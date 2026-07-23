@@ -21,8 +21,16 @@ A Gmail email from a financial account or payment method reporting a Transaction
 _Avoid_: Receipt, candidate transaction
 
 **Spending Notification Reference**:
-The minimal Gmail identity and processing outcome retained for an external Spending Notification without storing its content. It may remain unlinked or support exactly one Transaction.
+The minimal Gmail identity and processing outcome retained for a Gmail message evaluated as a possible Spending Notification without storing its content. It may remain unlinked or support exactly one Transaction.
 _Avoid_: Stored notification, raw email
+
+**Parser Profile**:
+An owner-enabled, versioned definition that trusts declared authenticated senders, identifies supported Spending Notification Formats, and extracts Transaction details using validated rules.
+_Avoid_: Learned parser, sender rule
+
+**Spending Notification Format**:
+An independently identifiable message layout that a Parser Profile supports only when representative fixtures validate its matching and extraction behavior.
+_Avoid_: Sender, institution format
 
 **Category**:
 The owner-facing classification assigned to a Transaction for spending analysis. Its assignment may be uncertain and require approval or correction.
