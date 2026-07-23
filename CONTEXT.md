@@ -52,6 +52,10 @@ _Avoid_: Model training, hidden preference
 An itemized allocation attached to a Transaction whose reconciled amounts explain how that Transaction contributes to Categories. It does not create additional Transactions.
 _Avoid_: Nested transactions, child transactions
 
+**Receipt Proposal**:
+A structured, image-free set of proposed Transaction and Receipt Breakdown details that OpenClaw derives from an owner-provided receipt photo for Money Assistant to validate and review.
+_Avoid_: Receipt extraction result, stored receipt
+
 **Line Item**:
 A single purchased item or adjustment within a Receipt Breakdown, with its own amount and Category.
 _Avoid_: Sub-transaction
