@@ -5,7 +5,7 @@ Money Assistant records personal spending and helps its owner understand and imp
 ## Language
 
 **Transaction**:
-A confirmed personal money movement that immediately affects spending totals as either a purchase or a Refund, even when some details remain uncertain and require review. A saved manual entry or supported Spending Notification is sufficient confirmation.
+A confirmed personal money movement that immediately affects spending totals as either a purchase or a Refund, even when some details remain uncertain and require review. A saved manual entry, supported Spending Notification, or owner-confirmed Receipt Proposal is sufficient confirmation.
 _Avoid_: Expense, purchase
 
 **Voided Transaction**:
@@ -33,7 +33,7 @@ An independently identifiable message layout that a Parser Profile supports only
 _Avoid_: Sender, institution format
 
 **Category**:
-The owner-facing classification assigned to a Transaction or Line Item for spending analysis. Categories form a customizable two-level taxonomy: either a top-level Category or one of its second-level Categories may be assigned, and second-level spending rolls up to its current parent. Active Category names are case-insensitively unique among siblings, while the same child name may appear under different parents. A Category may include an owner-editable description and examples that guide AI classification but do not alter deterministic Learned Rule matching. When no active Category fits adequately, AI may propose a new top-level or second-level Category with suggested guidance, but only an explicit owner confirmation creates it and assigns it to the current Transaction; applying it to other existing Transactions requires a separate, previewed owner action. A Category keeps its identity and historical assignments when renamed or moved, and its current name and parent apply across historical reporting. An assignment may be uncertain and require approval or Correction.
+The owner-facing classification assigned to a Transaction or Line Item for spending analysis. Its assignment may be uncertain and require approval or Correction; an unassigned amount reports in the system Uncategorized bucket. Categories form a customizable two-level taxonomy: either a top-level Category or one of its second-level Categories may be assigned, and second-level spending rolls up to its current parent. Active Category names are case-insensitively unique among siblings, while the same child name may appear under different parents. A Category may include an owner-editable description and examples that guide AI classification but do not alter deterministic Learned Rule matching. When no active Category fits adequately, AI may propose a new top-level or second-level Category with suggested guidance, but only an explicit owner confirmation creates it and assigns it to the current Transaction; applying it to other existing Transactions requires a separate, previewed owner action. A Category keeps its identity and historical assignments when renamed or moved, and its current name and parent apply across historical reporting. An assignment may be uncertain and require approval or Correction.
 _Avoid_: Tag, type
 
 **Retired Category**:
@@ -65,16 +65,24 @@ A visible, reversible, and revisioned merchant-centered classification pattern d
 _Avoid_: Model training, hidden preference
 
 **Receipt Breakdown**:
-An itemized allocation attached to a Transaction whose reconciled amounts explain how that Transaction contributes to Categories. It does not create additional Transactions.
+An itemized allocation attached to a Transaction whose reconciled amounts replace that Transaction's own Category contribution while active. It does not create additional Transactions or change the Transaction's amount; the retained Transaction Category is only a fallback.
 _Avoid_: Nested transactions, child transactions
+
+**Draft Receipt Breakdown**:
+An unconfirmed initial or replacement itemization attached to a Transaction. Its Line Items do not affect reporting until their signed amounts reconcile exactly to the Transaction and the owner explicitly confirms them; meanwhile, reporting continues through the current confirmed Receipt Breakdown or, when none exists, the Transaction's Category.
+_Avoid_: Partial allocation, balancing item
 
 **Receipt Proposal**:
 A structured, image-free set of proposed Transaction and Receipt Breakdown details that OpenClaw derives from an owner-provided receipt photo for Money Assistant to validate and review.
 _Avoid_: Receipt extraction result, stored receipt
 
 **Line Item**:
-A single purchased item or adjustment within a Receipt Breakdown, with its own amount and Category.
+A single purchased item or explicitly shown adjustment within a Receipt Breakdown, with its own authoritative signed line total and Category. Positive adjustments increase the reconciled amount; negative adjustments reduce it. Quantity and unit price may provide review context but do not determine its line total.
 _Avoid_: Sub-transaction
+
+**Unidentified Line Item**:
+An owner-confirmed, Uncategorized Line Item representing a known amount whose receipt detail is unavailable. It may reconcile a partial receipt and remains in the Review Queue; neither Money Assistant nor OpenClaw may invent it from an arithmetic remainder.
+_Avoid_: Balancing item, miscellaneous item
 
 **Reporting Currency**:
 The owner-selected currency in which combined USD-and-PEN insights are expressed. Currency-specific insights remain available in each Transaction's original currency.
@@ -85,7 +93,7 @@ The owner-editable PEN value of one USD for a calendar date, shared by all combi
 _Avoid_: Transaction exchange rate, live exchange rate
 
 **Refund**:
-A separate Transaction that reverses all or part of an earlier purchase and reduces spending totals. It may be linked to that purchase without changing the original Transaction.
+A separate Transaction that reverses all or part of an earlier purchase and reduces spending totals. It may be linked to that purchase without changing the original Transaction, but the link never copies or infers a Receipt Breakdown; every Refund allocation requires owner review.
 _Avoid_: Income, credit
 
 **Spending Baseline**:
