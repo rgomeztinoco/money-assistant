@@ -1,0 +1,38 @@
+#!/bin/sh
+
+set -eu
+
+read_secret()
+{
+    variable_name="$1"
+    secret_file="$2"
+
+    if [ ! -r "$secret_file" ]; then
+        echo "Required secret file is not readable: $secret_file" >&2
+        exit 1
+    fi
+
+    secret_value="$(cat "$secret_file")"
+
+    if [ -z "$secret_value" ]; then
+        echo "Required secret file is empty: $secret_file" >&2
+        exit 1
+    fi
+
+    export "$variable_name=$secret_value"
+}
+
+umask 0027
+
+read_secret APP_KEY "${APP_KEY_FILE:?APP_KEY_FILE is required}"
+read_secret DB_PASSWORD "${DB_PASSWORD_FILE:?DB_PASSWORD_FILE is required}"
+
+if [ "$(id -u)" -eq 0 ]; then
+    exec setpriv \
+        --reuid=33 \
+        --regid=33 \
+        --init-groups \
+        -- "$@"
+fi
+
+exec "$@"

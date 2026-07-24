@@ -1,0 +1,268 @@
+name: money-assistant-production
+
+x-application: &application
+    image: '${APP_IMAGE_REPOSITORY:?Set APP_IMAGE_REPOSITORY}@${APP_IMAGE_DIGEST:?Set APP_IMAGE_DIGEST}'
+    pull_policy: '${APP_IMAGE_PULL_POLICY:-always}'
+    init: true
+    read_only: true
+    environment: &application-environment
+        APP_NAME: 'Money Assistant'
+        APP_ENV: production
+        APP_DEBUG: 'false'
+        APP_URL: 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}'
+        APP_KEY_FILE: /run/secrets/application_key
+        CACHE_STORE: database
+        DB_CACHE_CONNECTION: pgsql
+        DB_CONNECTION: pgsql
+        DB_DATABASE: '${DB_DATABASE:-money_assistant}'
+        DB_HOST: postgres
+        DB_PASSWORD_FILE: /run/secrets/database_password
+        DB_PORT: 5432
+        DB_QUEUE_CONNECTION: pgsql
+        DB_USERNAME: '${DB_USERNAME:-money_assistant}'
+        LOG_CHANNEL: stderr
+        LOG_LEVEL: '${LOG_LEVEL:-info}'
+        QUEUE_CONNECTION: database
+        SESSION_CONNECTION: pgsql
+        SESSION_DRIVER: database
+        SESSION_ENCRYPT: 'true'
+        SESSION_SECURE_COOKIE: 'true'
+    secrets:
+        - application_key
+        - database_password
+    volumes:
+        - type: volume
+          source: application-storage
+          target: /app/storage
+    tmpfs:
+        - /app/bootstrap/cache:uid=33,gid=33,mode=0770
+        - /tmp:uid=33,gid=33,mode=1770
+    networks:
+        - application
+    security_opt:
+        - no-new-privileges:true
+    cap_drop:
+        - ALL
+    cap_add:
+        - SETGID
+        - SETUID
+
+services:
+    postgres:
+        image: 'postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e'
+        pull_policy: always
+        restart: unless-stopped
+        environment:
+            POSTGRES_DB: '${DB_DATABASE:-money_assistant}'
+            POSTGRES_PASSWORD_FILE: /run/secrets/database_password
+            POSTGRES_USER: '${DB_USERNAME:-money_assistant}'
+        secrets:
+            - database_password
+        volumes:
+            - type: volume
+              source: postgres-data
+              target: /var/lib/postgresql
+        networks:
+            - application
+        healthcheck:
+            test:
+                - CMD-SHELL
+                - 'pg_isready --quiet --dbname "$${POSTGRES_DB}" --username "$${POSTGRES_USER}"'
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 20s
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - DAC_OVERRIDE
+            - FOWNER
+            - SETGID
+            - SETUID
+
+    migrate:
+        <<: *application
+        restart: 'no'
+        command:
+            - php
+            - artisan
+            - migrate
+            - --force
+            - --no-interaction
+        depends_on:
+            postgres:
+                condition: service_healthy
+
+    web:
+        <<: *application
+        restart: unless-stopped
+        command:
+            - frankenphp
+            - run
+            - --config
+            - /etc/frankenphp/Caddyfile
+        depends_on:
+            postgres:
+                condition: service_healthy
+            migrate:
+                condition: service_completed_successfully
+        healthcheck:
+            test:
+                - CMD
+                - curl
+                - --fail
+                - --silent
+                - --show-error
+                - http://127.0.0.1:8080/up
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 30s
+
+    worker:
+        <<: *application
+        restart: unless-stopped
+        stop_grace_period: 2m
+        command:
+            - php
+            - artisan
+            - queue:work
+            - database
+            - --queue=default
+            - --sleep=3
+            - --tries=3
+            - --timeout=60
+            - --max-time=3600
+            - --no-interaction
+        depends_on:
+            postgres:
+                condition: service_healthy
+            migrate:
+                condition: service_completed_successfully
+        healthcheck:
+            test:
+                - CMD
+                - /usr/local/bin/with-production-secrets
+                - php
+                - artisan
+                - app:health-check
+                - worker
+                - --no-interaction
+            interval: 15s
+            timeout: 10s
+            retries: 5
+            start_period: 90s
+
+    scheduler:
+        <<: *application
+        restart: unless-stopped
+        stop_grace_period: 1m
+        command:
+            - php
+            - artisan
+            - schedule:work
+            - --no-interaction
+        depends_on:
+            postgres:
+                condition: service_healthy
+            migrate:
+                condition: service_completed_successfully
+        healthcheck:
+            test:
+                - CMD
+                - /usr/local/bin/with-production-secrets
+                - php
+                - artisan
+                - app:health-check
+                - scheduler
+                - --no-interaction
+            interval: 15s
+            timeout: 10s
+            retries: 5
+            start_period: 90s
+
+    proxy:
+        image: 'caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648'
+        pull_policy: always
+        restart: unless-stopped
+        init: true
+        read_only: true
+        user: '1000:1000'
+        environment:
+            PRIVATE_HOSTNAME: '${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}'
+        extra_hosts:
+            - '${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:127.0.0.1'
+        command:
+            - caddy
+            - run
+            - --config
+            - /etc/caddy/Caddyfile
+            - --adapter
+            - caddyfile
+        configs:
+            - source: production_caddy
+              target: /etc/caddy/Caddyfile
+              mode: 0444
+        volumes:
+            - type: volume
+              source: caddy-data
+              target: /data
+            - type: volume
+              source: caddy-config
+              target: /config
+        tmpfs:
+            - /tmp:uid=1000,gid=1000,mode=1770
+        networks:
+            - edge
+            - application
+        ports:
+            - target: 8443
+              published: '${PRIVATE_HTTPS_PORT:-443}'
+              host_ip: '${PRIVATE_BIND_ADDRESS:?Set PRIVATE_BIND_ADDRESS to the host tailnet IP}'
+              protocol: tcp
+        depends_on:
+            web:
+                condition: service_healthy
+        healthcheck:
+            test:
+                - CMD
+                - wget
+                - --quiet
+                - --spider
+                - --no-check-certificate
+                - 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:8443/up'
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 30s
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - NET_BIND_SERVICE
+
+networks:
+    application:
+        internal: true
+    edge:
+        driver: bridge
+
+volumes:
+    application-storage:
+    caddy-config:
+    caddy-data:
+    postgres-data:
+
+configs:
+    production_caddy:
+        file: ./Caddyfile.production
+
+secrets:
+    application_key:
+        file: '${APP_KEY_FILE:?Set APP_KEY_FILE}'
+    database_password:
+        file: '${DB_PASSWORD_FILE:?Set DB_PASSWORD_FILE}'

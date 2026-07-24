@@ -41,3 +41,93 @@ jobs:
 
       - name: Run CI Checks
         run: vendor/bin/sail composer ci:check
+
+  production-stack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Build immutable application image
+        run: |
+          docker build \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --tag money-assistant:ci \
+            .
+
+          image_reference="$(docker image inspect money-assistant:ci --format '{{index .RepoDigests 0}}')"
+          image_digest="${image_reference#*@}"
+
+          {
+            echo "APP_IMAGE_REPOSITORY=money-assistant"
+            echo "APP_IMAGE_DIGEST=$image_digest"
+            echo "APP_IMAGE_PULL_POLICY=never"
+            echo "PRIVATE_BIND_ADDRESS=127.0.0.1"
+            echo "PRIVATE_HOSTNAME=money-assistant.test"
+            echo "PRIVATE_HTTPS_PORT=8443"
+            echo "APP_KEY_FILE=/tmp/money-assistant-production-smoke/application_key"
+            echo "DB_PASSWORD_FILE=/tmp/money-assistant-production-smoke/database_password"
+          } >> "$GITHUB_ENV"
+
+      - name: Create production secrets
+        run: |
+          sudo install -d -m 0700 /tmp/money-assistant-production-smoke
+          printf 'base64:%s\n' "$(openssl rand -base64 32)" |
+            sudo tee /tmp/money-assistant-production-smoke/application_key >/dev/null
+          openssl rand -base64 32 |
+            sudo tee /tmp/money-assistant-production-smoke/database_password >/dev/null
+          sudo chmod 0600 /tmp/money-assistant-production-smoke/application_key
+          sudo chmod 0600 /tmp/money-assistant-production-smoke/database_password
+
+      - name: Start production stack
+        run: docker compose -p money-assistant-production-smoke -f compose.production.yaml up --detach --wait
+
+      - name: Verify production stack
+        run: |
+          wait_for_health() {
+            container="$1"
+
+            for attempt in $(seq 1 30); do
+              health_state="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
+
+              if [ "$health_state" = "healthy" ]; then
+                return 0
+              fi
+
+              sleep 2
+            done
+
+            docker logs "$container"
+
+            return 1
+          }
+
+          curl \
+            --fail \
+            --insecure \
+            --noproxy '*' \
+            --resolve money-assistant.test:8443:127.0.0.1 \
+            --silent \
+            --show-error \
+            https://money-assistant.test:8443/up \
+            >/dev/null
+
+          expected_image="$(docker inspect money-assistant-production-smoke-web-1 --format '{{.Image}}')"
+
+          test "$(docker inspect money-assistant-production-smoke-worker-1 --format '{{.Image}}')" = "$expected_image"
+          test "$(docker inspect money-assistant-production-smoke-scheduler-1 --format '{{.Image}}')" = "$expected_image"
+
+          docker compose -p money-assistant-production-smoke -f compose.production.yaml restart worker
+          wait_for_health money-assistant-production-smoke-worker-1
+
+          docker compose -p money-assistant-production-smoke -f compose.production.yaml restart scheduler
+          wait_for_health money-assistant-production-smoke-scheduler-1
+
+      - name: Stop production stack
+        if: always()
+        run: |
+          docker compose -p money-assistant-production-smoke -f compose.production.yaml down --volumes --remove-orphans
+          sudo rm -rf /tmp/money-assistant-production-smoke
