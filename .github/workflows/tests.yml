@@ -26,13 +26,18 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      - name: Setup Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: '22'
+      - name: Install Composer dependencies
+        # The project-local Sail binary is unavailable until this bootstrap install completes.
+        run: composer install --no-interaction --no-progress --no-scripts --prefer-dist
+
+      - name: Configure Application
+        run: cp .env.example .env
+
+      - name: Start Sail
+        run: vendor/bin/sail up -d --wait
 
       - name: Setup Application
-        run: composer setup
+        run: vendor/bin/sail composer setup
 
       - name: Run CI Checks
-        run: composer ci:check
+        run: vendor/bin/sail composer ci:check
