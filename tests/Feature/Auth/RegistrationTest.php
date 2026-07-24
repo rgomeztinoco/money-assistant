@@ -1,25 +1,16 @@
 <?php
 
-use Laravel\Fortify\Features;
+use App\Models\User;
+use Illuminate\Database\QueryException;
 
-beforeEach(function () {
-    $this->skipUnlessFortifyHas(Features::registration());
+test('public registration is unavailable', function () {
+    $this->get('/register')->assertNotFound();
+    $this->post('/register', [])->assertNotFound();
 });
 
-test('registration screen can be rendered', function () {
-    $response = $this->get(route('register'));
+test('only one Owner Account can exist', function () {
+    User::factory()->create();
 
-    $response->assertOk();
-});
-
-test('new users can register', function () {
-    $response = $this->post(route('register.store'), [
-        'name' => 'Test User',
-        'email' => 'test@example.com',
-        'password' => 'password',
-        'password_confirmation' => 'password',
-    ]);
-
-    $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    expect(fn () => User::factory()->create())
+        ->toThrow(QueryException::class);
 });

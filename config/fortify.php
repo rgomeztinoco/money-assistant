@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\PreventPersistentAuthentication;
 use Laravel\Fortify\Features;
 
 return [
@@ -101,7 +102,7 @@ return [
     |
     */
 
-    'middleware' => ['web'],
+    'middleware' => ['web', PreventPersistentAuthentication::class],
 
     /*
     |--------------------------------------------------------------------------
@@ -161,8 +162,6 @@ return [
     */
 
     'features' => [
-        Features::registration(),
-        Features::resetPasswords(),
         Features::emailVerification(),
         Features::twoFactorAuthentication([
             'confirm' => true,

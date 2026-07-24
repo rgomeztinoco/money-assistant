@@ -19,7 +19,6 @@ type Props = {
 
 export default function Security(props: Props) {
     const passwordInput = useRef<HTMLInputElement>(null);
-    const currentPasswordInput = useRef<HTMLInputElement>(null);
 
     return (
         <>
@@ -39,42 +38,17 @@ export default function Security(props: Props) {
                     options={{
                         preserveScroll: true,
                     }}
-                    resetOnError={[
-                        'password',
-                        'password_confirmation',
-                        'current_password',
-                    ]}
+                    resetOnError={['password', 'password_confirmation']}
                     resetOnSuccess
                     onError={(errors) => {
                         if (errors.password) {
                             passwordInput.current?.focus();
-                        }
-
-                        if (errors.current_password) {
-                            currentPasswordInput.current?.focus();
                         }
                     }}
                     className="space-y-6"
                 >
                     {({ errors, processing }) => (
                         <>
-                            <div className="grid gap-2">
-                                <Label htmlFor="current_password">
-                                    Current password
-                                </Label>
-
-                                <PasswordInput
-                                    id="current_password"
-                                    ref={currentPasswordInput}
-                                    name="current_password"
-                                    className="mt-1 block w-full"
-                                    autoComplete="current-password"
-                                    placeholder="Current password"
-                                />
-
-                                <InputError message={errors.current_password} />
-                            </div>
-
                             <div className="grid gap-2">
                                 <Label htmlFor="password">New password</Label>
 

@@ -20,3 +20,19 @@ test('password confirmation requires authentication', function () {
 
     $response->assertRedirect(route('login'));
 });
+
+test('passkey confirmation screen can be rendered', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('passkey.confirmation'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('auth/confirm-passkey'),
+        );
+});
+
+test('passkey confirmation requires authentication', function () {
+    $this->get(route('passkey.confirmation'))
+        ->assertRedirect(route('login'));
+});

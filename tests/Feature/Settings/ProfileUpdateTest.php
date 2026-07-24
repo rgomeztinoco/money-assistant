@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 test('profile page is displayed', function () {
     $user = User::factory()->create();
@@ -17,6 +18,7 @@ test('profile information can be updated', function () {
 
     $response = $this
         ->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
         ->patch(route('profile.update'), [
             'name' => 'Test User',
             'email' => 'test@example.com',
@@ -50,14 +52,62 @@ test('email verification status is unchanged when the email address is unchanged
     expect($user->refresh()->email_verified_at)->not->toBeNull();
 });
 
-test('user can delete their account', function () {
+test('changing the owner email invalidates other sessions', function () {
+    $user = User::factory()->create();
+
+    DB::table('sessions')->insert([
+        'id' => 'another-device-session',
+        'user_id' => $user->id,
+        'payload' => 'payload',
+        'last_activity' => now()->getTimestamp(),
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-owner@example.com',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(DB::table('sessions')->where('id', 'another-device-session')->exists())->toBeFalse();
+});
+
+test('owner email changes require fresh authentication', function () {
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => 'Changed Owner',
+            'email' => 'changed@example.com',
+        ])
+        ->assertRedirect(route('password.confirm'));
+
+    expect($user->refresh()->email)->not->toBe('changed@example.com');
+});
+
+test('permanent deletion requires fresh passkey authentication', function () {
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->from(route('profile.edit'))
+        ->delete(route('profile.destroy'))
+        ->assertRedirect('/confirm-passkey');
+
+    expect($user->fresh())->not->toBeNull();
+});
+
+test('user can delete their account after fresh passkey authentication', function () {
     $user = User::factory()->create();
 
     $response = $this
         ->actingAs($user)
-        ->delete(route('profile.destroy'), [
-            'password' => 'password',
-        ]);
+        ->withSession(['auth.passkey_confirmed_at' => time()])
+        ->delete(route('profile.destroy'));
 
     $response
         ->assertSessionHasNoErrors()
@@ -67,19 +117,18 @@ test('user can delete their account', function () {
     expect($user->fresh())->toBeNull();
 });
 
-test('correct password must be provided to delete account', function () {
+test('expired passkey authentication cannot delete account', function () {
     $user = User::factory()->create();
 
     $response = $this
         ->actingAs($user)
+        ->withSession(['auth.passkey_confirmed_at' => now()->subSeconds(901)->getTimestamp()])
         ->from(route('profile.edit'))
-        ->delete(route('profile.destroy'), [
-            'password' => 'wrong-password',
-        ]);
+        ->delete(route('profile.destroy'));
 
     $response
-        ->assertSessionHasErrors('password')
-        ->assertRedirect(route('profile.edit'));
+        ->assertSessionHasNoErrors()
+        ->assertRedirect('/confirm-passkey');
 
     expect($user->fresh())->not->toBeNull();
 });

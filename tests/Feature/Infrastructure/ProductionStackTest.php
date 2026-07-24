@@ -78,3 +78,15 @@ test('only the pinned reverse proxy exposes a tailnet-bound port', function () {
         expect($services[$service])->not->toHaveKey('ports');
     }
 });
+
+test('production sessions are bounded and use protected cookies', function () {
+    $environment = $this->productionCompose['services']['web']['environment'];
+
+    expect($environment['SESSION_LIFETIME'])->toBe('120')
+        ->and($environment['SESSION_SECURE_COOKIE'])->toBe('true')
+        ->and($environment['SESSION_HTTP_ONLY'])->toBe('true')
+        ->and($environment['SESSION_SAME_SITE'])->toBe('strict')
+        ->and(config('session.lifetime'))->toBe(120)
+        ->and(config('session.http_only'))->toBeTrue()
+        ->and(config('session.same_site'))->toBe('strict');
+});

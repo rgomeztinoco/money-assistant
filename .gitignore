@@ -4,6 +4,7 @@
 /public/build
 /public/fonts-manifest.dev.json
 /public/hot
+/tests/Browser/Screenshots
 /public/storage
 /storage/*.key
 /storage/pail

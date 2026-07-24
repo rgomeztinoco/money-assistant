@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Actions\Security\InvalidateOtherSessions;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
@@ -14,6 +14,8 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
+    public function __construct(private InvalidateOtherSessions $invalidateOtherSessions) {}
+
     /**
      * Show the user's profile settings page.
      */
@@ -38,6 +40,13 @@ class ProfileController extends Controller
 
         $request->user()->save();
 
+        if ($request->user()->wasChanged('email')) {
+            $this->invalidateOtherSessions->handle(
+                $request->user(),
+                $request->session()->getId(),
+            );
+        }
+
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
 
         return to_route('profile.edit');
@@ -46,7 +55,7 @@ class ProfileController extends Controller
     /**
      * Delete the user's profile.
      */
-    public function destroy(ProfileDeleteRequest $request): RedirectResponse
+    public function destroy(Request $request): RedirectResponse
     {
         $user = $request->user();
 
