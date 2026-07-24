@@ -3,11 +3,14 @@ import {
     ArrowDownLeft,
     ArrowUpRight,
     CircleOff,
+    Link2,
     ReceiptText,
     RotateCcw,
+    Tags,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { store as recordTransaction } from '@/actions/App/Http/Controllers/TransactionController';
+import { store as linkRefund } from '@/actions/App/Http/Controllers/TransactionRefundLinkController';
 import {
     destroy as restoreTransaction,
     store as voidTransaction,
@@ -31,6 +34,18 @@ import { index } from '@/routes/transactions';
 
 type Currency = 'USD' | 'PEN';
 type TransactionKind = 'purchase' | 'refund';
+type LedgerCategory = {
+    id: number;
+    name: string;
+    provenance: 'owner' | 'linked_refund' | 'learned_rule' | 'ai';
+};
+
+type PurchaseOption = {
+    id: number;
+    occurred_on: string;
+    merchant_description: string;
+    currency: Currency;
+};
 
 type LedgerTransaction = {
     id: number;
@@ -41,6 +56,11 @@ type LedgerTransaction = {
     merchant_description: string;
     confirmed_at: string;
     revision: number;
+    original_purchase: {
+        id: number;
+        merchant_description: string;
+    } | null;
+    category: LedgerCategory | null;
     state_change_idempotency_key: string;
 };
 
@@ -51,6 +71,11 @@ type VoidedLedgerTransaction = LedgerTransaction & {
 type TransactionsIndexProps = {
     today: string;
     totals: Record<Currency, string>;
+    category_totals: Array<{
+        category: Pick<LedgerCategory, 'id' | 'name'>;
+        totals: Record<Currency, string>;
+    }>;
+    purchase_options: PurchaseOption[];
     transactions: LedgerTransaction[];
     voided_transactions: VoidedLedgerTransaction[];
     errors?: Record<string, string>;
@@ -185,11 +210,71 @@ function TransactionVoidStateForm({
     );
 }
 
+function RefundLinkForm({
+    refund,
+    purchases,
+}: {
+    refund: LedgerTransaction;
+    purchases: PurchaseOption[];
+}) {
+    const selectId = `refund-${refund.id}-purchase`;
+
+    return (
+        <Form {...linkRefund.form(refund.id)} className="grid min-w-52 gap-1.5">
+            {({ errors, processing }) => (
+                <>
+                    <input
+                        type="hidden"
+                        name="expected_revision"
+                        value={refund.revision}
+                    />
+                    <Label htmlFor={selectId} className="sr-only">
+                        Original purchase for {refund.merchant_description}
+                    </Label>
+                    <div className="flex items-center gap-2">
+                        <NativeSelect
+                            id={selectId}
+                            name="purchase_id"
+                            required
+                            defaultValue=""
+                            aria-invalid={errors.purchase_id ? true : undefined}
+                            options={[
+                                {
+                                    value: '',
+                                    label: 'Select original purchase',
+                                },
+                                ...purchases.map((purchase) => ({
+                                    value: purchase.id.toString(),
+                                    label: `${purchase.occurred_on} · ${purchase.merchant_description}`,
+                                })),
+                            ]}
+                        />
+                        <Button
+                            type="submit"
+                            variant="secondary"
+                            size="sm"
+                            disabled={processing}
+                        >
+                            {processing ? <Spinner /> : <Link2 />}
+                            Link Refund
+                        </Button>
+                    </div>
+                    <InputError
+                        message={errors.purchase_id ?? errors.refund_link}
+                    />
+                </>
+            )}
+        </Form>
+    );
+}
+
 function LedgerTable({
     transactions,
+    purchases,
     operation,
 }: {
     transactions: Array<LedgerTransaction | VoidedLedgerTransaction>;
+    purchases: PurchaseOption[];
     operation: 'void' | 'restore';
 }) {
     const showsVoidedState = operation === 'restore';
@@ -237,6 +322,25 @@ function LedgerTable({
                                             {transaction.voided_at.slice(0, 10)}
                                         </p>
                                     )}
+                                    {transaction.original_purchase && (
+                                        <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                            <Link2 className="size-3" />
+                                            Linked to{' '}
+                                            {
+                                                transaction.original_purchase
+                                                    .merchant_description
+                                            }
+                                        </p>
+                                    )}
+                                    {transaction.category && (
+                                        <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                            <Tags className="size-3" />
+                                            {transaction.category.name}
+                                            {transaction.category.provenance ===
+                                                'linked_refund' &&
+                                                ' · from linked purchase'}
+                                        </p>
+                                    )}
                                 </td>
                                 <td className="py-4 pr-4">
                                     <Badge variant={presentation.badgeVariant}>
@@ -258,10 +362,30 @@ function LedgerTable({
                                     {transactionAmount(transaction)}
                                 </td>
                                 <td className="py-4 pl-4">
-                                    <TransactionVoidStateForm
-                                        transaction={transaction}
-                                        operation={operation}
-                                    />
+                                    <div className="grid justify-items-end gap-2">
+                                        {operation === 'void' &&
+                                            transaction.kind === 'refund' &&
+                                            transaction.original_purchase ===
+                                                null &&
+                                            purchases.some(
+                                                (purchase) =>
+                                                    purchase.currency ===
+                                                    transaction.currency,
+                                            ) && (
+                                                <RefundLinkForm
+                                                    refund={transaction}
+                                                    purchases={purchases.filter(
+                                                        (purchase) =>
+                                                            purchase.currency ===
+                                                            transaction.currency,
+                                                    )}
+                                                />
+                                            )}
+                                        <TransactionVoidStateForm
+                                            transaction={transaction}
+                                            operation={operation}
+                                        />
+                                    </div>
                                 </td>
                             </tr>
                         );
@@ -275,6 +399,8 @@ function LedgerTable({
 export default function TransactionsIndex({
     today,
     totals,
+    category_totals,
+    purchase_options,
     transactions,
     voided_transactions,
     errors = {},
@@ -282,11 +408,17 @@ export default function TransactionsIndex({
     const { flash } = usePage();
     const transactionStateError = flash.transaction_state_error as
         string | undefined;
+    const refundLinkError = flash.refund_link_error as string | undefined;
     const voidStateErrors = [
         transactionStateError,
         errors.expected_revision,
         errors.idempotency_key,
         errors.void_state,
+    ].filter((error): error is string => Boolean(error));
+    const refundLinkErrors = [
+        refundLinkError,
+        errors.purchase_id,
+        errors.refund_link,
     ].filter((error): error is string => Boolean(error));
 
     return (
@@ -307,6 +439,13 @@ export default function TransactionsIndex({
                     <AlertError
                         title="Transaction state was not changed."
                         errors={voidStateErrors}
+                    />
+                )}
+
+                {refundLinkErrors.length > 0 && (
+                    <AlertError
+                        title="Refund was not linked."
+                        errors={refundLinkErrors}
                     />
                 )}
 
@@ -336,6 +475,44 @@ export default function TransactionsIndex({
                         </Card>
                     ))}
                 </div>
+
+                {category_totals.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Category totals</CardTitle>
+                            <CardDescription>
+                                Net totals include linked and unlinked Refunds;
+                                negative totals remain visible.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {category_totals.map(({ category, totals }) => (
+                                <div
+                                    key={category.id}
+                                    className="grid gap-2 rounded-lg border p-4"
+                                >
+                                    <p className="font-medium">
+                                        {category.name}
+                                    </p>
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums">
+                                        <span>
+                                            {formatMinorUnits(
+                                                totals.USD,
+                                                'USD',
+                                            )}
+                                        </span>
+                                        <span>
+                                            {formatMinorUnits(
+                                                totals.PEN,
+                                                'PEN',
+                                            )}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                )}
 
                 <div className="grid items-start gap-6 xl:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]">
                     <Card>
@@ -520,6 +697,7 @@ export default function TransactionsIndex({
                             ) : (
                                 <LedgerTable
                                     transactions={transactions}
+                                    purchases={purchase_options}
                                     operation="void"
                                 />
                             )}
@@ -551,6 +729,7 @@ export default function TransactionsIndex({
                         ) : (
                             <LedgerTable
                                 transactions={voided_transactions}
+                                purchases={purchase_options}
                                 operation="restore"
                             />
                         )}

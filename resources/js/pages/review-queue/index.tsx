@@ -50,14 +50,38 @@ type ReviewTransaction = {
     fields: ReviewField[];
 };
 
+type RefundRelationshipReview = {
+    refund: {
+        id: number;
+        merchant_description: string;
+        amount_minor: string;
+        currency: Currency;
+        category_name: string | null;
+    };
+    purchase: {
+        id: number;
+        merchant_description: string;
+        amount_minor: string;
+        currency: Currency;
+    };
+    reason:
+        | 'cumulative_refunds_exceed_purchase'
+        | 'receipt_breakdown_allocation_requires_review';
+    reason_label: string;
+    linked_refund_total_minor: string;
+    overage_minor: string;
+};
+
 type ReviewQueueIndexProps = {
     unresolved_field_count: number;
+    unresolved_refund_relationship_count: number;
     stale_transaction:
         | (Omit<ReviewTransaction, 'fields' | 'confirmed_at'> & {
               provisional_fields: ReviewableFieldName[];
           })
         | null;
     transactions: ReviewTransaction[];
+    refund_relationships: RefundRelationshipReview[];
 };
 
 function fieldValueLabel(field: ReviewField): string {
@@ -226,9 +250,14 @@ function ReviewFieldCard({
 
 export default function ReviewQueueIndex({
     unresolved_field_count,
+    unresolved_refund_relationship_count,
     stale_transaction,
     transactions,
+    refund_relationships,
 }: ReviewQueueIndexProps) {
+    const unresolvedReviewCount =
+        unresolved_field_count + unresolved_refund_relationship_count;
+
     return (
         <>
             <Head title="Review Queue" />
@@ -245,8 +274,17 @@ export default function ReviewQueueIndex({
                     </div>
                     <Badge variant="outline" className="w-fit">
                         <ListChecks />
-                        {unresolved_field_count}{' '}
-                        {unresolved_field_count === 1 ? 'field' : 'fields'}
+                        {unresolved_refund_relationship_count === 0
+                            ? `${unresolved_field_count} ${
+                                  unresolved_field_count === 1
+                                      ? 'field'
+                                      : 'fields'
+                              }`
+                            : `${unresolvedReviewCount} ${
+                                  unresolvedReviewCount === 1
+                                      ? 'review'
+                                      : 'reviews'
+                              }`}
                     </Badge>
                 </div>
 
@@ -288,7 +326,8 @@ export default function ReviewQueueIndex({
                     </Card>
                 )}
 
-                {transactions.length === 0 ? (
+                {transactions.length === 0 &&
+                refund_relationships.length === 0 ? (
                     <Card>
                         <CardContent className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
                             <div className="rounded-full bg-muted p-3">
@@ -307,6 +346,80 @@ export default function ReviewQueueIndex({
                     </Card>
                 ) : (
                     <div className="grid gap-5">
+                        {refund_relationships.map((relationship) => (
+                            <Card
+                                key={`${relationship.refund.id}-${relationship.reason}`}
+                                className="border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20"
+                            >
+                                <CardHeader className="gap-3">
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="grid gap-1">
+                                            <CardTitle className="flex items-center gap-2">
+                                                <CircleAlert className="size-5 text-amber-700 dark:text-amber-400" />
+                                                {relationship.reason_label}
+                                            </CardTitle>
+                                            <CardDescription>
+                                                {
+                                                    relationship.refund
+                                                        .merchant_description
+                                                }{' '}
+                                                is linked to{' '}
+                                                {
+                                                    relationship.purchase
+                                                        .merchant_description
+                                                }
+                                                .
+                                            </CardDescription>
+                                        </div>
+                                        <Badge
+                                            variant="secondary"
+                                            className="w-fit"
+                                        >
+                                            Relationship review
+                                        </Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="grid gap-2 text-sm">
+                                    {relationship.reason ===
+                                    'cumulative_refunds_exceed_purchase' ? (
+                                        <>
+                                            <p>
+                                                Linked Refunds total{' '}
+                                                {
+                                                    relationship.linked_refund_total_minor
+                                                }{' '}
+                                                {relationship.purchase.currency}{' '}
+                                                minor units against a purchase
+                                                of{' '}
+                                                {
+                                                    relationship.purchase
+                                                        .amount_minor
+                                                }
+                                                .
+                                            </p>
+                                            <p className="font-medium text-amber-800 dark:text-amber-300">
+                                                The confirmed Refunds remain
+                                                included. The relationship is{' '}
+                                                {relationship.overage_minor}{' '}
+                                                minor units over the purchase.
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <p>
+                                            The purchase has a Receipt
+                                            Breakdown. This Refund{' '}
+                                            {relationship.refund.category_name
+                                                ? `keeps its existing ${relationship.refund.category_name} Category`
+                                                : 'remains Uncategorized'}{' '}
+                                            until its allocation is reviewed
+                                            independently; no Line Items were
+                                            copied or inferred.
+                                        </p>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
+
                         {transactions.map((transaction) => (
                             <Card key={transaction.id}>
                                 <CardHeader className="gap-3">

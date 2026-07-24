@@ -3,6 +3,7 @@
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionFieldReviewController;
+use App\Http\Controllers\TransactionRefundLinkController;
 use App\Http\Controllers\TransactionVoidController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,6 +13,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store']);
+    Route::post('transactions/{refund}/refund-link', [TransactionRefundLinkController::class, 'store'])
+        ->name('transactions.refund_link.store');
     Route::post('transactions/{transaction}/void', [TransactionVoidController::class, 'store'])
         ->name('transactions.void.store');
     Route::delete('transactions/{transaction}/void', [TransactionVoidController::class, 'destroy'])

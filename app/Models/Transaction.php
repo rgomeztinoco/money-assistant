@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
@@ -25,6 +26,11 @@ use Illuminate\Support\Carbon;
  * @property int $revision
  * @property list<string> $provisional_fields
  * @property CarbonImmutable|null $voided_at
+ * @property int|null $original_purchase_id
+ * @property list<string> $refund_relationship_review_reasons
+ * @property int|null $category_id
+ * @property CategoryAssignmentProvenance|null $category_assignment_provenance
+ * @property-read int|string|null $linked_refund_total_minor
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -39,6 +45,10 @@ use Illuminate\Support\Carbon;
     'revision',
     'provisional_fields',
     'voided_at',
+    'original_purchase_id',
+    'refund_relationship_review_reasons',
+    'category_id',
+    'category_assignment_provenance',
 ])]
 class Transaction extends Model
 {
@@ -51,6 +61,7 @@ class Transaction extends Model
     protected $attributes = [
         'revision' => 1,
         'provisional_fields' => '[]',
+        'refund_relationship_review_reasons' => '[]',
     ];
 
     /**
@@ -78,6 +89,38 @@ class Transaction extends Model
     }
 
     /**
+     * @return BelongsTo<Transaction, $this>
+     */
+    public function originalPurchase(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'original_purchase_id');
+    }
+
+    /**
+     * @return HasMany<Transaction, $this>
+     */
+    public function linkedRefunds(): HasMany
+    {
+        return $this->hasMany(self::class, 'original_purchase_id');
+    }
+
+    /**
+     * @return BelongsTo<Category, $this>
+     */
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * @return HasMany<ReceiptBreakdown, $this>
+     */
+    public function receiptBreakdowns(): HasMany
+    {
+        return $this->hasMany(ReceiptBreakdown::class);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
@@ -91,6 +134,8 @@ class Transaction extends Model
             'revision' => 'integer',
             'provisional_fields' => 'array',
             'voided_at' => 'immutable_datetime',
+            'refund_relationship_review_reasons' => 'array',
+            'category_assignment_provenance' => CategoryAssignmentProvenance::class,
         ];
     }
 }
