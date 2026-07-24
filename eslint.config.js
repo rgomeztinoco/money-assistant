@@ -106,8 +106,10 @@ export default [
         ignores: [
             'vendor',
             'node_modules',
+            '**/node_modules/**',
             'public',
             'bootstrap/ssr',
+            'openclaw/**/dist/**',
             'tailwind.config.js',
             'vite.config.ts',
             'resources/js/actions/**',

@@ -39,6 +39,11 @@ return [
         'capability' => [
             'key_id' => env('OPENCLAW_CAPABILITY_KEY_ID'),
             'public_key' => env('OPENCLAW_CAPABILITY_PUBLIC_KEY'),
+            'agent_id' => env('OPENCLAW_CAPABILITY_AGENT_ID'),
+            'account_id' => env('OPENCLAW_CAPABILITY_ACCOUNT_ID'),
+            'conversation_id' => env('OPENCLAW_CAPABILITY_CONVERSATION_ID'),
+            'owner_sender_id' => env('OPENCLAW_CAPABILITY_OWNER_SENDER_ID'),
+            'rate_limit_per_minute' => env('OPENCLAW_CAPABILITY_RATE_LIMIT_PER_MINUTE', 60),
         ],
         'hook' => [
             'url' => env('OPENCLAW_HOOK_URL'),

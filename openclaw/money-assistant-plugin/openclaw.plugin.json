@@ -1,0 +1,63 @@
+{
+  "id": "money-assistant",
+  "name": "Money Assistant",
+  "description": "Reads one field-minimized Money Assistant Transaction.",
+  "version": "1.0.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "keyId",
+      "privateKey",
+      "agentId",
+      "accountId",
+      "conversationId",
+      "ownerSenderId"
+    ],
+    "properties": {
+      "keyId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "privateKey": {
+        "type": "string",
+        "minLength": 1
+      },
+      "agentId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "accountId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "conversationId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "ownerSenderId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
+    "additionalProperties": false
+  },
+  "uiHints": {
+    "privateKey": {
+      "label": "Ed25519 private key",
+      "sensitive": true
+    }
+  },
+  "contracts": {
+    "tools": [
+      "money_assistant_transaction_read"
+    ]
+  }
+}

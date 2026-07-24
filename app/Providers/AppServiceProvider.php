@@ -36,8 +36,8 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
 
         RateLimiter::for(
-            'openclaw',
-            fn (): Limit => Limit::perMinute(60),
+            'openclaw-ingress',
+            fn (): Limit => Limit::perMinute(120),
         );
     }
 

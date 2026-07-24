@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::useCache('database');
 
 Schedule::everyMinute()
+    ->name('money-assistant-minute')
     ->onOneServer()
     ->group(function () {
         Schedule::call(

@@ -1,0 +1,60 @@
+{
+  "plugins": {
+    "enabled": true,
+    "allow": [
+      "telegram",
+      "money-assistant"
+    ],
+    "load": {
+      "paths": [
+        "/opt/money-assistant/openclaw/money-assistant-plugin"
+      ]
+    },
+    "entries": {
+      "money-assistant": {
+        "enabled": true,
+        "config": {
+          "keyId": "${OPENCLAW_MONEY_ASSISTANT_KEY_ID}",
+          "privateKey": "${OPENCLAW_MONEY_ASSISTANT_PRIVATE_KEY}",
+          "agentId": "money-assistant",
+          "accountId": "${OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID}",
+          "conversationId": "${OPENCLAW_MONEY_ASSISTANT_OWNER_SENDER_ID}",
+          "ownerSenderId": "${OPENCLAW_MONEY_ASSISTANT_OWNER_SENDER_ID}"
+        }
+      }
+    }
+  },
+  "agents": {
+    "list": [
+      {
+        "id": "money-assistant",
+        "name": "Money Assistant",
+        "workspace": "~/.openclaw/workspace-money-assistant",
+        "timeoutSeconds": 1800,
+        "skills": [],
+        "heartbeat": {
+          "every": "0m",
+          "target": "none"
+        },
+        "tools": {
+          "allow": [
+            "money_assistant_transaction_read"
+          ]
+        }
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "agentId": "money-assistant",
+      "match": {
+        "channel": "telegram",
+        "accountId": "${OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID}",
+        "peer": {
+          "kind": "direct",
+          "id": "${OPENCLAW_MONEY_ASSISTANT_OWNER_SENDER_ID}"
+        }
+      }
+    }
+  ]
+}

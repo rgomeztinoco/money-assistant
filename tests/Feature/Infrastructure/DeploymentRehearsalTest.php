@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
 
 test('restart probes are prepared without contacting external recipients', function () {
@@ -29,7 +30,9 @@ test('restart probes are prepared without contacting external recipients', funct
 });
 
 test('queued and scheduled restart probes each complete exactly once', function () {
+    config()->set('cache.default', 'array');
     Queue::fake();
+    Schedule::useCache('array');
     $rehearsalId = (string) Str::uuid();
 
     $this->artisan('app:deployment-rehearsal:prepare', ['rehearsal' => $rehearsalId])

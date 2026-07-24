@@ -5,13 +5,10 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\Response;
 
 final class AuthenticateOpenClaw
 {
-    private const int MAXIMUM_CLOCK_SKEW_IN_SECONDS = 300;
-
     /**
      * @param  Closure(Request): Response  $next
      */
@@ -26,10 +23,7 @@ final class AuthenticateOpenClaw
             || ! is_string($timestamp)
             || ! is_string($nonce)
             || ! is_string($encodedSignature)
-            || ! hash_equals((string) config('services.openclaw.capability.key_id'), $keyId)
-            || ! ctype_digit($timestamp)
-            || abs(now()->getTimestamp() - (int) $timestamp) > self::MAXIMUM_CLOCK_SKEW_IN_SECONDS
-            || preg_match('/^[a-zA-Z0-9_-]{16,128}$/', $nonce) !== 1) {
+            || ! hash_equals((string) config('services.openclaw.capability.key_id'), $keyId)) {
             return $this->unauthorized();
         }
 
@@ -47,16 +41,9 @@ final class AuthenticateOpenClaw
             return $this->unauthorized();
         }
 
-        if (! Cache::add(
-            'openclaw:nonce:'.hash('sha256', $keyId."\0".$nonce),
-            true,
-            max(
-                1,
-                ((int) $timestamp + self::MAXIMUM_CLOCK_SKEW_IN_SECONDS + 1) - now()->getTimestamp(),
-            ),
-        )) {
-            return response()->json(['message' => 'Request already used.'], Response::HTTP_CONFLICT);
-        }
+        $request->attributes->set('openclaw.key_id', $keyId);
+        $request->attributes->set('openclaw.timestamp', $timestamp);
+        $request->attributes->set('openclaw.nonce', $nonce);
 
         return $next($request);
     }

@@ -124,12 +124,76 @@ test('OpenClaw integrations have isolated transport and directional credentials'
 
     foreach ($services as $service) {
         expect(array_keys($service['environment'] ?? []))
-            ->not->toContain('OPENCLAW_GATEWAY_TOKEN');
+            ->not->toContain('OPENCLAW_GATEWAY_TOKEN')
+            ->not->toContain('OPENCLAW_MONEY_ASSISTANT_PRIVATE_KEY')
+            ->not->toContain('OPENCLAW_CAPABILITY_PRIVATE_KEY');
 
         foreach ($service['volumes'] ?? [] as $volume) {
             expect($volume['source'] ?? null)->not->toBe('openclaw');
         }
     }
+});
+
+test('the dedicated Money Assistant agent exposes only its bounded read plugin', function () {
+    $pluginRoot = base_path('openclaw/money-assistant-plugin');
+    $manifest = json_decode(
+        file_get_contents($pluginRoot.'/openclaw.plugin.json'),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $package = json_decode(
+        file_get_contents($pluginRoot.'/package.json'),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $policy = json_decode(
+        file_get_contents(base_path('openclaw/money-assistant-agent-policy.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $agent = collect($policy['agents']['list'])->firstWhere('id', 'money-assistant');
+
+    expect($manifest['id'])->toBe('money-assistant')
+        ->and($manifest['contracts'])->toBe([
+            'tools' => ['money_assistant_transaction_read'],
+        ])
+        ->and($manifest['configSchema']['additionalProperties'])->toBeFalse()
+        ->and($package['peerDependencies']['openclaw'])->toBe('2026.7.1')
+        ->and($package['openclaw']['build'])->toBe([
+            'openclawVersion' => '2026.7.1',
+            'pluginSdkVersion' => '2026.7.1',
+        ])
+        ->and($policy['plugins']['allow'])->toContain('money-assistant')
+        ->and($policy['plugins']['entries']['money-assistant']['enabled'])->toBeTrue()
+        ->and($agent['skills'])->toBe([])
+        ->and($agent['timeoutSeconds'])->toBe(1800)
+        ->and($agent['heartbeat']['every'])->toBe('0m')
+        ->and($agent['tools']['allow'])->toBe(['money_assistant_transaction_read'])
+        ->and($policy['bindings'])->toBe([
+            [
+                'agentId' => 'money-assistant',
+                'match' => [
+                    'channel' => 'telegram',
+                    'accountId' => '${OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID}',
+                    'peer' => [
+                        'kind' => 'direct',
+                        'id' => '${OPENCLAW_MONEY_ASSISTANT_OWNER_SENDER_ID}',
+                    ],
+                ],
+            ],
+        ]);
+
+    expect(file_get_contents($pluginRoot.'/src/index.ts'))
+        ->toContain("const CAPABILITY_PATH = '/api/openclaw/v1/transport'")
+        ->toContain('toolContext.senderIsOwner !== true')
+        ->toContain('toolContext.requesterSenderId')
+        ->toContain('toolContext.sessionId')
+        ->toContain("api.on('message_received'")
+        ->toContain('message_id: admission.messageId')
+        ->toContain('admission.occurredAtSeconds')
+        ->toContain("createHash('sha256').update(body).digest('hex')")
+        ->not->toContain('${toolContext.sessionId}:${toolCallId}')
+        ->not->toContain('OPENCLAW_GATEWAY_TOKEN');
 });
 
 test('the production stack ships a private ingress verifier', function () {

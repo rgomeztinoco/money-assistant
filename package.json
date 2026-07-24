@@ -10,6 +10,7 @@
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
         "lint:check": "eslint .",
+        "openclaw:check": "npm --prefix openclaw/money-assistant-plugin run check",
         "types:check": "tsc --noEmit"
     },
     "devDependencies": {
