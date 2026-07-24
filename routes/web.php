@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ReviewQueueController;
+use App\Http\Controllers\SuspectedDuplicateResolutionController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionFieldReviewController;
 use App\Http\Controllers\TransactionRefundLinkController;
@@ -19,6 +20,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('transactions.void.store');
     Route::delete('transactions/{transaction}/void', [TransactionVoidController::class, 'destroy'])
         ->name('transactions.void.destroy');
+    Route::post('suspected-duplicates/{suspected_duplicate}/resolution', [SuspectedDuplicateResolutionController::class, 'store'])
+        ->name('suspected_duplicates.resolution.store');
+    Route::delete('suspected-duplicates/{suspected_duplicate}/resolution', [SuspectedDuplicateResolutionController::class, 'destroy'])
+        ->name('suspected_duplicates.resolution.destroy');
     Route::get('review-queue', ReviewQueueController::class)
         ->name('review_queue.index');
     Route::resource('review-queue.fields', TransactionFieldReviewController::class)

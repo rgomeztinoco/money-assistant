@@ -5,6 +5,7 @@ namespace App\Actions\Ledger;
 use App\Currency;
 use App\ExactInteger;
 use App\Models\Category;
+use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
@@ -65,6 +66,13 @@ class ReadLedger
      *         voided_at: string,
      *         original_purchase: array{id: int, merchant_description: string}|null,
      *         category: array{id: int, name: string, provenance: string}|null,
+     *         duplicate_resolution: array{
+     *             id: int,
+     *             revision: int,
+     *             first_transaction_revision: int,
+     *             second_transaction_revision: int,
+     *             reopen_idempotency_key: string
+     *         }|null,
      *         state_change_idempotency_key: string
      *     }>
      * }
@@ -117,15 +125,43 @@ class ReadLedger
             ->orderByDesc('id')
             ->limit(100)
             ->get();
+        $duplicateResolutionsByVoidedTransaction = SuspectedDuplicate::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->whereIn('voided_transaction_id', $voidedTransactionModels->modelKeys())
+            ->whereNotNull('resolved_at')
+            ->with([
+                'firstTransaction:id,revision',
+                'secondTransaction:id,revision',
+            ])
+            ->get([
+                'id',
+                'first_transaction_id',
+                'second_transaction_id',
+                'revision',
+                'voided_transaction_id',
+            ])
+            ->keyBy('voided_transaction_id');
 
         $voidedTransactions = [];
 
         foreach ($voidedTransactionModels as $transaction) {
             assert($transaction->voided_at !== null);
+            $duplicateResolution = $duplicateResolutionsByVoidedTransaction->get(
+                $transaction->id,
+            );
 
             $voidedTransactions[] = [
                 ...$this->transactionData($transaction),
                 'voided_at' => $transaction->voided_at->toIso8601String(),
+                'duplicate_resolution' => $duplicateResolution === null
+                    ? null
+                    : [
+                        'id' => $duplicateResolution->id,
+                        'revision' => $duplicateResolution->revision,
+                        'first_transaction_revision' => $duplicateResolution->firstTransaction->revision,
+                        'second_transaction_revision' => $duplicateResolution->secondTransaction->revision,
+                        'reopen_idempotency_key' => (string) Str::uuid(),
+                    ],
                 'state_change_idempotency_key' => (string) Str::uuid(),
             ];
         }

@@ -5,7 +5,10 @@ import {
     CircleAlert,
     ListChecks,
     PencilLine,
+    ScanSearch,
 } from 'lucide-react';
+import { useState } from 'react';
+import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { update } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +20,14 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -72,9 +83,35 @@ type RefundRelationshipReview = {
     overage_minor: string;
 };
 
+type SuspectedDuplicateTransaction = {
+    id: number;
+    revision: number;
+    occurred_on: string;
+    amount_minor: string;
+    currency: Currency;
+    kind: TransactionKind;
+    merchant_description: string;
+    category_name: string | null;
+    original_purchase_id: number | null;
+    has_linked_refunds: boolean;
+    has_receipt_breakdown: boolean;
+    protects_resolved_duplicate: boolean;
+    source_reference_count: number;
+    source_reference_fingerprint: string;
+};
+
+type SuspectedDuplicateReview = {
+    id: number;
+    revision: number;
+    resolution_idempotency_key: string;
+    first_transaction: SuspectedDuplicateTransaction;
+    second_transaction: SuspectedDuplicateTransaction;
+};
+
 type ReviewQueueIndexProps = {
     unresolved_field_count: number;
     unresolved_refund_relationship_count: number;
+    unresolved_suspected_duplicate_count: number;
     stale_transaction:
         | (Omit<ReviewTransaction, 'fields' | 'confirmed_at'> & {
               provisional_fields: ReviewableFieldName[];
@@ -82,7 +119,51 @@ type ReviewQueueIndexProps = {
         | null;
     transactions: ReviewTransaction[];
     refund_relationships: RefundRelationshipReview[];
+    suspected_duplicates: SuspectedDuplicateReview[];
 };
+
+function formatMinorUnits(amountMinor: string, currency: Currency): string {
+    const digits = amountMinor.padStart(3, '0');
+    const integerPart = digits
+        .slice(0, -2)
+        .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const symbol = currency === 'USD' ? '$' : 'S/';
+
+    return `${symbol} ${integerPart}.${digits.slice(-2)}`;
+}
+
+function survivorChoiceBlockReason(
+    survivor: SuspectedDuplicateTransaction,
+    transactionToVoid: SuspectedDuplicateTransaction,
+): string | null {
+    if (
+        survivor.kind !== transactionToVoid.kind ||
+        survivor.currency !== transactionToVoid.currency ||
+        survivor.amount_minor !== transactionToVoid.amount_minor
+    ) {
+        return 'The records must have the same kind, currency, and amount.';
+    }
+
+    if (
+        survivor.original_purchase_id !== transactionToVoid.original_purchase_id
+    ) {
+        return 'The records have different original purchase relationships.';
+    }
+
+    if (transactionToVoid.has_receipt_breakdown) {
+        return 'This choice would void a Receipt Breakdown that requires separate review.';
+    }
+
+    if (transactionToVoid.has_linked_refunds) {
+        return 'This choice would void a purchase that still has linked Refunds.';
+    }
+
+    if (transactionToVoid.protects_resolved_duplicate) {
+        return 'This choice would void the survivor of another resolved pair.';
+    }
+
+    return null;
+}
 
 function fieldValueLabel(field: ReviewField): string {
     if (field.name === 'kind') {
@@ -248,15 +329,304 @@ function ReviewFieldCard({
     );
 }
 
+function SuspectedDuplicateInspector({
+    suspectedDuplicate,
+}: {
+    suspectedDuplicate: SuspectedDuplicateReview;
+}) {
+    const [survivorId, setSurvivorId] = useState<number | null>(null);
+    const transactions = [
+        suspectedDuplicate.first_transaction,
+        suspectedDuplicate.second_transaction,
+    ];
+    const survivor = transactions.find(
+        (transaction) => transaction.id === survivorId,
+    );
+    const transactionToVoid = transactions.find(
+        (transaction) => transaction.id !== survivorId,
+    );
+    const selectedChoiceBlockReason =
+        survivor && transactionToVoid
+            ? survivorChoiceBlockReason(survivor, transactionToVoid)
+            : null;
+
+    return (
+        <Dialog>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                    <ScanSearch />
+                    Inspect pair
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl">
+                <DialogHeader>
+                    <DialogTitle>Resolve Suspected Duplicate</DialogTitle>
+                    <DialogDescription>
+                        Compare both confirmed records. Nothing is merged until
+                        you choose a survivor and confirm the exact effect.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <Form
+                    {...resolveSuspectedDuplicate.form(suspectedDuplicate.id)}
+                    options={{ preserveScroll: true }}
+                    className="grid gap-5"
+                >
+                    {({ errors, processing }) => (
+                        <>
+                            <input
+                                type="hidden"
+                                name="survivor_transaction_id"
+                                value={survivorId ?? ''}
+                            />
+                            <input
+                                type="hidden"
+                                name="expected_suspected_duplicate_revision"
+                                value={suspectedDuplicate.revision}
+                            />
+                            <input
+                                type="hidden"
+                                name="expected_first_transaction_revision"
+                                value={
+                                    suspectedDuplicate.first_transaction
+                                        .revision
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="expected_second_transaction_revision"
+                                value={
+                                    suspectedDuplicate.second_transaction
+                                        .revision
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="expected_first_source_reference_fingerprint"
+                                value={
+                                    suspectedDuplicate.first_transaction
+                                        .source_reference_fingerprint
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="expected_second_source_reference_fingerprint"
+                                value={
+                                    suspectedDuplicate.second_transaction
+                                        .source_reference_fingerprint
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="idempotency_key"
+                                value={
+                                    suspectedDuplicate.resolution_idempotency_key
+                                }
+                            />
+
+                            <fieldset className="grid gap-3 md:grid-cols-2">
+                                <legend className="sr-only">
+                                    Choose the surviving Transaction
+                                </legend>
+                                {transactions.map((transaction) => {
+                                    const otherTransaction = transactions.find(
+                                        (candidate) =>
+                                            candidate.id !== transaction.id,
+                                    );
+                                    const blockReason = otherTransaction
+                                        ? survivorChoiceBlockReason(
+                                              transaction,
+                                              otherTransaction,
+                                          )
+                                        : null;
+
+                                    return (
+                                        <label
+                                            key={transaction.id}
+                                            className={`grid gap-3 rounded-lg border p-4 transition-colors ${
+                                                blockReason
+                                                    ? 'cursor-not-allowed opacity-60'
+                                                    : 'cursor-pointer hover:bg-muted/50'
+                                            } ${
+                                                survivorId === transaction.id
+                                                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                                                    : ''
+                                            }`}
+                                        >
+                                            <span className="flex items-center gap-2 font-medium">
+                                                <input
+                                                    type="radio"
+                                                    name="survivor_choice"
+                                                    value={transaction.id}
+                                                    checked={
+                                                        survivorId ===
+                                                        transaction.id
+                                                    }
+                                                    disabled={
+                                                        blockReason !== null
+                                                    }
+                                                    onChange={() =>
+                                                        setSurvivorId(
+                                                            transaction.id,
+                                                        )
+                                                    }
+                                                />
+                                                Keep{' '}
+                                                {
+                                                    transaction.merchant_description
+                                                }
+                                            </span>
+                                            <span className="grid gap-1 text-sm text-muted-foreground">
+                                                <span>
+                                                    {transaction.occurred_on} ·{' '}
+                                                    {transaction.kind ===
+                                                    'refund'
+                                                        ? 'Refund'
+                                                        : 'Purchase'}
+                                                </span>
+                                                <span className="font-medium text-foreground tabular-nums">
+                                                    {formatMinorUnits(
+                                                        transaction.amount_minor,
+                                                        transaction.currency,
+                                                    )}{' '}
+                                                    {transaction.currency}
+                                                </span>
+                                                <span>
+                                                    {transaction.category_name ??
+                                                        'Uncategorized'}
+                                                </span>
+                                                <span>
+                                                    {
+                                                        transaction.source_reference_count
+                                                    }{' '}
+                                                    {transaction.source_reference_count ===
+                                                    1
+                                                        ? 'source reference'
+                                                        : 'source references'}
+                                                </span>
+                                                <span>
+                                                    Revision{' '}
+                                                    {transaction.revision}
+                                                </span>
+                                                {blockReason && (
+                                                    <span className="font-medium text-amber-800 dark:text-amber-300">
+                                                        {blockReason}
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </fieldset>
+
+                            {survivor &&
+                            transactionToVoid &&
+                            selectedChoiceBlockReason === null ? (
+                                <div className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/20">
+                                    <p className="font-semibold">
+                                        Exact resolution effect
+                                    </p>
+                                    <p>
+                                        Keep {survivor.merchant_description}{' '}
+                                        active.
+                                    </p>
+                                    <p>
+                                        Move{' '}
+                                        {
+                                            transactionToVoid.source_reference_count
+                                        }{' '}
+                                        {transactionToVoid.source_reference_count ===
+                                        1
+                                            ? 'source reference'
+                                            : 'source references'}{' '}
+                                        from{' '}
+                                        {transactionToVoid.merchant_description}{' '}
+                                        to {survivor.merchant_description}.
+                                    </p>
+                                    <p>
+                                        Void{' '}
+                                        {transactionToVoid.merchant_description}{' '}
+                                        and{' '}
+                                        {transactionToVoid.kind === 'purchase'
+                                            ? 'remove'
+                                            : 'add back'}{' '}
+                                        {formatMinorUnits(
+                                            transactionToVoid.amount_minor,
+                                            transactionToVoid.currency,
+                                        )}{' '}
+                                        {transactionToVoid.kind === 'purchase'
+                                            ? 'from'
+                                            : 'to'}{' '}
+                                        {transactionToVoid.currency} net
+                                        spending.
+                                    </p>
+                                    <p>
+                                        {transactionToVoid.kind === 'purchase'
+                                            ? 'Remove'
+                                            : 'Add back'}{' '}
+                                        {formatMinorUnits(
+                                            transactionToVoid.amount_minor,
+                                            transactionToVoid.currency,
+                                        )}{' '}
+                                        {transactionToVoid.kind === 'purchase'
+                                            ? 'from'
+                                            : 'to'}{' '}
+                                        {transactionToVoid.category_name
+                                            ? `${transactionToVoid.category_name} Category`
+                                            : 'Uncategorized'}{' '}
+                                        spending.
+                                    </p>
+                                    <p className="font-medium">
+                                        The pair will contribute exactly once.
+                                    </p>
+                                </div>
+                            ) : (
+                                <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                                    Choose which Transaction to keep to preview
+                                    the exact effect.
+                                </p>
+                            )}
+
+                            <InputError
+                                message={
+                                    errors.survivor_transaction_id ??
+                                    errors.expected_first_source_reference_fingerprint ??
+                                    errors.expected_second_source_reference_fingerprint ??
+                                    errors.suspected_duplicate_resolution
+                                }
+                            />
+                            <Button
+                                type="submit"
+                                disabled={
+                                    processing ||
+                                    survivorId === null ||
+                                    selectedChoiceBlockReason !== null
+                                }
+                            >
+                                {processing && <Spinner />}
+                                Confirm resolution
+                            </Button>
+                        </>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export default function ReviewQueueIndex({
     unresolved_field_count,
     unresolved_refund_relationship_count,
+    unresolved_suspected_duplicate_count,
     stale_transaction,
     transactions,
     refund_relationships,
+    suspected_duplicates,
 }: ReviewQueueIndexProps) {
     const unresolvedReviewCount =
-        unresolved_field_count + unresolved_refund_relationship_count;
+        unresolved_field_count +
+        unresolved_refund_relationship_count +
+        unresolved_suspected_duplicate_count;
 
     return (
         <>
@@ -274,7 +644,8 @@ export default function ReviewQueueIndex({
                     </div>
                     <Badge variant="outline" className="w-fit">
                         <ListChecks />
-                        {unresolved_refund_relationship_count === 0
+                        {unresolved_refund_relationship_count === 0 &&
+                        unresolved_suspected_duplicate_count === 0
                             ? `${unresolved_field_count} ${
                                   unresolved_field_count === 1
                                       ? 'field'
@@ -327,7 +698,8 @@ export default function ReviewQueueIndex({
                 )}
 
                 {transactions.length === 0 &&
-                refund_relationships.length === 0 ? (
+                refund_relationships.length === 0 &&
+                suspected_duplicates.length === 0 ? (
                     <Card>
                         <CardContent className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
                             <div className="rounded-full bg-muted p-3">
@@ -346,6 +718,53 @@ export default function ReviewQueueIndex({
                     </Card>
                 ) : (
                     <div className="grid gap-5">
+                        {suspected_duplicates.map((suspectedDuplicate) => (
+                            <Card
+                                key={suspectedDuplicate.id}
+                                className="border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20"
+                            >
+                                <CardHeader className="gap-3">
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="grid gap-1">
+                                            <CardTitle className="flex items-center gap-2">
+                                                <CircleAlert className="size-5 text-amber-700 dark:text-amber-400" />
+                                                Suspected Duplicate
+                                            </CardTitle>
+                                            <CardDescription>
+                                                Similar evidence created two
+                                                confirmed Transactions. Both
+                                                remain included until you choose
+                                                a survivor.
+                                            </CardDescription>
+                                        </div>
+                                        <Badge
+                                            variant="secondary"
+                                            className="w-fit"
+                                        >
+                                            Relationship review
+                                        </Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <p className="text-sm text-muted-foreground">
+                                        {
+                                            suspectedDuplicate.first_transaction
+                                                .merchant_description
+                                        }{' '}
+                                        and{' '}
+                                        {
+                                            suspectedDuplicate
+                                                .second_transaction
+                                                .merchant_description
+                                        }
+                                    </p>
+                                    <SuspectedDuplicateInspector
+                                        suspectedDuplicate={suspectedDuplicate}
+                                    />
+                                </CardContent>
+                            </Card>
+                        ))}
+
                         {refund_relationships.map((relationship) => (
                             <Card
                                 key={`${relationship.refund.id}-${relationship.reason}`}

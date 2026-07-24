@@ -31,6 +31,9 @@ use Illuminate\Support\Carbon;
  * @property int|null $category_id
  * @property CategoryAssignmentProvenance|null $category_assignment_provenance
  * @property-read int|string|null $linked_refund_total_minor
+ * @property-read bool $linked_refunds_exists
+ * @property-read bool $receipt_breakdowns_exists
+ * @property-read bool $resolved_duplicate_relationships_as_survivor_exists
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -86,6 +89,23 @@ class Transaction extends Model
     public function stateChanges(): HasMany
     {
         return $this->hasMany(TransactionStateChange::class);
+    }
+
+    /**
+     * @return HasMany<SpendingNotificationReference, $this>
+     */
+    public function spendingNotificationReferences(): HasMany
+    {
+        return $this->hasMany(SpendingNotificationReference::class);
+    }
+
+    /**
+     * @return HasMany<SuspectedDuplicate, $this>
+     */
+    public function resolvedDuplicateRelationshipsAsSurvivor(): HasMany
+    {
+        return $this->hasMany(SuspectedDuplicate::class, 'survivor_transaction_id')
+            ->whereNotNull('resolved_at');
     }
 
     /**

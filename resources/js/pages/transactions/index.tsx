@@ -9,6 +9,7 @@ import {
     Tags,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { destroy as reopenSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { store as recordTransaction } from '@/actions/App/Http/Controllers/TransactionController';
 import { store as linkRefund } from '@/actions/App/Http/Controllers/TransactionRefundLinkController';
 import {
@@ -66,6 +67,13 @@ type LedgerTransaction = {
 
 type VoidedLedgerTransaction = LedgerTransaction & {
     voided_at: string;
+    duplicate_resolution: {
+        id: number;
+        revision: number;
+        first_transaction_revision: number;
+        second_transaction_revision: number;
+        reopen_idempotency_key: string;
+    } | null;
 };
 
 type TransactionsIndexProps = {
@@ -268,6 +276,62 @@ function RefundLinkForm({
     );
 }
 
+function ReopenSuspectedDuplicateForm({
+    transaction,
+}: {
+    transaction: VoidedLedgerTransaction;
+}) {
+    const duplicateResolution = transaction.duplicate_resolution;
+
+    if (duplicateResolution === null) {
+        return null;
+    }
+
+    return (
+        <Form
+            {...reopenSuspectedDuplicate.form(duplicateResolution.id)}
+            className="grid justify-items-end gap-1"
+        >
+            {({ errors, processing }) => (
+                <>
+                    <input
+                        type="hidden"
+                        name="expected_suspected_duplicate_revision"
+                        value={duplicateResolution.revision}
+                    />
+                    <input
+                        type="hidden"
+                        name="expected_first_transaction_revision"
+                        value={duplicateResolution.first_transaction_revision}
+                    />
+                    <input
+                        type="hidden"
+                        name="expected_second_transaction_revision"
+                        value={duplicateResolution.second_transaction_revision}
+                    />
+                    <input
+                        type="hidden"
+                        name="idempotency_key"
+                        value={duplicateResolution.reopen_idempotency_key}
+                    />
+                    <Button
+                        type="submit"
+                        variant="secondary"
+                        size="sm"
+                        disabled={processing}
+                    >
+                        {processing ? <Spinner /> : <RotateCcw />}
+                        Reopen pair
+                    </Button>
+                    <InputError
+                        message={errors.suspected_duplicate_resolution}
+                    />
+                </>
+            )}
+        </Form>
+    );
+}
+
 function LedgerTable({
     transactions,
     purchases,
@@ -381,10 +445,19 @@ function LedgerTable({
                                                     )}
                                                 />
                                             )}
-                                        <TransactionVoidStateForm
-                                            transaction={transaction}
-                                            operation={operation}
-                                        />
+                                        {operation === 'restore' &&
+                                        'duplicate_resolution' in transaction &&
+                                        transaction.duplicate_resolution !==
+                                            null ? (
+                                            <ReopenSuspectedDuplicateForm
+                                                transaction={transaction}
+                                            />
+                                        ) : (
+                                            <TransactionVoidStateForm
+                                                transaction={transaction}
+                                                operation={operation}
+                                            />
+                                        )}
                                     </div>
                                 </td>
                             </tr>

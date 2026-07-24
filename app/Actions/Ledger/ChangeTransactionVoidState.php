@@ -4,6 +4,7 @@ namespace App\Actions\Ledger;
 
 use App\Exceptions\IdempotencyKeyConflict;
 use App\Exceptions\StaleTransactionRevision;
+use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
 use App\Models\TransactionStateChange;
 use App\Models\User;
@@ -125,6 +126,16 @@ class ChangeTransactionVoidState
     ): void {
         if (
             $operation === TransactionVoidOperation::Void
+            && SuspectedDuplicate::query()
+                ->where('survivor_transaction_id', $transaction->getKey())
+                ->whereNotNull('resolved_at')
+                ->exists()
+        ) {
+            throw new InvalidArgumentException('Reopen the Suspected Duplicate relationship before voiding its survivor.');
+        }
+
+        if (
+            $operation === TransactionVoidOperation::Void
             && $transaction->voided_at !== null
         ) {
             throw new InvalidArgumentException('This Transaction is already voided.');
@@ -135,6 +146,16 @@ class ChangeTransactionVoidState
             && $transaction->voided_at === null
         ) {
             throw new InvalidArgumentException('This Transaction is already active.');
+        }
+
+        if (
+            $operation === TransactionVoidOperation::Restore
+            && SuspectedDuplicate::query()
+                ->where('voided_transaction_id', $transaction->getKey())
+                ->whereNotNull('resolved_at')
+                ->exists()
+        ) {
+            throw new InvalidArgumentException('Reopen the Suspected Duplicate relationship to restore this Transaction and its source references.');
         }
     }
 }
