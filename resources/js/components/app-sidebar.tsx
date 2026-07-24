@@ -1,5 +1,11 @@
 import { Link } from '@inertiajs/react';
-import { BookOpen, FolderGit2, LayoutGrid, ReceiptText } from 'lucide-react';
+import {
+    BookOpen,
+    FolderGit2,
+    LayoutGrid,
+    ListChecks,
+    ReceiptText,
+} from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -14,6 +20,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
 
@@ -27,6 +34,11 @@ const mainNavItems: NavItem[] = [
         title: 'Transactions',
         href: transactionsIndex(),
         icon: ReceiptText,
+    },
+    {
+        title: 'Review Queue',
+        href: reviewQueueIndex(),
+        icon: ListChecks,
     },
 ];
 

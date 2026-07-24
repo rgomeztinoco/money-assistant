@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Currency;
 use App\Models\Transaction;
 use App\Models\User;
+use App\ReviewableTransactionField;
 use App\TransactionKind;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -56,6 +57,18 @@ class TransactionFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'currency' => Currency::Pen,
+        ]);
+    }
+
+    /**
+     * @param  list<ReviewableTransactionField>  $fields
+     */
+    public function provisional(array $fields): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'provisional_fields' => collect($fields)
+                ->map(fn (ReviewableTransactionField $field): string => $field->value)
+                ->all(),
         ]);
     }
 }

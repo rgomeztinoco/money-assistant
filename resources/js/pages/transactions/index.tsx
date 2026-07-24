@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { index } from '@/routes/transactions';
 
@@ -80,19 +81,13 @@ function NativeSelectField({
     return (
         <div className="grid gap-2">
             <Label htmlFor={id}>{label}</Label>
-            <select
+            <NativeSelect
                 id={id}
                 name={id}
                 defaultValue={defaultValue}
                 aria-invalid={error ? true : undefined}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:bg-input/30 dark:aria-invalid:ring-destructive/40"
-            >
-                {options.map((option) => (
-                    <option key={option.value} value={option.value}>
-                        {option.label}
-                    </option>
-                ))}
-            </select>
+                options={options}
+            />
             <InputError message={error} />
         </div>
     );

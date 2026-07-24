@@ -5,6 +5,7 @@ namespace App\Actions\Ledger;
 use App\Currency;
 use App\Models\Transaction;
 use App\Models\User;
+use App\ReviewableTransactionField;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,9 @@ use InvalidArgumentException;
 
 class RecordManualTransaction
 {
+    /**
+     * @param  list<ReviewableTransactionField>  $provisionalFields
+     */
     public function handle(
         User $owner,
         CarbonImmutable $occurredOn,
@@ -20,6 +24,7 @@ class RecordManualTransaction
         Currency $currency,
         TransactionKind $kind,
         string $merchantDescription,
+        array $provisionalFields = [],
     ): Transaction {
         if (! is_int($amountMinor) || $amountMinor <= 0) {
             throw new InvalidArgumentException('A Transaction amount must be positive.');
@@ -39,6 +44,11 @@ class RecordManualTransaction
             'kind' => $kind,
             'merchant_description' => $merchantDescription,
             'confirmed_at' => now(),
+            'provisional_fields' => collect($provisionalFields)
+                ->map(fn (ReviewableTransactionField $field): string => $field->value)
+                ->unique()
+                ->values()
+                ->all(),
         ]));
     }
 }
