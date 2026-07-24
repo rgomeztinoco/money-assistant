@@ -65,9 +65,11 @@ jobs:
             echo "APP_IMAGE_REPOSITORY=money-assistant"
             echo "APP_IMAGE_DIGEST=$image_digest"
             echo "APP_IMAGE_PULL_POLICY=never"
-            echo "PRIVATE_BIND_ADDRESS=127.0.0.1"
             echo "PRIVATE_HOSTNAME=money-assistant.test"
-            echo "PRIVATE_HTTPS_PORT=8443"
+            echo "OPENCLAW_CAPABILITY_KEY_ID=openclaw-service-ci"
+            echo "OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE=/tmp/money-assistant-production-smoke/openclaw_capability_public_key"
+            echo "OPENCLAW_HOOK_TOKEN_FILE=/tmp/money-assistant-production-smoke/openclaw_hook_token"
+            echo "OPENCLAW_HOOK_URL=http://127.0.0.1:18789/hooks/money-assistant"
             echo "APP_KEY_FILE=/tmp/money-assistant-production-smoke/application_key"
             echo "DB_PASSWORD_FILE=/tmp/money-assistant-production-smoke/database_password"
           } >> "$GITHUB_ENV"
@@ -79,8 +81,14 @@ jobs:
             sudo tee /tmp/money-assistant-production-smoke/application_key >/dev/null
           openssl rand -base64 32 |
             sudo tee /tmp/money-assistant-production-smoke/database_password >/dev/null
+          openssl rand -base64 32 |
+            sudo tee /tmp/money-assistant-production-smoke/openclaw_capability_public_key >/dev/null
+          openssl rand -base64 32 |
+            sudo tee /tmp/money-assistant-production-smoke/openclaw_hook_token >/dev/null
           sudo chmod 0600 /tmp/money-assistant-production-smoke/application_key
           sudo chmod 0600 /tmp/money-assistant-production-smoke/database_password
+          sudo chmod 0600 /tmp/money-assistant-production-smoke/openclaw_capability_public_key
+          sudo chmod 0600 /tmp/money-assistant-production-smoke/openclaw_hook_token
 
       - name: Start production stack
         run: docker compose -p money-assistant-production-smoke -f compose.production.yaml up --detach --wait
@@ -107,12 +115,10 @@ jobs:
 
           curl \
             --fail \
-            --insecure \
             --noproxy '*' \
-            --resolve money-assistant.test:8443:127.0.0.1 \
             --silent \
             --show-error \
-            https://money-assistant.test:8443/up \
+            http://127.0.0.1:8443/up \
             >/dev/null
 
           expected_image="$(docker inspect money-assistant-production-smoke-web-1 --format '{{.Image}}')"

@@ -1,0 +1,131 @@
+#!/bin/sh
+
+set -eu
+
+environment_file="${1:-.env.production}"
+
+fail()
+{
+    printf 'Private ingress verification failed: %s\n' "$1" >&2
+    exit 1
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+    fail 'run this verifier as root so firewall state can be inspected'
+fi
+
+if [ ! -r "$environment_file" ]; then
+    fail "environment file is not readable: $environment_file"
+fi
+
+set -a
+. "$environment_file"
+set +a
+
+: "${PRIVATE_HOSTNAME:?PRIVATE_HOSTNAME is required}"
+: "${OPENCLAW_HOOK_URL:?OPENCLAW_HOOK_URL is required}"
+
+case "$OPENCLAW_HOOK_URL" in
+    'http://127.0.0.1:18789/hooks/money-assistant') ;;
+    *) fail 'OPENCLAW_HOOK_URL must use the dedicated loopback hook' ;;
+esac
+
+tailscale_status="$(tailscale status --json)"
+
+printf '%s' "$tailscale_status" |
+    jq -e '.BackendState == "Running" and (.Self.Tags // [] | index("tag:money-assistant") != null)' >/dev/null ||
+    fail 'Tailscale must be running with tag:money-assistant'
+
+serve_status="$(tailscale serve status --json)"
+
+printf '%s' "$serve_status" |
+    jq -e --arg host_port "${PRIVATE_HOSTNAME}:443" '
+        .TCP["443"].HTTPS == true
+        and .Web[$host_port].Handlers["/"].Proxy == "http://127.0.0.1:8443"
+        and ((.Web[$host_port].Handlers | keys) == ["/"])
+    ' >/dev/null || fail 'Tailscale Serve does not exclusively route HTTPS to the loopback proxy'
+
+funnel_status="$(tailscale funnel status --json)"
+
+printf '%s' "$funnel_status" |
+    jq -e '[(.AllowFunnel // {})[]] | all(. == false)' >/dev/null ||
+    fail 'Tailscale Funnel must remain disabled'
+
+ufw_status="$(ufw status verbose)"
+
+printf '%s' "$ufw_status" | awk '
+    /^Status: active$/ { active = 1 }
+    /^Default: deny \(incoming\)/ { default_deny = 1 }
+    END { exit !(active && default_deny) }
+' || fail 'UFW must be active with default-deny incoming policy'
+
+ufw_rules="$(ufw show added)"
+
+printf '%s' "$ufw_rules" | awk '
+    /^ufw allow/ && /(^|[[:space:]])(80|443|5432|8443|18789)(\/tcp)?([[:space:]]|$)/ && $0 !~ / on tailscale0 / { exit 1 }
+' || fail 'UFW explicitly allows an application port outside tailscale0'
+
+compose_status="$(docker compose --env-file "$environment_file" -f compose.production.yaml config --format json)"
+
+printf '%s' "$compose_status" | jq -e '
+    .services.proxy.ports == [{
+        host_ip: "127.0.0.1",
+        mode: "ingress",
+        protocol: "tcp",
+        published: "8443",
+        target: 8080
+    }]
+    and .services.postgres.ports == [{
+        host_ip: "127.0.0.1",
+        mode: "ingress",
+        protocol: "tcp",
+        published: "5432",
+        target: 5432
+    }]
+    and ([.services | to_entries[] | select(.key != "proxy" and .key != "postgres") | .value.ports // []] | all(length == 0))
+    and .services.worker.network_mode == "host"
+    and .services.worker.environment.DB_HOST == "127.0.0.1"
+' >/dev/null || fail 'Compose publishes an application port outside loopback'
+
+listeners="$(ss -H -lnt)"
+tailnet_ip="$(printf '%s' "$tailscale_status" | jq -r 'first(.TailscaleIPs[] | select(contains(":") | not)) // empty')"
+
+if [ -z "$tailnet_ip" ]; then
+    fail 'the host has no tailnet IPv4 address'
+fi
+
+printf '%s\n' "$listeners" | awk -v tailnet_ip="$tailnet_ip" '
+    $4 == "127.0.0.1:5432" { database = 1 }
+    $4 ~ /:5432$/ && $4 != "127.0.0.1:5432" { exit 1 }
+    $4 ~ /:80$/ { exit 1 }
+    $4 ~ /:8080$/ { exit 1 }
+    $4 ~ /:8443$/ && $4 != "127.0.0.1:8443" { exit 1 }
+    $4 ~ /:443$/ && $4 != tailnet_ip ":443" { exit 1 }
+    $4 == "127.0.0.1:18789" || $4 == "[::1]:18789" { hook = 1 }
+    $4 ~ /:18789$/ && $4 != "127.0.0.1:18789" && $4 != "[::1]:18789" { exit 1 }
+    END { exit !(database && hook) }
+' || fail 'an application or OpenClaw listener is reachable outside its approved private interface'
+
+peer_ip="$(printf '%s' "$tailscale_status" | jq -r '
+    first(
+        .Peer[]
+        | select((.Tags // []) | index("tag:money-assistant-approved-device") != null)
+        | .TailscaleIPs[0]
+    ) // empty
+')"
+
+if [ -z "$peer_ip" ]; then
+    fail 'at least one approved owner peer is required for route verification'
+fi
+
+ip route get "$peer_ip" | awk '$0 ~ /dev tailscale0/ { found = 1 } END { exit !found }' ||
+    fail 'the approved owner peer route does not use tailscale0'
+
+curl \
+    --fail \
+    --silent \
+    --show-error \
+    "https://${PRIVATE_HOSTNAME}/up" \
+    >/dev/null || fail 'tailnet HTTPS health probe failed'
+
+printf 'Private ingress verification passed.\n'

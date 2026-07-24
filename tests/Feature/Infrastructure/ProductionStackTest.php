@@ -60,33 +60,81 @@ test('application roles share one pinned image and restart independently', funct
     }
 });
 
-test('only the pinned reverse proxy exposes a tailnet-bound port', function () {
+test('only PostgreSQL and the pinned reverse proxy expose loopback ports', function () {
     $services = $this->productionCompose['services'];
 
     expect($services['postgres']['image'])->toMatch('/@sha256:[a-f0-9]{64}$/')
         ->and($services['proxy']['image'])->toMatch('/@sha256:[a-f0-9]{64}$/')
         ->and($services['proxy']['ports'])->toBe([
             [
-                'target' => 8443,
-                'published' => '${PRIVATE_HTTPS_PORT:-443}',
-                'host_ip' => '${PRIVATE_BIND_ADDRESS:?Set PRIVATE_BIND_ADDRESS to the host tailnet IP}',
+                'target' => 8080,
+                'published' => 8443,
+                'host_ip' => '127.0.0.1',
+                'protocol' => 'tcp',
+            ],
+        ])
+        ->and($services['postgres']['ports'])->toBe([
+            [
+                'target' => 5432,
+                'published' => 5432,
+                'host_ip' => '127.0.0.1',
                 'protocol' => 'tcp',
             ],
         ]);
 
-    foreach (['postgres', 'migrate', 'web', 'worker', 'scheduler'] as $service) {
+    foreach (['migrate', 'web', 'worker', 'scheduler'] as $service) {
         expect($services[$service])->not->toHaveKey('ports');
     }
 });
 
-test('production sessions are bounded and use protected cookies', function () {
-    $environment = $this->productionCompose['services']['web']['environment'];
+test('Tailscale is the exclusive HTTPS ingress for approved owner devices', function () {
+    $policy = file_get_contents(base_path('tailscale-policy.hujson'));
+    $service = file_get_contents(base_path('money-assistant-tailnet.service'));
 
-    expect($environment['SESSION_LIFETIME'])->toBe('120')
-        ->and($environment['SESSION_SECURE_COOKIE'])->toBe('true')
-        ->and($environment['SESSION_HTTP_ONLY'])->toBe('true')
-        ->and($environment['SESSION_SAME_SITE'])->toBe('strict')
-        ->and(config('session.lifetime'))->toBe(120)
-        ->and(config('session.http_only'))->toBeTrue()
-        ->and(config('session.same_site'))->toBe('strict');
+    expect($policy)
+        ->toContain('"tag:money-assistant-approved-device"')
+        ->toContain('"srcPosture": ["posture:approved-owner-device"]')
+        ->toContain('"tag:money-assistant:443"')
+        ->toContain('"deny": ["tag:money-assistant:80", "tag:money-assistant:8443", "tag:money-assistant:18789"]')
+        ->and($service)
+        ->toContain('tailscale wait')
+        ->toContain('tailscale serve --bg --https=443 http://127.0.0.1:8443')
+        ->not->toContain('--set-path=/hooks/money-assistant')
+        ->not->toContain('tailscale funnel');
+});
+
+test('OpenClaw integrations have isolated transport and directional credentials', function () {
+    $services = $this->productionCompose['services'];
+
+    expect($services)->not->toHaveKey('openclaw')
+        ->and($services['web']['secrets'])->toContain('openclaw_capability_public_key')
+        ->and($services['worker']['secrets'])->toContain('openclaw_hook_token')
+        ->and($services['web']['secrets'])->not->toContain('openclaw_hook_token')
+        ->and($services['worker']['secrets'])->not->toContain('openclaw_capability_public_key')
+        ->and($services['worker']['environment']['OPENCLAW_HOOK_URL'])
+        ->toBe('${OPENCLAW_HOOK_URL:?Set OPENCLAW_HOOK_URL to the private mapped hook}');
+
+    expect(file_get_contents(base_path('docker-entrypoint.production')))
+        ->toContain('read_secret OPENCLAW_CAPABILITY_PUBLIC_KEY')
+        ->toContain('read_secret OPENCLAW_HOOK_TOKEN');
+
+    foreach ($services as $service) {
+        expect(array_keys($service['environment'] ?? []))
+            ->not->toContain('OPENCLAW_GATEWAY_TOKEN');
+
+        foreach ($service['volumes'] ?? [] as $volume) {
+            expect($volume['source'] ?? null)->not->toBe('openclaw');
+        }
+    }
+});
+
+test('the production stack ships a private ingress verifier', function () {
+    $verifier = file_get_contents(base_path('verify-private-ingress'));
+
+    expect($verifier)
+        ->toContain('tailscale serve status --json')
+        ->toContain('tailscale funnel status --json')
+        ->toContain('ufw status verbose')
+        ->toContain('ss -H -lnt')
+        ->toContain('docker compose');
 });

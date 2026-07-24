@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    'openclaw' => [
+        'capability' => [
+            'key_id' => env('OPENCLAW_CAPABILITY_KEY_ID'),
+            'public_key' => env('OPENCLAW_CAPABILITY_PUBLIC_KEY'),
+        ],
+        'hook' => [
+            'url' => env('OPENCLAW_HOOK_URL'),
+            'token' => env('OPENCLAW_HOOK_TOKEN'),
+        ],
+    ],
+
 ];

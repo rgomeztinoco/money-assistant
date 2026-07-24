@@ -1,0 +1,17 @@
+[Unit]
+Description=Money Assistant private tailnet HTTPS ingress
+After=docker.service tailscale-online.target
+Wants=docker.service tailscale-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10s
+ExecStartPre=/usr/bin/tailscale wait --timeout=30s
+ExecStartPre=/usr/bin/curl --fail --silent --show-error http://127.0.0.1:8443/up
+ExecStart=/usr/bin/tailscale serve --bg --https=443 http://127.0.0.1:8443
+ExecStop=/usr/bin/tailscale serve --https=443 off
+
+[Install]
+WantedBy=multi-user.target

@@ -67,6 +67,11 @@ services:
               target: /var/lib/postgresql
         networks:
             - application
+        ports:
+            - target: 5432
+              published: 5432
+              host_ip: 127.0.0.1
+              protocol: tcp
         healthcheck:
             test:
                 - CMD-SHELL
@@ -102,6 +107,14 @@ services:
     web:
         <<: *application
         restart: unless-stopped
+        environment:
+            <<: *application-environment
+            OPENCLAW_CAPABILITY_KEY_ID: '${OPENCLAW_CAPABILITY_KEY_ID:?Set OPENCLAW_CAPABILITY_KEY_ID}'
+            OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE: /run/secrets/openclaw_capability_public_key
+        secrets:
+            - application_key
+            - database_password
+            - openclaw_capability_public_key
         command:
             - frankenphp
             - run
@@ -129,6 +142,17 @@ services:
         <<: *application
         restart: unless-stopped
         stop_grace_period: 2m
+        environment:
+            <<: *application-environment
+            DB_HOST: 127.0.0.1
+            OPENCLAW_HOOK_TOKEN_FILE: /run/secrets/openclaw_hook_token
+            OPENCLAW_HOOK_URL: '${OPENCLAW_HOOK_URL:?Set OPENCLAW_HOOK_URL to the private mapped hook}'
+        secrets:
+            - application_key
+            - database_password
+            - openclaw_hook_token
+        networks: []
+        network_mode: host
         command:
             - php
             - artisan
@@ -196,8 +220,6 @@ services:
         user: '1000:1000'
         environment:
             PRIVATE_HOSTNAME: '${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}'
-        extra_hosts:
-            - '${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:127.0.0.1'
         command:
             - caddy
             - run
@@ -222,9 +244,9 @@ services:
             - edge
             - application
         ports:
-            - target: 8443
-              published: '${PRIVATE_HTTPS_PORT:-443}'
-              host_ip: '${PRIVATE_BIND_ADDRESS:?Set PRIVATE_BIND_ADDRESS to the host tailnet IP}'
+            - target: 8080
+              published: 8443
+              host_ip: 127.0.0.1
               protocol: tcp
         depends_on:
             web:
@@ -235,8 +257,7 @@ services:
                 - wget
                 - --quiet
                 - --spider
-                - --no-check-certificate
-                - 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:8443/up'
+                - http://127.0.0.1:8080/up
             interval: 15s
             timeout: 5s
             retries: 5
@@ -269,3 +290,7 @@ secrets:
         file: '${APP_KEY_FILE:?Set APP_KEY_FILE}'
     database_password:
         file: '${DB_PASSWORD_FILE:?Set DB_PASSWORD_FILE}'
+    openclaw_capability_public_key:
+        file: '${OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE:?Set OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE}'
+    openclaw_hook_token:
+        file: '${OPENCLAW_HOOK_TOKEN_FILE:?Set OPENCLAW_HOOK_TOKEN_FILE}'
