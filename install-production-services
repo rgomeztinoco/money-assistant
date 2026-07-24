@@ -1,0 +1,36 @@
+#!/bin/sh
+
+set -eu
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+systemd_directory="${SYSTEMD_DIRECTORY:-/etc/systemd/system}"
+
+fail()
+{
+    printf 'Production service installation failed: %s\n' "$1" >&2
+    exit 1
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+    fail 'run this installer as root'
+fi
+
+if [ ! -x /opt/money-assistant/deploy-production ]; then
+    fail 'deploy-production is not installed at /opt/money-assistant'
+fi
+
+if [ ! -r /etc/money-assistant/production.env ]; then
+    fail 'production environment is not readable: /etc/money-assistant/production.env'
+fi
+
+install -m 0644 \
+    "${script_directory}/money-assistant-production.service" \
+    "${systemd_directory}/money-assistant-production.service"
+install -m 0644 \
+    "${script_directory}/money-assistant-tailnet.service" \
+    "${systemd_directory}/money-assistant-tailnet.service"
+
+systemctl daemon-reload
+systemctl enable --now money-assistant-production.service money-assistant-tailnet.service
+
+printf '%s\n' 'Production services will restore the private application path after reboot.'

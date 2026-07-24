@@ -1,7 +1,8 @@
 [Unit]
 Description=Money Assistant private tailnet HTTPS ingress
-After=docker.service tailscale-online.target
-Wants=docker.service tailscale-online.target
+Requires=money-assistant-production.service
+After=money-assistant-production.service tailscale-online.target
+Wants=tailscale-online.target
 
 [Service]
 Type=oneshot

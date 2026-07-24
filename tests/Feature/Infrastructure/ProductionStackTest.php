@@ -62,8 +62,12 @@ test('application roles share one pinned image and restart independently', funct
 
 test('only PostgreSQL and the pinned reverse proxy expose loopback ports', function () {
     $services = $this->productionCompose['services'];
+    $environment = file_get_contents(base_path('.env.production.example'));
+    preg_match('/^POSTGRES_IMAGE=(.+)$/m', $environment, $postgresImage);
 
-    expect($services['postgres']['image'])->toMatch('/@sha256:[a-f0-9]{64}$/')
+    expect($services['postgres']['image'])
+        ->toBe('${POSTGRES_IMAGE:?Set POSTGRES_IMAGE to a pinned PostgreSQL image}')
+        ->and($postgresImage[1] ?? null)->toMatch('/@sha256:[a-f0-9]{64}$/')
         ->and($services['proxy']['image'])->toMatch('/@sha256:[a-f0-9]{64}$/')
         ->and($services['proxy']['ports'])->toBe([
             [
@@ -137,4 +141,55 @@ test('the production stack ships a private ingress verifier', function () {
         ->toContain('ufw status verbose')
         ->toContain('ss -H -lnt')
         ->toContain('docker compose');
+});
+
+test('deployments record pinned application and database versions without secrets', function () {
+    $services = $this->productionCompose['services'];
+    $deployment = file_get_contents(base_path('deploy-production'));
+
+    expect($services['postgres']['image'])
+        ->toBe('${POSTGRES_IMAGE:?Set POSTGRES_IMAGE to a pinned PostgreSQL image}')
+        ->and($deployment)
+        ->toContain('flock')
+        ->toContain('application_image')
+        ->toContain('database_image')
+        ->toContain('application_revision')
+        ->toContain('database_version')
+        ->toContain('previous_application_image')
+        ->not->toContain('docker compose config')
+        ->not->toContain('set -x');
+});
+
+test('systemd restores the production stack before private ingress after reboot', function () {
+    $productionService = file_get_contents(base_path('money-assistant-production.service'));
+    $tailnetService = file_get_contents(base_path('money-assistant-tailnet.service'));
+    $installer = file_get_contents(base_path('install-production-services'));
+    $rehearsal = file_get_contents(base_path('rehearse-production-reboot'));
+
+    expect($productionService)
+        ->toContain('Requires=docker.service')
+        ->toContain('After=docker.service')
+        ->toContain('up --detach --wait --pull never')
+        ->toContain('WantedBy=multi-user.target')
+        ->and($tailnetService)
+        ->toContain('Requires=money-assistant-production.service')
+        ->toContain('After=money-assistant-production.service tailscale-online.target')
+        ->and($installer)
+        ->toContain('systemctl enable --now money-assistant-production.service money-assistant-tailnet.service')
+        ->and($rehearsal)
+        ->toContain('deployment.lock')
+        ->toContain('systemctl reboot')
+        ->toContain('systemctl is-active --quiet')
+        ->toContain('verify-private-ingress')
+        ->toContain('app:deployment-rehearsal:verify');
+});
+
+test('failed deployments restore and verify the previous healthy release', function () {
+    $deployment = file_get_contents(base_path('deploy-production'));
+
+    expect($deployment)
+        ->toContain('rollback')
+        ->toContain('previous.env')
+        ->toContain('up --detach --wait --pull never')
+        ->toContain('verify_stack');
 });

@@ -1,0 +1,418 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+compose_file="${COMPOSE_FILE:-${script_directory}/compose.production.yaml}"
+environment_file="${ENVIRONMENT_FILE:-${script_directory}/.env.production}"
+state_directory="${DEPLOYMENT_STATE_DIRECTORY:-/var/lib/money-assistant/deployments}"
+project_name="${COMPOSE_PROJECT_NAME:-money-assistant-production}"
+requested_application_image=''
+temporary_files=''
+
+usage()
+{
+    printf '%s\n' 'Usage: deploy-production deploy [--app-image REPOSITORY@sha256:DIGEST] [--env-file PATH]'
+    printf '%s\n' '       deploy-production rollback [--env-file PATH]'
+    printf '%s\n' '       deploy-production verify [--env-file PATH]'
+}
+
+fail()
+{
+    printf 'Production deployment failed: %s\n' "$1" >&2
+    exit 1
+}
+
+cleanup()
+{
+    for temporary_file in $temporary_files; do
+        rm -f -- "$temporary_file"
+    done
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+new_temporary_file()
+{
+    temporary_file="$(mktemp "${state_directory}/temporary.XXXXXX")"
+    temporary_files="${temporary_files} ${temporary_file}"
+}
+
+environment_value()
+{
+    requested_key="$1"
+    requested_file="$2"
+
+    while IFS='=' read -r key value; do
+        if [ "$key" = "$requested_key" ]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done < "$requested_file"
+
+    return 1
+}
+
+validate_digest()
+{
+    printf '%s\n' "$1" | grep -Eq '^sha256:[a-f0-9]{64}$' ||
+        fail "$2 must be a sha256 digest"
+}
+
+validate_image_reference()
+{
+    printf '%s\n' "$1" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
+        fail "$2 must include a repository and sha256 digest"
+}
+
+application_image_from()
+{
+    repository="$(environment_value APP_IMAGE_REPOSITORY "$1")" ||
+        fail 'APP_IMAGE_REPOSITORY is required'
+    digest="$(environment_value APP_IMAGE_DIGEST "$1")" ||
+        fail 'APP_IMAGE_DIGEST is required'
+    validate_digest "$digest" APP_IMAGE_DIGEST
+    printf '%s@%s\n' "$repository" "$digest"
+}
+
+database_image_from()
+{
+    database_image="$(environment_value POSTGRES_IMAGE "$1")" ||
+        fail 'POSTGRES_IMAGE is required'
+    validate_image_reference "$database_image" POSTGRES_IMAGE
+    printf '%s\n' "$database_image"
+}
+
+compose()
+{
+    compose_environment="$1"
+    shift
+
+    docker compose \
+        --project-name "$project_name" \
+        --env-file "$compose_environment" \
+        --file "$compose_file" \
+        "$@"
+}
+
+write_candidate_environment()
+{
+    source_file="$1"
+    target_file="$2"
+    repository="$3"
+    digest="$4"
+    found_repository=false
+    found_digest=false
+    found_pull_policy=false
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            APP_IMAGE_REPOSITORY=*)
+                printf 'APP_IMAGE_REPOSITORY=%s\n' "$repository" >> "$target_file"
+                found_repository=true
+                ;;
+            APP_IMAGE_DIGEST=*)
+                printf 'APP_IMAGE_DIGEST=%s\n' "$digest" >> "$target_file"
+                found_digest=true
+                ;;
+            APP_IMAGE_PULL_POLICY=*)
+                printf '%s\n' 'APP_IMAGE_PULL_POLICY=never' >> "$target_file"
+                found_pull_policy=true
+                ;;
+            *) printf '%s\n' "$line" >> "$target_file" ;;
+        esac
+    done < "$source_file"
+
+    if [ "$found_repository" = false ]; then
+        printf 'APP_IMAGE_REPOSITORY=%s\n' "$repository" >> "$target_file"
+    fi
+
+    if [ "$found_digest" = false ]; then
+        printf 'APP_IMAGE_DIGEST=%s\n' "$digest" >> "$target_file"
+    fi
+
+    if [ "$found_pull_policy" = false ]; then
+        printf '%s\n' 'APP_IMAGE_PULL_POLICY=never' >> "$target_file"
+    fi
+}
+
+verify_stack()
+{
+    verified_environment="$1"
+
+    for service in postgres web worker scheduler proxy; do
+        container_id="$(compose "$verified_environment" ps --quiet "$service")"
+
+        if [ -z "$container_id" ]; then
+            printf 'Required service is missing: %s\n' "$service" >&2
+            return 1
+        fi
+
+        if [ "$(docker inspect --format '{{.State.Status}}' "$container_id")" != running ]; then
+            printf 'Required service is not running: %s\n' "$service" >&2
+            return 1
+        fi
+
+        if [ "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" != healthy ]; then
+            printf 'Required service is not healthy: %s\n' "$service" >&2
+            return 1
+        fi
+    done
+
+    migration_container_id="$(compose "$verified_environment" ps --all --quiet migrate)"
+
+    if [ -z "$migration_container_id" ] ||
+        [ "$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$migration_container_id")" != 'exited:0' ]; then
+        printf '%s\n' 'The migration service did not complete successfully.' >&2
+        return 1
+    fi
+
+    curl \
+        --fail \
+        --noproxy '*' \
+        --silent \
+        --show-error \
+        http://127.0.0.1:8443/up \
+        >/dev/null
+}
+
+json_escape()
+{
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+record_release()
+{
+    outcome="$1"
+    active_environment="$2"
+    attempted_application_image="$3"
+    previous_application_image="$4"
+    active_application_image="$(application_image_from "$active_environment")"
+    active_database_image="$(database_image_from "$active_environment")"
+    application_image_id="$(docker image inspect --format '{{.Id}}' "$active_application_image")"
+    application_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$active_application_image")"
+    database_container_id="$(compose "$active_environment" ps --quiet postgres)"
+    database_image_id="$(docker inspect --format '{{.Image}}' "$database_container_id")"
+    database_version="$(docker exec "$database_container_id" postgres --version)"
+    recorded_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    record_file="${state_directory}/$(date -u '+%Y%m%dT%H%M%SZ')-$$.json"
+    new_temporary_file
+    temporary_record="$temporary_file"
+
+    {
+        printf '{\n'
+        printf '  "recorded_at": "%s",\n' "$(json_escape "$recorded_at")"
+        printf '  "outcome": "%s",\n' "$(json_escape "$outcome")"
+        printf '  "application_image": "%s",\n' "$(json_escape "$active_application_image")"
+        printf '  "application_image_id": "%s",\n' "$(json_escape "$application_image_id")"
+        printf '  "application_revision": "%s",\n' "$(json_escape "$application_revision")"
+        printf '  "database_image": "%s",\n' "$(json_escape "$active_database_image")"
+        printf '  "database_image_id": "%s",\n' "$(json_escape "$database_image_id")"
+        printf '  "database_version": "%s",\n' "$(json_escape "$database_version")"
+        printf '  "attempted_application_image": "%s",\n' "$(json_escape "$attempted_application_image")"
+        printf '  "previous_application_image": "%s"\n' "$(json_escape "$previous_application_image")"
+        printf '}\n'
+    } > "$temporary_record"
+
+    install -m 0600 "$temporary_record" "$record_file"
+    install -m 0600 "$temporary_record" "${state_directory}/current.json"
+}
+
+install_environment()
+{
+    source_file="$1"
+    target_file="$2"
+    target_directory="$(dirname -- "$target_file")"
+    staged_environment="$(mktemp "${target_directory}/.production.env.XXXXXX")"
+    temporary_files="${temporary_files} ${staged_environment}"
+
+    install -m 0600 "$source_file" "$staged_environment"
+    mv -f -- "$staged_environment" "$target_file"
+}
+
+restore_environment()
+{
+    rollback_environment="$1"
+    attempted_application_image="$2"
+    previous_application_image="$(application_image_from "$rollback_environment")"
+
+    printf '%s\n' 'Candidate deployment failed; restoring the previous release.' >&2
+
+    compose "$rollback_environment" up --detach --wait --pull never ||
+        fail 'the candidate and previous release both failed to become healthy'
+    verify_stack "$rollback_environment" ||
+        fail 'the previous release was restored but did not pass verification'
+    record_release \
+        rolled_back \
+        "$rollback_environment" \
+        "$attempted_application_image" \
+        "$previous_application_image"
+}
+
+deploy_release()
+{
+    new_temporary_file
+    previous_environment="$temporary_file"
+    new_temporary_file
+    candidate_environment="$temporary_file"
+    cp -- "$environment_file" "$previous_environment"
+    current_application_image="$(application_image_from "$previous_environment")"
+
+    if [ -n "$requested_application_image" ]; then
+        validate_image_reference "$requested_application_image" APPLICATION_IMAGE
+        candidate_repository="${requested_application_image%@*}"
+        candidate_digest="${requested_application_image##*@}"
+    else
+        candidate_repository="${current_application_image%@*}"
+        candidate_digest="${current_application_image##*@}"
+    fi
+
+    write_candidate_environment \
+        "$previous_environment" \
+        "$candidate_environment" \
+        "$candidate_repository" \
+        "$candidate_digest"
+
+    candidate_application_image="$(application_image_from "$candidate_environment")"
+    database_image_from "$candidate_environment" >/dev/null
+
+    candidate_database_image="$(database_image_from "$candidate_environment")"
+
+    if ! docker pull "$candidate_application_image" ||
+        ! docker pull "$candidate_database_image" ||
+        ! compose "$candidate_environment" pull proxy; then
+        verify_stack "$previous_environment" ||
+            fail 'the candidate image could not be pulled and the previous release is unhealthy'
+        record_release \
+            rolled_back \
+            "$previous_environment" \
+            "$candidate_application_image" \
+            "$current_application_image"
+        return 1
+    fi
+
+    if ! compose "$candidate_environment" up --detach --wait; then
+        restore_environment "$previous_environment" "$candidate_application_image"
+        return 1
+    fi
+
+    if ! verify_stack "$candidate_environment"; then
+        restore_environment "$previous_environment" "$candidate_application_image"
+        return 1
+    fi
+
+    install -m 0600 "$previous_environment" "${state_directory}/previous.env"
+    install_environment "$candidate_environment" "$environment_file"
+    record_release \
+        deployed \
+        "$environment_file" \
+        "$candidate_application_image" \
+        "$current_application_image"
+    printf 'Production deployment is healthy: %s\n' "$candidate_application_image"
+}
+
+rollback_release()
+{
+    previous_environment="${state_directory}/previous.env"
+
+    if [ ! -r "$previous_environment" ]; then
+        fail 'no previous release is available'
+    fi
+
+    new_temporary_file
+    current_environment="$temporary_file"
+    new_temporary_file
+    rollback_environment="$temporary_file"
+    cp -- "$environment_file" "$current_environment"
+    cp -- "$previous_environment" "$rollback_environment"
+    current_application_image="$(application_image_from "$current_environment")"
+    rollback_application_image="$(application_image_from "$rollback_environment")"
+
+    if ! compose "$rollback_environment" up --detach --wait --pull never ||
+        ! verify_stack "$rollback_environment"; then
+        if ! compose "$current_environment" up --detach --wait --pull never ||
+            ! verify_stack "$current_environment"; then
+            fail 'neither the previous nor current release became healthy'
+        fi
+
+        fail 'the previous release did not become healthy; the current release was restored'
+    fi
+
+    install -m 0600 "$current_environment" "${state_directory}/previous.env"
+    install_environment "$rollback_environment" "$environment_file"
+    record_release \
+        rolled_back \
+        "$environment_file" \
+        "$rollback_application_image" \
+        "$current_application_image"
+    printf 'Production rollback is healthy: %s\n' "$rollback_application_image"
+}
+
+if [ "$#" -lt 1 ]; then
+    usage >&2
+    exit 2
+fi
+
+action="$1"
+shift
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --app-image)
+            [ "$#" -ge 2 ] || fail '--app-image requires a value'
+            requested_application_image="$2"
+            shift 2
+            ;;
+        --env-file)
+            [ "$#" -ge 2 ] || fail '--env-file requires a value'
+            environment_file="$2"
+            shift 2
+            ;;
+        *)
+            usage >&2
+            fail "unknown argument: $1"
+            ;;
+    esac
+done
+
+case "$action" in
+    deploy | rollback | verify) ;;
+    *)
+        usage >&2
+        fail "unknown action: $action"
+        ;;
+esac
+
+if [ ! -r "$environment_file" ]; then
+    fail "environment file is not readable: $environment_file"
+fi
+
+command -v docker >/dev/null 2>&1 || fail 'docker is required'
+command -v flock >/dev/null 2>&1 || fail 'flock is required'
+command -v curl >/dev/null 2>&1 || fail 'curl is required'
+command -v sed >/dev/null 2>&1 || fail 'sed is required'
+
+install -d -m 0700 "$state_directory"
+exec 9>"${state_directory}/deployment.lock"
+flock -n 9 || fail 'another deployment operation is in progress'
+
+case "$action" in
+    deploy) deploy_release ;;
+    rollback) rollback_release ;;
+    verify)
+        application_image_from "$environment_file" >/dev/null
+        database_image_from "$environment_file" >/dev/null
+        verify_stack "$environment_file" || fail 'the production stack is unhealthy'
+        record_release \
+            verified \
+            "$environment_file" \
+            "$(application_image_from "$environment_file")" \
+            ''
+        printf '%s\n' 'Production stack verification passed.'
+        ;;
+esac

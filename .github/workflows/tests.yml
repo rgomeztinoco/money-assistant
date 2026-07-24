@@ -51,20 +51,47 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build immutable application image
+      - name: Build rehearsal application images
         run: |
+          docker run \
+            --detach \
+            --name money-assistant-rehearsal-registry \
+            --publish 127.0.0.1:5000:5000 \
+            registry:3@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5000/v2/ >/dev/null; then
+              break
+            fi
+
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:5000/v2/ >/dev/null
+
           docker build \
             --build-arg VCS_REF="$GITHUB_SHA" \
-            --tag money-assistant:ci \
+            --tag localhost:5000/money-assistant:healthy \
             .
+          docker push localhost:5000/money-assistant:healthy
 
-          image_reference="$(docker image inspect money-assistant:ci --format '{{index .RepoDigests 0}}')"
-          image_digest="${image_reference#*@}"
+          healthy_image="$(docker image inspect localhost:5000/money-assistant:healthy --format '{{index .RepoDigests 0}}')"
+          healthy_repository="${healthy_image%@*}"
+          healthy_digest="${healthy_image##*@}"
+
+          printf '%s\n' \
+            "FROM ${healthy_image}" \
+            "RUN printf ':8080 { respond 503 }\\n' > /etc/frankenphp/Caddyfile" |
+            docker build --tag localhost:5000/money-assistant:unhealthy -
+          docker push localhost:5000/money-assistant:unhealthy
+
+          unhealthy_image="$(docker image inspect localhost:5000/money-assistant:unhealthy --format '{{index .RepoDigests 0}}')"
 
           {
-            echo "APP_IMAGE_REPOSITORY=money-assistant"
-            echo "APP_IMAGE_DIGEST=$image_digest"
+            echo "APP_IMAGE_REPOSITORY=$healthy_repository"
+            echo "APP_IMAGE_DIGEST=$healthy_digest"
             echo "APP_IMAGE_PULL_POLICY=never"
+            echo "POSTGRES_IMAGE=postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e"
+            echo "POSTGRES_IMAGE_PULL_POLICY=never"
             echo "PRIVATE_HOSTNAME=money-assistant.test"
             echo "OPENCLAW_CAPABILITY_KEY_ID=openclaw-service-ci"
             echo "OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE=/tmp/money-assistant-production-smoke/openclaw_capability_public_key"
@@ -72,68 +99,169 @@ jobs:
             echo "OPENCLAW_HOOK_URL=http://127.0.0.1:18789/hooks/money-assistant"
             echo "APP_KEY_FILE=/tmp/money-assistant-production-smoke/application_key"
             echo "DB_PASSWORD_FILE=/tmp/money-assistant-production-smoke/database_password"
+            echo "COMPOSE_PROJECT_NAME=money-assistant-production-smoke"
+            echo "DEPLOYMENT_STATE_DIRECTORY=/tmp/money-assistant-production-smoke/deployments"
+            echo "PRODUCTION_ENV_FILE=/tmp/money-assistant-production-smoke/production.env"
+            echo "GOOD_APP_IMAGE=$healthy_image"
+            echo "BAD_APP_IMAGE=$unhealthy_image"
+            echo "REHEARSAL_OUTPUT=/tmp/money-assistant-production-smoke/rehearsal-output.log"
           } >> "$GITHUB_ENV"
 
-      - name: Create production secrets
+      - name: Create isolated rehearsal configuration
         run: |
-          sudo install -d -m 0700 /tmp/money-assistant-production-smoke
+          install -d -m 0700 /tmp/money-assistant-production-smoke
           printf 'base64:%s\n' "$(openssl rand -base64 32)" |
-            sudo tee /tmp/money-assistant-production-smoke/application_key >/dev/null
+            tee /tmp/money-assistant-production-smoke/application_key >/dev/null
           openssl rand -base64 32 |
-            sudo tee /tmp/money-assistant-production-smoke/database_password >/dev/null
+            tee /tmp/money-assistant-production-smoke/database_password >/dev/null
           openssl rand -base64 32 |
-            sudo tee /tmp/money-assistant-production-smoke/openclaw_capability_public_key >/dev/null
+            tee /tmp/money-assistant-production-smoke/openclaw_capability_public_key >/dev/null
           openssl rand -base64 32 |
-            sudo tee /tmp/money-assistant-production-smoke/openclaw_hook_token >/dev/null
-          sudo chmod 0600 /tmp/money-assistant-production-smoke/application_key
-          sudo chmod 0600 /tmp/money-assistant-production-smoke/database_password
-          sudo chmod 0600 /tmp/money-assistant-production-smoke/openclaw_capability_public_key
-          sudo chmod 0600 /tmp/money-assistant-production-smoke/openclaw_hook_token
+            tee /tmp/money-assistant-production-smoke/openclaw_hook_token >/dev/null
+          chmod 0600 /tmp/money-assistant-production-smoke/application_key
+          chmod 0600 /tmp/money-assistant-production-smoke/database_password
+          chmod 0600 /tmp/money-assistant-production-smoke/openclaw_capability_public_key
+          chmod 0600 /tmp/money-assistant-production-smoke/openclaw_hook_token
 
-      - name: Start production stack
-        run: docker compose -p money-assistant-production-smoke -f compose.production.yaml up --detach --wait
+          {
+            echo "APP_IMAGE_REPOSITORY=$APP_IMAGE_REPOSITORY"
+            echo "APP_IMAGE_DIGEST=$APP_IMAGE_DIGEST"
+            echo "APP_IMAGE_PULL_POLICY=never"
+            echo "POSTGRES_IMAGE=$POSTGRES_IMAGE"
+            echo "POSTGRES_IMAGE_PULL_POLICY=never"
+            echo "PRIVATE_HOSTNAME=$PRIVATE_HOSTNAME"
+            echo "OPENCLAW_CAPABILITY_KEY_ID=$OPENCLAW_CAPABILITY_KEY_ID"
+            echo "OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE=$OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE"
+            echo "OPENCLAW_HOOK_TOKEN_FILE=$OPENCLAW_HOOK_TOKEN_FILE"
+            echo "OPENCLAW_HOOK_URL=$OPENCLAW_HOOK_URL"
+            echo "APP_KEY_FILE=$APP_KEY_FILE"
+            echo "DB_PASSWORD_FILE=$DB_PASSWORD_FILE"
+          } > "$PRODUCTION_ENV_FILE"
+          chmod 0600 "$PRODUCTION_ENV_FILE"
 
-      - name: Verify production stack
+      - name: Deploy healthy production stack
         run: |
-          wait_for_health() {
-            container="$1"
+          exec 3>&1
+          exec > "$REHEARSAL_OUTPUT" 2>&1
 
-            for attempt in $(seq 1 30); do
-              health_state="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
+          ./deploy-production deploy \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --app-image "$GOOD_APP_IMAGE"
 
-              if [ "$health_state" = "healthy" ]; then
-                return 0
-              fi
+          jq -e \
+            --arg application_image "$GOOD_APP_IMAGE" \
+            --arg database_image "$POSTGRES_IMAGE" \
+            '.outcome == "deployed" and .application_image == $application_image and .database_image == $database_image' \
+            "$DEPLOYMENT_STATE_DIRECTORY/current.json"
+          test "$(stat --format '%a' "$DEPLOYMENT_STATE_DIRECTORY/current.json")" = 600
+          printf '%s\n' 'Healthy digest deployment and metadata verification passed.' >&3
 
-              sleep 2
-            done
+      - name: Rehearse restart recovery
+        run: |
+          exec 3>&1
+          exec >> "$REHEARSAL_OUTPUT" 2>&1
 
-            docker logs "$container"
+          rehearsal_id="$(< /proc/sys/kernel/random/uuid)"
+          echo "REHEARSAL_ID=$rehearsal_id" >> "$GITHUB_ENV"
 
-            return 1
-          }
+          docker compose \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --file compose.production.yaml \
+            stop worker scheduler
 
-          curl \
-            --fail \
-            --noproxy '*' \
-            --silent \
-            --show-error \
-            http://127.0.0.1:8443/up \
-            >/dev/null
+          docker compose \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --file compose.production.yaml \
+            exec --no-TTY web \
+            /usr/local/bin/with-production-secrets \
+            php artisan app:deployment-rehearsal:prepare "$rehearsal_id" --no-interaction
 
-          expected_image="$(docker inspect money-assistant-production-smoke-web-1 --format '{{.Image}}')"
+          docker compose \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --file compose.production.yaml \
+            stop
 
-          test "$(docker inspect money-assistant-production-smoke-worker-1 --format '{{.Image}}')" = "$expected_image"
-          test "$(docker inspect money-assistant-production-smoke-scheduler-1 --format '{{.Image}}')" = "$expected_image"
+          docker compose \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --file compose.production.yaml \
+            up --detach --wait --pull never
 
-          docker compose -p money-assistant-production-smoke -f compose.production.yaml restart worker
-          wait_for_health money-assistant-production-smoke-worker-1
+          for attempt in $(seq 1 30); do
+            if docker compose \
+              --env-file "$PRODUCTION_ENV_FILE" \
+              --file compose.production.yaml \
+              exec --no-TTY web \
+              /usr/local/bin/with-production-secrets \
+              php artisan app:deployment-rehearsal:verify "$rehearsal_id" --no-interaction; then
+              printf '%s\n' 'Queued and scheduled probes survived the stack restart.' >&3
+              exit 0
+            fi
 
-          docker compose -p money-assistant-production-smoke -f compose.production.yaml restart scheduler
-          wait_for_health money-assistant-production-smoke-scheduler-1
+            sleep 2
+          done
+
+          exit 1
+
+      - name: Rehearse failed deployment rollback
+        run: |
+          exec 3>&1
+          exec >> "$REHEARSAL_OUTPUT" 2>&1
+
+          if ./deploy-production deploy \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --app-image "$BAD_APP_IMAGE"; then
+            echo 'The deliberately unhealthy deployment unexpectedly succeeded.' >&2
+            exit 1
+          fi
+
+          jq -e \
+            --arg application_image "$GOOD_APP_IMAGE" \
+            --arg attempted_application_image "$BAD_APP_IMAGE" \
+            '.outcome == "rolled_back" and .application_image == $application_image and .attempted_application_image == $attempted_application_image' \
+            "$DEPLOYMENT_STATE_DIRECTORY/current.json"
+
+          ./deploy-production verify --env-file "$PRODUCTION_ENV_FILE"
+
+          expected_image="$(docker image inspect "$GOOD_APP_IMAGE" --format '{{.Id}}')"
+
+          for service in web worker scheduler; do
+            container_id="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml ps --quiet "$service")"
+            test "$(docker inspect "$container_id" --format '{{.Image}}')" = "$expected_image"
+          done
+
+          docker compose \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --file compose.production.yaml \
+            exec --no-TTY web \
+            /usr/local/bin/with-production-secrets \
+            php artisan app:deployment-rehearsal:verify "$REHEARSAL_ID" --no-interaction
+
+          docker compose \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --file compose.production.yaml \
+            logs --no-color postgres web worker scheduler proxy
+
+          for secret_file in \
+            "$APP_KEY_FILE" \
+            "$DB_PASSWORD_FILE" \
+            "$OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE" \
+            "$OPENCLAW_HOOK_TOKEN_FILE"; do
+            if grep --quiet --fixed-strings --file "$secret_file" "$REHEARSAL_OUTPUT"; then
+              printf 'A rehearsal credential was exposed from %s.\n' "$secret_file" >&3
+              exit 1
+            fi
+          done
+
+          printf '%s\n' 'Failed deployment rollback, durable work, health, and credential isolation passed.' >&3
 
       - name: Stop production stack
         if: always()
         run: |
-          docker compose -p money-assistant-production-smoke -f compose.production.yaml down --volumes --remove-orphans
-          sudo rm -rf /tmp/money-assistant-production-smoke
+          if [ -f /tmp/money-assistant-production-smoke/production.env ]; then
+            docker compose \
+              --env-file /tmp/money-assistant-production-smoke/production.env \
+              --file compose.production.yaml \
+              down --volumes --remove-orphans
+          fi
+          docker rm --force money-assistant-rehearsal-registry >/dev/null 2>&1 || true
+          rm -rf /tmp/money-assistant-production-smoke

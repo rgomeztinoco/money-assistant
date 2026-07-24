@@ -2,6 +2,7 @@
 
 set -eu
 
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 environment_file="${1:-.env.production}"
 
 fail()
@@ -65,7 +66,7 @@ printf '%s' "$ufw_rules" | awk '
     /^ufw allow/ && /(^|[[:space:]])(80|443|5432|8443|18789)(\/tcp)?([[:space:]]|$)/ && $0 !~ / on tailscale0 / { exit 1 }
 ' || fail 'UFW explicitly allows an application port outside tailscale0'
 
-compose_status="$(docker compose --env-file "$environment_file" -f compose.production.yaml config --format json)"
+compose_status="$(docker compose --env-file "$environment_file" -f "${script_directory}/compose.production.yaml" config --format json)"
 
 printf '%s' "$compose_status" | jq -e '
     .services.proxy.ports == [{

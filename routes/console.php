@@ -1,5 +1,6 @@
 <?php
 
+use App\Operations\DeploymentRehearsal;
 use App\Operations\RuntimeHealth;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -7,13 +8,21 @@ use Illuminate\Support\Facades\Schedule;
 
 Schedule::useCache('database');
 
-Schedule::call(
-    fn () => app(RuntimeHealth::class)->dispatchProbe(),
-)
-    ->name('runtime-health-probe')
-    ->everyMinute()
+Schedule::everyMinute()
     ->onOneServer()
-    ->withoutOverlapping();
+    ->group(function () {
+        Schedule::call(
+            fn () => app(RuntimeHealth::class)->dispatchProbe(),
+        )
+            ->name('runtime-health-probe')
+            ->withoutOverlapping();
+
+        Schedule::call(
+            fn () => app(DeploymentRehearsal::class)->dispatchDueScheduledProbes(),
+        )
+            ->name('deployment-rehearsal-probes')
+            ->withoutOverlapping();
+    });
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
