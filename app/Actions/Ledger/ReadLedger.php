@@ -6,9 +6,21 @@ use App\Currency;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
+use Illuminate\Support\Str;
 
 class ReadLedger
 {
+    private const TRANSACTION_COLUMNS = [
+        'id',
+        'occurred_on',
+        'amount_minor',
+        'currency',
+        'kind',
+        'merchant_description',
+        'confirmed_at',
+        'revision',
+    ];
+
     /**
      * @return array{
      *     today: string,
@@ -20,7 +32,21 @@ class ReadLedger
      *         currency: string,
      *         kind: string,
      *         merchant_description: string,
-     *         confirmed_at: string
+     *         confirmed_at: string,
+     *         revision: int,
+     *         state_change_idempotency_key: string
+     *     }>,
+     *     voided_transactions: list<array{
+     *         id: int,
+     *         occurred_on: string,
+     *         amount_minor: string,
+     *         currency: string,
+     *         kind: string,
+     *         merchant_description: string,
+     *         confirmed_at: string,
+     *         revision: int,
+     *         voided_at: string,
+     *         state_change_idempotency_key: string
      *     }>
      * }
      */
@@ -28,6 +54,7 @@ class ReadLedger
     {
         $totalRows = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
+            ->whereNull('voided_at')
             ->toBase()
             ->select('currency')
             ->selectRaw(
@@ -39,15 +66,8 @@ class ReadLedger
 
         $transactionModels = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
-            ->select([
-                'id',
-                'occurred_on',
-                'amount_minor',
-                'currency',
-                'kind',
-                'merchant_description',
-                'confirmed_at',
-            ])
+            ->whereNull('voided_at')
+            ->select(self::TRANSACTION_COLUMNS)
             ->orderByDesc('occurred_on')
             ->orderByDesc('id')
             ->limit(100)
@@ -57,13 +77,29 @@ class ReadLedger
 
         foreach ($transactionModels as $transaction) {
             $transactions[] = [
-                'id' => $transaction->id,
-                'occurred_on' => $transaction->occurred_on->toDateString(),
-                'amount_minor' => (string) $transaction->amount_minor,
-                'currency' => $transaction->currency->value,
-                'kind' => $transaction->kind->value,
-                'merchant_description' => $transaction->merchant_description,
-                'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
+                ...$this->transactionData($transaction),
+                'state_change_idempotency_key' => (string) Str::uuid(),
+            ];
+        }
+
+        $voidedTransactionModels = Transaction::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->whereNotNull('voided_at')
+            ->select([...self::TRANSACTION_COLUMNS, 'voided_at'])
+            ->orderByDesc('voided_at')
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get();
+
+        $voidedTransactions = [];
+
+        foreach ($voidedTransactionModels as $transaction) {
+            assert($transaction->voided_at !== null);
+
+            $voidedTransactions[] = [
+                ...$this->transactionData($transaction),
+                'voided_at' => $transaction->voided_at->toIso8601String(),
+                'state_change_idempotency_key' => (string) Str::uuid(),
             ];
         }
 
@@ -74,6 +110,33 @@ class ReadLedger
                 Currency::Pen->value => (string) $totalRows->get(Currency::Pen->value, '0'),
             ],
             'transactions' => $transactions,
+            'voided_transactions' => $voidedTransactions,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     id: int,
+     *     occurred_on: string,
+     *     amount_minor: string,
+     *     currency: string,
+     *     kind: string,
+     *     merchant_description: string,
+     *     confirmed_at: string,
+     *     revision: int
+     * }
+     */
+    private function transactionData(Transaction $transaction): array
+    {
+        return [
+            'id' => $transaction->id,
+            'occurred_on' => $transaction->occurred_on->toDateString(),
+            'amount_minor' => (string) $transaction->amount_minor,
+            'currency' => $transaction->currency->value,
+            'kind' => $transaction->kind->value,
+            'merchant_description' => $transaction->merchant_description,
+            'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
+            'revision' => $transaction->revision,
         ];
     }
 }

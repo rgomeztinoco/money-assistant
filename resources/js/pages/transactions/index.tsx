@@ -1,7 +1,18 @@
-import { Form, Head } from '@inertiajs/react';
-import { ArrowDownLeft, ArrowUpRight, ReceiptText } from 'lucide-react';
+import { Form, Head, usePage } from '@inertiajs/react';
+import {
+    ArrowDownLeft,
+    ArrowUpRight,
+    CircleOff,
+    ReceiptText,
+    RotateCcw,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { store } from '@/actions/App/Http/Controllers/TransactionController';
+import { store as recordTransaction } from '@/actions/App/Http/Controllers/TransactionController';
+import {
+    destroy as restoreTransaction,
+    store as voidTransaction,
+} from '@/actions/App/Http/Controllers/TransactionVoidController';
+import AlertError from '@/components/alert-error';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,12 +40,20 @@ type LedgerTransaction = {
     kind: TransactionKind;
     merchant_description: string;
     confirmed_at: string;
+    revision: number;
+    state_change_idempotency_key: string;
+};
+
+type VoidedLedgerTransaction = LedgerTransaction & {
+    voided_at: string;
 };
 
 type TransactionsIndexProps = {
     today: string;
     totals: Record<Currency, string>;
     transactions: LedgerTransaction[];
+    voided_transactions: VoidedLedgerTransaction[];
+    errors?: Record<string, string>;
 };
 
 type TransactionKindPresentation = {
@@ -117,11 +136,159 @@ function transactionAmount(transaction: LedgerTransaction): string {
     return `${transactionKindPresentations[transaction.kind].amountPrefix}${formattedAmount}`;
 }
 
+function TransactionVoidStateForm({
+    transaction,
+    operation,
+}: {
+    transaction: LedgerTransaction;
+    operation: 'void' | 'restore';
+}) {
+    const isVoid = operation === 'void';
+    const transactionRoute = isVoid
+        ? voidTransaction.form(transaction.id)
+        : restoreTransaction.form(transaction.id);
+    const Icon = isVoid ? CircleOff : RotateCcw;
+
+    return (
+        <Form {...transactionRoute} className="grid justify-items-end gap-1">
+            {({ errors, processing }) => (
+                <>
+                    <input
+                        type="hidden"
+                        name="expected_revision"
+                        value={transaction.revision}
+                    />
+                    <input
+                        type="hidden"
+                        name="idempotency_key"
+                        value={transaction.state_change_idempotency_key}
+                    />
+                    <Button
+                        type="submit"
+                        variant={isVoid ? 'outline' : 'secondary'}
+                        size="sm"
+                        disabled={processing}
+                    >
+                        {processing ? <Spinner /> : <Icon />}
+                        {isVoid ? 'Void' : 'Restore'}
+                    </Button>
+                    <InputError
+                        message={
+                            errors.expected_revision ??
+                            errors.idempotency_key ??
+                            errors.void_state
+                        }
+                    />
+                </>
+            )}
+        </Form>
+    );
+}
+
+function LedgerTable({
+    transactions,
+    operation,
+}: {
+    transactions: Array<LedgerTransaction | VoidedLedgerTransaction>;
+    operation: 'void' | 'restore';
+}) {
+    const showsVoidedState = operation === 'restore';
+
+    return (
+        <div className="overflow-x-auto">
+            <table
+                className={`w-full text-sm ${showsVoidedState ? 'min-w-[48rem]' : 'min-w-[44rem]'}`}
+            >
+                <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                        <th className="pb-3 font-medium">Date</th>
+                        <th className="pb-3 font-medium">
+                            Merchant or description
+                        </th>
+                        <th className="pb-3 font-medium">Kind</th>
+                        {showsVoidedState && (
+                            <th className="pb-3 font-medium">State</th>
+                        )}
+                        <th className="pb-3 text-right font-medium">Amount</th>
+                        <th className="pb-3 text-right font-medium">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {transactions.map((transaction) => {
+                        const presentation =
+                            transactionKindPresentations[transaction.kind];
+                        const KindIcon = presentation.icon;
+
+                        return (
+                            <tr
+                                key={transaction.id}
+                                className="border-b last:border-0"
+                            >
+                                <td className="py-4 pr-4 whitespace-nowrap text-muted-foreground">
+                                    {transaction.occurred_on}
+                                </td>
+                                <td className="py-4 pr-4">
+                                    <p className="font-medium">
+                                        {transaction.merchant_description}
+                                    </p>
+                                    {'voided_at' in transaction && (
+                                        <p className="text-xs text-muted-foreground">
+                                            Voided{' '}
+                                            {transaction.voided_at.slice(0, 10)}
+                                        </p>
+                                    )}
+                                </td>
+                                <td className="py-4 pr-4">
+                                    <Badge variant={presentation.badgeVariant}>
+                                        <KindIcon />
+                                        {presentation.label}
+                                    </Badge>
+                                </td>
+                                {showsVoidedState && (
+                                    <td className="py-4 pr-4">
+                                        <Badge variant="secondary">
+                                            <CircleOff />
+                                            Voided
+                                        </Badge>
+                                    </td>
+                                )}
+                                <td
+                                    className={`py-4 text-right font-medium whitespace-nowrap tabular-nums ${presentation.amountClassName}`}
+                                >
+                                    {transactionAmount(transaction)}
+                                </td>
+                                <td className="py-4 pl-4">
+                                    <TransactionVoidStateForm
+                                        transaction={transaction}
+                                        operation={operation}
+                                    />
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 export default function TransactionsIndex({
     today,
     totals,
     transactions,
+    voided_transactions,
+    errors = {},
 }: TransactionsIndexProps) {
+    const { flash } = usePage();
+    const transactionStateError = flash.transaction_state_error as
+        string | undefined;
+    const voidStateErrors = [
+        transactionStateError,
+        errors.expected_revision,
+        errors.idempotency_key,
+        errors.void_state,
+    ].filter((error): error is string => Boolean(error));
+
     return (
         <>
             <Head title="Transactions" />
@@ -135,6 +302,13 @@ export default function TransactionsIndex({
                         currency.
                     </p>
                 </div>
+
+                {voidStateErrors.length > 0 && (
+                    <AlertError
+                        title="Transaction state was not changed."
+                        errors={voidStateErrors}
+                    />
+                )}
 
                 <div className="grid gap-4 sm:grid-cols-2">
                     {(['USD', 'PEN'] as const).map((currency) => (
@@ -174,7 +348,7 @@ export default function TransactionsIndex({
                         </CardHeader>
                         <CardContent>
                             <Form
-                                {...store.form()}
+                                {...recordTransaction.form()}
                                 resetOnSuccess={[
                                     'amount_minor',
                                     'merchant_description',
@@ -322,10 +496,11 @@ export default function TransactionsIndex({
 
                     <Card className="min-w-0">
                         <CardHeader>
-                            <CardTitle>Confirmed ledger</CardTitle>
+                            <CardTitle>Active ledger</CardTitle>
                             <CardDescription>
-                                Latest 100 Transactions, newest occurrence
-                                first.
+                                Latest 100 active Transactions. Voided
+                                Transactions are excluded from this ledger and
+                                its totals.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -343,77 +518,44 @@ export default function TransactionsIndex({
                                     </div>
                                 </div>
                             ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full min-w-[36rem] text-sm">
-                                        <thead>
-                                            <tr className="border-b text-left text-xs text-muted-foreground">
-                                                <th className="pb-3 font-medium">
-                                                    Date
-                                                </th>
-                                                <th className="pb-3 font-medium">
-                                                    Merchant or description
-                                                </th>
-                                                <th className="pb-3 font-medium">
-                                                    Kind
-                                                </th>
-                                                <th className="pb-3 text-right font-medium">
-                                                    Amount
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {transactions.map((transaction) => {
-                                                const presentation =
-                                                    transactionKindPresentations[
-                                                        transaction.kind
-                                                    ];
-                                                const KindIcon =
-                                                    presentation.icon;
-
-                                                return (
-                                                    <tr
-                                                        key={transaction.id}
-                                                        className="border-b last:border-0"
-                                                    >
-                                                        <td className="py-4 pr-4 whitespace-nowrap text-muted-foreground">
-                                                            {
-                                                                transaction.occurred_on
-                                                            }
-                                                        </td>
-                                                        <td className="py-4 pr-4 font-medium">
-                                                            {
-                                                                transaction.merchant_description
-                                                            }
-                                                        </td>
-                                                        <td className="py-4 pr-4">
-                                                            <Badge
-                                                                variant={
-                                                                    presentation.badgeVariant
-                                                                }
-                                                            >
-                                                                <KindIcon />
-                                                                {
-                                                                    presentation.label
-                                                                }
-                                                            </Badge>
-                                                        </td>
-                                                        <td
-                                                            className={`py-4 text-right font-medium whitespace-nowrap tabular-nums ${presentation.amountClassName}`}
-                                                        >
-                                                            {transactionAmount(
-                                                                transaction,
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <LedgerTable
+                                    transactions={transactions}
+                                    operation="void"
+                                />
                             )}
                         </CardContent>
                     </Card>
                 </div>
+
+                <Card className="min-w-0">
+                    <CardHeader>
+                        <CardTitle>Voided Transactions</CardTitle>
+                        <CardDescription>
+                            Retained for traceability, excluded from active
+                            ledger results and spending totals, and available to
+                            restore.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {voided_transactions.length === 0 ? (
+                            <div className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-center">
+                                <CircleOff className="size-7 text-muted-foreground" />
+                                <p className="font-medium">
+                                    No Voided Transactions
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                    Transactions you void will remain visible
+                                    here for restoration.
+                                </p>
+                            </div>
+                        ) : (
+                            <LedgerTable
+                                transactions={voided_transactions}
+                                operation="restore"
+                            />
+                        )}
+                    </CardContent>
+                </Card>
             </div>
         </>
     );

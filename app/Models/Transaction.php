@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Currency;
 use App\TransactionKind;
+use Carbon\CarbonImmutable;
 use Database\Factories\TransactionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,14 +16,15 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $user_id
- * @property Carbon $occurred_on
+ * @property CarbonImmutable $occurred_on
  * @property int $amount_minor
  * @property Currency $currency
  * @property TransactionKind $kind
  * @property string $merchant_description
- * @property Carbon $confirmed_at
+ * @property CarbonImmutable $confirmed_at
  * @property int $revision
  * @property list<string> $provisional_fields
+ * @property CarbonImmutable|null $voided_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -36,6 +38,7 @@ use Illuminate\Support\Carbon;
     'confirmed_at',
     'revision',
     'provisional_fields',
+    'voided_at',
 ])]
 class Transaction extends Model
 {
@@ -67,6 +70,14 @@ class Transaction extends Model
     }
 
     /**
+     * @return HasMany<TransactionStateChange, $this>
+     */
+    public function stateChanges(): HasMany
+    {
+        return $this->hasMany(TransactionStateChange::class);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
@@ -79,6 +90,7 @@ class Transaction extends Model
             'confirmed_at' => 'immutable_datetime',
             'revision' => 'integer',
             'provisional_fields' => 'array',
+            'voided_at' => 'immutable_datetime',
         ];
     }
 }

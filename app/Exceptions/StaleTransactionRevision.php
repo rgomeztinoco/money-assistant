@@ -10,6 +10,8 @@ class StaleTransactionRevision extends Exception implements ShouldntReport
 {
     private const MESSAGE = 'This Transaction changed while you were reviewing it. Review the current values and try again.';
 
+    private const VOID_STATE_MESSAGE = 'This Transaction changed before its void state could be updated. Review the current ledger and try again.';
+
     /**
      * @param  array{
      *     id: int,
@@ -22,14 +24,41 @@ class StaleTransactionRevision extends Exception implements ShouldntReport
      *     provisional_fields: list<string>
      * }  $currentState
      */
-    public function __construct(private array $currentState)
-    {
-        parent::__construct(self::MESSAGE);
+    public function __construct(
+        private array $currentState,
+        string $message = self::MESSAGE,
+    ) {
+        parent::__construct($message);
     }
 
     public static function fromTransaction(Transaction $transaction): self
     {
-        return new self([
+        return new self(self::currentStateFrom($transaction));
+    }
+
+    public static function forVoidStateChange(Transaction $transaction): self
+    {
+        return new self(
+            self::currentStateFrom($transaction),
+            self::VOID_STATE_MESSAGE,
+        );
+    }
+
+    /**
+     * @return array{
+     *     id: int,
+     *     revision: int,
+     *     occurred_on: string,
+     *     amount_minor: string,
+     *     currency: string,
+     *     kind: string,
+     *     merchant_description: string,
+     *     provisional_fields: list<string>
+     * }
+     */
+    private static function currentStateFrom(Transaction $transaction): array
+    {
+        return [
             'id' => $transaction->id,
             'revision' => $transaction->revision,
             'occurred_on' => $transaction->occurred_on->toDateString(),
@@ -38,7 +67,7 @@ class StaleTransactionRevision extends Exception implements ShouldntReport
             'kind' => $transaction->kind->value,
             'merchant_description' => $transaction->merchant_description,
             'provisional_fields' => $transaction->provisional_fields,
-        ]);
+        ];
     }
 
     /**

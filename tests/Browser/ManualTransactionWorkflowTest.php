@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Transaction;
 use App\Models\User;
 
 beforeEach(function () {
@@ -45,4 +46,60 @@ test('the owner records purchases and Refunds with exact USD and PEN totals', fu
         ->assertSee('PEN Refund')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
+});
+
+test('the owner can void and restore a Transaction explicitly from the ledger', function () {
+    $owner = User::factory()->create();
+    Transaction::factory()
+        ->for($owner, 'owner')
+        ->purchase()
+        ->usd()
+        ->create([
+            'amount_minor' => 12345,
+            'merchant_description' => 'Mistaken market entry',
+        ]);
+    $this->actingAs($owner);
+
+    $page = visit('/transactions');
+
+    $page
+        ->assertSee('Mistaken market entry')
+        ->assertSee('$ 123.45')
+        ->press('Void')
+        ->assertSee('Transaction voided.')
+        ->assertSee('Voided Transactions')
+        ->assertSee('Mistaken market entry')
+        ->assertSee('$ 0.00')
+        ->press('Restore')
+        ->assertSee('Transaction restored.')
+        ->assertSee('$ 123.45')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+});
+
+test('the browser makes a stale void response explicit without changing the Transaction', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()
+        ->for($owner, 'owner')
+        ->create(['merchant_description' => 'Current market entry']);
+    $this->actingAs($owner);
+
+    $page = visit('/transactions');
+
+    $page
+        ->script(
+            "document.querySelector('input[name=\"expected_revision\"]').value = '2'",
+        );
+
+    $page
+        ->press('Void')
+        ->assertSee(
+            'This Transaction changed before its void state could be updated. Review the current ledger and try again.',
+        )
+        ->assertSee('Current market entry')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+
+    expect($transaction->refresh()->revision)->toBe(1)
+        ->and($transaction->voided_at)->toBeNull();
 });

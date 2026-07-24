@@ -28,6 +28,7 @@ class ReadReviewQueue
     {
         $reviewQuery = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
+            ->whereNull('voided_at')
             ->whereJsonLength('provisional_fields', '>', 0);
 
         $unresolvedFieldCount = (int) (clone $reviewQuery)
