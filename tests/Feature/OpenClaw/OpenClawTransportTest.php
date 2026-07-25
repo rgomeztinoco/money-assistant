@@ -3,6 +3,8 @@
 use App\Contracts\OpenClawHook;
 use App\Currency;
 use App\Models\OpenClawAuditEvent;
+use App\Models\OpenClawConfirmationGrant;
+use App\Models\OpenClawPendingOperation;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
@@ -85,6 +87,376 @@ beforeEach(function () {
             'transaction_id' => $transactionId,
         ],
     ];
+
+    $this->validManualTransactionPreparation = fn (): array => [
+        'schema_version' => 1,
+        'capability' => 'transaction.manual.prepare',
+        'interaction' => [
+            'kind' => 'owner_message',
+            'agent_id' => 'money-assistant',
+            'account_id' => 'money-assistant-owner',
+            'conversation_id' => 'telegram-owner-123',
+            'owner_sender_id' => 'telegram-owner-123',
+            'message_id' => 'telegram-owner-message-prepare',
+            'occurred_at' => now()->toIso8601String(),
+        ],
+        'input' => [
+            'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf372',
+            'occurred_on' => '2026-07-24',
+            'amount_minor' => 12345,
+            'currency' => 'USD',
+            'kind' => 'purchase',
+            'merchant_description' => '  Neighborhood   market  ',
+        ],
+    ];
+
+    $this->validManualTransactionConfirmation = fn (array $operation): array => [
+        'schema_version' => 1,
+        'capability' => 'transaction.manual.confirm',
+        'interaction' => [
+            'kind' => 'owner_message',
+            'agent_id' => 'money-assistant',
+            'account_id' => 'money-assistant-owner',
+            'conversation_id' => 'telegram-owner-123',
+            'owner_sender_id' => 'telegram-owner-123',
+            'message_id' => 'telegram-owner-message-approve',
+            'occurred_at' => now()->toIso8601String(),
+        ],
+        'input' => [
+            'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf374',
+            'pending_operation_id' => $operation['id'],
+            'pending_operation_revision' => $operation['revision'],
+            'payload_digest' => $operation['payload_digest'],
+        ],
+    ];
+});
+
+test('OpenClaw prepares a completely validated manual Transaction with its exact effect', function () {
+    $this->freezeTime();
+    User::factory()->create();
+    $expiresAt = now()->addMinutes(30);
+
+    ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->assertJsonPath('schema_version', 1)
+        ->assertJsonPath('pending_operation.revision', 1)
+        ->assertJsonPath('pending_operation.expires_at', $expiresAt->toIso8601String())
+        ->assertJsonPath(
+            'pending_operation.effect_summary',
+            'Record a purchase of USD 123.45 on 2026-07-24 at Neighborhood market.',
+        )
+        ->assertJson(fn ($json) => $json
+            ->whereType('pending_operation.id', 'string')
+            ->whereType('pending_operation.payload_digest', 'string')
+            ->etc());
+
+    expect(Transaction::query()->count())->toBe(0);
+});
+
+test('manual Transaction preparation rejects non-canonical input types', function () {
+    User::factory()->create();
+    $payload = ($this->validManualTransactionPreparation)();
+    $payload['input']['amount_minor'] = '12345';
+
+    ($this->callOpenClaw)($payload)->assertUnprocessable();
+
+    expect(OpenClawPendingOperation::query()->count())->toBe(0)
+        ->and(OpenClawAuditEvent::query()->sole()->outcome)->toBe('invalid_request');
+});
+
+test('manual Transaction preparation validates every operation field', function (Closure $changeInput) {
+    User::factory()->create();
+    $payload = ($this->validManualTransactionPreparation)();
+    $changeInput($payload['input']);
+
+    ($this->callOpenClaw)($payload)->assertUnprocessable();
+
+    expect(OpenClawPendingOperation::query()->count())->toBe(0);
+})->with([
+    'invalid date' => [function (array &$input): void {
+        $input['occurred_on'] = '2026-02-30';
+    }],
+    'zero amount' => [function (array &$input): void {
+        $input['amount_minor'] = 0;
+    }],
+    'fractional amount' => [function (array &$input): void {
+        $input['amount_minor'] = 12.5;
+    }],
+    'unsupported currency' => [function (array &$input): void {
+        $input['currency'] = 'EUR';
+    }],
+    'unsupported kind' => [function (array &$input): void {
+        $input['kind'] = 'transfer';
+    }],
+    'blank description' => [function (array &$input): void {
+        $input['merchant_description'] = '   ';
+    }],
+    'long description' => [function (array &$input): void {
+        $input['merchant_description'] = str_repeat('a', 256);
+    }],
+    'expanded shape' => [function (array &$input): void {
+        $input['confirmed_at'] = now()->toIso8601String();
+    }],
+]);
+
+test('manual Transaction preparation is idempotent only for identical input', function () {
+    User::factory()->create();
+    $payload = ($this->validManualTransactionPreparation)();
+
+    $firstResponse = ($this->callOpenClaw)($payload)->assertSuccessful();
+    $retryResponse = ($this->callOpenClaw)($payload)->assertSuccessful();
+    $changedPayload = $payload;
+    $changedPayload['input']['amount_minor'] = 12346;
+    ($this->callOpenClaw)($changedPayload)->assertConflict();
+
+    expect($retryResponse->json('pending_operation'))->toBe($firstResponse->json('pending_operation'))
+        ->and(OpenClawPendingOperation::query()->count())->toBe(1)
+        ->and(OpenClawAuditEvent::query()->pluck('outcome')->all())->toBe([
+            'success',
+            'success',
+            'idempotency_conflict',
+        ]);
+});
+
+test('preparing another operation cancels and revises the prior pending operation', function () {
+    User::factory()->create();
+
+    $firstResponse = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful();
+    $secondPayload = ($this->validManualTransactionPreparation)();
+    $secondPayload['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf373';
+    $secondPayload['input']['amount_minor'] = 9000;
+    $secondPayload['interaction']['message_id'] = 'telegram-owner-message-replacement';
+    $secondResponse = ($this->callOpenClaw)($secondPayload)->assertSuccessful();
+
+    $firstOperation = OpenClawPendingOperation::query()
+        ->where('operation_id', $firstResponse->json('pending_operation.id'))
+        ->sole();
+    $secondOperation = OpenClawPendingOperation::query()
+        ->where('operation_id', $secondResponse->json('pending_operation.id'))
+        ->sole();
+
+    expect($firstOperation->canceled_at)->not->toBeNull()
+        ->and($firstOperation->revision)->toBe(2)
+        ->and($secondOperation->canceled_at)->toBeNull()
+        ->and($secondOperation->revision)->toBe(1)
+        ->and(OpenClawPendingOperation::query()
+            ->whereNull('canceled_at')
+            ->whereNull('confirmed_at')
+            ->count())->toBe(1);
+});
+
+test('retrying a superseded preparation returns its original outcome', function () {
+    User::factory()->create();
+    $firstPayload = ($this->validManualTransactionPreparation)();
+    $firstResponse = ($this->callOpenClaw)($firstPayload)->assertSuccessful();
+    $replacement = ($this->validManualTransactionPreparation)();
+    $replacement['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf373';
+    $replacement['interaction']['message_id'] = 'telegram-owner-message-replacement';
+    ($this->callOpenClaw)($replacement)->assertSuccessful();
+
+    $retryResponse = ($this->callOpenClaw)($firstPayload)->assertSuccessful();
+
+    expect($retryResponse->json('pending_operation'))
+        ->toBe($firstResponse->json('pending_operation'));
+});
+
+test('a new admitted owner message confirms the exact prepared manual Transaction', function () {
+    User::factory()->create();
+    $operation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->json('pending_operation');
+
+    $response = ($this->callOpenClaw)(($this->validManualTransactionConfirmation)($operation))
+        ->assertSuccessful()
+        ->assertJsonPath('schema_version', 1)
+        ->assertJsonPath('transaction.revision', 1)
+        ->assertJsonPath('transaction.occurred_on', '2026-07-24')
+        ->assertJsonPath('transaction.amount_minor', '12345')
+        ->assertJsonPath('transaction.currency', 'USD')
+        ->assertJsonPath('transaction.kind', 'purchase')
+        ->assertJsonPath('transaction.merchant_description', 'Neighborhood market')
+        ->assertJsonPath('transaction.status', 'active');
+
+    $transaction = Transaction::query()->sole();
+    $pendingOperation = OpenClawPendingOperation::query()->sole();
+
+    expect($response->json('transaction.id'))->toBe($transaction->id)
+        ->and($transaction->confirmed_at)->not->toBeNull()
+        ->and($pendingOperation->confirmed_at)->not->toBeNull();
+});
+
+test('an identical successful mutation retry returns its original outcome once', function () {
+    User::factory()->create();
+    $operation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->json('pending_operation');
+    $confirmation = ($this->validManualTransactionConfirmation)($operation);
+
+    $firstResponse = ($this->callOpenClaw)($confirmation)->assertSuccessful();
+    $currentTransaction = Transaction::query()->sole();
+    $currentTransaction->voided_at = now();
+    $currentTransaction->revision = 2;
+    $currentTransaction->save();
+    $retryResponse = ($this->callOpenClaw)($confirmation)->assertSuccessful();
+
+    expect($retryResponse->json('transaction'))->toBe($firstResponse->json('transaction'))
+        ->and(Transaction::query()->count())->toBe(1)
+        ->and(Transaction::query()->sole()->revision)->toBe(2)
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(1)
+        ->and(OpenClawAuditEvent::query()->where('event_kind', 'mutation')->count())->toBe(1)
+        ->and(OpenClawAuditEvent::query()->pluck('outcome')->all())->toBe([
+            'success',
+            'success',
+            'idempotent_replay',
+        ]);
+});
+
+test('confirmation requires a new admitted owner message', function () {
+    User::factory()->create();
+    $operation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->json('pending_operation');
+    $confirmation = ($this->validManualTransactionConfirmation)($operation);
+    $confirmation['interaction']['message_id'] = 'telegram-owner-message-prepare';
+
+    ($this->callOpenClaw)($confirmation)->assertConflict();
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(0)
+        ->and(OpenClawAuditEvent::query()->latest('id')->value('outcome'))
+        ->toBe('approval_message_required');
+});
+
+test('a different owner message from before preparation cannot approve it', function () {
+    User::factory()->create();
+    $operation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->json('pending_operation');
+    $confirmation = ($this->validManualTransactionConfirmation)($operation);
+    $confirmation['interaction']['message_id'] = 'telegram-owner-message-older';
+    $confirmation['interaction']['occurred_at'] = now()->subSecond()->toIso8601String();
+
+    ($this->callOpenClaw)($confirmation)->assertConflict();
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(OpenClawAuditEvent::query()->latest('id')->value('outcome'))
+        ->toBe('approval_message_required');
+});
+
+test('a prepared operation expires after thirty minutes', function () {
+    User::factory()->create();
+    $operation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->json('pending_operation');
+
+    $this->travel(30)->minutes();
+
+    ($this->callOpenClaw)(($this->validManualTransactionConfirmation)($operation))
+        ->assertConflict();
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(0)
+        ->and(OpenClawAuditEvent::query()->latest('id')->value('outcome'))
+        ->toBe('confirmation_expired');
+});
+
+test('superseded pending-operation revisions fail closed', function () {
+    User::factory()->create();
+    $firstOperation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->json('pending_operation');
+    $replacement = ($this->validManualTransactionPreparation)();
+    $replacement['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf375';
+    $replacement['interaction']['message_id'] = 'telegram-owner-message-replacement';
+    ($this->callOpenClaw)($replacement)->assertSuccessful();
+
+    ($this->callOpenClaw)(($this->validManualTransactionConfirmation)($firstOperation))
+        ->assertConflict();
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(OpenClawAuditEvent::query()->latest('id')->value('outcome'))
+        ->toBe('stale_revision');
+});
+
+test('payload and schema changes invalidate confirmation', function (string $change) {
+    User::factory()->create();
+    $operation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->json('pending_operation');
+    $confirmation = ($this->validManualTransactionConfirmation)($operation);
+
+    if ($change === 'payload') {
+        $confirmation['input']['payload_digest'] = str_repeat('0', 64);
+    } else {
+        $confirmation['schema_version'] = 2;
+    }
+
+    $response = ($this->callOpenClaw)($confirmation);
+
+    if ($change === 'payload') {
+        $response->assertConflict();
+    } else {
+        $response->assertUnprocessable();
+    }
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(0);
+})->with(['payload', 'schema']);
+
+test('changed mutation idempotency input conflicts and a new key cannot reuse the grant', function () {
+    User::factory()->create();
+    $operation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->json('pending_operation');
+    $confirmation = ($this->validManualTransactionConfirmation)($operation);
+    ($this->callOpenClaw)($confirmation)->assertSuccessful();
+
+    $changedInput = $confirmation;
+    $changedInput['input']['payload_digest'] = str_repeat('0', 64);
+    ($this->callOpenClaw)($changedInput)->assertConflict();
+
+    $newCommand = $confirmation;
+    $newCommand['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf376';
+    ($this->callOpenClaw)($newCommand)->assertConflict();
+
+    expect(Transaction::query()->count())->toBe(1)
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(1)
+        ->and(OpenClawAuditEvent::query()->pluck('outcome')->all())->toBe([
+            'success',
+            'success',
+            'idempotency_conflict',
+            'confirmation_consumed',
+        ]);
+});
+
+test('a failed mutation audit rolls back the Transaction and Confirmation Grant', function () {
+    User::factory()->create();
+    $operation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
+        ->assertSuccessful()
+        ->json('pending_operation');
+    DB::unprepared(<<<'SQL'
+        CREATE OR REPLACE FUNCTION reject_open_claw_mutation_audit_event_insert() RETURNS trigger AS $$
+        BEGIN
+            RAISE EXCEPTION 'Mutation audit unavailable.' USING ERRCODE = '23514';
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER open_claw_mutation_audit_events_reject_insert
+        BEFORE INSERT ON open_claw_audit_events
+        FOR EACH ROW EXECUTE FUNCTION reject_open_claw_mutation_audit_event_insert();
+        SQL);
+
+    try {
+        ($this->callOpenClaw)(($this->validManualTransactionConfirmation)($operation))
+            ->assertServerError();
+    } finally {
+        DB::statement('DROP TRIGGER IF EXISTS open_claw_mutation_audit_events_reject_insert ON open_claw_audit_events');
+        DB::statement('DROP FUNCTION IF EXISTS reject_open_claw_mutation_audit_event_insert()');
+    }
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(0)
+        ->and(OpenClawPendingOperation::query()->sole()->confirmed_at)->toBeNull();
 });
 
 test('OpenClaw can read one field-minimized owner Transaction', function () {

@@ -1,7 +1,7 @@
 {
   "id": "money-assistant",
   "name": "Money Assistant",
-  "description": "Reads one field-minimized Money Assistant Transaction.",
+  "description": "Reads and confirms bounded Money Assistant Transaction operations.",
   "version": "1.0.0",
   "activation": {
     "onStartup": true
@@ -57,7 +57,9 @@
   },
   "contracts": {
     "tools": [
-      "money_assistant_transaction_read"
+      "money_assistant_transaction_read",
+      "money_assistant_transaction_prepare",
+      "money_assistant_transaction_confirm"
     ]
   }
 }

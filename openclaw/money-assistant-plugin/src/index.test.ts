@@ -1,12 +1,92 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, verify } from 'node:crypto';
 import test from 'node:test';
+import { getToolPluginMetadata } from 'openclaw/plugin-sdk/tool-plugin';
+import plugin, {
+  capabilityRequestBody,
+} from './index.js';
 import {
   admittedOwnerMessage,
   authorizationHeaders,
   isBoundOwnerInteraction,
   OwnerMessageAdmissions,
 } from './index.js';
+
+test('the plugin exposes only bounded read prepare and confirm tools', () => {
+  const metadata = getToolPluginMetadata(plugin);
+
+  assert.deepEqual(metadata?.tools.map((tool) => tool.name), [
+    'money_assistant_transaction_read',
+    'money_assistant_transaction_prepare',
+    'money_assistant_transaction_confirm',
+  ]);
+
+  for (const tool of metadata?.tools ?? []) {
+    assert.equal(tool.parameters.additionalProperties, false);
+  }
+});
+
+test('prepare and confirm serialize exact state-bound capability requests', () => {
+  const toolContext = {
+    agentId: 'money-assistant',
+    agentAccountId: 'money-assistant-owner',
+    requesterSenderId: 'telegram-owner-123',
+    deliveryContext: { to: 'telegram-owner-123' },
+  };
+  const admission = {
+    sessionKey: 'owner-session',
+    messageId: 'telegram-message-prepare',
+    occurredAtSeconds: 1_784_912_400,
+  };
+  const preparationInput = {
+    idempotency_key: '01983d79-a780-72f0-bb34-9b4f3f0cf372',
+    occurred_on: '2026-07-24',
+    amount_minor: 12345,
+    currency: 'USD',
+    kind: 'purchase',
+    merchant_description: 'Neighborhood market',
+  };
+
+  assert.deepEqual(
+    JSON.parse(capabilityRequestBody(
+      'transaction.manual.prepare',
+      preparationInput,
+      toolContext,
+      admission,
+    )),
+    {
+      schema_version: 1,
+      capability: 'transaction.manual.prepare',
+      interaction: {
+        kind: 'owner_message',
+        agent_id: 'money-assistant',
+        account_id: 'money-assistant-owner',
+        conversation_id: 'telegram-owner-123',
+        owner_sender_id: 'telegram-owner-123',
+        message_id: 'telegram-message-prepare',
+        occurred_at: '2026-07-24T17:00:00Z',
+      },
+      input: preparationInput,
+    },
+  );
+
+  const confirmationInput = {
+    idempotency_key: '01983d79-a780-72f0-bb34-9b4f3f0cf374',
+    pending_operation_id: '01983d79-a780-72f0-bb34-9b4f3f0cf373',
+    pending_operation_revision: 1,
+    payload_digest: 'a'.repeat(64),
+  };
+
+  assert.equal(
+    JSON.parse(capabilityRequestBody(
+      'transaction.manual.confirm',
+      confirmationInput,
+      toolContext,
+      { ...admission, messageId: 'telegram-message-approve' },
+    )).interaction.message_id,
+    'telegram-message-approve',
+  );
+});
 
 test('authorization signs timestamp nonce method path and exact body digest', () => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');

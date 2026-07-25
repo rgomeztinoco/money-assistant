@@ -134,7 +134,7 @@ test('OpenClaw integrations have isolated transport and directional credentials'
     }
 });
 
-test('the dedicated Money Assistant agent exposes only its bounded read plugin', function () {
+test('the dedicated Money Assistant agent exposes only its bounded Transaction plugin', function () {
     $pluginRoot = base_path('openclaw/money-assistant-plugin');
     $manifest = json_decode(
         file_get_contents($pluginRoot.'/openclaw.plugin.json'),
@@ -155,7 +155,11 @@ test('the dedicated Money Assistant agent exposes only its bounded read plugin',
 
     expect($manifest['id'])->toBe('money-assistant')
         ->and($manifest['contracts'])->toBe([
-            'tools' => ['money_assistant_transaction_read'],
+            'tools' => [
+                'money_assistant_transaction_read',
+                'money_assistant_transaction_prepare',
+                'money_assistant_transaction_confirm',
+            ],
         ])
         ->and($manifest['configSchema']['additionalProperties'])->toBeFalse()
         ->and($package['peerDependencies']['openclaw'])->toBe('2026.7.1')
@@ -168,7 +172,11 @@ test('the dedicated Money Assistant agent exposes only its bounded read plugin',
         ->and($agent['skills'])->toBe([])
         ->and($agent['timeoutSeconds'])->toBe(1800)
         ->and($agent['heartbeat']['every'])->toBe('0m')
-        ->and($agent['tools']['allow'])->toBe(['money_assistant_transaction_read'])
+        ->and($agent['tools']['allow'])->toBe([
+            'money_assistant_transaction_read',
+            'money_assistant_transaction_prepare',
+            'money_assistant_transaction_confirm',
+        ])
         ->and($policy['bindings'])->toBe([
             [
                 'agentId' => 'money-assistant',
@@ -191,6 +199,9 @@ test('the dedicated Money Assistant agent exposes only its bounded read plugin',
         ->toContain("api.on('message_received'")
         ->toContain('message_id: admission.messageId')
         ->toContain('admission.occurredAtSeconds')
+        ->toContain("'transaction.manual.prepare'")
+        ->toContain("'transaction.manual.confirm'")
+        ->toContain('idempotency_key')
         ->toContain("createHash('sha256').update(body).digest('hex')")
         ->not->toContain('${toolContext.sessionId}:${toolCallId}')
         ->not->toContain('OPENCLAW_GATEWAY_TOKEN');

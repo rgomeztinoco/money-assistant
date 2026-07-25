@@ -6,6 +6,7 @@ use App\Models\OpenClawAuditEvent;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use JsonException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -26,6 +27,10 @@ final class AuditOpenClawRequest
             $this->record($request, Response::HTTP_INTERNAL_SERVER_ERROR);
 
             throw $exception;
+        }
+
+        if ($request->attributes->get('openclaw.audit.recorded') === true) {
+            return $response;
         }
 
         $this->record($request, $response->getStatusCode());
@@ -75,7 +80,9 @@ final class AuditOpenClawRequest
                     'owner_sender_id' => $interaction['owner_sender_id'] ?? null,
                     'message_id' => $interaction['message_id'] ?? null,
                 ], JSON_THROW_ON_ERROR)),
-            'resource_type' => $capability === 'transaction.read' ? 'transaction' : null,
+            'resource_type' => is_string($capability) && Str::startsWith($capability, 'transaction.')
+                ? 'transaction'
+                : null,
             'result_count' => $request->attributes->get('openclaw.audit.result_count', 0),
         ]));
     }

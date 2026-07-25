@@ -19,6 +19,13 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $interaction_digest
  * @property string|null $resource_type
  * @property int $result_count
+ * @property string $event_kind
+ * @property string|null $idempotency_key
+ * @property string|null $operation_digest
+ * @property string|null $confirmation_grant_id
+ * @property string|null $domain_action
+ * @property int|null $resource_id
+ * @property int|null $resource_revision
  */
 #[Fillable([
     'occurred_at',
@@ -32,6 +39,13 @@ use Illuminate\Database\Eloquent\Model;
     'interaction_digest',
     'resource_type',
     'result_count',
+    'event_kind',
+    'idempotency_key',
+    'operation_digest',
+    'confirmation_grant_id',
+    'domain_action',
+    'resource_id',
+    'resource_revision',
 ])]
 final class OpenClawAuditEvent extends Model
 {
@@ -42,6 +56,7 @@ final class OpenClawAuditEvent extends Model
      */
     protected $attributes = [
         'result_count' => 0,
+        'event_kind' => 'request',
     ];
 
     /**
@@ -54,6 +69,8 @@ final class OpenClawAuditEvent extends Model
             'schema_version' => 'integer',
             'http_status' => 'integer',
             'result_count' => 'integer',
+            'resource_id' => 'integer',
+            'resource_revision' => 'integer',
         ];
     }
 }

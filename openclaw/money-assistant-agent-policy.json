@@ -38,7 +38,9 @@
         },
         "tools": {
           "allow": [
-            "money_assistant_transaction_read"
+            "money_assistant_transaction_read",
+            "money_assistant_transaction_prepare",
+            "money_assistant_transaction_confirm"
           ]
         }
       }

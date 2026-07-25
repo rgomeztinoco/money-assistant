@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Currency;
+use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Database\QueryException;
@@ -9,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use JsonException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -76,7 +79,13 @@ final class AuthorizeOpenClawCapability
             return $this->reject($request, 'unsupported_schema');
         }
 
-        if (($payload['capability'] ?? null) !== 'transaction.read') {
+        $capability = $payload['capability'] ?? null;
+
+        if (! is_string($capability) || ! in_array($capability, [
+            'transaction.read',
+            'transaction.manual.prepare',
+            'transaction.manual.confirm',
+        ], true)) {
             return $this->reject($request, 'unsupported_capability');
         }
 
@@ -87,7 +96,7 @@ final class AuthorizeOpenClawCapability
             return $this->reject($request, 'invalid_request');
         }
 
-        $validator = Validator::make($payload, [
+        $rules = [
             'schema_version' => ['required', 'integer'],
             'capability' => ['required', 'string'],
             'interaction' => ['required', 'array:kind,agent_id,account_id,conversation_id,owner_sender_id,message_id,occurred_at'],
@@ -98,20 +107,82 @@ final class AuthorizeOpenClawCapability
             'interaction.owner_sender_id' => ['required', 'string', 'max:128'],
             'interaction.message_id' => ['required', 'string', 'max:255'],
             'interaction.occurred_at' => ['required', 'string', 'max:35'],
-            'input' => ['required', 'array:transaction_id'],
-            'input.transaction_id' => ['required', 'integer', 'min:1'],
-        ]);
+        ];
 
-        if ($validator->fails()
-            || ! is_int($payload['input']['transaction_id'] ?? null)
-            || ! $this->hasExpectedInteractionBinding($payload['interaction'] ?? null)
+        if ($capability === 'transaction.read') {
+            $rules += [
+                'input' => ['required', 'array:transaction_id'],
+                'input.transaction_id' => ['required', 'integer', 'min:1'],
+            ];
+        } elseif ($capability === 'transaction.manual.prepare') {
+            $rules += [
+                'input' => ['required', 'array:idempotency_key,occurred_on,amount_minor,currency,kind,merchant_description'],
+                'input.idempotency_key' => ['required', 'uuid'],
+                'input.occurred_on' => ['required', 'date_format:Y-m-d'],
+                'input.amount_minor' => ['required', 'integer', 'min:1', 'max:'.PHP_INT_MAX],
+                'input.currency' => ['required', Rule::enum(Currency::class)],
+                'input.kind' => ['required', Rule::enum(TransactionKind::class)],
+                'input.merchant_description' => ['required', 'string', 'max:255'],
+            ];
+        } else {
+            $rules += [
+                'input' => ['required', 'array:idempotency_key,pending_operation_id,pending_operation_revision,payload_digest'],
+                'input.idempotency_key' => ['required', 'uuid'],
+                'input.pending_operation_id' => ['required', 'uuid'],
+                'input.pending_operation_revision' => ['required', 'integer', 'min:1'],
+                'input.payload_digest' => ['required', 'string', 'size:64', 'regex:/^[a-f0-9]{64}$/'],
+            ];
+        }
+
+        $validator = Validator::make($payload, $rules);
+
+        if ($validator->fails()) {
+            return $this->reject(
+                $request,
+                $capability === 'transaction.read' ? 'unbound_interaction' : 'invalid_request',
+            );
+        }
+
+        if ($capability === 'transaction.manual.prepare'
+            && ! is_int($payload['input']['amount_minor'] ?? null)) {
+            return $this->reject($request, 'invalid_request');
+        }
+
+        if ($capability === 'transaction.manual.confirm'
+            && ! is_int($payload['input']['pending_operation_revision'] ?? null)) {
+            return $this->reject($request, 'invalid_request');
+        }
+
+        if (! $this->hasExpectedInteractionBinding($payload['interaction'] ?? null)
             || ! $this->hasFreshInteraction($payload['interaction']['occurred_at'] ?? null)) {
             return $this->reject($request, 'unbound_interaction');
         }
 
+        if ($capability === 'transaction.read') {
+            if (! is_int($payload['input']['transaction_id'] ?? null)) {
+                return $this->reject($request, 'unbound_interaction');
+            }
+
+            $request->attributes->set(
+                'openclaw.transaction_id',
+                $payload['input']['transaction_id'],
+            );
+        }
+
+        $request->attributes->set('openclaw.capability', $capability);
+        $request->attributes->set('openclaw.schema_version', $payload['schema_version']);
+        $request->attributes->set('openclaw.input', $payload['input']);
+        $request->attributes->set('openclaw.interaction', $payload['interaction']);
         $request->attributes->set(
-            'openclaw.transaction_id',
-            $payload['input']['transaction_id'],
+            'openclaw.interaction_digest',
+            hash('sha256', json_encode([
+                'kind' => $payload['interaction']['kind'],
+                'agent_id' => $payload['interaction']['agent_id'],
+                'account_id' => $payload['interaction']['account_id'],
+                'conversation_id' => $payload['interaction']['conversation_id'],
+                'owner_sender_id' => $payload['interaction']['owner_sender_id'],
+                'message_id' => $payload['interaction']['message_id'],
+            ], JSON_THROW_ON_ERROR)),
         );
 
         return $next($request);
