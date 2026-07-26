@@ -12,17 +12,32 @@ import {
   OwnerMessageAdmissions,
 } from './index.js';
 
-test('the plugin exposes only bounded read prepare and confirm tools', () => {
+test('the plugin exposes only bounded Transaction and Category tools', () => {
   const metadata = getToolPluginMetadata(plugin);
 
   assert.deepEqual(metadata?.tools.map((tool) => tool.name), [
     'money_assistant_transaction_read',
     'money_assistant_transaction_prepare',
     'money_assistant_transaction_confirm',
+    'money_assistant_category_read',
+    'money_assistant_category_prepare',
+    'money_assistant_category_confirm',
   ]);
 
   for (const tool of metadata?.tools ?? []) {
-    assert.equal(tool.parameters.additionalProperties, false);
+    const schema = tool.parameters as {
+      additionalProperties?: boolean;
+      anyOf?: Array<{ additionalProperties?: boolean }>;
+    };
+
+    if (schema.anyOf) {
+      assert.equal(
+        schema.anyOf.every((variant) => variant.additionalProperties === false),
+        true,
+      );
+    } else {
+      assert.equal(schema.additionalProperties, false);
+    }
   }
 });
 

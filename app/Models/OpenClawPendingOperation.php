@@ -9,6 +9,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
+ * @phpstan-type ManualTransactionPayload array{occurred_on: string, amount_minor: int, currency: string, kind: string, merchant_description: string}
+ * @phpstan-type CategoryCreatePayload array{operation: 'create', name: string, parent_id: int|null, parent_name: string|null, parent_revision: int|null, description: string|null, examples: list<string>}
+ * @phpstan-type CategoryUpdatePayload array{operation: 'update', category_id: int, expected_revision: int, name: string, parent_id: int|null, parent_name: string|null, parent_revision: int|null, description: string|null, examples: list<string>}
+ * @phpstan-type CategoryLifecyclePayload array{operation: 'retire'|'reactivate', category_id: int, expected_revision: int, category_name: string, parent_id: int|null, parent_revision: int|null}
+ * @phpstan-type CategoryAssignmentPayload array{operation: 'assign_transaction', transaction_id: int, expected_revision: int, category_id: int|null, category_name: string|null, category_revision: int|null}
+ *
  * @property int $id
  * @property int $user_id
  * @property string $operation_id
@@ -18,7 +24,7 @@ use Illuminate\Support\Carbon;
  * @property string $conversation_digest
  * @property string $idempotency_key
  * @property string $payload_digest
- * @property array{occurred_on: string, amount_minor: int, currency: string, kind: string, merchant_description: string} $payload
+ * @property ManualTransactionPayload|CategoryCreatePayload|CategoryUpdatePayload|CategoryLifecyclePayload|CategoryAssignmentPayload $payload
  * @property string $effect_summary
  * @property int $prepared_revision
  * @property int $revision

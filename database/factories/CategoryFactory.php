@@ -22,6 +22,7 @@ class CategoryFactory extends Factory
             'user_id' => User::factory(),
             'name' => fake()->unique()->words(2, true),
             'examples' => [],
+            'revision' => 1,
         ];
     }
 }

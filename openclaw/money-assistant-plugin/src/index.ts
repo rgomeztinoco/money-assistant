@@ -54,6 +54,46 @@ const manualTransactionConfirmationParameters = Type.Object(
   { additionalProperties: false },
 );
 
+const categoryReadParameters = Type.Object({
+  page: Type.Integer({ minimum: 1 }),
+  per_page: Type.Integer({ minimum: 1, maximum: 100 }),
+}, { additionalProperties: false });
+
+const categoryNameParameters = {
+  name: Type.String({ minLength: 1, maxLength: 255 }),
+  parent_id: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+  description: Type.Union([Type.String({ maxLength: 2000 }), Type.Null()]),
+  examples: Type.Array(Type.String({ maxLength: 100 }), { maxItems: 20 }),
+};
+
+const categoryMutationPreparationParameters = Type.Union([
+  Type.Object({
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+    operation: Type.Literal('create'),
+    ...categoryNameParameters,
+  }, { additionalProperties: false }),
+  Type.Object({
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+    operation: Type.Literal('update'),
+    category_id: Type.Integer({ minimum: 1 }),
+    expected_revision: Type.Integer({ minimum: 1 }),
+    ...categoryNameParameters,
+  }, { additionalProperties: false }),
+  Type.Object({
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+    operation: Type.Union([Type.Literal('retire'), Type.Literal('reactivate')]),
+    category_id: Type.Integer({ minimum: 1 }),
+    expected_revision: Type.Integer({ minimum: 1 }),
+  }, { additionalProperties: false }),
+  Type.Object({
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+    operation: Type.Literal('assign_transaction'),
+    transaction_id: Type.Integer({ minimum: 1 }),
+    expected_revision: Type.Integer({ minimum: 1 }),
+    category_id: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+  }, { additionalProperties: false }),
+]);
+
 type BindingConfiguration = {
   agentId: string;
   accountId: string;
@@ -103,7 +143,7 @@ type TrustedToolContext = {
   };
 };
 
-type CapabilityInput = Record<string, string | number>;
+type CapabilityInput = Record<string, unknown>;
 
 function timestampInSeconds(timestamp: number): number | null {
   if (!Number.isFinite(timestamp) || timestamp <= 0) {
@@ -318,6 +358,50 @@ async function executeCapability(
   };
 }
 
+function isPositiveSafeInteger(value: unknown): boolean {
+  return Number.isSafeInteger(value) && Number(value) > 0;
+}
+
+function isCategoryMutationInput(input: Record<string, unknown>): boolean {
+  const operation = input.operation;
+
+  if (typeof input.idempotency_key !== 'string'
+    || !new RegExp(UUID_PATTERN).test(input.idempotency_key)
+    || typeof operation !== 'string') {
+    return false;
+  }
+
+  if (operation === 'assign_transaction') {
+    return isPositiveSafeInteger(input.transaction_id)
+      && isPositiveSafeInteger(input.expected_revision)
+      && (input.category_id === null || isPositiveSafeInteger(input.category_id));
+  }
+
+  if (operation === 'retire' || operation === 'reactivate') {
+    return isPositiveSafeInteger(input.category_id)
+      && isPositiveSafeInteger(input.expected_revision);
+  }
+
+  if (operation !== 'create' && operation !== 'update') {
+    return false;
+  }
+
+  return (operation === 'create'
+      || (isPositiveSafeInteger(input.category_id)
+        && isPositiveSafeInteger(input.expected_revision)))
+    && typeof input.name === 'string'
+    && input.name.trim() !== ''
+    && input.name.length <= 255
+    && (input.parent_id === null || isPositiveSafeInteger(input.parent_id))
+    && (input.description === null
+      || (typeof input.description === 'string' && input.description.length <= 2000))
+    && Array.isArray(input.examples)
+    && input.examples.length <= 20
+    && input.examples.every(
+      (example) => typeof example === 'string' && example.length <= 100,
+    );
+}
+
 const transactionToolDefinition = {
   name: 'money_assistant_transaction_read',
   label: 'Read Money Assistant Transaction',
@@ -339,10 +423,31 @@ const manualTransactionConfirmationToolDefinition = {
   parameters: manualTransactionConfirmationParameters,
 };
 
+const categoryReadToolDefinition = {
+  name: 'money_assistant_category_read',
+  label: 'Read Money Assistant Categories',
+  description: 'Read the bounded two-level Category taxonomy and guidance.',
+  parameters: categoryReadParameters,
+};
+
+const categoryMutationPreparationToolDefinition = {
+  name: 'money_assistant_category_prepare',
+  label: 'Prepare Money Assistant Categorization',
+  description: 'Validate and summarize one Category lifecycle or Transaction assignment operation.',
+  parameters: categoryMutationPreparationParameters,
+};
+
+const categoryMutationConfirmationToolDefinition = {
+  name: 'money_assistant_category_confirm',
+  label: 'Confirm Money Assistant Categorization',
+  description: 'Confirm one prepared Categorization operation from a new owner message.',
+  parameters: manualTransactionConfirmationParameters,
+};
+
 const plugin = defineToolPlugin({
   id: 'money-assistant',
   name: 'Money Assistant',
-  description: 'Reads and confirms bounded Money Assistant Transaction operations.',
+  description: 'Reads and confirms bounded Money Assistant financial operations.',
   configSchema: pluginConfigSchema,
   tools: (tool) => [
     tool({
@@ -451,6 +556,108 @@ const plugin = defineToolPlugin({
 
             return executeCapability(
               'transaction.manual.confirm',
+              {
+                idempotency_key: idempotencyKey,
+                pending_operation_id: pendingOperationId,
+                pending_operation_revision: Number(pendingOperationRevision),
+                payload_digest: payloadDigest,
+              },
+              config,
+              toolContext,
+              signal,
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      ...categoryReadToolDefinition,
+      factory({ config, toolContext }) {
+        if (!isBoundOwnerInteraction(toolContext, config)) {
+          return null;
+        }
+
+        return {
+          ...categoryReadToolDefinition,
+          async execute(_toolCallId, params, signal) {
+            const input = params as Record<string, unknown>;
+
+            if (!isPositiveSafeInteger(input.page)
+              || !isPositiveSafeInteger(input.per_page)
+              || Number(input.per_page) > 100) {
+              throw new Error('Money Assistant Category page input is invalid.');
+            }
+
+            return executeCapability(
+              'category.read',
+              {
+                page: Number(input.page),
+                per_page: Number(input.per_page),
+              },
+              config,
+              toolContext,
+              signal,
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      ...categoryMutationPreparationToolDefinition,
+      factory({ config, toolContext }) {
+        if (!isBoundOwnerInteraction(toolContext, config)) {
+          return null;
+        }
+
+        return {
+          ...categoryMutationPreparationToolDefinition,
+          async execute(_toolCallId, params, signal) {
+            const input = params as Record<string, unknown>;
+
+            if (!isCategoryMutationInput(input)) {
+              throw new Error('Money Assistant Categorization input is invalid.');
+            }
+
+            return executeCapability(
+              'category.mutation.prepare',
+              input,
+              config,
+              toolContext,
+              signal,
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      ...categoryMutationConfirmationToolDefinition,
+      factory({ config, toolContext }) {
+        if (!isBoundOwnerInteraction(toolContext, config)) {
+          return null;
+        }
+
+        return {
+          ...categoryMutationConfirmationToolDefinition,
+          async execute(_toolCallId, params, signal) {
+            const input = params as Record<string, unknown>;
+            const idempotencyKey = input.idempotency_key;
+            const pendingOperationId = input.pending_operation_id;
+            const pendingOperationRevision = input.pending_operation_revision;
+            const payloadDigest = input.payload_digest;
+
+            if (typeof idempotencyKey !== 'string'
+              || !new RegExp(UUID_PATTERN).test(idempotencyKey)
+              || typeof pendingOperationId !== 'string'
+              || !new RegExp(UUID_PATTERN).test(pendingOperationId)
+              || !Number.isSafeInteger(pendingOperationRevision)
+              || Number(pendingOperationRevision) < 1
+              || typeof payloadDigest !== 'string'
+              || !new RegExp(SHA256_PATTERN).test(payloadDigest)) {
+              throw new Error('Money Assistant Confirmation Grant input is invalid.');
+            }
+
+            return executeCapability(
+              'category.mutation.confirm',
               {
                 idempotency_key: idempotencyKey,
                 pending_operation_id: pendingOperationId,

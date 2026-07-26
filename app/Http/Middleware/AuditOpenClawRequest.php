@@ -80,9 +80,12 @@ final class AuditOpenClawRequest
                     'owner_sender_id' => $interaction['owner_sender_id'] ?? null,
                     'message_id' => $interaction['message_id'] ?? null,
                 ], JSON_THROW_ON_ERROR)),
-            'resource_type' => is_string($capability) && Str::startsWith($capability, 'transaction.')
-                ? 'transaction'
-                : null,
+            'resource_type' => $request->attributes->get(
+                'openclaw.audit.resource_type',
+                is_string($capability) && Str::startsWith($capability, 'transaction.')
+                    ? 'transaction'
+                    : null,
+            ),
             'result_count' => $request->attributes->get('openclaw.audit.result_count', 0),
         ]));
     }

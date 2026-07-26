@@ -40,6 +40,7 @@ import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index } from '@/routes/transactions';
 import type {
     Currency,
+    CategoryOption,
     LedgerCategory,
     LedgerFilters,
     SelectedTransaction,
@@ -92,6 +93,7 @@ export type TransactionsIndexProps = {
         category: Pick<LedgerCategory, 'id' | 'name'>;
         totals: Record<Currency, string>;
     }>;
+    category_options: CategoryOption[];
     purchase_options: PurchaseOption[];
     transactions: LedgerTransaction[];
     voided_transactions: VoidedLedgerTransaction[];
@@ -814,6 +816,7 @@ export default function TransactionsIndex({
     today,
     totals,
     category_totals,
+    category_options,
     purchase_options,
     transactions,
     voided_transactions,
@@ -1254,6 +1257,7 @@ export default function TransactionsIndex({
             </div>
             <TransactionInspector
                 transaction={selected_transaction}
+                categoryOptions={category_options}
                 onOpenChange={handleInspectorOpenChange}
             />
         </>

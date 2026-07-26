@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
+import { update as updateCategory } from '@/actions/App/Http/Controllers/TransactionCategoryController';
 import { update } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
@@ -40,6 +41,7 @@ import type {
     DuplicateTransaction,
     ReviewField,
     SelectedTransaction,
+    CategoryOption,
 } from '@/types';
 
 function CorrectionControl({
@@ -471,9 +473,11 @@ function SuspectedDuplicateDialog({
 
 export function TransactionInspector({
     transaction,
+    categoryOptions,
     onOpenChange,
 }: {
     transaction: SelectedTransaction | null;
+    categoryOptions: CategoryOption[];
     onOpenChange: (open: boolean) => void;
 }) {
     const unresolvedReviewCount = transaction
@@ -572,6 +576,64 @@ export function TransactionInspector({
                                 Confirmed{' '}
                                 {transaction.confirmed_at.slice(0, 10)}.
                             </p>
+                            <Form
+                                {...updateCategory.form(transaction.id)}
+                                options={{
+                                    preserveScroll: true,
+                                    preserveState: true,
+                                }}
+                                className="grid gap-2 rounded-lg border p-4"
+                            >
+                                {({ errors, processing }) => (
+                                    <>
+                                        <input
+                                            type="hidden"
+                                            name="expected_revision"
+                                            value={transaction.revision}
+                                        />
+                                        <Label
+                                            htmlFor={`transaction-${transaction.id}-category`}
+                                        >
+                                            Assign Category
+                                        </Label>
+                                        <div className="flex flex-col gap-2 sm:flex-row">
+                                            <NativeSelect
+                                                id={`transaction-${transaction.id}-category`}
+                                                name="category_id"
+                                                defaultValue={
+                                                    transaction.category?.id.toString() ??
+                                                    ''
+                                                }
+                                                options={[
+                                                    {
+                                                        value: '',
+                                                        label: 'Uncategorized',
+                                                    },
+                                                    ...categoryOptions.map(
+                                                        (category) => ({
+                                                            value: category.id.toString(),
+                                                            label: category.path,
+                                                        }),
+                                                    ),
+                                                ]}
+                                            />
+                                            <Button
+                                                type="submit"
+                                                disabled={processing}
+                                            >
+                                                {processing && <Spinner />}
+                                                Save Category
+                                            </Button>
+                                        </div>
+                                        <InputError
+                                            message={
+                                                errors.category_id ??
+                                                errors.expected_revision
+                                            }
+                                        />
+                                    </>
+                                )}
+                            </Form>
                         </section>
 
                         {transaction.review.fields.length > 0 && (

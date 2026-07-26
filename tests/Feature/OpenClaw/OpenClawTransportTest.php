@@ -1,7 +1,9 @@
 <?php
 
+use App\CategoryAssignmentProvenance;
 use App\Contracts\OpenClawHook;
 use App\Currency;
+use App\Models\Category;
 use App\Models\OpenClawAuditEvent;
 use App\Models\OpenClawConfirmationGrant;
 use App\Models\OpenClawPendingOperation;
@@ -129,6 +131,240 @@ beforeEach(function () {
             'payload_digest' => $operation['payload_digest'],
         ],
     ];
+
+    $this->validCategoryRead = fn (): array => [
+        'schema_version' => 1,
+        'capability' => 'category.read',
+        'interaction' => [
+            'kind' => 'owner_message',
+            'agent_id' => 'money-assistant',
+            'account_id' => 'money-assistant-owner',
+            'conversation_id' => 'telegram-owner-123',
+            'owner_sender_id' => 'telegram-owner-123',
+            'message_id' => 'telegram-owner-message-category-read',
+            'occurred_at' => now()->toIso8601String(),
+        ],
+        'input' => [
+            'page' => 1,
+            'per_page' => 1,
+        ],
+    ];
+
+    $this->validCategoryCreationPreparation = fn (): array => [
+        'schema_version' => 1,
+        'capability' => 'category.mutation.prepare',
+        'interaction' => [
+            'kind' => 'owner_message',
+            'agent_id' => 'money-assistant',
+            'account_id' => 'money-assistant-owner',
+            'conversation_id' => 'telegram-owner-123',
+            'owner_sender_id' => 'telegram-owner-123',
+            'message_id' => 'telegram-owner-message-category-prepare',
+            'occurred_at' => now()->toIso8601String(),
+        ],
+        'input' => [
+            'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf380',
+            'operation' => 'create',
+            'name' => '  Family   Care ',
+            'parent_id' => null,
+            'description' => 'Shared family costs',
+            'examples' => ['Childcare'],
+        ],
+    ];
+
+    $this->validCategoryAssignmentPreparation = fn (Transaction $transaction, Category $category): array => [
+        'schema_version' => 1,
+        'capability' => 'category.mutation.prepare',
+        'interaction' => [
+            'kind' => 'owner_message',
+            'agent_id' => 'money-assistant',
+            'account_id' => 'money-assistant-owner',
+            'conversation_id' => 'telegram-owner-123',
+            'owner_sender_id' => 'telegram-owner-123',
+            'message_id' => 'telegram-owner-message-category-assign-prepare',
+            'occurred_at' => now()->toIso8601String(),
+        ],
+        'input' => [
+            'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf381',
+            'operation' => 'assign_transaction',
+            'transaction_id' => $transaction->id,
+            'expected_revision' => $transaction->revision,
+            'category_id' => $category->id,
+        ],
+    ];
+
+    $this->validCategoryConfirmation = fn (array $operation): array => [
+        'schema_version' => 1,
+        'capability' => 'category.mutation.confirm',
+        'interaction' => [
+            'kind' => 'owner_message',
+            'agent_id' => 'money-assistant',
+            'account_id' => 'money-assistant-owner',
+            'conversation_id' => 'telegram-owner-123',
+            'owner_sender_id' => 'telegram-owner-123',
+            'message_id' => 'telegram-owner-message-category-approve',
+            'occurred_at' => now()->toIso8601String(),
+        ],
+        'input' => [
+            'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf382',
+            'pending_operation_id' => $operation['id'],
+            'pending_operation_revision' => $operation['revision'],
+            'payload_digest' => $operation['payload_digest'],
+        ],
+    ];
+});
+
+test('OpenClaw reads the bounded Category taxonomy without inventing Uncategorized', function () {
+    $owner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $groceries = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
+        'name' => 'Groceries',
+    ]);
+
+    ($this->callOpenClaw)(($this->validCategoryRead)())
+        ->assertSuccessful()
+        ->assertExactJson([
+            'schema_version' => 1,
+            'categories' => [[
+                'id' => $food->id,
+                'parent_id' => null,
+                'name' => 'Food',
+                'description' => null,
+                'examples' => [],
+                'revision' => 1,
+                'retired_at' => null,
+            ]],
+            'pagination' => [
+                'page' => 1,
+                'per_page' => 1,
+                'total' => 2,
+                'next_page' => 2,
+            ],
+        ]);
+
+    expect(Category::query()->where('name', 'Uncategorized')->exists())->toBeFalse()
+        ->and(OpenClawAuditEvent::query()->sole()->resource_type)->toBe('category_taxonomy');
+});
+
+test('OpenClaw confirms Category creation through the shared Categorization Action', function () {
+    User::factory()->create();
+
+    $operation = ($this->callOpenClaw)(($this->validCategoryCreationPreparation)())
+        ->assertSuccessful()
+        ->assertJsonPath(
+            'pending_operation.effect_summary',
+            'Create the top-level Category "Family Care". Guidance description: "Shared family costs". Guidance examples: ["Childcare"].',
+        )
+        ->json('pending_operation');
+
+    expect(Category::query()->count())->toBe(0);
+
+    ($this->callOpenClaw)(($this->validCategoryConfirmation)($operation))
+        ->assertSuccessful()
+        ->assertJsonPath('mutation.operation', 'create')
+        ->assertJsonPath('mutation.resource_type', 'category')
+        ->assertJsonPath('mutation.revision', 1);
+
+    expect(Category::query()->sole())
+        ->name->toBe('Family Care')
+        ->description->toBe('Shared family costs')
+        ->examples->toBe(['Childcare']);
+});
+
+test('OpenClaw confirms owner Category assignment and rejects changed Transaction state', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+    $preparation = ($this->validCategoryAssignmentPreparation)($transaction, $category);
+    $operation = ($this->callOpenClaw)($preparation)
+        ->assertSuccessful()
+        ->assertJsonPath(
+            'pending_operation.effect_summary',
+            "Assign the Category \"Groceries\" to Transaction #{$transaction->id} at revision 1.",
+        )
+        ->json('pending_operation');
+
+    $transaction->increment('revision');
+
+    ($this->callOpenClaw)(($this->validCategoryConfirmation)($operation))
+        ->assertConflict();
+
+    expect($transaction->fresh()->category_id)->toBeNull()
+        ->and(OpenClawAuditEvent::query()->latest('id')->value('outcome'))->toBe('stale_revision');
+
+    $freshPreparation = ($this->validCategoryAssignmentPreparation)($transaction->fresh(), $category);
+    $freshPreparation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf383';
+    $freshPreparation['interaction']['message_id'] = 'telegram-owner-message-category-assign-fresh';
+    $freshOperation = ($this->callOpenClaw)($freshPreparation)->assertSuccessful()->json('pending_operation');
+    $confirmation = ($this->validCategoryConfirmation)($freshOperation);
+    $confirmation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf384';
+
+    ($this->callOpenClaw)($confirmation)->assertSuccessful();
+
+    expect($transaction->fresh())
+        ->category_id->toBe($category->id)
+        ->category_assignment_provenance->toBe(CategoryAssignmentProvenance::Owner)
+        ->revision->toBe(3);
+});
+
+test('OpenClaw Category assignment confirmation expires when the target Category changes', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+    $operation = ($this->callOpenClaw)(
+        ($this->validCategoryAssignmentPreparation)($transaction, $category),
+    )->assertSuccessful()->json('pending_operation');
+
+    $this->actingAs($owner)->patch(route('categories.update', $category), [
+        'expected_revision' => 1,
+        'name' => 'Markets',
+        'parent_id' => null,
+        'description' => null,
+        'examples' => [],
+    ])->assertSessionHasNoErrors();
+
+    ($this->callOpenClaw)(($this->validCategoryConfirmation)($operation))
+        ->assertConflict();
+
+    expect($transaction->fresh()->category_id)->toBeNull()
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(0)
+        ->and(OpenClawAuditEvent::query()->latest('id')->value('outcome'))->toBe('stale_revision');
+});
+
+test('OpenClaw Category reactivation confirmation expires when its parent changes', function () {
+    $owner = User::factory()->create();
+    $parent = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $child = Category::factory()->for($owner, 'owner')->for($parent, 'parent')->create([
+        'name' => 'Dining',
+        'retired_at' => now(),
+        'revision' => 2,
+    ]);
+    $preparation = ($this->validCategoryCreationPreparation)();
+    $preparation['input'] = [
+        'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf385',
+        'operation' => 'reactivate',
+        'category_id' => $child->id,
+        'expected_revision' => 2,
+    ];
+    $preparation['interaction']['message_id'] = 'telegram-owner-message-reactivate-prepare';
+    $operation = ($this->callOpenClaw)($preparation)->assertSuccessful()->json('pending_operation');
+
+    $this->actingAs($owner)->patch(route('categories.update', $parent), [
+        'expected_revision' => 1,
+        'name' => 'Meals',
+        'parent_id' => null,
+        'description' => null,
+        'examples' => [],
+    ])->assertSessionHasNoErrors();
+
+    $confirmation = ($this->validCategoryConfirmation)($operation);
+    $confirmation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf386';
+
+    ($this->callOpenClaw)($confirmation)->assertConflict();
+
+    expect($child->fresh()->retired_at)->not->toBeNull()
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(0)
+        ->and(OpenClawAuditEvent::query()->latest('id')->value('outcome'))->toBe('stale_revision');
 });
 
 test('OpenClaw prepares a completely validated manual Transaction with its exact effect', function () {

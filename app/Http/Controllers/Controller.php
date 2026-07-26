@@ -13,6 +13,7 @@ abstract class Controller
         $workspaceUrls = [
             route('transactions.index'),
             route('review_queue.index'),
+            route('categories.index'),
         ];
 
         if (

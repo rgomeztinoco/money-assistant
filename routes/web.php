@@ -1,11 +1,15 @@
 <?php
 
+use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\CategoryRetirementController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\SuspectedDuplicateResolutionController;
+use App\Http\Controllers\TransactionCategoryController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionFieldReviewController;
 use App\Http\Controllers\TransactionRefundLinkController;
 use App\Http\Controllers\TransactionVoidController;
+use App\Http\Middleware\RequirePasskeyConfirmation;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
@@ -14,6 +18,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store']);
+    Route::put('transactions/{transaction}/category', [TransactionCategoryController::class, 'update'])
+        ->name('transactions.category.update');
+    Route::resource('categories', CategoryController::class)
+        ->only(['index', 'store', 'update']);
+    Route::delete('categories/{category}', [CategoryController::class, 'destroy'])
+        ->middleware(RequirePasskeyConfirmation::class)
+        ->name('categories.destroy');
+    Route::post('categories/{category}/retirement', [CategoryRetirementController::class, 'store'])
+        ->name('categories.retirement.store');
+    Route::delete('categories/{category}/retirement', [CategoryRetirementController::class, 'destroy'])
+        ->name('categories.retirement.destroy');
     Route::post('transactions/{refund}/refund-link', [TransactionRefundLinkController::class, 'store'])
         ->name('transactions.refund_link.store');
     Route::post('transactions/{transaction}/void', [TransactionVoidController::class, 'store'])

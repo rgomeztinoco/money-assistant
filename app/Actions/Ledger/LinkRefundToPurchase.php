@@ -5,6 +5,7 @@ namespace App\Actions\Ledger;
 use App\CategoryAssignmentProvenance;
 use App\ExactInteger;
 use App\Exceptions\StaleTransactionRevision;
+use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
@@ -56,18 +57,26 @@ class LinkRefundToPurchase
             $hasReceiptBreakdown = $currentPurchase
                 ->receiptBreakdowns()
                 ->exists();
+            $activePurchaseCategory = $currentPurchase->category_id === null
+                ? null
+                : Category::query()
+                    ->whereBelongsTo($owner, 'owner')
+                    ->whereKey($currentPurchase->category_id)
+                    ->whereNull('retired_at')
+                    ->lockForUpdate()
+                    ->first();
 
             $currentRefund->original_purchase_id = $currentPurchase->getKey();
 
             if (
                 ! $hasReceiptBreakdown
-                && $currentPurchase->category_id !== null
+                && $activePurchaseCategory !== null
                 && (
                     $currentRefund->category_id === null
                     || $currentRefund->category_assignment_provenance !== CategoryAssignmentProvenance::Owner
                 )
             ) {
-                $currentRefund->category_id = $currentPurchase->category_id;
+                $currentRefund->category_id = $activePurchaseCategory->id;
                 $currentRefund->category_assignment_provenance = CategoryAssignmentProvenance::LinkedRefund;
             }
 

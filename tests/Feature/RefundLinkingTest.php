@@ -176,6 +176,31 @@ test('an unambiguous linked Refund defaults to the purchase Category and may mak
         );
 });
 
+test('a linked Refund does not receive a Retired Category from its purchase', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create([
+        'name' => 'Clothing',
+        'retired_at' => now(),
+    ]);
+    $purchase = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->usd()->create();
+
+    $this->actingAs($owner)
+        ->post(route('transactions.refund_link.store', $refund), [
+            'purchase_id' => $purchase->id,
+            'expected_revision' => 1,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($refund->fresh())
+        ->original_purchase_id->toBe($purchase->id)
+        ->category_id->toBeNull()
+        ->category_assignment_provenance->toBeNull();
+});
+
 test('linked Refund Category precedence overrides automation', function (
     CategoryAssignmentProvenance $automationProvenance,
 ) {

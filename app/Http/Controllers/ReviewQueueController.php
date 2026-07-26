@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\Ledger\ReadLedger;
 use App\Actions\Ledger\ReadReviewQueue;
 use App\Actions\Ledger\ReadTransactionInspector;
@@ -15,6 +16,7 @@ class ReviewQueueController extends Controller
         private ReadLedger $readLedger,
         private ReadReviewQueue $readReviewQueue,
         private ReadTransactionInspector $readTransactionInspector,
+        private ReadCategoryTaxonomy $readCategoryTaxonomy,
     ) {}
 
     public function __invoke(IndexTransactionsRequest $request): Response
@@ -52,6 +54,7 @@ class ReviewQueueController extends Controller
                 'workspace_transactions' => $ledger['transactions'],
                 'workspace_voided_transactions' => $ledger['voided_transactions'],
                 'transactions' => $reviewQueue['transactions'],
+                'category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()),
                 'workspace' => ['mode' => 'review_queue'],
                 'stale_transaction' => $request->session()->get('stale_transaction'),
             ],

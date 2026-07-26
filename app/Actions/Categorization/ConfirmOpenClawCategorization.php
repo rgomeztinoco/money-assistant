@@ -1,15 +1,14 @@
 <?php
 
-namespace App\Actions\Ledger;
+namespace App\Actions\Categorization;
 
-use App\Currency;
 use App\Exceptions\IdempotencyKeyConflict;
 use App\Exceptions\OpenClawConfirmationRejected;
+use App\Models\Category;
 use App\Models\OpenClawAuditEvent;
 use App\Models\OpenClawConfirmationGrant;
 use App\Models\OpenClawPendingOperation;
 use App\Models\User;
-use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -18,26 +17,18 @@ use InvalidArgumentException;
 use JsonException;
 use Symfony\Component\HttpFoundation\Response;
 
-final class ConfirmOpenClawManualTransaction
+final class ConfirmOpenClawCategorization
 {
     public function __construct(
-        private RecordManualTransaction $recordManualTransaction,
+        private CreateCategory $createCategory,
+        private UpdateCategory $updateCategory,
+        private RetireCategory $retireCategory,
+        private ReactivateCategory $reactivateCategory,
+        private AssignCategoryToTransaction $assignCategoryToTransaction,
     ) {}
 
     /**
-     * @return array{
-     *     transaction: array{
-     *         id: int,
-     *         revision: int,
-     *         occurred_on: string,
-     *         amount_minor: string,
-     *         currency: string,
-     *         kind: string,
-     *         merchant_description: string,
-     *         status: string
-     *     },
-     *     replayed: bool
-     * }
+     * @return array{mutation: array{operation: string, resource_type: string, id: int, revision: int}, replayed: bool}
      *
      * @throws JsonException
      */
@@ -83,11 +74,7 @@ final class ConfirmOpenClawManualTransaction
                 $requestDigest,
                 $operationDigest,
             ): array {
-                $existingMutation = $this->existingMutation(
-                    $serviceKeyId,
-                    $schemaVersion,
-                    $idempotencyKey,
-                );
+                $existingMutation = $this->existingMutation($serviceKeyId, $schemaVersion, $idempotencyKey);
 
                 if ($existingMutation !== null) {
                     return $this->replayOrReject($existingMutation, $owner, $operationDigest);
@@ -110,16 +97,15 @@ final class ConfirmOpenClawManualTransaction
                 }
 
                 if ($pendingOperation === null
+                    || $pendingOperation->capability !== 'category.mutation.prepare'
                     || ! hash_equals($pendingOperation->service_key_id, $serviceKeyId)
                     || $pendingOperation->schema_version !== $schemaVersion
                     || ! hash_equals($pendingOperation->conversation_digest, hash('sha256', $conversationId))) {
                     throw new OpenClawConfirmationRejected('confirmation_invalid');
                 }
 
-                if (hash_equals(
-                    $pendingOperation->preparation_interaction_digest,
-                    $approvalInteractionDigest,
-                ) || $approvalOccurredAt->lessThan($pendingOperation->preparation_occurred_at)) {
+                if (hash_equals($pendingOperation->preparation_interaction_digest, $approvalInteractionDigest)
+                    || $approvalOccurredAt->lessThan($pendingOperation->preparation_occurred_at)) {
                     throw new OpenClawConfirmationRejected('approval_message_required');
                 }
 
@@ -132,14 +118,8 @@ final class ConfirmOpenClawManualTransaction
                     throw new OpenClawConfirmationRejected('stale_revision');
                 }
 
-                $payload = $this->manualTransactionPayload($pendingOperation->payload);
-                $currentPayloadDigest = hash('sha256', json_encode([
-                    'occurred_on' => $payload['occurred_on'],
-                    'amount_minor' => $payload['amount_minor'],
-                    'currency' => $payload['currency'],
-                    'kind' => $payload['kind'],
-                    'merchant_description' => $payload['merchant_description'],
-                ], JSON_THROW_ON_ERROR));
+                $payload = $this->categorizationPayload($pendingOperation->payload);
+                $currentPayloadDigest = $this->payloadDigest($payload);
 
                 if (! hash_equals($pendingOperation->payload_digest, $payloadDigest)
                     || ! hash_equals($pendingOperation->payload_digest, $currentPayloadDigest)) {
@@ -164,15 +144,7 @@ final class ConfirmOpenClawManualTransaction
                     'consumed_at' => now(),
                 ]);
 
-                $transaction = $this->recordManualTransaction->handle(
-                    owner: $owner,
-                    occurredOn: CarbonImmutable::createFromFormat('!Y-m-d', $payload['occurred_on']),
-                    amountMinor: $payload['amount_minor'],
-                    currency: Currency::from($payload['currency']),
-                    kind: TransactionKind::from($payload['kind']),
-                    merchantDescription: $payload['merchant_description'],
-                );
-
+                $mutation = $this->applyMutation($owner, $payload);
                 $pendingOperation->confirmed_at = now()->toImmutable();
                 $pendingOperation->save();
 
@@ -181,44 +153,30 @@ final class ConfirmOpenClawManualTransaction
                     'occurred_at' => now(),
                     'service_key_id' => $serviceKeyId,
                     'schema_version' => $schemaVersion,
-                    'capability' => 'transaction.manual.confirm',
+                    'capability' => 'category.mutation.confirm',
                     'outcome' => 'success',
                     'http_status' => Response::HTTP_OK,
                     'nonce_digest' => $nonceDigest,
                     'request_digest' => $requestDigest,
                     'interaction_digest' => $approvalInteractionDigest,
-                    'resource_type' => 'transaction',
+                    'resource_type' => $mutation['resource_type'],
                     'result_count' => 1,
                     'idempotency_key' => $idempotencyKey,
                     'operation_digest' => $operationDigest,
                     'confirmation_grant_id' => $confirmationGrant->grant_id,
-                    'domain_action' => 'transaction.record_manual',
-                    'resource_id' => $transaction->id,
-                    'resource_revision' => $transaction->revision,
+                    'domain_action' => $this->domainAction($mutation['operation']),
+                    'resource_id' => $mutation['id'],
+                    'resource_revision' => $mutation['revision'],
                 ]);
 
-                return [
-                    'transaction' => $this->transactionOutcome(
-                        $transaction->id,
-                        $transaction->revision,
-                        $payload,
-                    ),
-                    'replayed' => false,
-                ];
+                return ['mutation' => $mutation, 'replayed' => false];
             }, 3);
         } catch (QueryException $exception) {
-            if (! Str::contains(
-                $exception->getMessage(),
-                'open_claw_audit_events_mutation_idempotency_unique',
-            )) {
+            if (! Str::contains($exception->getMessage(), 'open_claw_audit_events_mutation_idempotency_unique')) {
                 throw $exception;
             }
 
-            $existingMutation = $this->existingMutation(
-                $serviceKeyId,
-                $schemaVersion,
-                $idempotencyKey,
-            );
+            $existingMutation = $this->existingMutation($serviceKeyId, $schemaVersion, $idempotencyKey);
 
             if ($existingMutation === null) {
                 throw $exception;
@@ -226,6 +184,60 @@ final class ConfirmOpenClawManualTransaction
 
             return $this->replayOrReject($existingMutation, $owner, $operationDigest);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{operation: string, resource_type: string, id: int, revision: int}
+     */
+    private function applyMutation(User $owner, array $payload): array
+    {
+        $operation = $payload['operation'];
+        $resource = match ($operation) {
+            'create' => $this->createCategory->handle(
+                $owner,
+                $payload['name'],
+                $payload['parent_id'],
+                $payload['description'],
+                $payload['examples'],
+                $payload['parent_revision'],
+            ),
+            'update' => $this->updateCategory->handle(
+                $owner,
+                $payload['category_id'],
+                $payload['expected_revision'],
+                $payload['name'],
+                $payload['parent_id'],
+                $payload['description'],
+                $payload['examples'],
+                $payload['parent_revision'],
+            ),
+            'retire' => $this->retireCategory->handle(
+                $owner,
+                $payload['category_id'],
+                $payload['expected_revision'],
+            ),
+            'reactivate' => $this->reactivateCategory->handle(
+                $owner,
+                $payload['category_id'],
+                $payload['expected_revision'],
+                $payload['parent_revision'],
+            ),
+            default => $this->assignCategoryToTransaction->handle(
+                $owner,
+                $payload['transaction_id'],
+                $payload['expected_revision'],
+                $payload['category_id'],
+                $payload['category_revision'],
+            ),
+        };
+
+        return [
+            'operation' => $operation,
+            'resource_type' => $resource instanceof Category ? 'category' : 'transaction',
+            'id' => $resource->id,
+            'revision' => $resource->revision,
+        ];
     }
 
     private function existingMutation(
@@ -237,25 +249,13 @@ final class ConfirmOpenClawManualTransaction
             ->where('event_kind', 'mutation')
             ->where('service_key_id', $serviceKeyId)
             ->where('schema_version', $schemaVersion)
-            ->where('capability', 'transaction.manual.confirm')
+            ->where('capability', 'category.mutation.confirm')
             ->where('idempotency_key', $idempotencyKey)
             ->first();
     }
 
     /**
-     * @return array{
-     *     transaction: array{
-     *         id: int,
-     *         revision: int,
-     *         occurred_on: string,
-     *         amount_minor: string,
-     *         currency: string,
-     *         kind: string,
-     *         merchant_description: string,
-     *         status: string
-     *     },
-     *     replayed: true
-     * }
+     * @return array{mutation: array{operation: string, resource_type: string, id: int, revision: int}, replayed: true}
      */
     private function replayOrReject(
         OpenClawAuditEvent $mutation,
@@ -264,6 +264,7 @@ final class ConfirmOpenClawManualTransaction
     ): array {
         if ($mutation->operation_digest === null
             || ! hash_equals($mutation->operation_digest, $operationDigest)
+            || $mutation->resource_type === null
             || $mutation->resource_id === null
             || $mutation->resource_revision === null
             || $mutation->confirmation_grant_id === null) {
@@ -277,55 +278,58 @@ final class ConfirmOpenClawManualTransaction
         $pendingOperation = OpenClawPendingOperation::query()
             ->whereKey($confirmationGrant->open_claw_pending_operation_id)
             ->firstOrFail();
+        $operation = $pendingOperation->payload['operation'] ?? null;
+
+        if (! is_string($operation)) {
+            throw new IdempotencyKeyConflict;
+        }
 
         return [
-            'transaction' => $this->transactionOutcome(
-                $mutation->resource_id,
-                $mutation->resource_revision,
-                $this->manualTransactionPayload($pendingOperation->payload),
-            ),
+            'mutation' => [
+                'operation' => $operation,
+                'resource_type' => $mutation->resource_type,
+                'id' => $mutation->resource_id,
+                'revision' => $mutation->resource_revision,
+            ],
             'replayed' => true,
         ];
     }
 
-    /**
-     * @param  array{occurred_on: string, amount_minor: int, currency: string, kind: string, merchant_description: string}  $payload
-     * @return array{id: int, revision: int, occurred_on: string, amount_minor: string, currency: string, kind: string, merchant_description: string, status: string}
-     */
-    private function transactionOutcome(int $id, int $revision, array $payload): array
+    private function domainAction(string $operation): string
     {
-        return [
-            'id' => $id,
-            'revision' => $revision,
-            'occurred_on' => $payload['occurred_on'],
-            'amount_minor' => (string) $payload['amount_minor'],
-            'currency' => $payload['currency'],
-            'kind' => $payload['kind'],
-            'merchant_description' => $payload['merchant_description'],
-            'status' => 'active',
-        ];
+        return match ($operation) {
+            'create' => 'category.create',
+            'update' => 'category.update',
+            'retire' => 'category.retire',
+            'reactivate' => 'category.reactivate',
+            default => 'transaction.assign_category',
+        };
     }
 
     /**
      * @param  array<string, mixed>  $payload
-     * @return array{occurred_on: string, amount_minor: int, currency: string, kind: string, merchant_description: string}
+     * @return array<string, mixed>
      */
-    private function manualTransactionPayload(array $payload): array
+    private function categorizationPayload(array $payload): array
     {
-        if (! is_string($payload['occurred_on'] ?? null)
-            || ! is_int($payload['amount_minor'] ?? null)
-            || ! is_string($payload['currency'] ?? null)
-            || ! is_string($payload['kind'] ?? null)
-            || ! is_string($payload['merchant_description'] ?? null)) {
+        if (! is_string($payload['operation'] ?? null)) {
             throw new OpenClawConfirmationRejected('confirmation_invalid');
         }
 
-        return [
-            'occurred_on' => $payload['occurred_on'],
-            'amount_minor' => $payload['amount_minor'],
-            'currency' => $payload['currency'],
-            'kind' => $payload['kind'],
-            'merchant_description' => $payload['merchant_description'],
-        ];
+        return $payload;
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function payloadDigest(array $payload): string
+    {
+        ksort($payload);
+
+        foreach ($payload as &$value) {
+            if (is_array($value) && ! array_is_list($value)) {
+                ksort($value);
+            }
+        }
+
+        return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
     }
 }

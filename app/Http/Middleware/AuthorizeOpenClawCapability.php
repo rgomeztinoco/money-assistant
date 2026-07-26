@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use JsonException;
 use Symfony\Component\HttpFoundation\Response;
@@ -85,6 +86,9 @@ final class AuthorizeOpenClawCapability
             'transaction.read',
             'transaction.manual.prepare',
             'transaction.manual.confirm',
+            'category.read',
+            'category.mutation.prepare',
+            'category.mutation.confirm',
         ], true)) {
             return $this->reject($request, 'unsupported_capability');
         }
@@ -114,6 +118,12 @@ final class AuthorizeOpenClawCapability
                 'input' => ['required', 'array:transaction_id'],
                 'input.transaction_id' => ['required', 'integer', 'min:1'],
             ];
+        } elseif ($capability === 'category.read') {
+            $rules += [
+                'input' => ['required', 'array:page,per_page'],
+                'input.page' => ['required', 'integer', 'min:1'],
+                'input.per_page' => ['required', 'integer', 'min:1', 'max:100'],
+            ];
         } elseif ($capability === 'transaction.manual.prepare') {
             $rules += [
                 'input' => ['required', 'array:idempotency_key,occurred_on,amount_minor,currency,kind,merchant_description'],
@@ -123,6 +133,12 @@ final class AuthorizeOpenClawCapability
                 'input.currency' => ['required', Rule::enum(Currency::class)],
                 'input.kind' => ['required', Rule::enum(TransactionKind::class)],
                 'input.merchant_description' => ['required', 'string', 'max:255'],
+            ];
+        } elseif ($capability === 'category.mutation.prepare') {
+            $rules += [
+                'input' => ['required', 'array'],
+                'input.idempotency_key' => ['required', 'uuid'],
+                'input.operation' => ['required', 'string'],
             ];
         } else {
             $rules += [
@@ -143,12 +159,26 @@ final class AuthorizeOpenClawCapability
             );
         }
 
+        if ($capability === 'category.mutation.prepare'
+            && ! $this->hasValidCategoryMutationInput($payload['input'] ?? null)) {
+            return $this->reject($request, 'invalid_request');
+        }
+
         if ($capability === 'transaction.manual.prepare'
             && ! is_int($payload['input']['amount_minor'] ?? null)) {
             return $this->reject($request, 'invalid_request');
         }
 
-        if ($capability === 'transaction.manual.confirm'
+        if ($capability === 'category.read'
+            && (! is_int($payload['input']['page'] ?? null)
+                || ! is_int($payload['input']['per_page'] ?? null))) {
+            return $this->reject($request, 'invalid_request');
+        }
+
+        if (in_array($capability, [
+            'transaction.manual.confirm',
+            'category.mutation.confirm',
+        ], true)
             && ! is_int($payload['input']['pending_operation_revision'] ?? null)) {
             return $this->reject($request, 'invalid_request');
         }
@@ -222,6 +252,71 @@ final class AuthorizeOpenClawCapability
         }
 
         return true;
+    }
+
+    private function hasValidCategoryMutationInput(mixed $input): bool
+    {
+        if (! is_array($input)
+            || ! is_string($input['idempotency_key'] ?? null)
+            || ! Str::isUuid($input['idempotency_key'])
+            || ! is_string($input['operation'] ?? null)) {
+            return false;
+        }
+
+        $operation = $input['operation'];
+        $expectedKeys = match ($operation) {
+            'create' => ['description', 'examples', 'idempotency_key', 'name', 'operation', 'parent_id'],
+            'update' => ['category_id', 'description', 'examples', 'expected_revision', 'idempotency_key', 'name', 'operation', 'parent_id'],
+            'retire', 'reactivate' => ['category_id', 'expected_revision', 'idempotency_key', 'operation'],
+            'assign_transaction' => ['category_id', 'expected_revision', 'idempotency_key', 'operation', 'transaction_id'],
+            default => null,
+        };
+
+        if ($expectedKeys === null) {
+            return false;
+        }
+
+        $actualKeys = array_keys($input);
+        sort($actualKeys);
+
+        if ($actualKeys !== $expectedKeys) {
+            return false;
+        }
+
+        if (in_array($operation, ['update', 'retire', 'reactivate'], true)
+            && (! is_int($input['category_id']) || $input['category_id'] < 1)) {
+            return false;
+        }
+
+        if (in_array($operation, ['update', 'retire', 'reactivate', 'assign_transaction'], true)
+            && (! is_int($input['expected_revision']) || $input['expected_revision'] < 1)) {
+            return false;
+        }
+
+        if ($operation === 'assign_transaction') {
+            return is_int($input['transaction_id'])
+                && $input['transaction_id'] > 0
+                && ($input['category_id'] === null
+                    || (is_int($input['category_id']) && $input['category_id'] > 0));
+        }
+
+        if (! in_array($operation, ['create', 'update'], true)) {
+            return true;
+        }
+
+        return is_string($input['name'])
+            && Str::squish($input['name']) !== ''
+            && mb_strlen($input['name']) <= 255
+            && ($input['parent_id'] === null
+                || (is_int($input['parent_id']) && $input['parent_id'] > 0))
+            && ($input['description'] === null
+                || (is_string($input['description']) && mb_strlen($input['description']) <= 2000))
+            && is_array($input['examples'])
+            && array_is_list($input['examples'])
+            && count($input['examples']) <= 20
+            && collect($input['examples'])->every(
+                fn (mixed $example): bool => is_string($example) && mb_strlen($example) <= 100,
+            );
     }
 
     private function hasFreshInteraction(mixed $occurredAt): bool

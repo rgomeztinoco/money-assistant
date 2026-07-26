@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string|null $description
  * @property list<string> $examples
+ * @property int $revision
  * @property CarbonImmutable|null $retired_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -28,12 +29,19 @@ use Illuminate\Support\Carbon;
     'name',
     'description',
     'examples',
+    'revision',
     'retired_at',
 ])]
 class Category extends Model
 {
     /** @use HasFactory<CategoryFactory> */
     use HasFactory;
+
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'examples' => '[]',
+        'revision' => 1,
+    ];
 
     /**
      * @return BelongsTo<User, $this>
@@ -74,6 +82,7 @@ class Category extends Model
     {
         return [
             'examples' => 'array',
+            'revision' => 'integer',
             'retired_at' => 'immutable_datetime',
         ];
     }

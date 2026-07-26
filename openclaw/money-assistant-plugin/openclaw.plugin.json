@@ -1,7 +1,7 @@
 {
   "id": "money-assistant",
   "name": "Money Assistant",
-  "description": "Reads and confirms bounded Money Assistant Transaction operations.",
+  "description": "Reads and confirms bounded Money Assistant financial operations.",
   "version": "1.0.0",
   "activation": {
     "onStartup": true
@@ -59,7 +59,10 @@
     "tools": [
       "money_assistant_transaction_read",
       "money_assistant_transaction_prepare",
-      "money_assistant_transaction_confirm"
+      "money_assistant_transaction_confirm",
+      "money_assistant_category_read",
+      "money_assistant_category_prepare",
+      "money_assistant_category_confirm"
     ]
   }
 }

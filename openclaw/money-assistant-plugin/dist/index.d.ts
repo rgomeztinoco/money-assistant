@@ -37,7 +37,7 @@ type TrustedToolContext = {
         to?: string;
     };
 };
-type CapabilityInput = Record<string, string | number>;
+type CapabilityInput = Record<string, unknown>;
 export declare function admittedOwnerMessage(event: InboundMessage, context: InboundMessageContext, config: BindingConfiguration): AdmittedOwnerMessage | null;
 export declare class OwnerMessageAdmissions {
     private readonly messages;

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\Ledger\ReadLedger;
 use App\Actions\Ledger\RecordManualTransaction;
 use App\Currency;
@@ -18,6 +19,7 @@ class TransactionController extends Controller
     public function __construct(
         private RecordManualTransaction $recordManualTransaction,
         private ReadLedger $readLedger,
+        private ReadCategoryTaxonomy $readCategoryTaxonomy,
     ) {}
 
     public function index(IndexTransactionsRequest $request): Response
@@ -34,6 +36,7 @@ class TransactionController extends Controller
                         ? (int) $validated['selected']
                         : null,
                 ),
+                'category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()),
                 'workspace' => ['mode' => 'transactions'],
             ],
         );

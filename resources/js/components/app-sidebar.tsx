@@ -5,6 +5,7 @@ import {
     LayoutGrid,
     ListChecks,
     ReceiptText,
+    Tags,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
@@ -20,6 +21,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as categoriesIndex } from '@/routes/categories';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
@@ -57,6 +59,13 @@ export function AppSidebar() {
             badgeCount: review_queue.outstanding_count,
         },
     ];
+    const manageNavItems: NavItem[] = [
+        {
+            title: 'Categories',
+            href: categoriesIndex(),
+            icon: Tags,
+        },
+    ];
 
     return (
         <Sidebar collapsible="icon" variant="inset">
@@ -74,6 +83,7 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain items={mainNavItems} />
+                <NavMain items={manageNavItems} label="Manage" />
             </SidebarContent>
 
             <SidebarFooter>

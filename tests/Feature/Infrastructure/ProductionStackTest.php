@@ -159,6 +159,9 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
                 'money_assistant_transaction_read',
                 'money_assistant_transaction_prepare',
                 'money_assistant_transaction_confirm',
+                'money_assistant_category_read',
+                'money_assistant_category_prepare',
+                'money_assistant_category_confirm',
             ],
         ])
         ->and($manifest['configSchema']['additionalProperties'])->toBeFalse()
@@ -176,6 +179,9 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
             'money_assistant_transaction_read',
             'money_assistant_transaction_prepare',
             'money_assistant_transaction_confirm',
+            'money_assistant_category_read',
+            'money_assistant_category_prepare',
+            'money_assistant_category_confirm',
         ])
         ->and($policy['bindings'])->toBe([
             [
@@ -201,6 +207,8 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
         ->toContain('admission.occurredAtSeconds')
         ->toContain("'transaction.manual.prepare'")
         ->toContain("'transaction.manual.confirm'")
+        ->toContain("'category.mutation.prepare'")
+        ->toContain("'category.mutation.confirm'")
         ->toContain('idempotency_key')
         ->toContain("createHash('sha256').update(body).digest('hex')")
         ->not->toContain('${toolContext.sessionId}:${toolCallId}')
