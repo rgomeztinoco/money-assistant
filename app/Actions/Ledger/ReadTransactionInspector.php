@@ -1,0 +1,279 @@
+<?php
+
+namespace App\Actions\Ledger;
+
+use App\Models\SpendingNotificationReference;
+use App\Models\SuspectedDuplicate;
+use App\Models\Transaction;
+use App\Models\TransactionCorrection;
+use App\Models\TransactionStateChange;
+use App\Models\User;
+use App\RefundRelationshipReviewReason;
+use App\ReviewableTransactionField;
+use App\SourceReferenceSetFingerprint;
+use Illuminate\Support\Str;
+
+/**
+ * @phpstan-type RelatedTransactionData array{
+ *     id: int,
+ *     occurred_on: string,
+ *     amount_minor: string,
+ *     currency: string,
+ *     kind: string,
+ *     merchant_description: string,
+ *     category_name: string|null
+ * }
+ * @phpstan-type DuplicateTransactionData array{
+ *     id: int,
+ *     occurred_on: string,
+ *     amount_minor: string,
+ *     currency: string,
+ *     kind: string,
+ *     merchant_description: string,
+ *     category_name: string|null,
+ *     revision: int,
+ *     original_purchase_id: int|null,
+ *     has_linked_refunds: bool,
+ *     has_receipt_breakdown: bool,
+ *     protects_resolved_duplicate: bool,
+ *     source_reference_count: int,
+ *     source_reference_fingerprint: string
+ * }
+ */
+class ReadTransactionInspector
+{
+    /**
+     * @return array{
+     *     id: int,
+     *     occurred_on: string,
+     *     amount_minor: string,
+     *     currency: string,
+     *     kind: string,
+     *     merchant_description: string,
+     *     confirmed_at: string,
+     *     revision: int,
+     *     voided_at: string|null,
+     *     category: array{id: int, name: string, provenance: string|null}|null,
+     *     review: array{
+     *         fields: list<array{name: string, label: string, value: string}>,
+     *         refund_relationship_reasons: list<array{name: string, label: string}>
+     *     },
+     *     original_purchase: RelatedTransactionData|null,
+     *     linked_refunds: list<RelatedTransactionData>,
+     *     corrections: list<array{id: int, field: string, field_label: string, previous_value: string, corrected_value: string, transaction_revision: int, created_at: string|null}>,
+     *     state_changes: list<array{id: int, operation: string, result_revision: int, result_voided_at: string|null, created_at: string|null}>,
+     *     source_reference_count: int,
+     *     source_references: list<array{id: int, processing_outcome: string, created_at: string|null}>,
+     *     duplicate_relationships: list<array{
+     *         id: int,
+     *         revision: int,
+     *         status: string,
+     *         resolved_at: string|null,
+     *         survivor_transaction_id: int|null,
+     *         voided_transaction_id: int|null,
+     *         resolution_idempotency_key: string,
+     *         reopen_idempotency_key: string,
+     *         other_transaction: RelatedTransactionData,
+     *         first_transaction: DuplicateTransactionData,
+     *         second_transaction: DuplicateTransactionData
+     *     }>,
+     *     state_change_idempotency_key: string
+     * }|null
+     */
+    public function handle(User $owner, ?int $transactionId): ?array
+    {
+        if ($transactionId === null) {
+            return null;
+        }
+
+        $transaction = Transaction::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->with([
+                'category:id,name',
+                'originalPurchase:id,occurred_on,amount_minor,currency,kind,merchant_description,category_id',
+                'originalPurchase.category:id,name',
+                'linkedRefunds' => fn ($query) => $query
+                    ->with('category:id,name')
+                    ->orderByDesc('occurred_on')
+                    ->orderByDesc('id'),
+                'corrections' => fn ($query) => $query
+                    ->orderByDesc('transaction_revision'),
+                'stateChanges' => fn ($query) => $query
+                    ->orderByDesc('result_revision'),
+                'spendingNotificationReferences' => fn ($query) => $query
+                    ->orderByDesc('created_at'),
+            ])
+            ->find($transactionId);
+
+        if ($transaction === null) {
+            return null;
+        }
+
+        $reviewFields = [];
+
+        foreach ($transaction->provisional_fields as $fieldName) {
+            $field = ReviewableTransactionField::from($fieldName);
+            $reviewFields[] = [
+                'name' => $field->value,
+                'label' => $field->label(),
+                'value' => $field->valueFor($transaction),
+            ];
+        }
+
+        $refundRelationshipReasons = [];
+
+        foreach ($transaction->refund_relationship_review_reasons as $reasonValue) {
+            $reason = RefundRelationshipReviewReason::from($reasonValue);
+            $refundRelationshipReasons[] = [
+                'name' => $reason->value,
+                'label' => $reason->label(),
+            ];
+        }
+
+        $duplicateRelationships = SuspectedDuplicate::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->where(function ($query) use ($transaction): void {
+                $query
+                    ->where('first_transaction_id', $transaction->id)
+                    ->orWhere('second_transaction_id', $transaction->id);
+            })
+            ->with([
+                'firstTransaction' => fn ($query) => $query
+                    ->with([
+                        'category:id,name',
+                        'spendingNotificationReferences:id,transaction_id',
+                    ])
+                    ->withExists([
+                        'linkedRefunds',
+                        'receiptBreakdowns',
+                        'resolvedDuplicateRelationshipsAsSurvivor',
+                    ]),
+                'secondTransaction' => fn ($query) => $query
+                    ->with([
+                        'category:id,name',
+                        'spendingNotificationReferences:id,transaction_id',
+                    ])
+                    ->withExists([
+                        'linkedRefunds',
+                        'receiptBreakdowns',
+                        'resolvedDuplicateRelationshipsAsSurvivor',
+                    ]),
+            ])
+            ->orderByDesc('created_at')
+            ->get();
+
+        return [
+            'id' => $transaction->id,
+            'occurred_on' => $transaction->occurred_on->toDateString(),
+            'amount_minor' => (string) $transaction->amount_minor,
+            'currency' => $transaction->currency->value,
+            'kind' => $transaction->kind->value,
+            'merchant_description' => $transaction->merchant_description,
+            'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
+            'revision' => $transaction->revision,
+            'voided_at' => $transaction->voided_at?->toIso8601String(),
+            'category' => $transaction->category === null
+                ? null
+                : [
+                    'id' => $transaction->category->id,
+                    'name' => $transaction->category->name,
+                    'provenance' => $transaction->category_assignment_provenance?->value,
+                ],
+            'review' => [
+                'fields' => $reviewFields,
+                'refund_relationship_reasons' => $refundRelationshipReasons,
+            ],
+            'original_purchase' => $transaction->originalPurchase === null
+                ? null
+                : $this->relatedTransactionData($transaction->originalPurchase),
+            'linked_refunds' => array_values($transaction->linkedRefunds
+                ->map(fn (Transaction $refund): array => $this->relatedTransactionData($refund))
+                ->all()),
+            'corrections' => array_values($transaction->corrections
+                ->map(fn (TransactionCorrection $correction): array => [
+                    'id' => $correction->id,
+                    'field' => $correction->field->value,
+                    'field_label' => $correction->field->label(),
+                    'previous_value' => $correction->previous_value,
+                    'corrected_value' => $correction->corrected_value,
+                    'transaction_revision' => $correction->transaction_revision,
+                    'created_at' => $correction->created_at?->toIso8601String(),
+                ])
+                ->all()),
+            'state_changes' => array_values($transaction->stateChanges
+                ->map(fn (TransactionStateChange $stateChange): array => [
+                    'id' => $stateChange->id,
+                    'operation' => $stateChange->operation->value,
+                    'result_revision' => $stateChange->result_revision,
+                    'result_voided_at' => $stateChange->result_voided_at?->toIso8601String(),
+                    'created_at' => $stateChange->created_at?->toIso8601String(),
+                ])
+                ->all()),
+            'source_reference_count' => $transaction->spendingNotificationReferences->count(),
+            'source_references' => array_values($transaction->spendingNotificationReferences
+                ->map(fn (SpendingNotificationReference $reference): array => [
+                    'id' => $reference->id,
+                    'processing_outcome' => $reference->processing_outcome,
+                    'created_at' => $reference->created_at?->toIso8601String(),
+                ])
+                ->all()),
+            'duplicate_relationships' => array_values($duplicateRelationships
+                ->map(function (SuspectedDuplicate $relationship) use ($transaction): array {
+                    $otherTransaction = $relationship->first_transaction_id === $transaction->id
+                        ? $relationship->secondTransaction
+                        : $relationship->firstTransaction;
+
+                    return [
+                        'id' => $relationship->id,
+                        'revision' => $relationship->revision,
+                        'status' => $relationship->resolved_at === null ? 'suspected' : 'resolved',
+                        'resolved_at' => $relationship->resolved_at?->toIso8601String(),
+                        'survivor_transaction_id' => $relationship->survivor_transaction_id,
+                        'voided_transaction_id' => $relationship->voided_transaction_id,
+                        'resolution_idempotency_key' => (string) Str::uuid(),
+                        'reopen_idempotency_key' => (string) Str::uuid(),
+                        'other_transaction' => $this->relatedTransactionData($otherTransaction),
+                        'first_transaction' => $this->duplicateTransactionData($relationship->firstTransaction),
+                        'second_transaction' => $this->duplicateTransactionData($relationship->secondTransaction),
+                    ];
+                })
+                ->all()),
+            'state_change_idempotency_key' => (string) Str::uuid(),
+        ];
+    }
+
+    /**
+     * @return RelatedTransactionData
+     */
+    private function relatedTransactionData(Transaction $transaction): array
+    {
+        return [
+            'id' => $transaction->id,
+            'occurred_on' => $transaction->occurred_on->toDateString(),
+            'amount_minor' => (string) $transaction->amount_minor,
+            'currency' => $transaction->currency->value,
+            'kind' => $transaction->kind->value,
+            'merchant_description' => $transaction->merchant_description,
+            'category_name' => $transaction->category?->name,
+        ];
+    }
+
+    /**
+     * @return DuplicateTransactionData
+     */
+    private function duplicateTransactionData(Transaction $transaction): array
+    {
+        return [
+            ...$this->relatedTransactionData($transaction),
+            'revision' => $transaction->revision,
+            'original_purchase_id' => $transaction->original_purchase_id,
+            'has_linked_refunds' => (bool) $transaction->linked_refunds_exists,
+            'has_receipt_breakdown' => (bool) $transaction->receipt_breakdowns_exists,
+            'protects_resolved_duplicate' => (bool) $transaction->resolved_duplicate_relationships_as_survivor_exists,
+            'source_reference_count' => $transaction->spendingNotificationReferences->count(),
+            'source_reference_fingerprint' => SourceReferenceSetFingerprint::fromIds(
+                $transaction->spendingNotificationReferences->modelKeys(),
+            ),
+        ];
+    }
+}

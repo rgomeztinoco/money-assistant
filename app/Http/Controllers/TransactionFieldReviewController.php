@@ -45,6 +45,6 @@ class TransactionFieldReviewController extends Controller
                 : __('Correction saved.'),
         ]);
 
-        return to_route('review_queue.index');
+        return $this->redirectToWorkspace('review_queue.index');
     }
 }

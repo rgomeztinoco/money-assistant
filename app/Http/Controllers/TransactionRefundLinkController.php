@@ -45,6 +45,6 @@ class TransactionRefundLinkController extends Controller
             'message' => __('Refund linked to its original purchase.'),
         ]);
 
-        return to_route('transactions.index');
+        return $this->redirectToWorkspace('transactions.index');
     }
 }

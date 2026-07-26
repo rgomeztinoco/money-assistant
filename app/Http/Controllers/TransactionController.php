@@ -5,11 +5,11 @@ namespace App\Http\Controllers;
 use App\Actions\Ledger\ReadLedger;
 use App\Actions\Ledger\RecordManualTransaction;
 use App\Currency;
+use App\Http\Requests\IndexTransactionsRequest;
 use App\Http\Requests\StoreManualTransactionRequest;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -20,11 +20,22 @@ class TransactionController extends Controller
         private ReadLedger $readLedger,
     ) {}
 
-    public function index(Request $request): Response
+    public function index(IndexTransactionsRequest $request): Response
     {
+        $validated = $request->validated();
+
         return Inertia::render(
             'transactions/index',
-            $this->readLedger->handle($request->user()),
+            [
+                ...$this->readLedger->handle(
+                    owner: $request->user(),
+                    filters: $validated,
+                    selectedTransactionId: isset($validated['selected'])
+                        ? (int) $validated['selected']
+                        : null,
+                ),
+                'workspace' => ['mode' => 'transactions'],
+            ],
         );
     }
 
@@ -46,6 +57,6 @@ class TransactionController extends Controller
             'message' => __('Transaction recorded.'),
         ]);
 
-        return to_route('transactions.index');
+        return $this->redirectToWorkspace('transactions.index');
     }
 }

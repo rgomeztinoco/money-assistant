@@ -1,4 +1,4 @@
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import {
     BookOpen,
     FolderGit2,
@@ -24,24 +24,6 @@ import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
-    {
-        title: 'Transactions',
-        href: transactionsIndex(),
-        icon: ReceiptText,
-    },
-    {
-        title: 'Review Queue',
-        href: reviewQueueIndex(),
-        icon: ListChecks,
-    },
-];
-
 const footerNavItems: NavItem[] = [
     {
         title: 'Repository',
@@ -56,6 +38,26 @@ const footerNavItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
+    const { review_queue } = usePage().props;
+    const mainNavItems: NavItem[] = [
+        {
+            title: 'Dashboard',
+            href: dashboard(),
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Transactions',
+            href: transactionsIndex(),
+            icon: ReceiptText,
+        },
+        {
+            title: 'Review Queue',
+            href: reviewQueueIndex(),
+            icon: ListChecks,
+            badgeCount: review_queue.outstanding_count,
+        },
+    ];
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>

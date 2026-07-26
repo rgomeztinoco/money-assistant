@@ -63,7 +63,7 @@ class TransactionVoidController extends Controller
                 : __('Transaction restored.'),
         ]);
 
-        return to_route('transactions.index');
+        return $this->redirectToWorkspace('transactions.index');
     }
 
     private function stateErrorResponse(string $field, Throwable $exception): RedirectResponse

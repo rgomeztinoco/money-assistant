@@ -55,7 +55,7 @@ class SuspectedDuplicateResolutionController extends Controller
             'message' => __('Suspected Duplicate resolved.'),
         ]);
 
-        return to_route('review_queue.index');
+        return $this->redirectToWorkspace('review_queue.index');
     }
 
     public function destroy(
@@ -86,6 +86,6 @@ class SuspectedDuplicateResolutionController extends Controller
             'message' => __('Suspected Duplicate reopened.'),
         ]);
 
-        return to_route('review_queue.index');
+        return $this->redirectToWorkspace('review_queue.index');
     }
 }
