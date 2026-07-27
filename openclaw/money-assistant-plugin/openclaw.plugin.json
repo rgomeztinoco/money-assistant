@@ -62,7 +62,9 @@
       "money_assistant_transaction_confirm",
       "money_assistant_category_read",
       "money_assistant_category_prepare",
-      "money_assistant_category_confirm"
+      "money_assistant_category_confirm",
+      "money_assistant_reminder_read",
+      "money_assistant_reminder_respond"
     ]
   }
 }

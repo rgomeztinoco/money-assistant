@@ -3,7 +3,15 @@ import { createHash, generateKeyPairSync, verify } from 'node:crypto';
 import test from 'node:test';
 import { getToolPluginMetadata } from 'openclaw/plugin-sdk/tool-plugin';
 import plugin, {
+  admittedReminderEvent,
   capabilityRequestBody,
+  consumeAlreadyDeliveredReminder,
+  isBoundReminderChannelDelivery,
+  isBoundReminderEventInteraction,
+  ReminderEventAdmissions,
+  recordReminderChannelDelivery,
+  reminderEventCapabilityRequestBody,
+  shouldSuppressReminderDelivery,
 } from './index.js';
 import {
   admittedOwnerMessage,
@@ -12,7 +20,7 @@ import {
   OwnerMessageAdmissions,
 } from './index.js';
 
-test('the plugin exposes only bounded Transaction and Category tools', () => {
+test('the plugin exposes only bounded Transaction Category and Reminder tools', () => {
   const metadata = getToolPluginMetadata(plugin);
 
   assert.deepEqual(metadata?.tools.map((tool) => tool.name), [
@@ -22,6 +30,8 @@ test('the plugin exposes only bounded Transaction and Category tools', () => {
     'money_assistant_category_read',
     'money_assistant_category_prepare',
     'money_assistant_category_confirm',
+    'money_assistant_reminder_read',
+    'money_assistant_reminder_respond',
   ]);
 
   for (const tool of metadata?.tools ?? []) {
@@ -39,6 +49,265 @@ test('the plugin exposes only bounded Transaction and Category tools', () => {
       assert.equal(schema.additionalProperties, false);
     }
   }
+});
+
+test('the mapped hook binds Reminder events to one fixed unattended session and route', () => {
+  const config = {
+    agentId: 'money-assistant',
+    accountId: 'money-assistant-owner',
+    conversationId: 'telegram-owner-123',
+    ownerSenderId: 'telegram-owner-123',
+  };
+  const context = {
+    agentId: 'money-assistant',
+    sessionKey: 'hook:money-assistant:reminders',
+    deliveryContext: {
+      channel: 'telegram',
+      accountId: 'money-assistant-owner',
+      to: 'telegram-owner-123',
+    },
+  };
+
+  assert.deepEqual(admittedReminderEvent(
+    'Fetch Reminder event 01983d79-a780-72f0-bb34-9b4f3f0cf390 that occurred at 2026-07-26T15:05:00Z with money_assistant_reminder_read.',
+    {
+      agentId: 'money-assistant',
+      sessionKey: 'hook:money-assistant:reminders',
+    },
+    config,
+    1_785_078_301,
+  ), {
+    eventId: '01983d79-a780-72f0-bb34-9b4f3f0cf390',
+    occurredAtSeconds: 1_785_078_301,
+  });
+  assert.equal(admittedReminderEvent(
+    'Fetch Reminder event 01983d79-a780-72f0-bb34-9b4f3f0cf390 that occurred at 2026-07-26T15:05:00Z with money_assistant_reminder_read.',
+    {
+      agentId: 'money-assistant',
+      sessionKey: 'caller-selected',
+    },
+    config,
+    1_785_078_301,
+  ), null);
+
+  assert.equal(isBoundReminderEventInteraction(context, config), true);
+  assert.equal(
+    isBoundReminderEventInteraction({ ...context, sessionKey: 'caller-selected' }, config),
+    false,
+  );
+  assert.equal(
+    isBoundReminderEventInteraction({
+      ...context,
+      deliveryContext: { ...context.deliveryContext, to: 'other' },
+    }, config),
+    false,
+  );
+
+  assert.equal(isBoundReminderChannelDelivery(
+    {
+      to: 'telegram-owner-123',
+      success: true,
+      sessionKey: 'hook:money-assistant:reminders',
+    },
+    {
+      channelId: 'telegram',
+      accountId: 'money-assistant-owner',
+      conversationId: 'telegram-owner-123',
+    },
+    config,
+  ), true);
+  assert.equal(isBoundReminderChannelDelivery(
+    {
+      to: 'telegram-owner-123',
+      success: false,
+      sessionKey: 'hook:money-assistant:reminders',
+    },
+    {
+      channelId: 'telegram',
+      accountId: 'money-assistant-owner',
+      conversationId: 'telegram-owner-123',
+    },
+    config,
+  ), false);
+
+  assert.deepEqual(
+    JSON.parse(reminderEventCapabilityRequestBody(
+      'reminder.read',
+      { event_id: '01983d79-a780-72f0-bb34-9b4f3f0cf390' },
+      config,
+      '01983d79-a780-72f0-bb34-9b4f3f0cf390',
+      1_785_078_300,
+    )),
+    {
+      schema_version: 1,
+      capability: 'reminder.read',
+      interaction: {
+        kind: 'money_assistant_event',
+        agent_id: 'money-assistant',
+        account_id: 'money-assistant-owner',
+        conversation_id: 'telegram-owner-123',
+        owner_sender_id: 'telegram-owner-123',
+        message_id: '01983d79-a780-72f0-bb34-9b4f3f0cf390',
+        occurred_at: '2026-07-26T15:05:00Z',
+      },
+      input: { event_id: '01983d79-a780-72f0-bb34-9b4f3f0cf390' },
+    },
+  );
+});
+
+test('a successful mapped-hook send consumes only its session Reminder event admission', () => {
+  const admissions = new ReminderEventAdmissions();
+  const eventId = '01983d79-a780-72f0-bb34-9b4f3f0cf390';
+  const nextEventId = '01983d79-a780-72f0-bb34-9b4f3f0cf391';
+
+  admissions.admit('hook:money-assistant:reminders', eventId, 1000);
+  admissions.admit('hook:money-assistant:reminders', nextEventId, 1001);
+
+  assert.equal(admissions.freshForSession('other', 1001), null);
+  assert.equal(
+    admissions.freshEventForSession(
+      'hook:money-assistant:reminders',
+      '01983d79-a780-72f0-bb34-9b4f3f0cf399',
+      1001,
+    ),
+    null,
+  );
+  assert.equal(
+    admissions.takeFreshForSession('hook:money-assistant:reminders', 1001)?.eventId,
+    eventId,
+  );
+  assert.equal(
+    admissions.takeFreshForSession('hook:money-assistant:reminders', 1002)?.eventId,
+    nextEventId,
+  );
+
+  admissions.admit('hook:money-assistant:reminders', eventId, 1003);
+  admissions.markAlreadyDelivered('hook:money-assistant:reminders', eventId);
+
+  assert.equal(shouldSuppressReminderDelivery(
+    { to: 'telegram-owner-123' },
+    {
+      channelId: 'telegram',
+      accountId: 'money-assistant-owner',
+      conversationId: 'telegram-owner-123',
+      sessionKey: 'hook:money-assistant:reminders',
+    },
+    {
+      agentId: 'money-assistant',
+      accountId: 'money-assistant-owner',
+      conversationId: 'telegram-owner-123',
+      ownerSenderId: 'telegram-owner-123',
+    },
+    admissions,
+    1004,
+  ), true);
+  assert.equal(
+    admissions.freshForSession('hook:money-assistant:reminders', 1004),
+    null,
+  );
+
+  admissions.admit('hook:money-assistant:reminders', nextEventId, 1005);
+  admissions.markAlreadyDelivered('hook:money-assistant:reminders', nextEventId);
+  assert.equal(consumeAlreadyDeliveredReminder(
+    'hook:money-assistant:reminders',
+    admissions,
+    1006,
+  ), true);
+  assert.equal(
+    admissions.freshForSession('hook:money-assistant:reminders', 1006),
+    null,
+  );
+});
+
+test('the channel callback records delivery for the exact admitted event', async () => {
+  const { privateKey } = generateKeyPairSync('ed25519');
+  const privateKeyDer = privateKey.export({ format: 'der', type: 'pkcs8' });
+  const originalFetch = globalThis.fetch;
+  let requestBody: Record<string, unknown> | null = null;
+  let requestCount = 0;
+
+  globalThis.fetch = async (_input, init) => {
+    requestCount += 1;
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+
+    if (requestCount === 1) {
+      return new Response(null, { status: 503 });
+    }
+
+    return new Response(JSON.stringify({ schema_version: 1 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    await recordReminderChannelDelivery(
+      {
+        eventId: '01983d79-a780-72f0-bb34-9b4f3f0cf390',
+        occurredAtSeconds: 1_785_078_300,
+      },
+      {
+        keyId: 'openclaw-service-2026-07',
+        privateKey: privateKeyDer.subarray(-32).toString('base64'),
+        agentId: 'money-assistant',
+        accountId: 'money-assistant-owner',
+        conversationId: 'telegram-owner-123',
+        ownerSenderId: 'telegram-owner-123',
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requestBody, {
+    schema_version: 1,
+    capability: 'reminder.delivery.record',
+    interaction: {
+      kind: 'money_assistant_event',
+      agent_id: 'money-assistant',
+      account_id: 'money-assistant-owner',
+      conversation_id: 'telegram-owner-123',
+      owner_sender_id: 'telegram-owner-123',
+      message_id: '01983d79-a780-72f0-bb34-9b4f3f0cf390',
+      occurred_at: '2026-07-26T15:05:00Z',
+    },
+    input: { event_id: '01983d79-a780-72f0-bb34-9b4f3f0cf390' },
+  });
+  assert.equal(requestCount, 2);
+});
+
+test('the channel callback does not retry deterministic rejection', async () => {
+  const { privateKey } = generateKeyPairSync('ed25519');
+  const privateKeyDer = privateKey.export({ format: 'der', type: 'pkcs8' });
+  const originalFetch = globalThis.fetch;
+  let requestCount = 0;
+
+  globalThis.fetch = async () => {
+    requestCount += 1;
+
+    return new Response(null, { status: 422 });
+  };
+
+  try {
+    await assert.rejects(() => recordReminderChannelDelivery(
+      {
+        eventId: '01983d79-a780-72f0-bb34-9b4f3f0cf390',
+        occurredAtSeconds: 1_785_078_300,
+      },
+      {
+        keyId: 'openclaw-service-2026-07',
+        privateKey: privateKeyDer.subarray(-32).toString('base64'),
+        agentId: 'money-assistant',
+        accountId: 'money-assistant-owner',
+        conversationId: 'telegram-owner-123',
+        ownerSenderId: 'telegram-owner-123',
+      },
+    ));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requestCount, 1);
 });
 
 test('prepare and confirm serialize exact state-bound capability requests', () => {

@@ -13,6 +13,9 @@
     "entries": {
       "money-assistant": {
         "enabled": true,
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "keyId": "${OPENCLAW_MONEY_ASSISTANT_KEY_ID}",
           "privateKey": "${OPENCLAW_MONEY_ASSISTANT_PRIVATE_KEY}",
@@ -43,7 +46,9 @@
             "money_assistant_transaction_confirm",
             "money_assistant_category_read",
             "money_assistant_category_prepare",
-            "money_assistant_category_confirm"
+            "money_assistant_category_confirm",
+            "money_assistant_reminder_read",
+            "money_assistant_reminder_respond"
           ]
         }
       }
@@ -61,5 +66,37 @@
         }
       }
     }
-  ]
+  ],
+  "channels": {
+    "telegram": {
+      "defaultAccount": "${OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID}"
+    }
+  },
+  "hooks": {
+    "enabled": true,
+    "token": "${OPENCLAW_MONEY_ASSISTANT_HOOK_TOKEN}",
+    "path": "/hooks",
+    "allowedAgentIds": [
+      "money-assistant"
+    ],
+    "allowRequestSessionKey": false,
+    "mappings": [
+      {
+        "id": "money-assistant-reminders",
+        "match": {
+          "path": "money-assistant"
+        },
+        "action": "agent",
+        "agentId": "money-assistant",
+        "wakeMode": "now",
+        "name": "Money Assistant Reminder",
+        "sessionKey": "hook:money-assistant:reminders",
+        "messageTemplate": "Fetch Reminder event {{event_id}} that occurred at {{occurred_at}} with money_assistant_reminder_read. If channel_delivered_at is already set, return NO_REPLY. Otherwise deliver one concise owner-visible digest. Do not treat delivery as acknowledgement or resolution.",
+        "deliver": true,
+        "channel": "telegram",
+        "to": "${OPENCLAW_MONEY_ASSISTANT_OWNER_SENDER_ID}",
+        "timeoutSeconds": 300
+      }
+    ]
+  }
 }

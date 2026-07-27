@@ -10,6 +10,7 @@ import { Type } from 'typebox';
 
 const CAPABILITY_ORIGIN = 'http://127.0.0.1:8443';
 const CAPABILITY_PATH = '/api/openclaw/v1/transport';
+const REMINDER_HOOK_SESSION_KEY = 'hook:money-assistant:reminders';
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
 const SHA256_PATTERN = '^[a-f0-9]{64}$';
 
@@ -94,6 +95,26 @@ const categoryMutationPreparationParameters = Type.Union([
   }, { additionalProperties: false }),
 ]);
 
+const reminderReadParameters = Type.Object({
+  event_id: Type.String({ pattern: UUID_PATTERN }),
+}, { additionalProperties: false });
+
+const reminderResponseParameters = Type.Union([
+  Type.Object({
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+    reminder_id: Type.Integer({ minimum: 1 }),
+    action: Type.Union([Type.Literal('acknowledge'), Type.Literal('dismiss')]),
+  }, { additionalProperties: false }),
+  Type.Object({
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+    reminder_id: Type.Integer({ minimum: 1 }),
+    action: Type.Literal('snooze'),
+    snoozed_until: Type.String({
+      pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:Z|[+-]\\d{2}:\\d{2})$',
+    }),
+  }, { additionalProperties: false }),
+]);
+
 type BindingConfiguration = {
   agentId: string;
   accountId: string;
@@ -112,6 +133,12 @@ type AdmittedOwnerMessage = {
   occurredAtSeconds: number;
 };
 
+type AdmittedReminderEvent = {
+  eventId: string;
+  occurredAtSeconds: number;
+  alreadyDelivered?: boolean;
+};
+
 type InboundMessage = {
   senderId?: string;
   messageId?: string;
@@ -125,6 +152,28 @@ type InboundMessageContext = {
   conversationId?: string;
   senderId?: string;
   messageId?: string;
+  sessionKey?: string;
+};
+
+type SentMessage = {
+  to: string;
+  success: boolean;
+  sessionKey?: string;
+};
+
+type OutgoingMessage = {
+  to: string;
+};
+
+type SentMessageContext = {
+  channelId: string;
+  accountId?: string;
+  conversationId?: string;
+  sessionKey?: string;
+};
+
+type ReminderRunContext = {
+  agentId?: string;
   sessionKey?: string;
 };
 
@@ -144,6 +193,15 @@ type TrustedToolContext = {
 };
 
 type CapabilityInput = Record<string, unknown>;
+
+class CapabilityRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
 
 function timestampInSeconds(timestamp: number): number | null {
   if (!Number.isFinite(timestamp) || timestamp <= 0) {
@@ -220,6 +278,93 @@ export class OwnerMessageAdmissions {
 
 const ownerMessageAdmissions = new OwnerMessageAdmissions();
 
+export class ReminderEventAdmissions {
+  private readonly events = new Map<string, AdmittedReminderEvent[]>();
+
+  admit(sessionKey: string, eventId: string, occurredAtSeconds: number): void {
+    const admissions = this.events.get(sessionKey) ?? [];
+
+    if (!admissions.some((admission) => admission.eventId === eventId)) {
+      admissions.push({ eventId, occurredAtSeconds });
+    }
+
+    this.events.set(sessionKey, admissions);
+  }
+
+  freshForSession(
+    sessionKey: string | undefined,
+    nowSeconds: number,
+  ): AdmittedReminderEvent | null {
+    const admissions = this.events.get(sessionKey ?? '') ?? [];
+    const admission = admissions.find((candidate) => {
+      const ageInSeconds = nowSeconds - candidate.occurredAtSeconds;
+
+      return ageInSeconds >= 0 && ageInSeconds <= 1800;
+    });
+
+    if (!admission) {
+      return null;
+    }
+
+    return admission;
+  }
+
+  freshEventForSession(
+    sessionKey: string | undefined,
+    eventId: string,
+    nowSeconds: number,
+  ): AdmittedReminderEvent | null {
+    const admissions = this.events.get(sessionKey ?? '') ?? [];
+
+    return admissions.find((admission) => {
+      const ageInSeconds = nowSeconds - admission.occurredAtSeconds;
+
+      return admission.eventId === eventId
+        && ageInSeconds >= 0
+        && ageInSeconds <= 1800;
+    }) ?? null;
+  }
+
+  markAlreadyDelivered(sessionKey: string, eventId: string): void {
+    const admission = this.events.get(sessionKey)?.find(
+      (candidate) => candidate.eventId === eventId,
+    );
+
+    if (admission) {
+      admission.alreadyDelivered = true;
+    }
+  }
+
+  takeFreshForSession(
+    sessionKey: string | undefined,
+    nowSeconds: number,
+  ): AdmittedReminderEvent | null {
+    const key = sessionKey ?? '';
+    const admissions = this.events.get(key) ?? [];
+    const admissionIndex = admissions.findIndex((candidate) => {
+      const ageInSeconds = nowSeconds - candidate.occurredAtSeconds;
+
+      return ageInSeconds >= 0 && ageInSeconds <= 1800;
+    });
+
+    if (admissionIndex < 0) {
+      return null;
+    }
+
+    const [admission] = admissions.splice(admissionIndex, 1);
+
+    if (admissions.length === 0) {
+      this.events.delete(key);
+    } else {
+      this.events.set(key, admissions);
+    }
+
+    return admission;
+  }
+}
+
+const reminderEventAdmissions = new ReminderEventAdmissions();
+
 export function isBoundOwnerInteraction(
   toolContext: TrustedToolContext,
   config: BindingConfiguration,
@@ -236,6 +381,92 @@ export function isBoundOwnerInteraction(
     && toolContext.deliveryContext?.channel === 'telegram'
     && toolContext.deliveryContext.accountId === config.accountId
     && toolContext.deliveryContext.to === config.conversationId;
+}
+
+export function isBoundReminderEventInteraction(
+  toolContext: TrustedToolContext,
+  config: BindingConfiguration,
+): boolean {
+  return toolContext.agentId === config.agentId
+    && toolContext.sessionKey === REMINDER_HOOK_SESSION_KEY
+    && toolContext.deliveryContext?.channel === 'telegram'
+    && toolContext.deliveryContext.accountId === config.accountId
+    && toolContext.deliveryContext.to === config.conversationId;
+}
+
+export function admittedReminderEvent(
+  prompt: string,
+  context: ReminderRunContext,
+  config: BindingConfiguration,
+  nowSeconds: number,
+): AdmittedReminderEvent | null {
+  if (context.agentId !== config.agentId
+    || context.sessionKey !== REMINDER_HOOK_SESSION_KEY) {
+    return null;
+  }
+
+  const match = prompt.match(
+    /Fetch Reminder event ([0-9a-f-]{36}) that occurred at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z with money_assistant_reminder_read/,
+  );
+
+  if (!match
+    || !new RegExp(UUID_PATTERN).test(match[1] ?? '')) {
+    return null;
+  }
+
+  return {
+    eventId: match[1] as string,
+    occurredAtSeconds: nowSeconds,
+  };
+}
+
+export function isBoundReminderChannelDelivery(
+  event: SentMessage,
+  context: SentMessageContext,
+  config: BindingConfiguration,
+): boolean {
+  const sessionKey = event.sessionKey ?? context.sessionKey;
+
+  return event.success === true
+    && sessionKey === REMINDER_HOOK_SESSION_KEY
+    && context.channelId === 'telegram'
+    && context.accountId === config.accountId
+    && context.conversationId === config.conversationId
+    && event.to === config.conversationId;
+}
+
+export function shouldSuppressReminderDelivery(
+  event: OutgoingMessage,
+  context: SentMessageContext,
+  config: BindingConfiguration,
+  admissions: ReminderEventAdmissions,
+  nowSeconds: number,
+): boolean {
+  const sessionKey = context.sessionKey;
+
+  if (sessionKey !== REMINDER_HOOK_SESSION_KEY
+    || context.channelId !== 'telegram'
+    || context.accountId !== config.accountId
+    || context.conversationId !== config.conversationId
+    || event.to !== config.conversationId) {
+    return false;
+  }
+
+  return consumeAlreadyDeliveredReminder(sessionKey, admissions, nowSeconds);
+}
+
+export function consumeAlreadyDeliveredReminder(
+  sessionKey: string | undefined,
+  admissions: ReminderEventAdmissions,
+  nowSeconds: number,
+): boolean {
+  if (admissions.freshForSession(sessionKey, nowSeconds)?.alreadyDelivered !== true) {
+    return false;
+  }
+
+  admissions.takeFreshForSession(sessionKey, nowSeconds);
+
+  return true;
 }
 
 function privateKeyFromSodiumSecret(encodedPrivateKey: string): KeyObject {
@@ -312,6 +543,63 @@ export function capabilityRequestBody(
   });
 }
 
+export function reminderEventCapabilityRequestBody(
+  capability: string,
+  input: CapabilityInput,
+  config: BindingConfiguration,
+  eventId: string,
+  occurredAtSeconds: number,
+): string {
+  const occurredAt = new Date(occurredAtSeconds * 1000)
+    .toISOString()
+    .replace('.000Z', 'Z');
+
+  return JSON.stringify({
+    schema_version: 1,
+    capability,
+    interaction: {
+      kind: 'money_assistant_event',
+      agent_id: config.agentId,
+      account_id: config.accountId,
+      conversation_id: config.conversationId,
+      owner_sender_id: config.ownerSenderId,
+      message_id: eventId,
+      occurred_at: occurredAt,
+    },
+    input,
+  });
+}
+
+async function requestCapability(
+  capability: string,
+  body: string,
+  config: PluginConfiguration,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  signal?.throwIfAborted();
+  const response = await fetch(`${CAPABILITY_ORIGIN}${CAPABILITY_PATH}`, {
+    method: 'POST',
+    headers: authorizationHeaders(
+      body,
+      config.keyId,
+      config.privateKey,
+      Math.floor(Date.now() / 1000).toString(),
+      randomUUID(),
+    ),
+    body,
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new CapabilityRequestError(
+      `Money Assistant rejected ${capability} (${response.status}).`,
+      response.status,
+    );
+  }
+
+  return response.json();
+}
+
 async function executeCapability(
   capability: string,
   input: CapabilityInput,
@@ -319,8 +607,6 @@ async function executeCapability(
   toolContext: TrustedToolContext,
   signal?: AbortSignal,
 ): Promise<{ content: Array<{ type: 'text'; text: string }>; details: unknown }> {
-  signal?.throwIfAborted();
-
   const nowSeconds = Math.floor(Date.now() / 1000);
   const admission = ownerMessageAdmissions.freshForSession(
     toolContext.sessionKey,
@@ -332,30 +618,97 @@ async function executeCapability(
   }
 
   const body = capabilityRequestBody(capability, input, toolContext, admission);
-  const timestamp = nowSeconds.toString();
-  const response = await fetch(`${CAPABILITY_ORIGIN}${CAPABILITY_PATH}`, {
-    method: 'POST',
-    headers: authorizationHeaders(
-      body,
-      config.keyId,
-      config.privateKey,
-      timestamp,
-      randomUUID(),
-    ),
-    body,
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Money Assistant rejected ${capability} (${response.status}).`);
-  }
-
-  const details = await response.json();
+  const details = await requestCapability(capability, body, config, signal);
 
   return {
     content: [{ type: 'text', text: JSON.stringify(details) }],
     details,
   };
+}
+
+async function executeReminderEventCapability(
+  capability: string,
+  input: CapabilityInput,
+  eventId: string,
+  config: PluginConfiguration,
+  toolContext: TrustedToolContext,
+  signal?: AbortSignal,
+): Promise<{ content: Array<{ type: 'text'; text: string }>; details: unknown }> {
+  if (!isBoundReminderEventInteraction(toolContext, config)
+    || toolContext.sessionKey === undefined) {
+    throw new Error('Money Assistant Reminder event binding is unavailable.');
+  }
+
+  const admission = reminderEventAdmissions.freshEventForSession(
+    toolContext.sessionKey,
+    eventId,
+    Math.floor(Date.now() / 1000),
+  );
+
+  if (!admission) {
+    throw new Error('Money Assistant Reminder event admission is unavailable.');
+  }
+
+  const body = reminderEventCapabilityRequestBody(
+    capability,
+    input,
+    config,
+    eventId,
+    admission.occurredAtSeconds,
+  );
+  const details = await requestCapability(capability, body, config, signal);
+
+  if (capability === 'reminder.read'
+    && typeof details === 'object'
+    && details !== null
+    && 'delivery' in details
+    && typeof details.delivery === 'object'
+    && details.delivery !== null
+    && 'channel_delivered_at' in details.delivery
+    && details.delivery.channel_delivered_at !== null) {
+    reminderEventAdmissions.markAlreadyDelivered(
+      toolContext.sessionKey,
+      eventId,
+    );
+  }
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify(details) }],
+    details,
+  };
+}
+
+export async function recordReminderChannelDelivery(
+  admission: AdmittedReminderEvent,
+  config: PluginConfiguration,
+): Promise<void> {
+  const body = reminderEventCapabilityRequestBody(
+    'reminder.delivery.record',
+    { event_id: admission.eventId },
+    config,
+    admission.eventId,
+    admission.occurredAtSeconds,
+  );
+
+  const delays = [200, 1000];
+
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      await requestCapability('reminder.delivery.record', body, config);
+
+      return;
+    } catch (error) {
+      const isTransient = !(error instanceof CapabilityRequestError)
+        || error.status === 429
+        || (error.status !== undefined && error.status >= 500);
+
+      if (!isTransient || attempt === delays.length) {
+        throw error;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+    }
+  }
 }
 
 function isPositiveSafeInteger(value: unknown): boolean {
@@ -402,6 +755,28 @@ function isCategoryMutationInput(input: Record<string, unknown>): boolean {
     );
 }
 
+function isReminderResponseInput(input: Record<string, unknown>): boolean {
+  if (typeof input.idempotency_key !== 'string'
+    || !new RegExp(UUID_PATTERN).test(input.idempotency_key)
+    || !isPositiveSafeInteger(input.reminder_id)) {
+    return false;
+  }
+
+  if (input.action === 'acknowledge' || input.action === 'dismiss') {
+    return Object.keys(input).length === 3;
+  }
+
+  if (input.action !== 'snooze'
+    || typeof input.snoozed_until !== 'string'
+    || Object.keys(input).length !== 4) {
+    return false;
+  }
+
+  const snoozedUntil = Date.parse(input.snoozed_until);
+
+  return Number.isFinite(snoozedUntil) && snoozedUntil > Date.now();
+}
+
 const transactionToolDefinition = {
   name: 'money_assistant_transaction_read',
   label: 'Read Money Assistant Transaction',
@@ -442,6 +817,20 @@ const categoryMutationConfirmationToolDefinition = {
   label: 'Confirm Money Assistant Categorization',
   description: 'Confirm one prepared Categorization operation from a new owner message.',
   parameters: manualTransactionConfirmationParameters,
+};
+
+const reminderReadToolDefinition = {
+  name: 'money_assistant_reminder_read',
+  label: 'Read Money Assistant Reminder',
+  description: 'Read the current Reminder issued by the fixed Money Assistant hook event.',
+  parameters: reminderReadParameters,
+};
+
+const reminderResponseToolDefinition = {
+  name: 'money_assistant_reminder_respond',
+  label: 'Respond to Money Assistant Reminder',
+  description: 'Acknowledge, snooze, or dismiss one Reminder from an admitted owner message.',
+  parameters: reminderResponseParameters,
 };
 
 const plugin = defineToolPlugin({
@@ -672,16 +1061,149 @@ const plugin = defineToolPlugin({
         };
       },
     }),
+    tool({
+      ...reminderReadToolDefinition,
+      factory({ config, toolContext }) {
+        if (!isBoundReminderEventInteraction(toolContext, config)) {
+          return null;
+        }
+
+        return {
+          ...reminderReadToolDefinition,
+          async execute(_toolCallId, params, signal) {
+            const eventId = (params as { event_id?: unknown }).event_id;
+
+            if (typeof eventId !== 'string'
+              || !new RegExp(UUID_PATTERN).test(eventId)) {
+              throw new Error('Money Assistant Reminder event identifier is invalid.');
+            }
+
+            return executeReminderEventCapability(
+              'reminder.read',
+              { event_id: eventId },
+              eventId,
+              config,
+              toolContext,
+              signal,
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      ...reminderResponseToolDefinition,
+      factory({ config, toolContext }) {
+        if (!isBoundOwnerInteraction(toolContext, config)) {
+          return null;
+        }
+
+        return {
+          ...reminderResponseToolDefinition,
+          async execute(_toolCallId, params, signal) {
+            const input = params as Record<string, unknown>;
+
+            if (!isReminderResponseInput(input)) {
+              throw new Error('Money Assistant Reminder response is invalid.');
+            }
+
+            return executeCapability(
+              'reminder.respond',
+              input,
+              config,
+              toolContext,
+              signal,
+            );
+          },
+        };
+      },
+    }),
   ],
 });
 
 const registerTool = plugin.register;
 
 plugin.register = (api): void => {
-  const config = api.pluginConfig as BindingConfiguration;
+  const config = api.pluginConfig as PluginConfiguration;
 
   api.on('message_received', (event, context) => {
     ownerMessageAdmissions.admit(event, context, config);
+  });
+
+  api.on('before_model_resolve', (event, context) => {
+    const admission = admittedReminderEvent(
+      event.prompt,
+      context,
+      config,
+      Math.floor(Date.now() / 1000),
+    );
+
+    if (admission && context.sessionKey) {
+      reminderEventAdmissions.admit(
+        context.sessionKey,
+        admission.eventId,
+        admission.occurredAtSeconds,
+      );
+    }
+  });
+
+  api.on('before_agent_reply', (_event, context) => {
+    if (context.agentId === config.agentId
+      && context.sessionKey === REMINDER_HOOK_SESSION_KEY
+      && consumeAlreadyDeliveredReminder(
+        context.sessionKey,
+        reminderEventAdmissions,
+        Math.floor(Date.now() / 1000),
+      )) {
+      return {
+        handled: true,
+        reason: 'Money Assistant Reminder event was already delivered.',
+      };
+    }
+  });
+
+  api.on('message_sending', (event, context) => {
+    if (shouldSuppressReminderDelivery(
+      event,
+      context,
+      config,
+      reminderEventAdmissions,
+      Math.floor(Date.now() / 1000),
+    )) {
+      return {
+        cancel: true,
+        cancelReason: 'Money Assistant Reminder event was already delivered.',
+      };
+    }
+  });
+
+  api.on('message_sent', async (event, context) => {
+    const sessionKey = event.sessionKey ?? context.sessionKey;
+
+    if (!isBoundReminderChannelDelivery(event, context, config)
+      || sessionKey === undefined) {
+      return;
+    }
+
+    const admission = reminderEventAdmissions.takeFreshForSession(
+      sessionKey,
+      Math.floor(Date.now() / 1000),
+    );
+
+    if (!admission) {
+      return;
+    }
+
+    try {
+      await recordReminderChannelDelivery(admission, config);
+    } catch (error) {
+      reminderEventAdmissions.admit(
+        sessionKey,
+        admission.eventId,
+        admission.occurredAtSeconds,
+      );
+
+      throw error;
+    }
   });
 
   registerTool(api);

@@ -162,6 +162,8 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
                 'money_assistant_category_read',
                 'money_assistant_category_prepare',
                 'money_assistant_category_confirm',
+                'money_assistant_reminder_read',
+                'money_assistant_reminder_respond',
             ],
         ])
         ->and($manifest['configSchema']['additionalProperties'])->toBeFalse()
@@ -172,6 +174,9 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
         ])
         ->and($policy['plugins']['allow'])->toContain('money-assistant')
         ->and($policy['plugins']['entries']['money-assistant']['enabled'])->toBeTrue()
+        ->and($policy['plugins']['entries']['money-assistant']['hooks'])->toBe([
+            'allowConversationAccess' => true,
+        ])
         ->and($agent['skills'])->toBe([])
         ->and($agent['timeoutSeconds'])->toBe(1800)
         ->and($agent['heartbeat']['every'])->toBe('0m')
@@ -182,6 +187,8 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
             'money_assistant_category_read',
             'money_assistant_category_prepare',
             'money_assistant_category_confirm',
+            'money_assistant_reminder_read',
+            'money_assistant_reminder_respond',
         ])
         ->and($policy['bindings'])->toBe([
             [
@@ -195,7 +202,30 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
                     ],
                 ],
             ],
-        ]);
+        ])
+        ->and($policy['hooks'])->toBe([
+            'enabled' => true,
+            'token' => '${OPENCLAW_MONEY_ASSISTANT_HOOK_TOKEN}',
+            'path' => '/hooks',
+            'allowedAgentIds' => ['money-assistant'],
+            'allowRequestSessionKey' => false,
+            'mappings' => [[
+                'id' => 'money-assistant-reminders',
+                'match' => ['path' => 'money-assistant'],
+                'action' => 'agent',
+                'agentId' => 'money-assistant',
+                'wakeMode' => 'now',
+                'name' => 'Money Assistant Reminder',
+                'sessionKey' => 'hook:money-assistant:reminders',
+                'messageTemplate' => 'Fetch Reminder event {{event_id}} that occurred at {{occurred_at}} with money_assistant_reminder_read. If channel_delivered_at is already set, return NO_REPLY. Otherwise deliver one concise owner-visible digest. Do not treat delivery as acknowledgement or resolution.',
+                'deliver' => true,
+                'channel' => 'telegram',
+                'to' => '${OPENCLAW_MONEY_ASSISTANT_OWNER_SENDER_ID}',
+                'timeoutSeconds' => 300,
+            ]],
+        ])
+        ->and($policy['channels']['telegram']['defaultAccount'])
+        ->toBe('${OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID}');
 
     expect(file_get_contents($pluginRoot.'/src/index.ts'))
         ->toContain("const CAPABILITY_PATH = '/api/openclaw/v1/transport'")
@@ -209,6 +239,9 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
         ->toContain("'transaction.manual.confirm'")
         ->toContain("'category.mutation.prepare'")
         ->toContain("'category.mutation.confirm'")
+        ->toContain("'reminder.read'")
+        ->toContain("'reminder.respond'")
+        ->toContain("'reminder.delivery.record'")
         ->toContain('idempotency_key')
         ->toContain("createHash('sha256').update(body).digest('hex')")
         ->not->toContain('${toolContext.sessionId}:${toolCallId}')

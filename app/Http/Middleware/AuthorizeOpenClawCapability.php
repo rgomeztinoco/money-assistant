@@ -89,9 +89,18 @@ final class AuthorizeOpenClawCapability
             'category.read',
             'category.mutation.prepare',
             'category.mutation.confirm',
+            'reminder.read',
+            'reminder.delivery.record',
+            'reminder.respond',
         ], true)) {
             return $this->reject($request, 'unsupported_capability');
         }
+
+        $isReminderEventCapability = in_array(
+            $capability,
+            ['reminder.read', 'reminder.delivery.record'],
+            true,
+        );
 
         $topLevelKeys = array_keys($payload);
         sort($topLevelKeys);
@@ -113,7 +122,20 @@ final class AuthorizeOpenClawCapability
             'interaction.occurred_at' => ['required', 'string', 'max:35'],
         ];
 
-        if ($capability === 'transaction.read') {
+        if ($isReminderEventCapability) {
+            $rules += [
+                'input' => ['required', 'array:event_id'],
+                'input.event_id' => ['required', 'uuid'],
+            ];
+        } elseif ($capability === 'reminder.respond') {
+            $rules += [
+                'input' => ['required', 'array'],
+                'input.idempotency_key' => ['required', 'uuid'],
+                'input.reminder_id' => ['required', 'integer', 'min:1'],
+                'input.action' => ['required', 'string', Rule::in(['acknowledge', 'snooze', 'dismiss'])],
+                'input.snoozed_until' => ['nullable', 'string', 'max:35'],
+            ];
+        } elseif ($capability === 'transaction.read') {
             $rules += [
                 'input' => ['required', 'array:transaction_id'],
                 'input.transaction_id' => ['required', 'integer', 'min:1'],
@@ -159,8 +181,30 @@ final class AuthorizeOpenClawCapability
             );
         }
 
+        $rejection = $this->authorizeValidatedPayload($request, $payload, $capability);
+
+        if ($rejection !== null) {
+            return $rejection;
+        }
+
+        return $next($request);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function authorizeValidatedPayload(
+        Request $request,
+        array $payload,
+        string $capability,
+    ): ?JsonResponse {
         if ($capability === 'category.mutation.prepare'
             && ! $this->hasValidCategoryMutationInput($payload['input'] ?? null)) {
+            return $this->reject($request, 'invalid_request');
+        }
+
+        if ($capability === 'reminder.respond'
+            && ! $this->hasValidReminderResponseInput($payload['input'] ?? null)) {
             return $this->reject($request, 'invalid_request');
         }
 
@@ -183,7 +227,26 @@ final class AuthorizeOpenClawCapability
             return $this->reject($request, 'invalid_request');
         }
 
-        if (! $this->hasExpectedInteractionBinding($payload['interaction'] ?? null)
+        $isReminderEventCapability = in_array(
+            $capability,
+            ['reminder.read', 'reminder.delivery.record'],
+            true,
+        );
+
+        if ($isReminderEventCapability
+            && (($payload['interaction']['kind'] ?? null) !== 'money_assistant_event'
+                || ! is_string($payload['input']['event_id'] ?? null)
+                || ! hash_equals(
+                    $payload['input']['event_id'],
+                    (string) ($payload['interaction']['message_id'] ?? ''),
+                ))) {
+            return $this->reject($request, 'unbound_interaction');
+        }
+
+        if (! $this->hasExpectedInteractionBinding(
+            $payload['interaction'] ?? null,
+            $isReminderEventCapability ? 'money_assistant_event' : 'owner_message',
+        )
             || ! $this->hasFreshInteraction($payload['interaction']['occurred_at'] ?? null)) {
             return $this->reject($request, 'unbound_interaction');
         }
@@ -215,7 +278,7 @@ final class AuthorizeOpenClawCapability
             ], JSON_THROW_ON_ERROR)),
         );
 
-        return $next($request);
+        return null;
     }
 
     private function reject(
@@ -228,9 +291,9 @@ final class AuthorizeOpenClawCapability
         return response()->json(['message' => 'Capability request rejected.'], $status);
     }
 
-    private function hasExpectedInteractionBinding(mixed $interaction): bool
+    private function hasExpectedInteractionBinding(mixed $interaction, string $expectedKind): bool
     {
-        if (! is_array($interaction) || ($interaction['kind'] ?? null) !== 'owner_message') {
+        if (! is_array($interaction) || ($interaction['kind'] ?? null) !== $expectedKind) {
             return false;
         }
 
@@ -317,6 +380,33 @@ final class AuthorizeOpenClawCapability
             && collect($input['examples'])->every(
                 fn (mixed $example): bool => is_string($example) && mb_strlen($example) <= 100,
             );
+    }
+
+    private function hasValidReminderResponseInput(mixed $input): bool
+    {
+        if (! is_array($input)
+            || ! is_int($input['reminder_id'] ?? null)
+            || $input['reminder_id'] < 1
+            || ! is_string($input['action'] ?? null)) {
+            return false;
+        }
+
+        $expectedKeys = $input['action'] === 'snooze'
+            ? ['action', 'idempotency_key', 'reminder_id', 'snoozed_until']
+            : ['action', 'idempotency_key', 'reminder_id'];
+        $actualKeys = array_keys($input);
+        sort($actualKeys);
+
+        if ($actualKeys !== $expectedKeys) {
+            return false;
+        }
+
+        if ($input['action'] !== 'snooze') {
+            return true;
+        }
+
+        return is_string($input['snoozed_until'] ?? null)
+            && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/', $input['snoozed_until']) === 1;
     }
 
     private function hasFreshInteraction(mixed $occurredAt): bool

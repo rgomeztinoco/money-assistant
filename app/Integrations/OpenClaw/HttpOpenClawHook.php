@@ -26,6 +26,7 @@ final class HttpOpenClawHook implements OpenClawHook
         Http::acceptJson()
             ->asJson()
             ->withToken($this->token)
+            ->withHeader('Idempotency-Key', $eventId)
             ->connectTimeout(3)
             ->timeout(10)
             ->retry(

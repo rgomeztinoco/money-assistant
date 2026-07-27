@@ -8,6 +8,9 @@ use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\Ledger\ConfirmOpenClawManualTransaction;
 use App\Actions\Ledger\PrepareOpenClawManualTransaction;
 use App\Actions\Ledger\ReadTransactionForOpenClaw;
+use App\Actions\Reminders\ReadReminderForOpenClaw;
+use App\Actions\Reminders\RecordReminderChannelDelivery;
+use App\Actions\Reminders\RespondToReminder;
 use App\Currency;
 use App\Exceptions\CategoryOperationBlocked;
 use App\Exceptions\IdempotencyKeyConflict;
@@ -22,6 +25,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\Response;
 
 final class OpenClawTransportController extends Controller
@@ -33,6 +37,9 @@ final class OpenClawTransportController extends Controller
         private ReadCategoryTaxonomy $readCategoryTaxonomy,
         private PrepareOpenClawCategorization $prepareCategorization,
         private ConfirmOpenClawCategorization $confirmCategorization,
+        private ReadReminderForOpenClaw $readReminder,
+        private RecordReminderChannelDelivery $recordReminderChannelDelivery,
+        private RespondToReminder $respondToReminder,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -58,6 +65,18 @@ final class OpenClawTransportController extends Controller
 
         if ($capability === 'category.mutation.confirm') {
             return $this->confirmCategorization($request, $owner);
+        }
+
+        if ($capability === 'reminder.read') {
+            return $this->readReminder($request, $owner);
+        }
+
+        if ($capability === 'reminder.delivery.record') {
+            return $this->recordReminderChannelDelivery($request, $owner);
+        }
+
+        if ($capability === 'reminder.respond') {
+            return $this->respondToReminder($request, $owner);
         }
 
         $transactionId = $request->attributes->get('openclaw.transaction_id');
@@ -137,6 +156,144 @@ final class OpenClawTransportController extends Controller
                 'payload_digest' => $operation->payload_digest,
                 'effect_summary' => $operation->effect_summary,
             ],
+        ]);
+    }
+
+    private function readReminder(Request $request, ?User $owner): JsonResponse
+    {
+        $input = $request->attributes->get('openclaw.input');
+        $eventId = is_array($input) ? ($input['event_id'] ?? null) : null;
+        $result = $owner !== null && is_string($eventId)
+            ? $this->readReminder->handle($owner, $eventId)
+            : null;
+
+        if ($result === null) {
+            $request->attributes->set('openclaw.audit.outcome', 'not_found');
+
+            return response()->json(['message' => 'Reminder not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        $request->attributes->set('openclaw.audit.outcome', 'success');
+        $request->attributes->set('openclaw.audit.resource_type', 'reminder');
+        $request->attributes->set('openclaw.audit.result_count', 1);
+
+        return response()->json([
+            'schema_version' => 1,
+            ...$result,
+        ]);
+    }
+
+    private function recordReminderChannelDelivery(Request $request, ?User $owner): JsonResponse
+    {
+        $input = $request->attributes->get('openclaw.input');
+        $eventId = is_array($input) ? ($input['event_id'] ?? null) : null;
+        $serviceKeyId = $request->attributes->get('openclaw.key_id');
+        $schemaVersion = $request->attributes->get('openclaw.schema_version');
+        $interactionDigest = $request->attributes->get('openclaw.interaction_digest');
+        $nonce = $request->attributes->get('openclaw.nonce');
+        $result = $owner !== null
+            && is_string($eventId)
+            && is_string($serviceKeyId)
+            && is_int($schemaVersion)
+            && is_string($interactionDigest)
+            && is_string($nonce)
+            ? $this->recordReminderChannelDelivery->handle(
+                owner: $owner,
+                eventId: $eventId,
+                serviceKeyId: $serviceKeyId,
+                schemaVersion: $schemaVersion,
+                interactionDigest: $interactionDigest,
+                nonceDigest: hash('sha256', $nonce),
+                requestDigest: hash('sha256', $request->getContent()),
+            )
+            : null;
+
+        if ($result === null) {
+            $request->attributes->set('openclaw.audit.outcome', 'not_found');
+
+            return response()->json(['message' => 'Reminder delivery not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        $request->attributes->set(
+            'openclaw.audit.outcome',
+            $result['replayed'] ? 'idempotent_replay' : 'success',
+        );
+        $request->attributes->set('openclaw.audit.resource_type', 'reminder');
+        $request->attributes->set('openclaw.audit.result_count', 1);
+        $request->attributes->set('openclaw.audit.recorded', true);
+
+        return response()->json([
+            'schema_version' => 1,
+            'delivery' => [
+                'event_id' => $result['delivery']->id,
+                'hook_accepted_at' => $result['delivery']->accepted_at?->toIso8601String(),
+                'channel_delivered_at' => $result['delivery']->delivered_at?->toIso8601String(),
+            ],
+        ]);
+    }
+
+    private function respondToReminder(Request $request, ?User $owner): JsonResponse
+    {
+        $input = $request->attributes->get('openclaw.input');
+        $serviceKeyId = $request->attributes->get('openclaw.key_id');
+        $schemaVersion = $request->attributes->get('openclaw.schema_version');
+        $interactionDigest = $request->attributes->get('openclaw.interaction_digest');
+        $nonce = $request->attributes->get('openclaw.nonce');
+
+        if ($owner === null
+            || ! is_array($input)
+            || ! is_string($serviceKeyId)
+            || ! is_int($schemaVersion)
+            || ! is_string($interactionDigest)
+            || ! is_string($nonce)) {
+            $request->attributes->set('openclaw.audit.outcome', 'not_found');
+
+            return response()->json(['message' => 'Reminder not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        try {
+            $result = $this->respondToReminder->handle(
+                owner: $owner,
+                serviceKeyId: $serviceKeyId,
+                schemaVersion: $schemaVersion,
+                interactionDigest: $interactionDigest,
+                nonceDigest: hash('sha256', $nonce),
+                requestDigest: hash('sha256', $request->getContent()),
+                idempotencyKey: (string) $input['idempotency_key'],
+                reminderId: (int) $input['reminder_id'],
+                action: (string) $input['action'],
+                snoozedUntil: isset($input['snoozed_until'])
+                    ? CarbonImmutable::parse((string) $input['snoozed_until'])
+                    : null,
+            );
+        } catch (IdempotencyKeyConflict) {
+            $request->attributes->set('openclaw.audit.outcome', 'idempotency_conflict');
+
+            return response()->json(
+                ['message' => 'Idempotency key conflicts with an earlier response.'],
+                Response::HTTP_CONFLICT,
+            );
+        } catch (ModelNotFoundException) {
+            $request->attributes->set('openclaw.audit.outcome', 'not_found');
+
+            return response()->json(['message' => 'Reminder not found.'], Response::HTTP_NOT_FOUND);
+        } catch (InvalidArgumentException) {
+            $request->attributes->set('openclaw.audit.outcome', 'invalid_request');
+
+            return response()->json(['message' => 'Reminder response rejected.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $request->attributes->set(
+            'openclaw.audit.outcome',
+            $result['replayed'] ? 'idempotent_replay' : 'success',
+        );
+        $request->attributes->set('openclaw.audit.resource_type', 'reminder');
+        $request->attributes->set('openclaw.audit.result_count', 1);
+        $request->attributes->set('openclaw.audit.recorded', true);
+
+        return response()->json([
+            'schema_version' => 1,
+            'reminder' => $this->readReminder->state($result['reminder']),
         ]);
     }
 
