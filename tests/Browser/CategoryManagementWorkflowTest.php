@@ -37,10 +37,12 @@ test('the owner creates a child Category and assigns it from the Transaction ins
     $page
         ->press('Inspect')
         ->assertSee('Uncategorized')
+        ->assertSee('Category needs review')
         ->select('Assign Category', 'Food > Dining out')
         ->press('Save Category')
         ->assertSee('Category assigned.')
         ->assertSee('Dining out')
+        ->assertSee('Assigned by '.$owner->name)
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 

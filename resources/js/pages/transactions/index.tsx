@@ -90,7 +90,10 @@ export type TransactionsIndexProps = {
     today: string;
     totals: Record<Currency, string>;
     category_totals: Array<{
-        category: Pick<LedgerCategory, 'id' | 'name'>;
+        category: {
+            id: number | null;
+            name: string;
+        };
         totals: Record<Currency, string>;
     }>;
     category_options: CategoryOption[];
@@ -105,6 +108,7 @@ export type TransactionsIndexProps = {
         mode: 'transactions' | 'review_queue';
     };
     unresolved_field_count?: number;
+    unresolved_category_count?: number;
     unresolved_refund_relationship_count?: number;
     unresolved_suspected_duplicate_count?: number;
     stale_transaction?: {
@@ -477,8 +481,8 @@ function LedgerTable({
                                         <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                                             <Tags className="size-3" />
                                             {transaction.category.name}
-                                            {transaction.category.provenance ===
-                                                'linked_refund' &&
+                                            {transaction.category.provenance
+                                                .source === 'linked_refund' &&
                                                 ' · from linked purchase'}
                                         </p>
                                     )}
@@ -826,6 +830,7 @@ export default function TransactionsIndex({
     filters,
     workspace,
     unresolved_field_count = 0,
+    unresolved_category_count = 0,
     unresolved_refund_relationship_count = 0,
     unresolved_suspected_duplicate_count = 0,
     stale_transaction = null,
@@ -837,6 +842,7 @@ export default function TransactionsIndex({
     const visibleVoidedTransactions =
         workspace_voided_transactions ?? voided_transactions;
     const outstandingReviewCount =
+        unresolved_category_count +
         unresolved_field_count +
         unresolved_refund_relationship_count +
         unresolved_suspected_duplicate_count;
@@ -981,7 +987,7 @@ export default function TransactionsIndex({
                         <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                             {category_totals.map(({ category, totals }) => (
                                 <div
-                                    key={category.id}
+                                    key={category.id ?? 'uncategorized'}
                                     className="grid gap-2 rounded-lg border p-4"
                                 >
                                     <p className="font-medium">

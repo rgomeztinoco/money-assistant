@@ -13,10 +13,32 @@ export type ReviewField = {
     value: string;
 };
 
+export type CategoryAssignmentProvenance = {
+    source: 'owner' | 'linked_refund' | 'learned_rule' | 'ai';
+    owner: {
+        id: number;
+        name: string;
+    } | null;
+    linked_purchase: {
+        id: number;
+        merchant_description: string;
+    } | null;
+    learned_rule: {
+        id: number;
+        revision: number;
+    } | null;
+    ai: {
+        classifier_version: string;
+        confidence: number;
+        outcome: string;
+        explanation: string;
+    } | null;
+};
+
 export type LedgerCategory = {
     id: number;
     name: string;
-    provenance: 'owner' | 'linked_refund' | 'learned_rule' | 'ai';
+    provenance: CategoryAssignmentProvenance;
 };
 
 export type RelatedTransaction = {
@@ -65,6 +87,7 @@ export type SelectedTransaction = {
     voided_at: string | null;
     category: LedgerCategory | null;
     review: {
+        category: boolean;
         fields: ReviewField[];
         refund_relationship_reasons: Array<{
             name:

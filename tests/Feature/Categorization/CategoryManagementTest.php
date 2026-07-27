@@ -153,6 +153,30 @@ test('only a never-referenced Category can be deleted after fresh passkey authen
     $this->assertModelMissing($category);
 });
 
+test('a Category remains historically referenced after a Transaction returns to Uncategorized', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+
+    $this->actingAs($owner)
+        ->put(route('transactions.category.update', $transaction), [
+            'expected_revision' => 1,
+            'category_id' => $category->id,
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->put(route('transactions.category.update', $transaction), [
+        'expected_revision' => 2,
+        'category_id' => null,
+    ])->assertSessionHasNoErrors();
+
+    $this->withSession([RequirePasskeyConfirmation::SESSION_KEY => Date::now()->unix()])
+        ->delete(route('categories.destroy', $category), ['expected_revision' => 1])
+        ->assertSessionHasErrors('category');
+
+    $this->assertModelExists($category);
+});
+
 test('reactivation preserves identity and rejects active sibling conflicts', function () {
     $owner = User::factory()->create();
     $retired = Category::factory()->for($owner, 'owner')->create([

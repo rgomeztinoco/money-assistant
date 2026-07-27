@@ -659,6 +659,19 @@ export function TransactionInspector({
                             </section>
                         )}
 
+                        {transaction.review.category && (
+                            <section className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/20">
+                                <h2 className="font-semibold">
+                                    Category needs review
+                                </h2>
+                                <p>
+                                    This Transaction remains included in total
+                                    spending and in the Uncategorized reporting
+                                    bucket until you assign a Category.
+                                </p>
+                            </section>
+                        )}
+
                         {transaction.review.refund_relationship_reasons.map(
                             (reason) => (
                                 <section
@@ -732,12 +745,79 @@ export function TransactionInspector({
                                 <p>
                                     Category source:{' '}
                                     <span className="font-medium">
-                                        {transaction.category?.provenance.replace(
+                                        {transaction.category?.provenance.source.replace(
                                             '_',
                                             ' ',
                                         ) ?? 'No Category assignment'}
                                     </span>
                                 </p>
+                                {transaction.category?.provenance.owner && (
+                                    <p className="text-muted-foreground">
+                                        Assigned by{' '}
+                                        {
+                                            transaction.category.provenance
+                                                .owner.name
+                                        }
+                                    </p>
+                                )}
+                                {transaction.category?.provenance
+                                    .linked_purchase && (
+                                    <p className="text-muted-foreground">
+                                        Defaulted from purchase #{' '}
+                                        {
+                                            transaction.category.provenance
+                                                .linked_purchase.id
+                                        }
+                                        ,{' '}
+                                        {
+                                            transaction.category.provenance
+                                                .linked_purchase
+                                                .merchant_description
+                                        }
+                                        .
+                                    </p>
+                                )}
+                                {transaction.category?.provenance
+                                    .learned_rule && (
+                                    <p className="text-muted-foreground">
+                                        Learned Rule #{' '}
+                                        {
+                                            transaction.category.provenance
+                                                .learned_rule.id
+                                        }{' '}
+                                        · Revision{' '}
+                                        {
+                                            transaction.category.provenance
+                                                .learned_rule.revision
+                                        }
+                                    </p>
+                                )}
+                                {transaction.category?.provenance.ai && (
+                                    <div className="grid gap-1 text-muted-foreground">
+                                        <p>
+                                            {
+                                                transaction.category.provenance
+                                                    .ai.classifier_version
+                                            }{' '}
+                                            ·{' '}
+                                            {
+                                                transaction.category.provenance
+                                                    .ai.confidence
+                                            }
+                                            % model confidence ·{' '}
+                                            {transaction.category.provenance.ai.outcome.replaceAll(
+                                                '_',
+                                                ' ',
+                                            )}
+                                        </p>
+                                        <p>
+                                            {
+                                                transaction.category.provenance
+                                                    .ai.explanation
+                                            }
+                                        </p>
+                                    </div>
+                                )}
                                 <p>
                                     {transaction.source_reference_count === 0
                                         ? 'Manual or owner-confirmed entry with no Spending Notification Reference.'

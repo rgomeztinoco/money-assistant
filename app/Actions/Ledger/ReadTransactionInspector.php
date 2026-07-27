@@ -2,6 +2,7 @@
 
 namespace App\Actions\Ledger;
 
+use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
 use App\Models\SpendingNotificationReference;
 use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
@@ -14,6 +15,8 @@ use App\SourceReferenceSetFingerprint;
 use Illuminate\Support\Str;
 
 /**
+ * @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance
+ *
  * @phpstan-type RelatedTransactionData array{
  *     id: int,
  *     occurred_on: string,
@@ -42,6 +45,10 @@ use Illuminate\Support\Str;
  */
 class ReadTransactionInspector
 {
+    public function __construct(
+        private ReadCategoryAssignmentProvenance $readCategoryAssignmentProvenance,
+    ) {}
+
     /**
      * @return array{
      *     id: int,
@@ -53,8 +60,9 @@ class ReadTransactionInspector
      *     confirmed_at: string,
      *     revision: int,
      *     voided_at: string|null,
-     *     category: array{id: int, name: string, provenance: string|null}|null,
+     *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
      *     review: array{
+     *         category: bool,
      *         fields: list<array{name: string, label: string, value: string}>,
      *         refund_relationship_reasons: list<array{name: string, label: string}>
      *     },
@@ -90,6 +98,8 @@ class ReadTransactionInspector
             ->whereBelongsTo($owner, 'owner')
             ->with([
                 'category:id,name',
+                'currentCategoryAssignment.owner:id,name',
+                'currentCategoryAssignment.linkedPurchase:id,merchant_description',
                 'originalPurchase:id,occurred_on,amount_minor,currency,kind,merchant_description,category_id',
                 'originalPurchase.category:id,name',
                 'linkedRefunds' => fn ($query) => $query
@@ -177,9 +187,10 @@ class ReadTransactionInspector
                 : [
                     'id' => $transaction->category->id,
                     'name' => $transaction->category->name,
-                    'provenance' => $transaction->category_assignment_provenance?->value,
+                    'provenance' => $this->readCategoryAssignmentProvenance->handle($transaction, $owner),
                 ],
             'review' => [
+                'category' => $transaction->category_id === null,
                 'fields' => $reviewFields,
                 'refund_relationship_reasons' => $refundRelationshipReasons,
             ],

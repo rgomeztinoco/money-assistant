@@ -2,7 +2,9 @@
 
 use App\Actions\Ledger\RecordManualTransaction;
 use App\Actions\Ledger\ResolveTransactionField;
+use App\CategoryAssignmentProvenance;
 use App\Currency;
+use App\Models\Category;
 use App\Models\User;
 use App\ReviewableTransactionField;
 use App\TransactionFieldResolution;
@@ -30,6 +32,11 @@ test('the owner accepts, corrects, and re-reviews stale uncertain Transaction fi
             ReviewableTransactionField::MerchantDescription,
         ],
     );
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $transaction->update([
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
 
     $page = visit('/review-queue');
 

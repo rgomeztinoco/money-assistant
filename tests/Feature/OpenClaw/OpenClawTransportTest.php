@@ -305,6 +305,16 @@ test('OpenClaw confirms owner Category assignment and rejects changed Transactio
         ->category_id->toBe($category->id)
         ->category_assignment_provenance->toBe(CategoryAssignmentProvenance::Owner)
         ->revision->toBe(3);
+
+    $readPayload = ($this->validPayload)($transaction->id);
+    $readPayload['interaction']['message_id'] = 'telegram-owner-message-category-read';
+
+    ($this->callOpenClaw)($readPayload)
+        ->assertSuccessful()
+        ->assertJsonPath('transaction.category.id', $category->id)
+        ->assertJsonPath('transaction.category.provenance.source', 'owner')
+        ->assertJsonPath('transaction.category.provenance.owner.id', $owner->id)
+        ->assertJsonPath('transaction.category.provenance.owner.name', $owner->name);
 });
 
 test('OpenClaw Category assignment confirmation expires when the target Category changes', function () {
@@ -720,6 +730,7 @@ test('OpenClaw can read one field-minimized owner Transaction', function () {
                 'kind' => 'purchase',
                 'merchant_description' => 'Neighborhood market',
                 'status' => 'active',
+                'category' => null,
             ],
         ]);
 
@@ -948,7 +959,7 @@ test('the capability requires a current message from the admitted owner interact
         $interaction['occurred_at'] = now()->subSeconds(1801)->toIso8601String();
     }],
     'future message' => [function (array &$interaction): void {
-        $interaction['occurred_at'] = now()->addSecond()->toIso8601String();
+        $interaction['occurred_at'] = now()->addMinute()->toIso8601String();
     }],
 ]);
 

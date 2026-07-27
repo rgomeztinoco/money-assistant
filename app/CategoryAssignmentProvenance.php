@@ -8,4 +8,19 @@ enum CategoryAssignmentProvenance: string
     case LinkedRefund = 'linked_refund';
     case LearnedRule = 'learned_rule';
     case Ai = 'ai';
+
+    public function canReplace(?self $current): bool
+    {
+        return $current === null || $this->priority() >= $current->priority();
+    }
+
+    private function priority(): int
+    {
+        return match ($this) {
+            self::Owner => 4,
+            self::LinkedRefund => 3,
+            self::LearnedRule => 2,
+            self::Ai => 1,
+        };
+    }
 }

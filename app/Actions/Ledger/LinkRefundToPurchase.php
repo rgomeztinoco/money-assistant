@@ -6,6 +6,7 @@ use App\CategoryAssignmentProvenance;
 use App\ExactInteger;
 use App\Exceptions\StaleTransactionRevision;
 use App\Models\Category;
+use App\Models\CategoryAssignment;
 use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
@@ -68,16 +69,19 @@ class LinkRefundToPurchase
 
             $currentRefund->original_purchase_id = $currentPurchase->getKey();
 
+            $categoryAssignmentApplied = false;
+            $previousCategoryId = $currentRefund->category_id;
+
             if (
                 ! $hasReceiptBreakdown
                 && $activePurchaseCategory !== null
-                && (
-                    $currentRefund->category_id === null
-                    || $currentRefund->category_assignment_provenance !== CategoryAssignmentProvenance::Owner
+                && CategoryAssignmentProvenance::LinkedRefund->canReplace(
+                    $currentRefund->category_assignment_provenance,
                 )
             ) {
                 $currentRefund->category_id = $activePurchaseCategory->id;
                 $currentRefund->category_assignment_provenance = CategoryAssignmentProvenance::LinkedRefund;
+                $categoryAssignmentApplied = true;
             }
 
             $reviewReasons = [];
@@ -97,6 +101,18 @@ class LinkRefundToPurchase
             $currentRefund->refund_relationship_review_reasons = $reviewReasons;
             $currentRefund->revision++;
             $currentRefund->save();
+
+            if ($categoryAssignmentApplied) {
+                CategoryAssignment::create([
+                    'user_id' => $owner->getKey(),
+                    'transaction_id' => $currentRefund->getKey(),
+                    'category_id' => $activePurchaseCategory->id,
+                    'previous_category_id' => $previousCategoryId,
+                    'source' => CategoryAssignmentProvenance::LinkedRefund,
+                    'transaction_revision' => $currentRefund->revision,
+                    'linked_purchase_id' => $currentPurchase->getKey(),
+                ]);
+            }
 
             return $currentRefund;
         }, 3);

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Ledger;
 
+use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
 use App\Currency;
 use App\ExactInteger;
 use App\Models\Category;
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 
 /**
+ * @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance
+ *
  * @phpstan-type LedgerFiltersInput array{
  *     search?: string|null,
  *     date_from?: string|null,
@@ -47,7 +50,7 @@ use Illuminate\Support\Str;
  *     confirmed_at: string,
  *     revision: int,
  *     original_purchase: array{id: int, merchant_description: string}|null,
- *     category: array{id: int, name: string, provenance: string}|null,
+ *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
  *     review_state: string,
  *     review_field_count: int,
  *     refund_relationship_review_count: int,
@@ -64,7 +67,7 @@ use Illuminate\Support\Str;
  *     confirmed_at: string,
  *     revision: int,
  *     original_purchase: array{id: int, merchant_description: string}|null,
- *     category: array{id: int, name: string, provenance: string}|null,
+ *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
  *     review_state: string,
  *     review_field_count: int,
  *     refund_relationship_review_count: int,
@@ -83,7 +86,7 @@ use Illuminate\Support\Str;
  *     confirmed_at: string,
  *     revision: int,
  *     original_purchase: array{id: int, merchant_description: string}|null,
- *     category: array{id: int, name: string, provenance: string}|null,
+ *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
  *     review_state: string,
  *     review_field_count: int,
  *     refund_relationship_review_count: int,
@@ -110,6 +113,7 @@ class ReadLedger
 
     public function __construct(
         private ReadTransactionInspector $readTransactionInspector,
+        private ReadCategoryAssignmentProvenance $readCategoryAssignmentProvenance,
     ) {}
 
     /**
@@ -117,7 +121,7 @@ class ReadLedger
      * @return array{
      *     today: string,
      *     totals: array{USD: string, PEN: string},
-     *     category_totals: list<array{category: array{id: int, name: string}, totals: array{USD: string, PEN: string}}>,
+     *     category_totals: list<array{category: array{id: int|null, name: string}, totals: array{USD: string, PEN: string}}>,
      *     purchase_options: list<array{id: int, occurred_on: string, merchant_description: string, currency: string}>,
      *     transactions: list<ActiveLedgerTransactionData>,
      *     voided_transactions: list<VoidedLedgerTransactionData>,
@@ -154,6 +158,8 @@ class ReadLedger
             ->with([
                 'originalPurchase:id,merchant_description',
                 'category:id,name',
+                'currentCategoryAssignment.owner:id,name',
+                'currentCategoryAssignment.linkedPurchase:id,merchant_description',
             ])
             ->orderByDesc('occurred_on')
             ->orderByDesc('id');
@@ -173,6 +179,8 @@ class ReadLedger
             ->with([
                 'originalPurchase:id,merchant_description',
                 'category:id,name',
+                'currentCategoryAssignment.owner:id,name',
+                'currentCategoryAssignment.linkedPurchase:id,merchant_description',
             ])
             ->orderByDesc('voided_at')
             ->orderByDesc('id');
@@ -217,6 +225,7 @@ class ReadLedger
             $transactions[] = [
                 ...$this->transactionData(
                     $transaction,
+                    $owner,
                     $duplicateStatuses[$transaction->id] ?? 'none',
                 ),
                 'state_change_idempotency_key' => (string) Str::uuid(),
@@ -251,6 +260,7 @@ class ReadLedger
             $voidedTransactions[] = [
                 ...$this->transactionData(
                     $transaction,
+                    $owner,
                     $duplicateStatuses[$transaction->id] ?? 'none',
                 ),
                 'voided_at' => $transaction->voided_at->toIso8601String(),
@@ -334,6 +344,32 @@ class ReadLedger
             ];
         }
 
+        $uncategorizedTotalRows = Transaction::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->whereNull('voided_at')
+            ->whereNull('category_id')
+            ->toBase()
+            ->select('currency')
+            ->selectRaw(
+                'SUM(CASE WHEN kind = ? THEN amount_minor ELSE -amount_minor END) AS total_minor',
+                [TransactionKind::Purchase->value],
+            )
+            ->groupBy('currency')
+            ->pluck('total_minor', 'currency');
+
+        if ($uncategorizedTotalRows->isNotEmpty()) {
+            $categoryTotals[] = [
+                'category' => [
+                    'id' => null,
+                    'name' => 'Uncategorized',
+                ],
+                'totals' => [
+                    Currency::Usd->value => (string) $uncategorizedTotalRows->get(Currency::Usd->value, '0'),
+                    Currency::Pen->value => (string) $uncategorizedTotalRows->get(Currency::Pen->value, '0'),
+                ],
+            ];
+        }
+
         $purchaseModels = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
@@ -387,23 +423,24 @@ class ReadLedger
      *     confirmed_at: string,
      *     revision: int,
      *     original_purchase: array{id: int, merchant_description: string}|null,
-     *     category: array{id: int, name: string, provenance: string}|null,
+     *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
      *     review_state: string,
      *     review_field_count: int,
      *     refund_relationship_review_count: int,
      *     duplicate_status: string
      * }
      */
-    private function transactionData(Transaction $transaction, string $duplicateStatus): array
+    private function transactionData(Transaction $transaction, User $owner, string $duplicateStatus): array
     {
         $category = null;
 
         if ($transaction->category !== null) {
-            assert($transaction->category_assignment_provenance !== null);
+            $provenance = $this->readCategoryAssignmentProvenance->handle($transaction, $owner);
+            assert($provenance !== null);
             $category = [
                 'id' => $transaction->category->id,
                 'name' => $transaction->category->name,
-                'provenance' => $transaction->category_assignment_provenance->value,
+                'provenance' => $provenance,
             ];
         }
 
@@ -423,7 +460,8 @@ class ReadLedger
                     'merchant_description' => $transaction->originalPurchase->merchant_description,
                 ],
             'category' => $category,
-            'review_state' => $transaction->provisional_fields !== []
+            'review_state' => $transaction->category_id === null
+                || $transaction->provisional_fields !== []
                 || $transaction->refund_relationship_review_reasons !== []
                 || $duplicateStatus === 'suspected'
                     ? 'outstanding'
@@ -482,12 +520,14 @@ class ReadLedger
         if ($filters['review_state'] === 'outstanding') {
             $query->where(function (Builder $query): void {
                 $query
-                    ->whereJsonLength('provisional_fields', '>', 0)
+                    ->whereNull('category_id')
+                    ->orWhereJsonLength('provisional_fields', '>', 0)
                     ->orWhereJsonLength('refund_relationship_review_reasons', '>', 0)
                     ->orWhere(fn (Builder $query) => $this->whereHasDuplicateRelationship($query, false));
             });
         } elseif ($filters['review_state'] === 'clear') {
             $query
+                ->whereNotNull('category_id')
                 ->whereJsonLength('provisional_fields', 0)
                 ->whereJsonLength('refund_relationship_review_reasons', 0);
             $this->whereHasNoDuplicateRelationship($query, false);

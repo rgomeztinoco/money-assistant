@@ -16,6 +16,7 @@ class ReadReviewQueue
     /**
      * @return array{
      *     unresolved_field_count: int,
+     *     unresolved_category_count: int,
      *     unresolved_refund_relationship_count: int,
      *     unresolved_suspected_duplicate_count: int,
      *     transactions: list<array{
@@ -78,6 +79,11 @@ class ReadReviewQueue
      */
     public function handle(User $owner): array
     {
+        $unresolvedCategoryCount = Transaction::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->whereNull('voided_at')
+            ->whereNull('category_id')
+            ->count();
         $reviewQuery = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
@@ -267,6 +273,7 @@ class ReadReviewQueue
 
         return [
             'unresolved_field_count' => $unresolvedFieldCount,
+            'unresolved_category_count' => $unresolvedCategoryCount,
             'unresolved_refund_relationship_count' => $unresolvedRefundRelationshipCount,
             'unresolved_suspected_duplicate_count' => $suspectedDuplicateModels->count(),
             'transactions' => $transactions,

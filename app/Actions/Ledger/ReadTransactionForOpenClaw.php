@@ -2,11 +2,17 @@
 
 namespace App\Actions\Ledger;
 
+use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
 use App\Models\Transaction;
 use App\Models\User;
 
+/** @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance */
 class ReadTransactionForOpenClaw
 {
+    public function __construct(
+        private ReadCategoryAssignmentProvenance $readCategoryAssignmentProvenance,
+    ) {}
+
     /**
      * @return array{
      *     id: int,
@@ -16,7 +22,8 @@ class ReadTransactionForOpenClaw
      *     currency: string,
      *     kind: string,
      *     merchant_description: string,
-     *     status: string
+     *     status: string,
+     *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null
      * }|null
      */
     public function handle(User $owner, int $transactionId): ?array
@@ -24,6 +31,12 @@ class ReadTransactionForOpenClaw
         $transaction = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereKey($transactionId)
+            ->with([
+                'category:id,name',
+                'originalPurchase:id,merchant_description',
+                'currentCategoryAssignment.owner:id,name',
+                'currentCategoryAssignment.linkedPurchase:id,merchant_description',
+            ])
             ->first([
                 'id',
                 'revision',
@@ -33,6 +46,9 @@ class ReadTransactionForOpenClaw
                 'kind',
                 'merchant_description',
                 'voided_at',
+                'category_id',
+                'category_assignment_provenance',
+                'original_purchase_id',
             ]);
 
         if ($transaction === null) {
@@ -48,6 +64,13 @@ class ReadTransactionForOpenClaw
             'kind' => $transaction->kind->value,
             'merchant_description' => $transaction->merchant_description,
             'status' => $transaction->voided_at === null ? 'active' : 'voided',
+            'category' => $transaction->category === null
+                ? null
+                : [
+                    'id' => $transaction->category->id,
+                    'name' => $transaction->category->name,
+                    'provenance' => $this->readCategoryAssignmentProvenance->handle($transaction, $owner),
+                ],
         ];
     }
 }

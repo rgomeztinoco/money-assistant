@@ -60,6 +60,14 @@ class Category extends Model
     }
 
     /**
+     * @return HasMany<CategoryAssignment, $this>
+     */
+    public function assignments(): HasMany
+    {
+        return $this->hasMany(CategoryAssignment::class);
+    }
+
+    /**
      * @return BelongsTo<Category, $this>
      */
     public function parent(): BelongsTo

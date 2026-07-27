@@ -2,8 +2,10 @@
 
 use App\Actions\Ledger\RecordManualTransaction;
 use App\Actions\Ledger\ResolveTransactionField;
+use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\Exceptions\StaleTransactionRevision;
+use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -54,6 +56,38 @@ test('a confirmed Transaction with multiple provisional fields remains in totals
             ->where('transactions.0.fields.1.name', 'merchant_description')
             ->where('transactions.0.fields.1.value', 'Neighborhood market'),
         );
+});
+
+test('an Uncategorized Transaction remains in totals, reports in its system bucket, and enters the Review Queue', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $uncategorized = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+        'amount_minor' => 10_000,
+        'merchant_description' => 'Needs a Category',
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+        'amount_minor' => 5_000,
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('transactions.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('totals.USD', '15000')
+            ->where('category_totals.0.category.id', $category->id)
+            ->where('category_totals.0.totals.USD', '5000')
+            ->where('category_totals.1.category.id', null)
+            ->where('category_totals.1.category.name', 'Uncategorized')
+            ->where('category_totals.1.totals.USD', '10000'));
+
+    $this->get(route('review_queue.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('unresolved_category_count', 1)
+            ->where('review_queue.outstanding_count', 1)
+            ->has('workspace_transactions', 1)
+            ->where('workspace_transactions.0.id', $uncategorized->id)
+            ->where('selected_transaction.id', $uncategorized->id));
 });
 
 test('the owner can accept one provisional field and correct another with totals recalculated immediately', function () {

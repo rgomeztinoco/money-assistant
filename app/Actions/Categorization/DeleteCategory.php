@@ -23,7 +23,7 @@ final class DeleteCategory
                 throw new StaleCategoryRevision;
             }
 
-            if ($category->transactions()->exists()) {
+            if ($category->transactions()->exists() || $category->assignments()->exists()) {
                 throw new CategoryOperationBlocked('This Category has historical Transaction assignments and must be retired instead.');
             }
 

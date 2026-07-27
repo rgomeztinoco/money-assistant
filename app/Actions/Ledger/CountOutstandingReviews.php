@@ -10,6 +10,11 @@ class CountOutstandingReviews
 {
     public function handle(User $owner): int
     {
+        $categoryCount = Transaction::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->whereNull('voided_at')
+            ->whereNull('category_id')
+            ->count();
         $fieldCount = (int) Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
@@ -27,6 +32,6 @@ class CountOutstandingReviews
             ->whereNull('resolved_at')
             ->count();
 
-        return $fieldCount + $refundRelationshipCount + $suspectedDuplicateCount;
+        return $categoryCount + $fieldCount + $refundRelationshipCount + $suspectedDuplicateCount;
     }
 }

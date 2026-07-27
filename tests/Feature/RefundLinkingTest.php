@@ -166,9 +166,11 @@ test('an unambiguous linked Refund defaults to the purchase Category and may mak
             ->where('transactions.0.category.id', $category->id)
             ->where('transactions.0.category.name', 'Clothing')
             ->where(
-                'transactions.0.category.provenance',
+                'transactions.0.category.provenance.source',
                 'linked_refund',
             )
+            ->where('transactions.0.category.provenance.linked_purchase.id', $purchase->id)
+            ->where('transactions.0.category.provenance.linked_purchase.merchant_description', $purchase->merchant_description)
             ->has('category_totals', 1)
             ->where('category_totals.0.category.id', $category->id)
             ->where('category_totals.0.totals.USD', '-5000')
@@ -320,7 +322,7 @@ test('an unlinked Refund keeps its independent owner Category', function () {
             ->where('transactions.0.id', $refund->id)
             ->where('transactions.0.original_purchase', null)
             ->where('transactions.0.category.id', $category->id)
-            ->where('transactions.0.category.provenance', 'owner')
+            ->where('transactions.0.category.provenance.source', 'owner')
             ->where('category_totals.0.totals.PEN', '-2500'),
         );
 });

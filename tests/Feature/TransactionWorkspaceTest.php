@@ -90,6 +90,8 @@ test('ledger state filters distinguish every supported relationship state', func
         ->create([
             'occurred_on' => '2026-07-10',
             'merchant_description' => 'Clear purchase',
+            'category_id' => $category->id,
+            'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     $categorizedPurchase = Transaction::factory()
         ->for($owner, 'owner')
@@ -151,8 +153,9 @@ test('ledger state filters distinguish every supported relationship state', func
 
     $this->get(route('transactions.index', ['category_state' => 'categorized']))
         ->assertInertia(fn (Assert $page) => $page
-            ->has('transactions', 1)
-            ->where('transactions.0.id', $categorizedPurchase->id),
+            ->has('transactions', 2)
+            ->where('transactions.0.id', $categorizedPurchase->id)
+            ->where('transactions.1.id', $clearPurchase->id),
         );
 
     $this->get(route('transactions.index', ['category_state' => 'uncategorized']))
@@ -292,7 +295,7 @@ test('selecting an owned Transaction returns its contextual inspector history an
         ->assertInertia(fn (Assert $page) => $page
             ->where('selected_transaction.id', $transaction->id)
             ->where('selected_transaction.category.name', 'Groceries')
-            ->where('selected_transaction.category.provenance', 'owner')
+            ->where('selected_transaction.category.provenance.source', 'owner')
             ->where('selected_transaction.review.fields.0.name', 'occurred_on')
             ->where('selected_transaction.corrections.0.corrected_value', 'Neighborhood market')
             ->where('selected_transaction.state_changes.0.operation', 'restore')
@@ -325,7 +328,11 @@ test('the Review Queue is the outstanding preset of the ledger and shares its na
         'first_transaction_id' => min($reviewTransaction->id, $similarTransaction->id),
         'second_transaction_id' => max($reviewTransaction->id, $similarTransaction->id),
     ]);
-    Transaction::factory()->for($owner, 'owner')->create();
+    $clearCategory = Category::factory()->for($owner, 'owner')->create();
+    Transaction::factory()->for($owner, 'owner')->create([
+        'category_id' => $clearCategory->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
     $refundReviewPurchase = Transaction::factory()
         ->for($owner, 'owner')
         ->purchase()
@@ -343,10 +350,10 @@ test('the Review Queue is the outstanding preset of the ledger and shares its na
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('review-queue/index')
-            ->where('review_queue.outstanding_count', 4)
+            ->where('review_queue.outstanding_count', 8)
             ->where('workspace.mode', 'review_queue')
             ->where('filters.review_state', 'outstanding')
-            ->has('workspace_transactions', 3)
+            ->has('workspace_transactions', 4)
             ->where('selected_transaction.id', $reviewTransaction->id),
         );
 

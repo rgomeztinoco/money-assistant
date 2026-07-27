@@ -6,6 +6,7 @@ use App\CategoryAssignmentProvenance;
 use App\Exceptions\StaleCategoryRevision;
 use App\Exceptions\StaleTransactionRevision;
 use App\Models\Category;
+use App\Models\CategoryAssignment;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -52,12 +53,22 @@ final class AssignCategoryToTransaction
                 throw new StaleCategoryRevision;
             }
 
+            $previousCategoryId = $transaction->category_id;
             $transaction->category_id = $category?->id;
             $transaction->category_assignment_provenance = $category === null
                 ? null
                 : CategoryAssignmentProvenance::Owner;
             $transaction->revision++;
             $transaction->save();
+
+            CategoryAssignment::create([
+                'user_id' => $owner->getKey(),
+                'transaction_id' => $transaction->getKey(),
+                'category_id' => $category?->id,
+                'previous_category_id' => $previousCategoryId,
+                'source' => CategoryAssignmentProvenance::Owner,
+                'transaction_revision' => $transaction->revision,
+            ]);
 
             return $transaction;
         }, 3);

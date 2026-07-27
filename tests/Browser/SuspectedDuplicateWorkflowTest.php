@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\Ledger\MarkSuspectedDuplicate;
+use App\CategoryAssignmentProvenance;
+use App\Models\Category;
 use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
@@ -11,6 +13,7 @@ beforeEach(function () {
 
 test('the inspector shows both records and the exact duplicate resolution effect before confirmation', function () {
     $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
     $notificationTransaction = Transaction::factory()
         ->for($owner, 'owner')
         ->purchase()
@@ -19,6 +22,8 @@ test('the inspector shows both records and the exact duplicate resolution effect
             'occurred_on' => '2026-07-20',
             'amount_minor' => 2_500,
             'merchant_description' => 'Market notification',
+            'category_id' => $category->id,
+            'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     $receiptTransaction = Transaction::factory()
         ->for($owner, 'owner')
@@ -28,6 +33,8 @@ test('the inspector shows both records and the exact duplicate resolution effect
             'occurred_on' => '2026-07-20',
             'amount_minor' => 2_500,
             'merchant_description' => 'Market receipt',
+            'category_id' => $category->id,
+            'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     SpendingNotificationReference::factory()
         ->for($owner, 'owner')
@@ -55,7 +62,7 @@ test('the inspector shows both records and the exact duplicate resolution effect
         ->assertSee('Keep Market receipt active.')
         ->assertSee('Move 1 source reference from Market notification to Market receipt.')
         ->assertSee('Void Market notification and remove $ 25.00 from USD net spending.')
-        ->assertSee('Remove $ 25.00 from Uncategorized spending.')
+        ->assertSee('Remove $ 25.00 from Groceries Category spending.')
         ->press('Confirm resolution')
         ->assertSee('Suspected Duplicate resolved.')
         ->assertSee('Review Queue is clear')
