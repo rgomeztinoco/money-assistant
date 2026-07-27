@@ -4,6 +4,7 @@ import {
     FolderGit2,
     LayoutGrid,
     ListChecks,
+    Sparkles,
     ReceiptText,
     Tags,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import { index as categoriesIndex } from '@/routes/categories';
+import { index as learnedRulesIndex } from '@/routes/learned_rules';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
@@ -64,6 +66,11 @@ export function AppSidebar() {
             title: 'Categories',
             href: categoriesIndex(),
             icon: Tags,
+        },
+        {
+            title: 'Learned Rules',
+            href: learnedRulesIndex(),
+            icon: Sparkles,
         },
     ];
 

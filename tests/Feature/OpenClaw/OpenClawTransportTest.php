@@ -812,11 +812,12 @@ test('signature verification binds timestamp nonce method path and exact body', 
 
 test('validly signed stale and malformed authentication claims are rejected and audited', function (
     ?string $nonce,
-    string $timestamp,
+    int $timestampOffset,
     string $expectedOutcome,
 ) {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create();
+    $timestamp = (string) now()->addSeconds($timestampOffset)->getTimestamp();
 
     ($this->callOpenClaw)(
         ($this->validPayload)($transaction->id),
@@ -826,19 +827,19 @@ test('validly signed stale and malformed authentication claims are rejected and 
 
     expect(OpenClawAuditEvent::query()->sole()->outcome)->toBe($expectedOutcome);
 })->with([
-    'stale timestamp' => fn () => [
+    'stale timestamp' => [
         null,
-        (string) now()->subSeconds(301)->getTimestamp(),
+        -301,
         'stale_signature',
     ],
-    'future timestamp' => fn () => [
+    'future timestamp' => [
         null,
-        (string) now()->addSeconds(301)->getTimestamp(),
+        301,
         'stale_signature',
     ],
-    'malformed nonce' => fn () => [
+    'malformed nonce' => [
         'short',
-        (string) now()->getTimestamp(),
+        0,
         'invalid_request',
     ],
 ]);

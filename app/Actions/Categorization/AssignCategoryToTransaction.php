@@ -14,6 +14,10 @@ use Illuminate\Validation\ValidationException;
 
 final class AssignCategoryToTransaction
 {
+    public function __construct(
+        private CollectLearnedRuleSuggestionEvidence $collectLearnedRuleSuggestionEvidence,
+    ) {}
+
     public function handle(
         User $owner,
         int $transactionId,
@@ -32,16 +36,21 @@ final class AssignCategoryToTransaction
                 throw StaleTransactionRevision::fromTransaction($transaction);
             }
 
-            $category = $categoryId === null
-                ? null
-                : Category::query()
-                    ->whereBelongsTo($owner, 'owner')
-                    ->whereKey($categoryId)
-                    ->whereNull('retired_at')
-                    ->lockForUpdate()
-                    ->first();
+            $categoryIdsToLock = collect([$transaction->category_id, $categoryId])
+                ->filter(fn (?int $id): bool => $id !== null)
+                ->unique()
+                ->sort()
+                ->values();
+            $lockedCategories = Category::query()
+                ->whereBelongsTo($owner, 'owner')
+                ->whereIn('id', $categoryIdsToLock)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+            $category = $categoryId === null ? null : $lockedCategories->get($categoryId);
 
-            if ($categoryId !== null && $category === null) {
+            if ($categoryId !== null && ($category === null || $category->retired_at !== null)) {
                 throw ValidationException::withMessages([
                     'category_id' => 'Choose an active Category owned by you.',
                 ]);
@@ -53,7 +62,13 @@ final class AssignCategoryToTransaction
                 throw new StaleCategoryRevision;
             }
 
+            if ($transaction->category_id === $category?->id
+                && $transaction->category_assignment_provenance === CategoryAssignmentProvenance::Owner) {
+                return $transaction;
+            }
+
             $previousCategoryId = $transaction->category_id;
+            $isCategoryCorrection = $previousCategoryId !== $category?->id;
             $transaction->category_id = $category?->id;
             $transaction->category_assignment_provenance = $category === null
                 ? null
@@ -61,14 +76,22 @@ final class AssignCategoryToTransaction
             $transaction->revision++;
             $transaction->save();
 
-            CategoryAssignment::create([
+            $assignment = CategoryAssignment::create([
                 'user_id' => $owner->getKey(),
                 'transaction_id' => $transaction->getKey(),
                 'category_id' => $category?->id,
                 'previous_category_id' => $previousCategoryId,
                 'source' => CategoryAssignmentProvenance::Owner,
+                'is_correction' => $isCategoryCorrection,
                 'transaction_revision' => $transaction->revision,
             ]);
+
+            if ($isCategoryCorrection) {
+                $this->collectLearnedRuleSuggestionEvidence->handle(
+                    $transaction,
+                    $category === null ? null : $assignment,
+                );
+            }
 
             return $transaction;
         }, 3);

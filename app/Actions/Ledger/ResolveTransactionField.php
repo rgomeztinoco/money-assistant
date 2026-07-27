@@ -2,7 +2,10 @@
 
 namespace App\Actions\Ledger;
 
+use App\Actions\Categorization\CollectLearnedRuleSuggestionEvidence;
+use App\CategoryAssignmentProvenance;
 use App\Exceptions\StaleTransactionRevision;
+use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -12,6 +15,10 @@ use InvalidArgumentException;
 
 class ResolveTransactionField
 {
+    public function __construct(
+        private CollectLearnedRuleSuggestionEvidence $collectLearnedRuleSuggestionEvidence,
+    ) {}
+
     public function handle(
         User $owner,
         Transaction $transaction,
@@ -72,6 +79,29 @@ class ResolveTransactionField
             $currentTransaction->provisional_fields = $remainingProvisionalFields;
             $currentTransaction->revision = $nextRevision;
             $currentTransaction->save();
+
+            if ($resolution === TransactionFieldResolution::Correct
+                && in_array($field, [
+                    ReviewableTransactionField::MerchantDescription,
+                    ReviewableTransactionField::Kind,
+                    ReviewableTransactionField::Currency,
+                ], true)) {
+                $currentAssignment = $currentTransaction->currentCategoryAssignment()->first();
+
+                if ($currentAssignment?->source === CategoryAssignmentProvenance::Owner
+                    && $currentAssignment->is_correction) {
+                    Category::query()
+                        ->whereKey($currentAssignment->category_id)
+                        ->whereBelongsTo($owner, 'owner')
+                        ->lockForUpdate()
+                        ->first();
+
+                    $this->collectLearnedRuleSuggestionEvidence->handle(
+                        $currentTransaction,
+                        $currentAssignment,
+                    );
+                }
+            }
 
             return $currentTransaction;
         });

@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryRetirementController;
+use App\Http\Controllers\LearnedRuleController;
+use App\Http\Controllers\LearnedRuleSuggestionAcceptanceController;
+use App\Http\Controllers\LearnedRuleSuggestionController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\SuspectedDuplicateResolutionController;
 use App\Http\Controllers\TransactionCategoryController;
@@ -22,6 +25,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('transactions.category.update');
     Route::resource('categories', CategoryController::class)
         ->only(['index', 'store', 'update']);
+    Route::resource('learned-rules', LearnedRuleController::class)
+        ->only(['index', 'store'])
+        ->names([
+            'index' => 'learned_rules.index',
+            'store' => 'learned_rules.store',
+        ]);
+    Route::delete('learned-rule-suggestions/{learned_rule_suggestion}', [LearnedRuleSuggestionController::class, 'destroy'])
+        ->name('learned_rule_suggestions.destroy');
+    Route::post('learned-rule-suggestions/{learned_rule_suggestion}/acceptance', [LearnedRuleSuggestionAcceptanceController::class, 'store'])
+        ->name('learned_rule_suggestions.acceptance.store');
     Route::delete('categories/{category}', [CategoryController::class, 'destroy'])
         ->middleware(RequirePasskeyConfirmation::class)
         ->name('categories.destroy');

@@ -68,6 +68,14 @@ class Category extends Model
     }
 
     /**
+     * @return HasMany<LearnedRuleRevision, $this>
+     */
+    public function learnedRuleRevisions(): HasMany
+    {
+        return $this->hasMany(LearnedRuleRevision::class);
+    }
+
+    /**
      * @return BelongsTo<Category, $this>
      */
     public function parent(): BelongsTo

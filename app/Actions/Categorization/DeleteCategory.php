@@ -27,6 +27,10 @@ final class DeleteCategory
                 throw new CategoryOperationBlocked('This Category has historical Transaction assignments and must be retired instead.');
             }
 
+            if ($category->learnedRuleRevisions()->exists()) {
+                throw new CategoryOperationBlocked('This Category has a historical Learned Rule revision and must be retired instead.');
+            }
+
             if ($category->children()->exists()) {
                 throw new CategoryOperationBlocked('Move or delete every child Category first.');
             }

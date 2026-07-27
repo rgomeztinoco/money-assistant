@@ -1,3 +1,5 @@
+import type { LearnedRuleCandidate } from './learned-rule';
+
 export type Currency = 'USD' | 'PEN';
 export type TransactionKind = 'purchase' | 'refund';
 export type ReviewableFieldName =
@@ -107,6 +109,7 @@ export type SelectedTransaction = {
         transaction_revision: number;
         created_at: string | null;
     }>;
+    learned_rule_candidate: LearnedRuleCandidate | null;
     state_changes: Array<{
         id: number;
         operation: 'void' | 'restore';

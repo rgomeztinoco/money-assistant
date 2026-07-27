@@ -5,6 +5,7 @@ namespace App\Actions\Categorization;
 use App\Exceptions\CategoryOperationBlocked;
 use App\Exceptions\StaleCategoryRevision;
 use App\Models\Category;
+use App\Models\LearnedRule;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -25,6 +26,14 @@ final class RetireCategory
 
             if ($category->children()->whereNull('retired_at')->exists()) {
                 throw new CategoryOperationBlocked('Move or retire every active child Category first.');
+            }
+
+            if (LearnedRule::query()
+                ->whereBelongsTo($owner, 'owner')
+                ->whereNull('retired_at')
+                ->whereHas('currentRevision', fn ($query) => $query->where('category_id', $category->id))
+                ->exists()) {
+                throw new CategoryOperationBlocked('Retire or revise every active Learned Rule targeting this Category first.');
             }
 
             if ($category->retired_at !== null) {

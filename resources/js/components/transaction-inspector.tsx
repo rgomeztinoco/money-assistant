@@ -7,9 +7,11 @@ import {
     Link2,
     PencilLine,
     ScanSearch,
+    Sparkles,
     ShieldCheck,
 } from 'lucide-react';
 import { useState } from 'react';
+import { store as activateLearnedRule } from '@/actions/App/Http/Controllers/LearnedRuleController';
 import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { update as updateCategory } from '@/actions/App/Http/Controllers/TransactionCategoryController';
 import { update } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
@@ -634,6 +636,86 @@ export function TransactionInspector({
                                     </>
                                 )}
                             </Form>
+                            {transaction.learned_rule_candidate && (
+                                <div className="grid gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                                    <div className="flex items-start gap-3">
+                                        <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+                                        <div className="grid gap-1">
+                                            <h2 className="font-semibold">
+                                                Create an exact Learned Rule?
+                                            </h2>
+                                            <p className="text-sm text-muted-foreground">
+                                                Future{' '}
+                                                <span className="capitalize">
+                                                    {
+                                                        transaction
+                                                            .learned_rule_candidate
+                                                            .transaction_kind
+                                                    }
+                                                </span>{' '}
+                                                Transactions in{' '}
+                                                {
+                                                    transaction
+                                                        .learned_rule_candidate
+                                                        .currency
+                                                }{' '}
+                                                matching “
+                                                {
+                                                    transaction
+                                                        .learned_rule_candidate
+                                                        .merchant_pattern
+                                                }
+                                                ” exactly would use{' '}
+                                                {
+                                                    transaction
+                                                        .learned_rule_candidate
+                                                        .category_name
+                                                }
+                                                . Nothing is activated
+                                                automatically, and existing
+                                                Transactions do not change.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Form
+                                        {...activateLearnedRule.form()}
+                                        options={{ preserveScroll: true }}
+                                    >
+                                        {({ errors, processing }) => (
+                                            <div className="grid gap-1">
+                                                <input
+                                                    type="hidden"
+                                                    name="transaction_id"
+                                                    value={transaction.id}
+                                                />
+                                                <input
+                                                    type="hidden"
+                                                    name="expected_revision"
+                                                    value={transaction.revision}
+                                                />
+                                                <Button
+                                                    type="submit"
+                                                    size="sm"
+                                                    className="w-fit"
+                                                    disabled={processing}
+                                                >
+                                                    {processing ? (
+                                                        <Spinner />
+                                                    ) : (
+                                                        <Sparkles />
+                                                    )}
+                                                    Activate exact rule
+                                                </Button>
+                                                <InputError
+                                                    message={
+                                                        errors.transaction_id
+                                                    }
+                                                />
+                                            </div>
+                                        )}
+                                    </Form>
+                                </div>
+                            )}
                         </section>
 
                         {transaction.review.fields.length > 0 && (

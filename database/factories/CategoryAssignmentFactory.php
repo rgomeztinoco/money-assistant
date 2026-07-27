@@ -28,6 +28,7 @@ class CategoryAssignmentFactory extends Factory
             'category_id' => null,
             'previous_category_id' => null,
             'source' => CategoryAssignmentProvenance::Owner,
+            'is_correction' => false,
             'transaction_revision' => 1,
         ];
     }

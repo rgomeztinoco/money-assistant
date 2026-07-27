@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $category_id
  * @property int|null $previous_category_id
  * @property CategoryAssignmentProvenance $source
+ * @property bool $is_correction
  * @property int $transaction_revision
  * @property int|null $linked_purchase_id
  * @property int|null $learned_rule_id
@@ -34,6 +35,7 @@ use Illuminate\Support\Carbon;
     'category_id',
     'previous_category_id',
     'source',
+    'is_correction',
     'transaction_revision',
     'linked_purchase_id',
     'learned_rule_id',
@@ -47,6 +49,11 @@ class CategoryAssignment extends Model
 {
     /** @use HasFactory<CategoryAssignmentFactory> */
     use HasFactory;
+
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'is_correction' => false,
+    ];
 
     /** @return BelongsTo<User, $this> */
     public function owner(): BelongsTo
@@ -83,6 +90,7 @@ class CategoryAssignment extends Model
     {
         return [
             'source' => CategoryAssignmentProvenance::class,
+            'is_correction' => 'boolean',
             'transaction_revision' => 'integer',
             'learned_rule_id' => 'integer',
             'learned_rule_revision' => 'integer',
