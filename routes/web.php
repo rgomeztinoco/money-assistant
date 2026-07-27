@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryRetirementController;
+use App\Http\Controllers\DailyExchangeRateController;
 use App\Http\Controllers\LearnedRuleBulkActionConfirmationController;
 use App\Http\Controllers\LearnedRuleBulkActionController;
 use App\Http\Controllers\LearnedRuleController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\LearnedRulePreviewController;
 use App\Http\Controllers\LearnedRuleRetirementController;
 use App\Http\Controllers\LearnedRuleSuggestionController;
 use App\Http\Controllers\LearnedRuleSuggestionPreviewController;
+use App\Http\Controllers\ReportingCurrencyController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\SuspectedDuplicateResolutionController;
 use App\Http\Controllers\TransactionCategoryController;
@@ -31,6 +33,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('transactions.category.update');
     Route::resource('categories', CategoryController::class)
         ->only(['index', 'store', 'update']);
+    Route::resource('daily-exchange-rates', DailyExchangeRateController::class)
+        ->only(['index', 'store', 'update'])
+        ->names([
+            'index' => 'daily_exchange_rates.index',
+            'store' => 'daily_exchange_rates.store',
+            'update' => 'daily_exchange_rates.update',
+        ]);
+    Route::put('reporting-currency', [ReportingCurrencyController::class, 'update'])
+        ->name('reporting_currency.update');
     Route::resource('learned-rules', LearnedRuleController::class)
         ->only(['index', 'store', 'update'])
         ->names([

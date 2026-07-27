@@ -1,7 +1,9 @@
 import { Form, Head, Link, router, usePage } from '@inertiajs/react';
 import {
     ArrowDownLeft,
+    ArrowRightLeft,
     ArrowUpRight,
+    CircleAlert,
     CircleOff,
     Link2,
     ListChecks,
@@ -36,11 +38,13 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index } from '@/routes/transactions';
 import type {
     Currency,
     CategoryOption,
+    CombinedTotal,
     LedgerCategory,
     LedgerFilters,
     SelectedTransaction,
@@ -89,12 +93,14 @@ type VoidedLedgerTransaction = LedgerTransaction & {
 export type TransactionsIndexProps = {
     today: string;
     totals: Record<Currency, string>;
+    combined_total: CombinedTotal;
     category_totals: Array<{
         category: {
             id: number | null;
             name: string;
         };
         totals: Record<Currency, string>;
+        combined_total: CombinedTotal;
     }>;
     category_options: CategoryOption[];
     purchase_options: PurchaseOption[];
@@ -819,6 +825,7 @@ function LedgerFiltersForm({
 export default function TransactionsIndex({
     today,
     totals,
+    combined_total,
     category_totals,
     category_options,
     purchase_options,
@@ -948,7 +955,7 @@ export default function TransactionsIndex({
 
                 <LedgerFiltersForm filters={filters} mode={workspace.mode} />
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {(['USD', 'PEN'] as const).map((currency) => (
                         <Card key={currency} className="gap-3">
                             <CardHeader>
@@ -973,6 +980,66 @@ export default function TransactionsIndex({
                             </CardContent>
                         </Card>
                     ))}
+                    <Card className="gap-3 border-primary/30 bg-primary/[0.03] sm:col-span-2 xl:col-span-1">
+                        <CardHeader>
+                            <CardDescription className="flex items-center gap-2">
+                                <ArrowRightLeft className="size-4" />
+                                Combined net spending
+                            </CardDescription>
+                            {combined_total.amount_minor !== null &&
+                            combined_total.currency !== null ? (
+                                <CardTitle
+                                    className="text-3xl tabular-nums"
+                                    data-test="total-combined"
+                                >
+                                    {formatMinorUnits(
+                                        combined_total.amount_minor,
+                                        combined_total.currency,
+                                    )}
+                                </CardTitle>
+                            ) : (
+                                <CardTitle className="flex items-center gap-2 text-lg">
+                                    <CircleAlert className="size-5 text-amber-600 dark:text-amber-400" />
+                                    Combined total unavailable
+                                </CardTitle>
+                            )}
+                        </CardHeader>
+                        <CardContent className="grid gap-3">
+                            {combined_total.unavailable_reason ===
+                            'reporting_currency_not_selected' ? (
+                                <p className="text-xs text-muted-foreground">
+                                    Choose a Reporting Currency to combine USD
+                                    and PEN spending.
+                                </p>
+                            ) : combined_total.unavailable_reason ===
+                              'missing_exchange_rates' ? (
+                                <p className="text-xs text-muted-foreground">
+                                    Add Daily Exchange Rates for{' '}
+                                    {combined_total.missing_rate_dates.join(
+                                        ', ',
+                                    )}
+                                    .
+                                </p>
+                            ) : (
+                                <p className="text-xs text-muted-foreground">
+                                    Each Transaction is converted and rounded
+                                    half-up before summing.
+                                </p>
+                            )}
+                            {combined_total.unavailable_reason !== null && (
+                                <Button
+                                    asChild
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-fit"
+                                >
+                                    <Link href={dailyExchangeRatesIndex()}>
+                                        Manage exchange rates
+                                    </Link>
+                                </Button>
+                            )}
+                        </CardContent>
+                    </Card>
                 </div>
 
                 {category_totals.length > 0 && (
@@ -985,30 +1052,52 @@ export default function TransactionsIndex({
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                            {category_totals.map(({ category, totals }) => (
-                                <div
-                                    key={category.id ?? 'uncategorized'}
-                                    className="grid gap-2 rounded-lg border p-4"
-                                >
-                                    <p className="font-medium">
-                                        {category.name}
-                                    </p>
-                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums">
-                                        <span>
-                                            {formatMinorUnits(
-                                                totals.USD,
-                                                'USD',
+                            {category_totals.map(
+                                ({ category, totals, combined_total }) => (
+                                    <div
+                                        key={category.id ?? 'uncategorized'}
+                                        className="grid gap-2 rounded-lg border p-4"
+                                    >
+                                        <p className="font-medium">
+                                            {category.name}
+                                        </p>
+                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums">
+                                            <span>
+                                                {formatMinorUnits(
+                                                    totals.USD,
+                                                    'USD',
+                                                )}
+                                            </span>
+                                            <span>
+                                                {formatMinorUnits(
+                                                    totals.PEN,
+                                                    'PEN',
+                                                )}
+                                            </span>
+                                        </div>
+                                        <div className="border-t pt-2 text-sm">
+                                            {combined_total.amount_minor !==
+                                                null &&
+                                            combined_total.currency !== null ? (
+                                                <span className="font-medium tabular-nums">
+                                                    Combined:{' '}
+                                                    {formatMinorUnits(
+                                                        combined_total.amount_minor,
+                                                        combined_total.currency,
+                                                    )}
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">
+                                                    {combined_total.unavailable_reason ===
+                                                    'missing_exchange_rates'
+                                                        ? `Combined unavailable: missing ${combined_total.missing_rate_dates.join(', ')}`
+                                                        : 'Choose a Reporting Currency for a combined total.'}
+                                                </span>
                                             )}
-                                        </span>
-                                        <span>
-                                            {formatMinorUnits(
-                                                totals.PEN,
-                                                'PEN',
-                                            )}
-                                        </span>
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ),
+                            )}
                         </CardContent>
                     </Card>
                 )}

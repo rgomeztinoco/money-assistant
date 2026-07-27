@@ -1,5 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
+    ArrowRightLeft,
     BookOpen,
     FolderGit2,
     LayoutGrid,
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import { index as categoriesIndex } from '@/routes/categories';
+import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
 import { index as learnedRulesIndex } from '@/routes/learned_rules';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
@@ -71,6 +73,11 @@ export function AppSidebar() {
             title: 'Learned Rules',
             href: learnedRulesIndex(),
             icon: Sparkles,
+        },
+        {
+            title: 'Daily Exchange Rates',
+            href: dailyExchangeRatesIndex(),
+            icon: ArrowRightLeft,
         },
     ];
 

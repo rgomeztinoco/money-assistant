@@ -3,9 +3,7 @@
 namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
-use App\Currency;
-use App\ExactInteger;
-use App\Models\Category;
+use App\Actions\Reporting\ReadSpendingSummary;
 use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
 use App\Models\User;
@@ -15,6 +13,8 @@ use Illuminate\Support\Str;
 
 /**
  * @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance
+ * @phpstan-import-type CombinedTotalData from ReadSpendingSummary
+ * @phpstan-import-type CategoryTotalData from ReadSpendingSummary
  *
  * @phpstan-type LedgerFiltersInput array{
  *     search?: string|null,
@@ -114,6 +114,7 @@ class ReadLedger
     public function __construct(
         private ReadTransactionInspector $readTransactionInspector,
         private ReadCategoryAssignmentProvenance $readCategoryAssignmentProvenance,
+        private ReadSpendingSummary $readSpendingSummary,
     ) {}
 
     /**
@@ -121,7 +122,8 @@ class ReadLedger
      * @return array{
      *     today: string,
      *     totals: array{USD: string, PEN: string},
-     *     category_totals: list<array{category: array{id: int|null, name: string}, totals: array{USD: string, PEN: string}}>,
+     *     combined_total: CombinedTotalData,
+     *     category_totals: list<CategoryTotalData>,
      *     purchase_options: list<array{id: int, occurred_on: string, merchant_description: string, currency: string}>,
      *     transactions: list<ActiveLedgerTransactionData>,
      *     voided_transactions: list<VoidedLedgerTransactionData>,
@@ -136,17 +138,7 @@ class ReadLedger
         bool $includeEveryMatch = false,
     ): array {
         $filters = $this->normalizeFilters($filters);
-        $totalRows = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereNull('voided_at')
-            ->toBase()
-            ->select('currency')
-            ->selectRaw(
-                'SUM(CASE WHEN kind = ? THEN amount_minor ELSE -amount_minor END) AS total_minor',
-                [TransactionKind::Purchase->value],
-            )
-            ->groupBy('currency')
-            ->pluck('total_minor', 'currency');
+        $spendingSummary = $this->readSpendingSummary->handle($owner);
 
         $filteredQuery = $this->applyFilters(
             Transaction::query()->whereBelongsTo($owner, 'owner'),
@@ -277,99 +269,6 @@ class ReadLedger
             ];
         }
 
-        $categoryTotalRows = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereNull('voided_at')
-            ->whereNotNull('category_id')
-            ->toBase()
-            ->select(['category_id', 'currency'])
-            ->selectRaw(
-                'SUM(CASE WHEN kind = ? THEN amount_minor ELSE -amount_minor END) AS total_minor',
-                [TransactionKind::Purchase->value],
-            )
-            ->groupBy(['category_id', 'currency'])
-            ->get();
-
-        $categories = Category::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->orderBy('name')
-            ->get(['id', 'parent_id', 'name']);
-        $categoryTotalsById = [];
-
-        foreach ($categoryTotalRows as $categoryTotalRow) {
-            $categoryTotalsById[(int) $categoryTotalRow->category_id][(string) $categoryTotalRow->currency] = ExactInteger::from(
-                (string) $categoryTotalRow->total_minor,
-            );
-        }
-
-        foreach ($categories as $category) {
-            if (
-                $category->parent_id === null
-                || ! isset($categoryTotalsById[$category->id])
-            ) {
-                continue;
-            }
-
-            foreach (Currency::cases() as $currency) {
-                $childTotal = $categoryTotalsById[$category->id][$currency->value]
-                    ?? ExactInteger::from(0);
-                $parentTotal = $categoryTotalsById[$category->parent_id][$currency->value]
-                    ?? ExactInteger::from(0);
-                $categoryTotalsById[$category->parent_id][$currency->value] = $parentTotal->add($childTotal);
-            }
-        }
-
-        $categoryTotals = [];
-
-        foreach ($categories as $category) {
-            if (! isset($categoryTotalsById[$category->id])) {
-                continue;
-            }
-
-            $categoryTotals[] = [
-                'category' => [
-                    'id' => $category->id,
-                    'name' => $category->name,
-                ],
-                'totals' => [
-                    Currency::Usd->value => (
-                        $categoryTotalsById[$category->id][Currency::Usd->value]
-                        ?? ExactInteger::from(0)
-                    )->value(),
-                    Currency::Pen->value => (
-                        $categoryTotalsById[$category->id][Currency::Pen->value]
-                        ?? ExactInteger::from(0)
-                    )->value(),
-                ],
-            ];
-        }
-
-        $uncategorizedTotalRows = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereNull('voided_at')
-            ->whereNull('category_id')
-            ->toBase()
-            ->select('currency')
-            ->selectRaw(
-                'SUM(CASE WHEN kind = ? THEN amount_minor ELSE -amount_minor END) AS total_minor',
-                [TransactionKind::Purchase->value],
-            )
-            ->groupBy('currency')
-            ->pluck('total_minor', 'currency');
-
-        if ($uncategorizedTotalRows->isNotEmpty()) {
-            $categoryTotals[] = [
-                'category' => [
-                    'id' => null,
-                    'name' => 'Uncategorized',
-                ],
-                'totals' => [
-                    Currency::Usd->value => (string) $uncategorizedTotalRows->get(Currency::Usd->value, '0'),
-                    Currency::Pen->value => (string) $uncategorizedTotalRows->get(Currency::Pen->value, '0'),
-                ],
-            ];
-        }
-
         $purchaseModels = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
@@ -396,11 +295,9 @@ class ReadLedger
 
         return [
             'today' => now(config('app.timezone'))->toDateString(),
-            'totals' => [
-                Currency::Usd->value => (string) $totalRows->get(Currency::Usd->value, '0'),
-                Currency::Pen->value => (string) $totalRows->get(Currency::Pen->value, '0'),
-            ],
-            'category_totals' => $categoryTotals,
+            'totals' => $spendingSummary['totals'],
+            'combined_total' => $spendingSummary['combined_total'],
+            'category_totals' => $spendingSummary['category_totals'],
             'purchase_options' => $purchaseOptions,
             'transactions' => $transactions,
             'voided_transactions' => $voidedTransactions,
