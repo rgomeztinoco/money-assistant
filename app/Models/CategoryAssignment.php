@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $linked_purchase_id
  * @property int|null $learned_rule_id
  * @property int|null $learned_rule_revision
+ * @property int|null $learned_rule_bulk_action_id
  * @property string|null $ai_classifier_version
  * @property int|null $ai_confidence
  * @property string|null $ai_outcome
@@ -40,6 +41,7 @@ use Illuminate\Support\Carbon;
     'linked_purchase_id',
     'learned_rule_id',
     'learned_rule_revision',
+    'learned_rule_bulk_action_id',
     'ai_classifier_version',
     'ai_confidence',
     'ai_outcome',
@@ -94,6 +96,7 @@ class CategoryAssignment extends Model
             'transaction_revision' => 'integer',
             'learned_rule_id' => 'integer',
             'learned_rule_revision' => 'integer',
+            'learned_rule_bulk_action_id' => 'integer',
             'ai_confidence' => 'integer',
         ];
     }

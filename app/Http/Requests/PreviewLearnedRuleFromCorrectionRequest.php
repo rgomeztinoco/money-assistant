@@ -2,18 +2,21 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Transaction;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
-class StoreLearnedRuleRequest extends FormRequest
+class PreviewLearnedRuleFromCorrectionRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
      */
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        $transaction = $this->route('transaction');
+
+        return $transaction instanceof Transaction
+            && $transaction->user_id === $this->user()->getKey();
     }
 
     /**
@@ -24,11 +27,7 @@ class StoreLearnedRuleRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'preview_id' => [
-                'required',
-                'integer',
-                Rule::exists('learned_rule_change_previews', 'id')->where('user_id', $this->user()->getKey()),
-            ],
+            'expected_revision' => ['required', 'integer', 'min:1'],
             'merchant_pattern' => ['prohibited'],
             'merchant_key' => ['prohibited'],
             'match_mode' => ['prohibited'],

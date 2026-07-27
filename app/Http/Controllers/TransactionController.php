@@ -53,6 +53,8 @@ class TransactionController extends Controller
             currency: Currency::from($validated['currency']),
             kind: TransactionKind::from($validated['kind']),
             merchantDescription: $validated['merchant_description'],
+            paymentInstrumentLabel: $validated['payment_instrument_label'] ?? null,
+            paymentInstrumentLastFour: $validated['payment_instrument_last_four'] ?? null,
         );
 
         Inertia::flash('toast', [

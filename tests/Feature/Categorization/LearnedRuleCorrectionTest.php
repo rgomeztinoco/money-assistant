@@ -3,6 +3,7 @@
 use App\Http\Middleware\RequirePasskeyConfirmation;
 use App\Models\Category;
 use App\Models\LearnedRule;
+use App\Models\LearnedRuleChangePreview;
 use App\Models\LearnedRuleSuggestion;
 use App\Models\Transaction;
 use App\Models\User;
@@ -63,10 +64,14 @@ test('the owner explicitly activates the exact narrow rule prepared from a Corre
 
     $sourceAssignment = $transaction->categoryAssignments()->sole();
 
-    $this->post(route('learned_rules.store'), [
-        'transaction_id' => $transaction->id,
+    $this->post(route('transactions.learned_rule_preview.store', $transaction), [
         'expected_revision' => 2,
     ])->assertSessionHasNoErrors();
+
+    $preview = LearnedRuleChangePreview::query()->whereBelongsTo($owner, 'owner')->sole();
+
+    $this->post(route('learned_rules.store'), ['preview_id' => $preview->id])
+        ->assertSessionHasNoErrors();
 
     $rule = LearnedRule::query()->with('revisions')->sole();
     $revision = $rule->revisions->sole();
@@ -204,7 +209,12 @@ test('accepting a suggestion explicitly activates its visible deterministic rule
 
     $suggestion = LearnedRuleSuggestion::query()->sole();
 
-    $this->post(route('learned_rule_suggestions.acceptance.store', $suggestion))
+    $this->post(route('learned_rule_suggestions.preview.store', $suggestion))
+        ->assertSessionHasNoErrors();
+
+    $preview = LearnedRuleChangePreview::query()->whereBelongsTo($owner, 'owner')->sole();
+
+    $this->post(route('learned_rules.store'), ['preview_id' => $preview->id])
         ->assertSessionHasNoErrors();
 
     $this->get(route('learned_rules.index'))
@@ -300,8 +310,7 @@ test('Correction activation rejects caller-defined and prohibited matching input
         'similarity' => 0.9,
     ];
 
-    $this->post(route('learned_rules.store'), [
-        'transaction_id' => $transaction->id,
+    $this->post(route('transactions.learned_rule_preview.store', $transaction), [
         'expected_revision' => 2,
         ...$prohibitedInput,
     ])->assertSessionHasErrors(array_keys($prohibitedInput));
@@ -387,8 +396,7 @@ test('rule activation rejects a stale candidate instead of activating changed co
         'category_id' => $secondCategory->id,
     ])->assertSessionHasNoErrors();
 
-    $this->post(route('learned_rules.store'), [
-        'transaction_id' => $transaction->id,
+    $this->post(route('transactions.learned_rule_preview.store', $transaction), [
         'expected_revision' => 2,
     ])->assertSessionHasErrors('expected_revision');
 
@@ -471,10 +479,14 @@ test('direct activation resolves an equivalent pending suggestion', function () 
         ])->assertSessionHasNoErrors();
     }
 
-    $this->post(route('learned_rules.store'), [
-        'transaction_id' => $transactions->first()->id,
+    $this->post(route('transactions.learned_rule_preview.store', $transactions->first()), [
         'expected_revision' => 2,
     ])->assertSessionHasNoErrors();
+
+    $preview = LearnedRuleChangePreview::query()->whereBelongsTo($owner, 'owner')->sole();
+
+    $this->post(route('learned_rules.store'), ['preview_id' => $preview->id])
+        ->assertSessionHasNoErrors();
 
     $suggestion = LearnedRuleSuggestion::query()->sole();
 

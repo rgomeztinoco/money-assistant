@@ -45,12 +45,45 @@ test('the owner reviews and explicitly activates a Learned Rule from Corrections
     visit('/learned-rules')
         ->assertSee('Supported by 2 separate Corrections.')
         ->assertSee('Mercado Central')
-        ->press('Activate rule')
+        ->press('Preview suggested rule')
+        ->assertSee('Rule change preview')
+        ->press('Confirm rule change')
         ->assertSee('Learned Rule activated.')
-        ->assertSee('Active rules')
+        ->assertSee('Rule lifecycle')
         ->assertSee('Revision 1')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
     expect(LearnedRule::query()->count())->toBe(1);
+});
+
+test('the owner previews creates historically applies and undoes a Learned Rule', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Restaurants']);
+    $transaction = Transaction::factory()->for($owner, 'owner')->create([
+        'merchant_description' => 'Preview Cafe',
+        'kind' => 'purchase',
+        'currency' => 'PEN',
+    ]);
+    $this->actingAs($owner);
+
+    visit('/learned-rules')
+        ->select('Category', (string) $category->id)
+        ->fill('Merchant pattern', 'Preview Cafe')
+        ->press('Preview new rule')
+        ->assertSee('Rule change preview')
+        ->assertSee('1 existing matches')
+        ->press('Confirm rule change')
+        ->assertSee('Learned Rule activated.')
+        ->press('Preview historical application')
+        ->assertSee('Historical application preview')
+        ->assertSee('will create 1 authoritative Correction')
+        ->press('Confirm 1 changes')
+        ->assertSee('Historical Learned Rule application completed.')
+        ->press('Undo group')
+        ->assertSee('Historical application undone: 1 restored, 0 skipped.')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+
+    expect($transaction->fresh()->category_id)->toBeNull();
 });

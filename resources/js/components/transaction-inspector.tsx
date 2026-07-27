@@ -11,10 +11,10 @@ import {
     ShieldCheck,
 } from 'lucide-react';
 import { useState } from 'react';
-import { store as activateLearnedRule } from '@/actions/App/Http/Controllers/LearnedRuleController';
 import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { update as updateCategory } from '@/actions/App/Http/Controllers/TransactionCategoryController';
 import { update } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
+import { store as previewLearnedRule } from '@/actions/App/Http/Controllers/TransactionLearnedRulePreviewController';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -678,16 +678,13 @@ export function TransactionInspector({
                                         </div>
                                     </div>
                                     <Form
-                                        {...activateLearnedRule.form()}
+                                        {...previewLearnedRule.form(
+                                            transaction.id,
+                                        )}
                                         options={{ preserveScroll: true }}
                                     >
                                         {({ errors, processing }) => (
                                             <div className="grid gap-1">
-                                                <input
-                                                    type="hidden"
-                                                    name="transaction_id"
-                                                    value={transaction.id}
-                                                />
                                                 <input
                                                     type="hidden"
                                                     name="expected_revision"
@@ -704,7 +701,7 @@ export function TransactionInspector({
                                                     ) : (
                                                         <Sparkles />
                                                     )}
-                                                    Activate exact rule
+                                                    Preview exact rule
                                                 </Button>
                                                 <InputError
                                                     message={
@@ -871,6 +868,16 @@ export function TransactionInspector({
                                         {
                                             transaction.category.provenance
                                                 .learned_rule.revision
+                                        }
+                                    </p>
+                                )}
+                                {transaction.category?.provenance
+                                    .bulk_action && (
+                                    <p className="text-muted-foreground">
+                                        Historical application group #{' '}
+                                        {
+                                            transaction.category.provenance
+                                                .bulk_action.id
                                         }
                                     </p>
                                 )}

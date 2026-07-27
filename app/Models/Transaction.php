@@ -23,6 +23,8 @@ use Illuminate\Support\Carbon;
  * @property Currency $currency
  * @property TransactionKind $kind
  * @property string $merchant_description
+ * @property string|null $payment_instrument_label
+ * @property string|null $payment_instrument_last_four
  * @property CarbonImmutable $confirmed_at
  * @property int $revision
  * @property list<string> $provisional_fields
@@ -45,6 +47,8 @@ use Illuminate\Support\Carbon;
     'currency',
     'kind',
     'merchant_description',
+    'payment_instrument_label',
+    'payment_instrument_last_four',
     'confirmed_at',
     'revision',
     'provisional_fields',

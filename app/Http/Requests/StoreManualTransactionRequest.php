@@ -42,6 +42,8 @@ class StoreManualTransactionRequest extends FormRequest
             'currency' => ['required', Rule::enum(Currency::class)],
             'kind' => ['required', Rule::enum(TransactionKind::class)],
             'merchant_description' => ['required', 'string', 'max:255'],
+            'payment_instrument_label' => ['nullable', 'string', 'max:100'],
+            'payment_instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
         ];
     }
 }

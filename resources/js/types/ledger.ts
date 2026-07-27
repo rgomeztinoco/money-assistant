@@ -29,6 +29,9 @@ export type CategoryAssignmentProvenance = {
         id: number;
         revision: number;
     } | null;
+    bulk_action: {
+        id: number;
+    } | null;
     ai: {
         classifier_version: string;
         confidence: number;
