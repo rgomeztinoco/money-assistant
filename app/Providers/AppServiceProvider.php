@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Contracts\BcrpData;
 use App\Contracts\OpenClawHook;
+use App\Integrations\BcrpData\HttpBcrpData;
 use App\Integrations\OpenClaw\HttpOpenClawHook;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -19,6 +21,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(BcrpData::class, HttpBcrpData::class);
+
         $this->app->singleton(
             OpenClawHook::class,
             fn (): HttpOpenClawHook => new HttpOpenClawHook(

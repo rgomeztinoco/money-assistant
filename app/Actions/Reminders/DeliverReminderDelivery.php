@@ -27,6 +27,21 @@ final class DeliverReminderDelivery
                 return null;
             }
 
+            if ($delivery->reminder->resolved_at !== null
+                || $delivery->reminder->dismissed_at !== null
+                || ! $delivery->scheduled_for->equalTo($delivery->reminder->scheduled_for)) {
+                $delivery->forceFill([
+                    'queued_at' => null,
+                    'claimed_at' => null,
+                    'next_attempt_at' => null,
+                    'terminal_at' => now(),
+                    'terminal_reason' => 'deterministic_failure',
+                    'last_error_code' => 'reminder_inactive',
+                ])->save();
+
+                return null;
+            }
+
             $delivery->forceFill([
                 'attempt_count' => $delivery->attempt_count + 1,
                 'queued_at' => null,

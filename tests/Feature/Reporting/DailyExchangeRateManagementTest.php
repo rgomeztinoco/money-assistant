@@ -130,6 +130,7 @@ test('PostgreSQL constraints protect Daily Exchange Rate invariants', function (
 })->with([
     'non-positive scaled rate' => [['pen_per_usd_scaled' => 0]],
     'non-positive revision' => [['revision' => 0]],
+    'missing owner or BCRP authority' => [['owner_managed_at' => null]],
 ]);
 
 test('Daily Exchange Rate and Reporting Currency routes require an authenticated owner', function () {

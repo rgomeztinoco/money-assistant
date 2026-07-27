@@ -16,6 +16,12 @@ use Illuminate\Support\Carbon;
  * @property CarbonImmutable $applicable_on
  * @property int $pen_per_usd_scaled
  * @property CarbonImmutable|null $owner_managed_at
+ * @property string|null $source
+ * @property string|null $source_series
+ * @property CarbonImmutable|null $source_observed_on
+ * @property CarbonImmutable|null $source_retrieved_at
+ * @property string|null $source_value
+ * @property int|null $source_precision
  * @property int $revision
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -25,6 +31,12 @@ use Illuminate\Support\Carbon;
     'applicable_on',
     'pen_per_usd_scaled',
     'owner_managed_at',
+    'source',
+    'source_series',
+    'source_observed_on',
+    'source_retrieved_at',
+    'source_value',
+    'source_precision',
     'revision',
 ])]
 class DailyExchangeRate extends Model
@@ -57,6 +69,9 @@ class DailyExchangeRate extends Model
             'applicable_on' => 'immutable_date',
             'pen_per_usd_scaled' => 'integer',
             'owner_managed_at' => 'immutable_datetime',
+            'source_observed_on' => 'immutable_date',
+            'source_retrieved_at' => 'immutable_datetime',
+            'source_precision' => 'integer',
             'revision' => 'integer',
         ];
     }

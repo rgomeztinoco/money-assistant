@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Reporting\ReadDailyExchangeRates;
+use App\Actions\Reporting\RetryDailyExchangeRateSeed;
 use App\Actions\Reporting\SetDailyExchangeRate;
 use App\Exceptions\StaleDailyExchangeRateRevision;
 use App\Http\Requests\StoreDailyExchangeRateRequest;
 use App\Http\Requests\UpdateDailyExchangeRateRequest;
 use App\Models\DailyExchangeRate;
+use App\Models\DailyExchangeRateSeedRequest;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +20,7 @@ class DailyExchangeRateController extends Controller
 {
     public function __construct(
         private ReadDailyExchangeRates $readDailyExchangeRates,
+        private RetryDailyExchangeRateSeed $retryDailyExchangeRateSeed,
         private SetDailyExchangeRate $setDailyExchangeRate,
     ) {}
 
@@ -61,6 +64,18 @@ class DailyExchangeRateController extends Controller
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Daily Exchange Rate updated.')]);
+
+        return to_route('daily_exchange_rates.index');
+    }
+
+    public function retrySeed(Request $request, DailyExchangeRateSeedRequest $dailyExchangeRateSeedRequest): RedirectResponse
+    {
+        $this->retryDailyExchangeRateSeed->handle(
+            owner: $request->user(),
+            seedRequestId: $dailyExchangeRateSeedRequest->id,
+        );
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('BCRP retrieval queued for retry.')]);
 
         return to_route('daily_exchange_rates.index');
     }

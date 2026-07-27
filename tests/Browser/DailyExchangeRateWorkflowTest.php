@@ -65,3 +65,30 @@ test('a stale rate form reloads the current value before it can be retried', fun
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
+
+test('a seeded rate displays BCRP sell attribution and distinct source metadata', function () {
+    $owner = User::factory()->create();
+    DailyExchangeRate::factory()->for($owner, 'owner')->create([
+        'applicable_on' => '2026-07-26',
+        'pen_per_usd_scaled' => 3_545_000,
+        'owner_managed_at' => null,
+        'source' => 'bcrp_data',
+        'source_series' => 'PD04638PD',
+        'source_observed_on' => '2026-07-24',
+        'source_retrieved_at' => '2026-07-27 15:00:00+00',
+        'source_value' => '3.545',
+        'source_precision' => 3,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit(route('daily_exchange_rates.index'));
+
+    $page
+        ->assertSee('BCRP interbank sell')
+        ->assertSee('Banco Central de Reserva del Peru, BCRPData series PD04638PD')
+        ->assertSee('Applicable date: 2026-07-26')
+        ->assertSee('Source observation date: 2026-07-24')
+        ->assertSee('Source value: 3.545 (declared precision: 3 decimal places)')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+});

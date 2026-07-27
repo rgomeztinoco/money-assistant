@@ -40,6 +40,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'store' => 'daily_exchange_rates.store',
             'update' => 'daily_exchange_rates.update',
         ]);
+    Route::post('daily-exchange-rate-seed-requests/{dailyExchangeRateSeedRequest}/retry', [DailyExchangeRateController::class, 'retrySeed'])
+        ->name('daily_exchange_rates.retry_seed');
     Route::put('reporting-currency', [ReportingCurrencyController::class, 'update'])
         ->name('reporting_currency.update');
     Route::resource('learned-rules', LearnedRuleController::class)

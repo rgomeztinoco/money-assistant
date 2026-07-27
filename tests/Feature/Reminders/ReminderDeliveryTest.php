@@ -159,6 +159,21 @@ test('a stale failed worker cannot overwrite a later accepted delivery', functio
         ->and($delivery->next_attempt_at)->toBeNull();
 });
 
+test('a resolved Reminder cannot be delivered by an already queued worker', function () {
+    Http::preventStrayRequests();
+    $delivery = ReminderDelivery::factory()->create();
+    $delivery->reminder->forceFill(['resolved_at' => now()])->save();
+
+    app(DeliverReminderDelivery::class)->handle($delivery->id);
+    $delivery->refresh();
+
+    expect($delivery->attempt_count)->toBe(0)
+        ->and($delivery->terminal_at)->not->toBeNull()
+        ->and($delivery->terminal_reason)->toBe('deterministic_failure')
+        ->and($delivery->last_error_code)->toBe('reminder_inactive');
+    Http::assertNothingSent();
+});
+
 test('the Laravel scheduler queues each pending outbox delivery once', function () {
     $this->travelTo(CarbonImmutable::parse('2026-07-26 15:00:00 UTC'));
     config()->set('cache.default', 'array');

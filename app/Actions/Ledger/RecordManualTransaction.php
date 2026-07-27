@@ -3,6 +3,7 @@
 namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ApplyLearnedRuleToTransaction;
+use App\Actions\Reporting\DiscoverMissingDailyExchangeRates;
 use App\Currency;
 use App\Models\Transaction;
 use App\Models\User;
@@ -15,7 +16,10 @@ use InvalidArgumentException;
 
 class RecordManualTransaction
 {
-    public function __construct(private ApplyLearnedRuleToTransaction $applyLearnedRuleToTransaction) {}
+    public function __construct(
+        private ApplyLearnedRuleToTransaction $applyLearnedRuleToTransaction,
+        private DiscoverMissingDailyExchangeRates $discoverMissingDailyExchangeRates,
+    ) {}
 
     /**
      * @param  list<ReviewableTransactionField>  $provisionalFields
@@ -41,7 +45,7 @@ class RecordManualTransaction
             throw new InvalidArgumentException('A merchant or short description is required.');
         }
 
-        return DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $provisionalFields, $paymentInstrumentLabel, $paymentInstrumentLastFour): Transaction {
+        $transaction = DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $provisionalFields, $paymentInstrumentLabel, $paymentInstrumentLastFour): Transaction {
             $transaction = Transaction::create([
                 'user_id' => $owner->getKey(),
                 'occurred_on' => $occurredOn,
@@ -61,5 +65,9 @@ class RecordManualTransaction
 
             return $this->applyLearnedRuleToTransaction->handle($transaction);
         });
+
+        $this->discoverMissingDailyExchangeRates->handle();
+
+        return $transaction;
     }
 }

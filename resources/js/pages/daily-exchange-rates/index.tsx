@@ -1,6 +1,7 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import { ArrowRightLeft, CalendarDays, PencilLine, Plus } from 'lucide-react';
 import {
+    retrySeed as retryDailyExchangeRateSeed,
     store as createDailyExchangeRate,
     update as updateDailyExchangeRate,
 } from '@/actions/App/Http/Controllers/DailyExchangeRateController';
@@ -20,11 +21,16 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { index } from '@/routes/daily_exchange_rates';
-import type { Currency, DailyExchangeRate } from '@/types';
+import type {
+    Currency,
+    DailyExchangeRate,
+    DailyExchangeRateSeedRequest,
+} from '@/types';
 
 type DailyExchangeRatesIndexProps = {
     reporting_currency: Currency | null;
     rates: DailyExchangeRate[];
+    seed_requests: DailyExchangeRateSeedRequest[];
     pagination: {
         current_page: number;
         last_page: number;
@@ -36,6 +42,7 @@ type DailyExchangeRatesIndexProps = {
 export default function DailyExchangeRatesIndex({
     reporting_currency,
     rates,
+    seed_requests,
     pagination,
 }: DailyExchangeRatesIndexProps) {
     return (
@@ -52,6 +59,7 @@ export default function DailyExchangeRatesIndex({
                     <p className="max-w-3xl text-sm text-muted-foreground">
                         Set the Reporting Currency for combined views and keep
                         the PEN value of one USD for each applicable local date.
+                        Automatic rates use only the BCRP interbank sell quote.
                     </p>
                 </div>
 
@@ -178,6 +186,76 @@ export default function DailyExchangeRatesIndex({
                     </Card>
                 </div>
 
+                {seed_requests.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Missing rate work</CardTitle>
+                            <CardDescription>
+                                BCRP retrieval stays separate from dates that
+                                now require an owner-entered value.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 sm:grid-cols-2">
+                            {seed_requests.map((seedRequest) => (
+                                <div
+                                    key={seedRequest.applicable_on}
+                                    className="grid gap-2 rounded-lg border p-4"
+                                >
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <p className="font-medium tabular-nums">
+                                            {seedRequest.applicable_on}
+                                        </p>
+                                        <Badge
+                                            variant={
+                                                seedRequest.state === 'pending'
+                                                    ? 'secondary'
+                                                    : 'destructive'
+                                            }
+                                        >
+                                            {seedRequest.state ===
+                                            'owner_entry_required'
+                                                ? 'Owner entry required'
+                                                : seedRequest.state ===
+                                                    'retrieval_failed'
+                                                  ? 'BCRP retrieval failed'
+                                                  : 'BCRP retrieval pending'}
+                                        </Badge>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        {seedRequest.state ===
+                                        'owner_entry_required'
+                                            ? 'Use the form above to enter PEN per USD for this applicable date.'
+                                            : seedRequest.state ===
+                                                'retrieval_failed'
+                                              ? 'BCRP retrieval failed after bounded retries. Combined reporting remains unavailable until retrieval is retried or you enter a rate.'
+                                              : `Attempt ${seedRequest.attempt_count} of 8. The exact BCRP business-day observation may not be published yet.`}
+                                    </p>
+                                    {seedRequest.state ===
+                                        'retrieval_failed' && (
+                                        <Form
+                                            {...retryDailyExchangeRateSeed.form(
+                                                seedRequest.id,
+                                            )}
+                                        >
+                                            {({ processing }) => (
+                                                <Button
+                                                    type="submit"
+                                                    size="sm"
+                                                    variant="outline"
+                                                    disabled={processing}
+                                                >
+                                                    {processing && <Spinner />}
+                                                    Retry BCRP retrieval
+                                                </Button>
+                                            )}
+                                        </Form>
+                                    )}
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                )}
+
                 <Card>
                     <CardHeader>
                         <CardTitle>Rate Calendar</CardTitle>
@@ -209,12 +287,42 @@ export default function DailyExchangeRatesIndex({
                                         </p>
                                         <div className="flex flex-wrap items-center gap-2">
                                             <Badge variant="secondary">
-                                                Owner managed
+                                                {rate.owner_managed
+                                                    ? 'Owner managed'
+                                                    : rate.source?.label}
                                             </Badge>
                                             <span className="text-xs text-muted-foreground">
                                                 Revision {rate.revision}
                                             </span>
                                         </div>
+                                        {rate.source && (
+                                            <div className="grid gap-1 pt-2 text-xs text-muted-foreground">
+                                                <p>
+                                                    {rate.source.attribution},{' '}
+                                                    BCRPData series{' '}
+                                                    {rate.source.series}
+                                                </p>
+                                                <p>
+                                                    Applicable date:{' '}
+                                                    {rate.applicable_on}
+                                                </p>
+                                                <p>
+                                                    Source observation date:{' '}
+                                                    {rate.source.observed_on}
+                                                </p>
+                                                <p>
+                                                    Retrieved:{' '}
+                                                    {rate.source.retrieved_at}
+                                                </p>
+                                                <p>
+                                                    Source value:{' '}
+                                                    {rate.source.value}{' '}
+                                                    (declared precision:{' '}
+                                                    {rate.source.precision}{' '}
+                                                    decimal places)
+                                                </p>
+                                            </div>
+                                        )}
                                     </div>
                                     <Form
                                         {...updateDailyExchangeRate.form(
