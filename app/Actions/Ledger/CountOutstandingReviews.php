@@ -14,10 +14,7 @@ class CountOutstandingReviews
         $categoryCount = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
-            ->whereNull('category_id')
-            ->whereDoesntHave('receiptBreakdowns', fn ($query) => $query
-                ->where('status', 'confirmed')
-                ->whereHas('lineItems'))
+            ->whereCategoryRequiresReview()
             ->count();
         $lineItemCategoryCount = LineItem::query()
             ->whereNull('category_id')

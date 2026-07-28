@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Categorization\DispatchPendingAiClassifications;
 use App\Actions\Reminders\DispatchPendingReminderDeliveries;
 use App\Actions\Reminders\EnqueueDueReminderDeliveries;
 use App\Actions\Reporting\DiscoverMissingDailyExchangeRates;
@@ -38,6 +39,12 @@ Schedule::everyMinute()
             fn () => app(DispatchPendingDailyExchangeRateSeeds::class)->handle(),
         )
             ->name('daily-exchange-rate-seeds')
+            ->withoutOverlapping();
+
+        Schedule::call(
+            fn () => app(DispatchPendingAiClassifications::class)->handle(),
+        )
+            ->name('ai-transaction-classifications')
             ->withoutOverlapping();
 
         Schedule::call(

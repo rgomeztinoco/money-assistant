@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\AiClassificationOutcome;
 use App\CategoryAssignmentProvenance;
 use Database\Factories\CategoryAssignmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -25,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $learned_rule_bulk_action_id
  * @property string|null $ai_classifier_version
  * @property int|null $ai_confidence
- * @property string|null $ai_outcome
+ * @property AiClassificationOutcome|null $ai_outcome
  * @property string|null $ai_explanation
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -98,6 +99,7 @@ class CategoryAssignment extends Model
             'learned_rule_revision' => 'integer',
             'learned_rule_bulk_action_id' => 'integer',
             'ai_confidence' => 'integer',
+            'ai_outcome' => AiClassificationOutcome::class,
         ];
     }
 }

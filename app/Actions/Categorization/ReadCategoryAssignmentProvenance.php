@@ -69,7 +69,7 @@ class ReadCategoryAssignmentProvenance
                     ? [
                         'classifier_version' => $assignment->ai_classifier_version,
                         'confidence' => $assignment->ai_confidence,
-                        'outcome' => $assignment->ai_outcome,
+                        'outcome' => $assignment->ai_outcome->value,
                         'explanation' => $assignment->ai_explanation,
                     ]
                     : null,

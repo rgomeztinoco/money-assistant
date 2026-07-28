@@ -42,6 +42,12 @@ return [
         'oauth_publishing_status' => env('GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS', 'testing'),
     ],
 
+    'ai_classifier' => [
+        'url' => env('AI_CLASSIFIER_URL'),
+        'token' => env('AI_CLASSIFIER_TOKEN'),
+        'version' => env('AI_CLASSIFIER_VERSION'),
+    ],
+
     'openclaw' => [
         'capability' => [
             'key_id' => env('OPENCLAW_CAPABILITY_KEY_ID'),

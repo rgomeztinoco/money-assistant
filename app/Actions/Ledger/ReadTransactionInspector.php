@@ -220,7 +220,8 @@ class ReadTransactionInspector
             'review' => [
                 'category' => ($receiptBreakdown['confirmed'] === null
                     || $receiptBreakdown['confirmed']['line_items'] === [])
-                    && $transaction->category_id === null,
+                    && $transaction->category_id === null
+                    || $transaction->hasProvisionalAiCategory(),
                 'fields' => $reviewFields,
                 'refund_relationship_reasons' => $refundRelationshipReasons,
             ],

@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\AiClassificationOutcome;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Database\Factories\TransactionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -151,6 +153,53 @@ class Transaction extends Model
     public function currentCategoryAssignment(): HasOne
     {
         return $this->hasOne(CategoryAssignment::class)->ofMany('transaction_revision', 'max');
+    }
+
+    public function hasProvisionalAiCategory(): bool
+    {
+        return $this->currentCategoryAssignment?->source === CategoryAssignmentProvenance::Ai
+            && $this->currentCategoryAssignment->ai_outcome === AiClassificationOutcome::Medium;
+    }
+
+    /**
+     * @param  Builder<Transaction>  $query
+     * @return Builder<Transaction>
+     */
+    public function scopeWhereHasProvisionalAiCategory(Builder $query): Builder
+    {
+        return $query->whereHas('currentCategoryAssignment', fn (Builder $query) => $query
+            ->where('source', CategoryAssignmentProvenance::Ai)
+            ->where('ai_outcome', AiClassificationOutcome::Medium->value));
+    }
+
+    /**
+     * @param  Builder<Transaction>  $query
+     * @return Builder<Transaction>
+     */
+    public function scopeWhereDoesntHaveProvisionalAiCategory(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('currentCategoryAssignment', fn (Builder $query) => $query
+            ->where('source', CategoryAssignmentProvenance::Ai)
+            ->where('ai_outcome', AiClassificationOutcome::Medium->value));
+    }
+
+    /**
+     * @param  Builder<Transaction>  $query
+     * @return Builder<Transaction>
+     */
+    public function scopeWhereCategoryRequiresReview(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query
+                ->where(function (Builder $query): void {
+                    $query
+                        ->whereNull('category_id')
+                        ->whereDoesntHave('receiptBreakdowns', fn (Builder $query) => $query
+                            ->where('status', 'confirmed')
+                            ->whereHas('lineItems'));
+                })
+                ->orWhere(fn (Builder $query) => $query->whereHasProvisionalAiCategory());
+        });
     }
 
     /**
