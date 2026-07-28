@@ -20,6 +20,9 @@ x-application: &application
         DB_PORT: 5432
         DB_QUEUE_CONNECTION: pgsql
         DB_USERNAME: '${DB_USERNAME:-money_assistant}'
+        GOOGLE_GMAIL_CLIENT_ID: '${GOOGLE_GMAIL_CLIENT_ID:?Set GOOGLE_GMAIL_CLIENT_ID}'
+        GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS: production
+        GOOGLE_GMAIL_REDIRECT_URI: 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}/settings/connections/gmail/callback'
         LOG_CHANNEL: stderr
         LOG_LEVEL: '${LOG_LEVEL:-info}'
         QUEUE_CONNECTION: database
@@ -28,7 +31,7 @@ x-application: &application
         SESSION_ENCRYPT: 'true'
         SESSION_HTTP_ONLY: 'true'
         SESSION_LIFETIME: '120'
-        SESSION_SAME_SITE: strict
+        SESSION_SAME_SITE: lax
         SESSION_SECURE_COOKIE: 'true'
     secrets:
         - application_key
@@ -115,9 +118,11 @@ services:
             OPENCLAW_CAPABILITY_ACCOUNT_ID: '${OPENCLAW_CAPABILITY_ACCOUNT_ID:?Set OPENCLAW_CAPABILITY_ACCOUNT_ID}'
             OPENCLAW_CAPABILITY_CONVERSATION_ID: '${OPENCLAW_CAPABILITY_CONVERSATION_ID:?Set OPENCLAW_CAPABILITY_CONVERSATION_ID}'
             OPENCLAW_CAPABILITY_OWNER_SENDER_ID: '${OPENCLAW_CAPABILITY_OWNER_SENDER_ID:?Set OPENCLAW_CAPABILITY_OWNER_SENDER_ID}'
+            GOOGLE_GMAIL_CLIENT_SECRET_FILE: /run/secrets/google_gmail_client_secret
         secrets:
             - application_key
             - database_password
+            - google_gmail_client_secret
             - openclaw_capability_public_key
         command:
             - frankenphp
@@ -294,6 +299,8 @@ secrets:
         file: '${APP_KEY_FILE:?Set APP_KEY_FILE}'
     database_password:
         file: '${DB_PASSWORD_FILE:?Set DB_PASSWORD_FILE}'
+    google_gmail_client_secret:
+        file: '${GOOGLE_GMAIL_CLIENT_SECRET_FILE:?Set GOOGLE_GMAIL_CLIENT_SECRET_FILE}'
     openclaw_capability_public_key:
         file: '${OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE:?Set OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE}'
     openclaw_hook_token:

@@ -60,6 +60,22 @@ test('application roles share one pinned image and restart independently', funct
     }
 });
 
+test('production permits the state-bound Gmail callback and mounts its OAuth secret only in the web role', function () {
+    $services = $this->productionCompose['services'];
+    $entrypoint = file_get_contents(base_path('docker-entrypoint.production'));
+
+    expect($services['web']['environment']['SESSION_SAME_SITE'])->toBe('lax')
+        ->and($services['web']['environment']['GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS'])->toBe('production')
+        ->and($services['web']['environment']['GOOGLE_GMAIL_REDIRECT_URI'])
+        ->toBe('https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}/settings/connections/gmail/callback')
+        ->and($services['web']['environment']['GOOGLE_GMAIL_CLIENT_SECRET_FILE'])
+        ->toBe('/run/secrets/google_gmail_client_secret')
+        ->and($services['web']['secrets'])->toContain('google_gmail_client_secret')
+        ->and($services['worker']['secrets'])->not->toContain('google_gmail_client_secret')
+        ->and($services['scheduler']['secrets'])->not->toContain('google_gmail_client_secret')
+        ->and($entrypoint)->toContain('read_secret GOOGLE_GMAIL_CLIENT_SECRET');
+});
+
 test('only PostgreSQL and the pinned reverse proxy expose loopback ports', function () {
     $services = $this->productionCompose['services'];
     $environment = file_get_contents(base_path('.env.production.example'));

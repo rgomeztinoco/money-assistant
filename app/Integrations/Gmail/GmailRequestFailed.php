@@ -1,0 +1,23 @@
+<?php
+
+namespace App\Integrations\Gmail;
+
+use RuntimeException;
+
+final class GmailRequestFailed extends RuntimeException
+{
+    public static function authorization(): self
+    {
+        return new self('Gmail authorization could not be completed.');
+    }
+
+    public static function refresh(): self
+    {
+        return new self('Gmail access could not be refreshed.');
+    }
+
+    public static function profile(): self
+    {
+        return new self('The Gmail profile could not be checked.');
+    }
+}

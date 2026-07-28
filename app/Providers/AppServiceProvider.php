@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Contracts\BcrpData;
+use App\Contracts\Gmail;
 use App\Contracts\OpenClawHook;
 use App\Integrations\BcrpData\HttpBcrpData;
+use App\Integrations\Gmail\GoogleGmail;
 use App\Integrations\OpenClaw\HttpOpenClawHook;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -22,6 +24,15 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(BcrpData::class, HttpBcrpData::class);
+
+        $this->app->singleton(
+            Gmail::class,
+            fn (): GoogleGmail => new GoogleGmail(
+                clientId: (string) config('services.gmail.client_id'),
+                clientSecret: (string) config('services.gmail.client_secret'),
+                redirectUri: (string) config('services.gmail.redirect_uri'),
+            ),
+        );
 
         $this->app->singleton(
             OpenClawHook::class,

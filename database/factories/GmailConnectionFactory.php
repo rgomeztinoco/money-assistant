@@ -1,0 +1,43 @@
+<?php
+
+namespace Database\Factories;
+
+use App\Models\GmailConnection;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Factories\Factory;
+
+/**
+ * @extends Factory<GmailConnection>
+ */
+class GmailConnectionFactory extends Factory
+{
+    /**
+     * Define the model's default state.
+     *
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        return [
+            'user_id' => User::factory(),
+            'gmail_account_identity' => fake()->unique()->safeEmail(),
+            'access_token' => 'access-token-'.fake()->uuid(),
+            'refresh_token' => 'refresh-token-'.fake()->uuid(),
+            'access_token_expires_at' => now()->addHour(),
+            'granted_scopes' => ['https://www.googleapis.com/auth/gmail.readonly'],
+            'connected_at' => now()->subDay(),
+            'last_successful_check_at' => now()->subMinute(),
+            'last_check_failed_at' => null,
+            'reauthorization_required_at' => null,
+            'last_error_code' => null,
+        ];
+    }
+
+    public function reauthorizationRequired(): static
+    {
+        return $this->state(fn (): array => [
+            'reauthorization_required_at' => now(),
+            'last_error_code' => GmailConnection::ERROR_REFRESH_TOKEN_REJECTED,
+        ]);
+    }
+}

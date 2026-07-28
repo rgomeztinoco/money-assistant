@@ -35,6 +35,13 @@ return [
         ],
     ],
 
+    'gmail' => [
+        'client_id' => env('GOOGLE_GMAIL_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_GMAIL_CLIENT_SECRET'),
+        'redirect_uri' => env('GOOGLE_GMAIL_REDIRECT_URI', rtrim((string) env('APP_URL'), '/').'/settings/connections/gmail/callback'),
+        'oauth_publishing_status' => env('GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS', 'testing'),
+    ],
+
     'openclaw' => [
         'capability' => [
             'key_id' => env('OPENCLAW_CAPABILITY_KEY_ID'),
