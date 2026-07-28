@@ -8,6 +8,8 @@ use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\Ledger\ConfirmOpenClawManualTransaction;
 use App\Actions\Ledger\PrepareOpenClawManualTransaction;
 use App\Actions\Ledger\ReadTransactionForOpenClaw;
+use App\Actions\ReceiptReconciliation\ConfirmOpenClawReceiptBreakdown;
+use App\Actions\ReceiptReconciliation\PrepareOpenClawReceiptBreakdown;
 use App\Actions\ReceiptReconciliation\SubmitReceiptProposal;
 use App\Actions\Reminders\ReadReminderForOpenClaw;
 use App\Actions\Reminders\RecordReminderChannelDelivery;
@@ -16,7 +18,9 @@ use App\Currency;
 use App\Exceptions\CategoryOperationBlocked;
 use App\Exceptions\IdempotencyKeyConflict;
 use App\Exceptions\OpenClawConfirmationRejected;
+use App\Exceptions\ReceiptBreakdownNotReconciled;
 use App\Exceptions\StaleCategoryRevision;
+use App\Exceptions\StaleReceiptBreakdownRevision;
 use App\Exceptions\StaleTransactionRevision;
 use App\Http\Controllers\Controller;
 use App\Models\User;
@@ -42,6 +46,8 @@ final class OpenClawTransportController extends Controller
         private RecordReminderChannelDelivery $recordReminderChannelDelivery,
         private RespondToReminder $respondToReminder,
         private SubmitReceiptProposal $submitReceiptProposal,
+        private PrepareOpenClawReceiptBreakdown $prepareReceiptBreakdown,
+        private ConfirmOpenClawReceiptBreakdown $confirmReceiptBreakdown,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -83,6 +89,14 @@ final class OpenClawTransportController extends Controller
 
         if ($capability === 'receipt.proposal.submit') {
             return $this->submitReceiptProposal($request, $owner);
+        }
+
+        if ($capability === 'receipt.breakdown.mutation.prepare') {
+            return $this->prepareReceiptBreakdown($request, $owner);
+        }
+
+        if ($capability === 'receipt.breakdown.mutation.confirm') {
+            return $this->confirmReceiptBreakdown($request, $owner);
         }
 
         $transactionId = $request->attributes->get('openclaw.transaction_id');
@@ -400,6 +414,142 @@ final class OpenClawTransportController extends Controller
                 'id' => $result['proposal']->proposal_id,
                 'status' => 'accepted',
             ],
+        ]);
+    }
+
+    private function prepareReceiptBreakdown(Request $request, ?User $owner): JsonResponse
+    {
+        $input = $request->attributes->get('openclaw.input');
+        $interaction = $request->attributes->get('openclaw.interaction');
+        $serviceKeyId = $request->attributes->get('openclaw.key_id');
+        $schemaVersion = $request->attributes->get('openclaw.schema_version');
+        $interactionDigest = $request->attributes->get('openclaw.interaction_digest');
+
+        if ($owner === null
+            || ! is_array($input)
+            || ! is_array($interaction)
+            || ! is_string($serviceKeyId)
+            || ! is_int($schemaVersion)
+            || ! is_string($interactionDigest)) {
+            $request->attributes->set('openclaw.audit.outcome', 'not_found');
+
+            return response()->json(['message' => 'Owner not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        try {
+            $operation = $this->prepareReceiptBreakdown->handle(
+                owner: $owner,
+                serviceKeyId: $serviceKeyId,
+                schemaVersion: $schemaVersion,
+                conversationId: (string) $interaction['conversation_id'],
+                preparationInteractionDigest: $interactionDigest,
+                preparationOccurredAt: CarbonImmutable::parse((string) $interaction['occurred_at']),
+                input: $input,
+            );
+        } catch (IdempotencyKeyConflict) {
+            $request->attributes->set('openclaw.audit.outcome', 'idempotency_conflict');
+
+            return response()->json(['message' => 'Idempotency key conflicts with an earlier request.'], Response::HTTP_CONFLICT);
+        } catch (StaleReceiptBreakdownRevision) {
+            $request->attributes->set('openclaw.audit.outcome', 'stale_revision');
+
+            return response()->json(['message' => 'Receipt Breakdown draft changed.'], Response::HTTP_CONFLICT);
+        } catch (ValidationException|InvalidArgumentException) {
+            $request->attributes->set('openclaw.audit.outcome', 'invalid_request');
+
+            return response()->json(['message' => 'Receipt Breakdown operation is not valid.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (ModelNotFoundException) {
+            $request->attributes->set('openclaw.audit.outcome', 'not_found');
+
+            return response()->json(['message' => 'Receipt Breakdown not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        $request->attributes->set('openclaw.audit.outcome', 'success');
+        $request->attributes->set('openclaw.audit.resource_type', 'receipt_breakdown');
+
+        return response()->json([
+            'schema_version' => 1,
+            'pending_operation' => [
+                'id' => $operation->operation_id,
+                'revision' => $operation->prepared_revision,
+                'expires_at' => $operation->expires_at->toIso8601String(),
+                'payload_digest' => $operation->payload_digest,
+                'effect_summary' => $operation->effect_summary,
+            ],
+        ]);
+    }
+
+    private function confirmReceiptBreakdown(Request $request, ?User $owner): JsonResponse
+    {
+        $input = $request->attributes->get('openclaw.input');
+        $interaction = $request->attributes->get('openclaw.interaction');
+        $serviceKeyId = $request->attributes->get('openclaw.key_id');
+        $schemaVersion = $request->attributes->get('openclaw.schema_version');
+        $interactionDigest = $request->attributes->get('openclaw.interaction_digest');
+        $nonce = $request->attributes->get('openclaw.nonce');
+
+        if ($owner === null
+            || ! is_array($input)
+            || ! is_array($interaction)
+            || ! is_string($serviceKeyId)
+            || ! is_int($schemaVersion)
+            || ! is_string($interactionDigest)
+            || ! is_string($nonce)) {
+            $request->attributes->set('openclaw.audit.outcome', 'not_found');
+
+            return response()->json(['message' => 'Owner not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        try {
+            $confirmation = $this->confirmReceiptBreakdown->handle(
+                owner: $owner,
+                serviceKeyId: $serviceKeyId,
+                schemaVersion: $schemaVersion,
+                conversationId: (string) $interaction['conversation_id'],
+                approvalInteractionDigest: $interactionDigest,
+                approvalOccurredAt: CarbonImmutable::parse((string) $interaction['occurred_at']),
+                pendingOperationId: (string) $input['pending_operation_id'],
+                pendingOperationRevision: (int) $input['pending_operation_revision'],
+                payloadDigest: (string) $input['payload_digest'],
+                idempotencyKey: (string) $input['idempotency_key'],
+                nonceDigest: hash('sha256', $nonce),
+                requestDigest: hash('sha256', $request->getContent()),
+            );
+        } catch (IdempotencyKeyConflict) {
+            $request->attributes->set('openclaw.audit.outcome', 'idempotency_conflict');
+
+            return response()->json(['message' => 'Idempotency key conflicts with an earlier request.'], Response::HTTP_CONFLICT);
+        } catch (OpenClawConfirmationRejected $exception) {
+            $request->attributes->set('openclaw.audit.outcome', $exception->outcome);
+
+            return response()->json(['message' => 'Confirmation request rejected.'], $exception->httpStatus);
+        } catch (StaleReceiptBreakdownRevision) {
+            $request->attributes->set('openclaw.audit.outcome', 'stale_revision');
+
+            return response()->json(['message' => 'Receipt Breakdown draft changed.'], Response::HTTP_CONFLICT);
+        } catch (ReceiptBreakdownNotReconciled|ValidationException) {
+            $request->attributes->set('openclaw.audit.outcome', 'invalid_request');
+
+            return response()->json(['message' => 'Receipt Breakdown operation is not valid.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (ModelNotFoundException) {
+            $request->attributes->set('openclaw.audit.outcome', 'not_found');
+
+            return response()->json(['message' => 'Receipt Breakdown not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        $request->attributes->set(
+            'openclaw.audit.outcome',
+            $confirmation['replayed'] ? 'idempotent_replay' : 'success',
+        );
+        $request->attributes->set('openclaw.audit.result_count', 1);
+
+        if (! $confirmation['replayed']) {
+            $request->attributes->set('openclaw.audit.recorded', true);
+        }
+
+        return response()->json([
+            'schema_version' => 1,
+            'mutation' => $confirmation['mutation'],
         ]);
     }
 

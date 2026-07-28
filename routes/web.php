@@ -11,6 +11,9 @@ use App\Http\Controllers\LearnedRulePreviewController;
 use App\Http\Controllers\LearnedRuleRetirementController;
 use App\Http\Controllers\LearnedRuleSuggestionController;
 use App\Http\Controllers\LearnedRuleSuggestionPreviewController;
+use App\Http\Controllers\ReceiptBreakdownConfirmationController;
+use App\Http\Controllers\ReceiptBreakdownController;
+use App\Http\Controllers\ReceiptProposalAttachmentController;
 use App\Http\Controllers\ReportingCurrencyController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\SuspectedDuplicateResolutionController;
@@ -29,6 +32,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store']);
+    Route::post('transactions/{transaction}/receipt-proposal-attachments', [ReceiptProposalAttachmentController::class, 'store'])
+        ->name('transactions.receipt_proposal_attachments.store');
+    Route::put('receipt-breakdowns/{receipt_breakdown}', [ReceiptBreakdownController::class, 'update'])
+        ->name('receipt_breakdowns.update');
+    Route::post('receipt-breakdowns/{receipt_breakdown}/confirmation', [ReceiptBreakdownConfirmationController::class, 'store'])
+        ->name('receipt_breakdowns.confirmation.store');
     Route::put('transactions/{transaction}/category', [TransactionCategoryController::class, 'update'])
         ->name('transactions.category.update');
     Route::resource('categories', CategoryController::class)

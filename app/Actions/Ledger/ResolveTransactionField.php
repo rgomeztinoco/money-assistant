@@ -4,8 +4,10 @@ namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\CollectLearnedRuleSuggestionEvidence;
 use App\CategoryAssignmentProvenance;
+use App\ExactInteger;
 use App\Exceptions\StaleTransactionRevision;
 use App\Models\Category;
+use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -59,6 +61,7 @@ class ResolveTransactionField
                 $previousValue = $field->valueFor($currentTransaction);
                 $normalizedValue = $field->normalizeCorrection($correctedValue);
                 $currentTransaction->setAttribute($field->value, $normalizedValue);
+                $this->demoteInvalidatedReceiptBreakdown($currentTransaction, $field);
 
                 $currentTransaction->corrections()->create([
                     'field' => $field,
@@ -105,5 +108,50 @@ class ResolveTransactionField
 
             return $currentTransaction;
         });
+    }
+
+    private function demoteInvalidatedReceiptBreakdown(
+        Transaction $transaction,
+        ReviewableTransactionField $field,
+    ): void {
+        if (! in_array($field, [
+            ReviewableTransactionField::AmountMinor,
+            ReviewableTransactionField::Currency,
+            ReviewableTransactionField::Kind,
+        ], true)) {
+            return;
+        }
+
+        $breakdowns = ReceiptBreakdown::query()
+            ->where('transaction_id', $transaction->getKey())
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+        $confirmedBreakdown = $breakdowns->firstWhere('status', 'confirmed');
+
+        if ($confirmedBreakdown === null) {
+            return;
+        }
+
+        if ($field === ReviewableTransactionField::AmountMinor) {
+            $lineItemTotal = ExactInteger::from(0);
+
+            foreach ($confirmedBreakdown->lineItems()->lockForUpdate()->get() as $lineItem) {
+                $lineItemTotal = $lineItemTotal->add(ExactInteger::from($lineItem->line_total_minor));
+            }
+
+            if ($lineItemTotal->compare(ExactInteger::from($transaction->amount_minor)) === 0) {
+                return;
+            }
+        }
+
+        $confirmedBreakdown->status = $breakdowns->contains('status', 'draft')
+            ? 'superseded'
+            : 'draft';
+        $confirmedBreakdown->confirmed_at = $confirmedBreakdown->status === 'draft'
+            ? null
+            : $confirmedBreakdown->confirmed_at;
+        $confirmedBreakdown->revision++;
+        $confirmedBreakdown->save();
     }
 }

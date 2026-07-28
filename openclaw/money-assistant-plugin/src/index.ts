@@ -166,6 +166,27 @@ const receiptProposalParameters = Type.Object({
   }, { additionalProperties: false }), { minItems: 1, maxItems: 200 }),
 }, { additionalProperties: false });
 
+const receiptBreakdownMutationPreparationParameters = Type.Union([
+  Type.Object({
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+    operation: Type.Literal('update_draft'),
+    receipt_breakdown_id: Type.Integer({ minimum: 1 }),
+    expected_revision: Type.Integer({ minimum: 1 }),
+    line_items: Type.Array(Type.Object({
+      id: Type.Union([Type.String({ pattern: UUID_PATTERN }), Type.Null()]),
+      description: Type.String({ minLength: 1, maxLength: 255 }),
+      line_total_minor: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+      category_id: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+    }, { additionalProperties: false }), { minItems: 1, maxItems: 200 }),
+  }, { additionalProperties: false }),
+  Type.Object({
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+    operation: Type.Literal('confirm_draft'),
+    receipt_breakdown_id: Type.Integer({ minimum: 1 }),
+    expected_revision: Type.Integer({ minimum: 1 }),
+  }, { additionalProperties: false }),
+]);
+
 type BindingConfiguration = {
   agentId: string;
   accountId: string;
@@ -1872,6 +1893,66 @@ function isReceiptProposalInput(input: Record<string, unknown>): boolean {
   });
 }
 
+export function isReceiptBreakdownMutationInput(input: Record<string, unknown>): boolean {
+  if (typeof input.idempotency_key !== 'string'
+    || !new RegExp(UUID_PATTERN).test(input.idempotency_key)
+    || !isPositiveSafeInteger(input.receipt_breakdown_id)
+    || !isPositiveSafeInteger(input.expected_revision)) {
+    return false;
+  }
+
+  if (input.operation === 'confirm_draft') {
+    return hasExactKeys(input, [
+      'idempotency_key',
+      'operation',
+      'receipt_breakdown_id',
+      'expected_revision',
+    ]);
+  }
+
+  if (input.operation !== 'update_draft'
+    || !hasExactKeys(input, [
+      'idempotency_key',
+      'operation',
+      'receipt_breakdown_id',
+      'expected_revision',
+      'line_items',
+    ])
+    || !Array.isArray(input.line_items)
+    || input.line_items.length < 1
+    || input.line_items.length > 200) {
+    return false;
+  }
+
+  const seenIds = new Set<string>();
+
+  return input.line_items.every((candidate) => {
+    if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+      return false;
+    }
+
+    const lineItem = candidate as Record<string, unknown>;
+
+    if (!hasExactKeys(lineItem, ['id', 'description', 'line_total_minor', 'category_id'])
+      || (lineItem.id !== null && typeof lineItem.id !== 'string')
+      || (typeof lineItem.id === 'string' && !new RegExp(UUID_PATTERN).test(lineItem.id))
+      || (typeof lineItem.id === 'string' && seenIds.has(lineItem.id))
+      || typeof lineItem.description !== 'string'
+      || lineItem.description.trim() === ''
+      || Array.from(lineItem.description).length > 255
+      || !isPositiveSafeInteger(lineItem.line_total_minor)
+      || (lineItem.category_id !== null && !isPositiveSafeInteger(lineItem.category_id))) {
+      return false;
+    }
+
+    if (typeof lineItem.id === 'string') {
+      seenIds.add(lineItem.id);
+    }
+
+    return true;
+  });
+}
+
 const transactionToolDefinition = {
   name: 'money_assistant_transaction_read',
   label: 'Read Money Assistant Transaction',
@@ -1933,6 +2014,20 @@ const receiptProposalToolDefinition = {
   label: 'Submit Money Assistant Receipt Proposal',
   description: 'Submit structured image-free Transaction and Line Item details from the admitted receipt photo.',
   parameters: receiptProposalParameters,
+};
+
+const receiptBreakdownMutationPreparationToolDefinition = {
+  name: 'money_assistant_receipt_breakdown_prepare',
+  label: 'Prepare Money Assistant Receipt Breakdown',
+  description: 'Validate and summarize one revision-bound Receipt Breakdown draft edit or confirmation.',
+  parameters: receiptBreakdownMutationPreparationParameters,
+};
+
+const receiptBreakdownMutationConfirmationToolDefinition = {
+  name: 'money_assistant_receipt_breakdown_confirm',
+  label: 'Confirm Money Assistant Receipt Breakdown',
+  description: 'Confirm one prepared Receipt Breakdown operation from a new owner message.',
+  parameters: manualTransactionConfirmationParameters,
 };
 
 const plugin = defineToolPlugin({
@@ -2182,6 +2277,75 @@ const plugin = defineToolPlugin({
 
             return executeReceiptProposal(
               input,
+              config,
+              toolContext,
+              signal,
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      ...receiptBreakdownMutationPreparationToolDefinition,
+      factory({ config, toolContext }) {
+        if (!isBoundOwnerInteraction(toolContext, config)) {
+          return null;
+        }
+
+        return {
+          ...receiptBreakdownMutationPreparationToolDefinition,
+          async execute(_toolCallId, params, signal) {
+            const input = params as Record<string, unknown>;
+
+            if (!isReceiptBreakdownMutationInput(input)) {
+              throw new Error('Money Assistant Receipt Breakdown input is invalid.');
+            }
+
+            return executeCapability(
+              'receipt.breakdown.mutation.prepare',
+              input,
+              config,
+              toolContext,
+              signal,
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      ...receiptBreakdownMutationConfirmationToolDefinition,
+      factory({ config, toolContext }) {
+        if (!isBoundOwnerInteraction(toolContext, config)) {
+          return null;
+        }
+
+        return {
+          ...receiptBreakdownMutationConfirmationToolDefinition,
+          async execute(_toolCallId, params, signal) {
+            const input = params as Record<string, unknown>;
+            const idempotencyKey = input.idempotency_key;
+            const pendingOperationId = input.pending_operation_id;
+            const pendingOperationRevision = input.pending_operation_revision;
+            const payloadDigest = input.payload_digest;
+
+            if (typeof idempotencyKey !== 'string'
+              || !new RegExp(UUID_PATTERN).test(idempotencyKey)
+              || typeof pendingOperationId !== 'string'
+              || !new RegExp(UUID_PATTERN).test(pendingOperationId)
+              || !isPositiveSafeInteger(pendingOperationRevision)
+              || typeof payloadDigest !== 'string'
+              || !new RegExp(SHA256_PATTERN).test(payloadDigest)) {
+              throw new Error('Money Assistant Confirmation Grant input is invalid.');
+            }
+
+            return executeCapability(
+              'receipt.breakdown.mutation.confirm',
+              {
+                idempotency_key: idempotencyKey,
+                pending_operation_id: pendingOperationId,
+                pending_operation_revision: Number(pendingOperationRevision),
+                payload_digest: payloadDigest,
+              },
               config,
               toolContext,
               signal,

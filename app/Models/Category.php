@@ -67,6 +67,12 @@ class Category extends Model
         return $this->hasMany(CategoryAssignment::class);
     }
 
+    /** @return HasMany<LineItem, $this> */
+    public function lineItems(): HasMany
+    {
+        return $this->hasMany(LineItem::class);
+    }
+
     /**
      * @return HasMany<LearnedRuleRevision, $this>
      */

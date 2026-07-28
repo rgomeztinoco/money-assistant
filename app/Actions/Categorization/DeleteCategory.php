@@ -23,8 +23,10 @@ final class DeleteCategory
                 throw new StaleCategoryRevision;
             }
 
-            if ($category->transactions()->exists() || $category->assignments()->exists()) {
-                throw new CategoryOperationBlocked('This Category has historical Transaction assignments and must be retired instead.');
+            if ($category->transactions()->exists()
+                || $category->assignments()->exists()
+                || $category->lineItems()->exists()) {
+                throw new CategoryOperationBlocked('This Category has historical Transaction or Line Item assignments and must be retired instead.');
             }
 
             if ($category->learnedRuleRevisions()->exists()) {

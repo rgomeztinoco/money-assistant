@@ -3,14 +3,19 @@
 namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
+use App\Actions\ReceiptReconciliation\ReadReceiptBreakdownState;
 use App\Models\Transaction;
 use App\Models\User;
 
-/** @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance */
+/**
+ * @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance
+ * @phpstan-import-type ReceiptBreakdownState from ReadReceiptBreakdownState
+ */
 class ReadTransactionForOpenClaw
 {
     public function __construct(
         private ReadCategoryAssignmentProvenance $readCategoryAssignmentProvenance,
+        private ReadReceiptBreakdownState $readReceiptBreakdownState,
     ) {}
 
     /**
@@ -23,7 +28,8 @@ class ReadTransactionForOpenClaw
      *     kind: string,
      *     merchant_description: string,
      *     status: string,
-     *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null
+     *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
+     *     receipt_breakdown: ReceiptBreakdownState
      * }|null
      */
     public function handle(User $owner, int $transactionId): ?array
@@ -36,6 +42,7 @@ class ReadTransactionForOpenClaw
                 'originalPurchase:id,merchant_description',
                 'currentCategoryAssignment.owner:id,name',
                 'currentCategoryAssignment.linkedPurchase:id,merchant_description',
+                'receiptBreakdowns.lineItems.category:id,name',
             ])
             ->first([
                 'id',
@@ -71,6 +78,7 @@ class ReadTransactionForOpenClaw
                     'name' => $transaction->category->name,
                     'provenance' => $this->readCategoryAssignmentProvenance->handle($transaction, $owner),
                 ],
+            'receipt_breakdown' => $this->readReceiptBreakdownState->handle($transaction),
         ];
     }
 }

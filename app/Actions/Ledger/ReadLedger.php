@@ -152,6 +152,7 @@ class ReadLedger
                 'category:id,name',
                 'currentCategoryAssignment.owner:id,name',
                 'currentCategoryAssignment.linkedPurchase:id,merchant_description',
+                'receiptBreakdowns.lineItems:id,receipt_breakdown_id,category_id',
             ])
             ->orderByDesc('occurred_on')
             ->orderByDesc('id');
@@ -173,6 +174,7 @@ class ReadLedger
                 'category:id,name',
                 'currentCategoryAssignment.owner:id,name',
                 'currentCategoryAssignment.linkedPurchase:id,merchant_description',
+                'receiptBreakdowns.lineItems:id,receipt_breakdown_id,category_id',
             ])
             ->orderByDesc('voided_at')
             ->orderByDesc('id');
@@ -330,6 +332,12 @@ class ReadLedger
     private function transactionData(Transaction $transaction, User $owner, string $duplicateStatus): array
     {
         $category = null;
+        $confirmedBreakdown = $transaction->receiptBreakdowns
+            ->first(fn ($breakdown): bool => $breakdown->status === 'confirmed'
+                && $breakdown->lineItems->isNotEmpty());
+        $unresolvedCategoryCount = $confirmedBreakdown === null
+            ? ($transaction->category_id === null ? 1 : 0)
+            : $confirmedBreakdown->lineItems->whereNull('category_id')->count();
 
         if ($transaction->category !== null) {
             $provenance = $this->readCategoryAssignmentProvenance->handle($transaction, $owner);
@@ -357,13 +365,13 @@ class ReadLedger
                     'merchant_description' => $transaction->originalPurchase->merchant_description,
                 ],
             'category' => $category,
-            'review_state' => $transaction->category_id === null
+            'review_state' => $unresolvedCategoryCount > 0
                 || $transaction->provisional_fields !== []
                 || $transaction->refund_relationship_review_reasons !== []
                 || $duplicateStatus === 'suspected'
                     ? 'outstanding'
                     : 'clear',
-            'review_field_count' => count($transaction->provisional_fields),
+            'review_field_count' => count($transaction->provisional_fields) + $unresolvedCategoryCount,
             'refund_relationship_review_count' => count($transaction->refund_relationship_review_reasons),
             'duplicate_status' => $duplicateStatus,
         ];
@@ -403,8 +411,6 @@ class ReadLedger
             ->when($filters['date_from'] !== null, fn (Builder $query) => $query->whereDate('occurred_on', '>=', $filters['date_from']))
             ->when($filters['date_to'] !== null, fn (Builder $query) => $query->whereDate('occurred_on', '<=', $filters['date_to']))
             ->when($filters['currency'] !== 'all', fn (Builder $query) => $query->where('currency', $filters['currency']))
-            ->when($filters['category_state'] === 'categorized', fn (Builder $query) => $query->whereNotNull('category_id'))
-            ->when($filters['category_state'] === 'uncategorized', fn (Builder $query) => $query->whereNull('category_id'))
             ->when($filters['refund_relationship'] === 'linked', fn (Builder $query) => $query
                 ->where('kind', TransactionKind::Refund)
                 ->whereNotNull('original_purchase_id'))
@@ -414,19 +420,25 @@ class ReadLedger
             ->when($filters['refund_relationship'] === 'not_applicable', fn (Builder $query) => $query
                 ->where('kind', TransactionKind::Purchase));
 
+        if ($filters['category_state'] === 'categorized') {
+            $this->whereHasNoUncategorizedContribution($query);
+        } elseif ($filters['category_state'] === 'uncategorized') {
+            $this->whereHasUncategorizedContribution($query);
+        }
+
         if ($filters['review_state'] === 'outstanding') {
             $query->where(function (Builder $query): void {
                 $query
-                    ->whereNull('category_id')
+                    ->where(fn (Builder $query) => $this->whereHasUncategorizedContribution($query))
                     ->orWhereJsonLength('provisional_fields', '>', 0)
                     ->orWhereJsonLength('refund_relationship_review_reasons', '>', 0)
                     ->orWhere(fn (Builder $query) => $this->whereHasDuplicateRelationship($query, false));
             });
         } elseif ($filters['review_state'] === 'clear') {
             $query
-                ->whereNotNull('category_id')
                 ->whereJsonLength('provisional_fields', 0)
                 ->whereJsonLength('refund_relationship_review_reasons', 0);
+            $this->whereHasNoUncategorizedContribution($query);
             $this->whereHasNoDuplicateRelationship($query, false);
         }
 
@@ -475,6 +487,43 @@ class ReadLedger
                 })
                 ->when($resolved === true, fn ($query) => $query->whereNotNull('suspected_duplicates.resolved_at'))
                 ->when($resolved === false, fn ($query) => $query->whereNull('suspected_duplicates.resolved_at'));
+        });
+    }
+
+    /** @param Builder<Transaction> $query */
+    private function whereHasUncategorizedContribution(Builder $query): void
+    {
+        $query->where(function (Builder $query): void {
+            $query
+                ->where(function (Builder $query): void {
+                    $query
+                        ->whereNull('category_id')
+                        ->whereDoesntHave('receiptBreakdowns', fn (Builder $query) => $query
+                            ->where('status', 'confirmed')
+                            ->whereHas('lineItems'));
+                })
+                ->orWhereHas('receiptBreakdowns', fn (Builder $query) => $query
+                    ->where('status', 'confirmed')
+                    ->whereHas('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
+        });
+    }
+
+    /** @param Builder<Transaction> $query */
+    private function whereHasNoUncategorizedContribution(Builder $query): void
+    {
+        $query->where(function (Builder $query): void {
+            $query
+                ->where(function (Builder $query): void {
+                    $query
+                        ->whereNotNull('category_id')
+                        ->whereDoesntHave('receiptBreakdowns', fn (Builder $query) => $query
+                            ->where('status', 'confirmed')
+                            ->whereHas('lineItems'));
+                })
+                ->orWhereHas('receiptBreakdowns', fn (Builder $query) => $query
+                    ->where('status', 'confirmed')
+                    ->whereHas('lineItems')
+                    ->whereDoesntHave('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
         });
     }
 }

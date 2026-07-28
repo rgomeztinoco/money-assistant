@@ -4,6 +4,8 @@ namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
 use App\Actions\Categorization\ReadLearnedRuleCandidateFromCorrection;
+use App\Actions\ReceiptReconciliation\ReadReceiptBreakdownState;
+use App\Models\ReceiptProposal;
 use App\Models\SpendingNotificationReference;
 use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
@@ -17,6 +19,7 @@ use Illuminate\Support\Str;
 
 /**
  * @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance
+ * @phpstan-import-type ReceiptBreakdownState from ReadReceiptBreakdownState
  *
  * @phpstan-type RelatedTransactionData array{
  *     id: int,
@@ -49,6 +52,7 @@ class ReadTransactionInspector
     public function __construct(
         private ReadCategoryAssignmentProvenance $readCategoryAssignmentProvenance,
         private ReadLearnedRuleCandidateFromCorrection $readLearnedRuleCandidateFromCorrection,
+        private ReadReceiptBreakdownState $readReceiptBreakdownState,
     ) {}
 
     /**
@@ -88,6 +92,8 @@ class ReadTransactionInspector
      *         first_transaction: DuplicateTransactionData,
      *         second_transaction: DuplicateTransactionData
      *     }>,
+     *     receipt_breakdown: ReceiptBreakdownState,
+     *     receipt_proposals: list<array{id: string, processed_at: string, proposed_amount_minor: string, proposed_merchant_description: string, line_item_count: int}>,
      *     state_change_idempotency_key: string
      * }|null
      */
@@ -115,12 +121,31 @@ class ReadTransactionInspector
                     ->orderByDesc('result_revision'),
                 'spendingNotificationReferences' => fn ($query) => $query
                     ->orderByDesc('created_at'),
+                'receiptBreakdowns.lineItems.category:id,name',
             ])
             ->find($transactionId);
 
         if ($transaction === null) {
             return null;
         }
+
+        $receiptBreakdown = $this->readReceiptBreakdownState->handle($transaction);
+        $receiptProposals = ReceiptProposal::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->whereDoesntHave('receiptBreakdown')
+            ->where('proposed_transaction->currency', $transaction->currency->value)
+            ->where('proposed_transaction->kind', $transaction->kind->value)
+            ->select([
+                'id',
+                'user_id',
+                'proposal_id',
+                'processed_at',
+                'proposed_transaction',
+                'proposed_line_items',
+            ])
+            ->latest('processed_at')
+            ->limit(20)
+            ->get();
 
         $reviewFields = [];
 
@@ -193,7 +218,9 @@ class ReadTransactionInspector
                     'provenance' => $this->readCategoryAssignmentProvenance->handle($transaction, $owner),
                 ],
             'review' => [
-                'category' => $transaction->category_id === null,
+                'category' => ($receiptBreakdown['confirmed'] === null
+                    || $receiptBreakdown['confirmed']['line_items'] === [])
+                    && $transaction->category_id === null,
                 'fields' => $reviewFields,
                 'refund_relationship_reasons' => $refundRelationshipReasons,
             ],
@@ -252,6 +279,16 @@ class ReadTransactionInspector
                         'second_transaction' => $this->duplicateTransactionData($relationship->secondTransaction),
                     ];
                 })
+                ->all()),
+            'receipt_breakdown' => $receiptBreakdown,
+            'receipt_proposals' => array_values($receiptProposals
+                ->map(fn (ReceiptProposal $proposal): array => [
+                    'id' => $proposal->proposal_id,
+                    'processed_at' => $proposal->processed_at->toIso8601String(),
+                    'proposed_amount_minor' => (string) $proposal->proposed_transaction['amount_minor'],
+                    'proposed_merchant_description' => $proposal->proposed_transaction['merchant_description'],
+                    'line_item_count' => count($proposal->proposed_line_items),
+                ])
                 ->all()),
             'state_change_idempotency_key' => (string) Str::uuid(),
         ];

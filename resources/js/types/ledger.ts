@@ -80,6 +80,28 @@ export type DuplicateRelationship = {
     second_transaction: DuplicateTransaction;
 };
 
+export type ReceiptLineItem = {
+    id: string;
+    description: string;
+    role: 'purchased_item';
+    line_total_minor: string;
+    category: {
+        id: number;
+        name: string;
+    } | null;
+    requires_review: boolean;
+};
+
+export type ReceiptBreakdown = {
+    id: number;
+    revision: number;
+    status: 'draft' | 'confirmed';
+    total_minor: string;
+    delta_minor: string;
+    confirmed_at: string | null;
+    line_items: ReceiptLineItem[];
+};
+
 export type SelectedTransaction = {
     id: number;
     occurred_on: string;
@@ -127,6 +149,17 @@ export type SelectedTransaction = {
         created_at: string | null;
     }>;
     duplicate_relationships: DuplicateRelationship[];
+    receipt_breakdown: {
+        draft: ReceiptBreakdown | null;
+        confirmed: ReceiptBreakdown | null;
+    };
+    receipt_proposals: Array<{
+        id: string;
+        processed_at: string;
+        proposed_amount_minor: string;
+        proposed_merchant_description: string;
+        line_item_count: number;
+    }>;
     state_change_idempotency_key: string;
 };
 

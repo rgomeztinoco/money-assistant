@@ -177,5 +177,6 @@ type GatewayRequestRuntime = {
 };
 export declare function deleteReceiptSourceMessage(gateway: GatewayRequestRuntime, admission: AdmittedReceiptPhoto, config: CapabilityConfiguration): Promise<void>;
 export declare function warnReceiptSourceDeletionFailed(gateway: GatewayRequestRuntime, admission: AdmittedReceiptPhoto, config: CapabilityConfiguration): Promise<void>;
+export declare function isReceiptBreakdownMutationInput(input: Record<string, unknown>): boolean;
 declare const plugin: import("openclaw/plugin-sdk/tool-plugin").DefinedToolPluginEntry;
 export default plugin;

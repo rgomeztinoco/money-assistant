@@ -4,9 +4,11 @@ use App\CategoryAssignmentProvenance;
 use App\Contracts\OpenClawHook;
 use App\Currency;
 use App\Models\Category;
+use App\Models\LineItem;
 use App\Models\OpenClawAuditEvent;
 use App\Models\OpenClawConfirmationGrant;
 use App\Models\OpenClawPendingOperation;
+use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
@@ -315,6 +317,137 @@ test('OpenClaw confirms owner Category assignment and rejects changed Transactio
         ->assertJsonPath('transaction.category.provenance.source', 'owner')
         ->assertJsonPath('transaction.category.provenance.owner.id', $owner->id)
         ->assertJsonPath('transaction.category.provenance.owner.name', $owner->name);
+});
+
+test('OpenClaw edits and confirms the same expected Receipt Breakdown revision as the web', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+        'amount_minor' => 2500,
+    ]);
+    $draft = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->draft()->create();
+    $firstLineItem = LineItem::factory()->for($draft)->create(['line_total_minor' => 1000]);
+    $secondLineItem = LineItem::factory()->for($draft)->create(['line_total_minor' => 1500]);
+    $lineItems = [
+        [
+            'id' => $firstLineItem->line_item_id,
+            'description' => 'Coffee',
+            'line_total_minor' => 1000,
+            'category_id' => $category->id,
+        ],
+        [
+            'id' => $secondLineItem->line_item_id,
+            'description' => 'Fruit',
+            'line_total_minor' => 1500,
+            'category_id' => null,
+        ],
+    ];
+    $preparation = ($this->validCategoryCreationPreparation)();
+    $preparation['capability'] = 'receipt.breakdown.mutation.prepare';
+    $preparation['input'] = [
+        'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf3a0',
+        'operation' => 'update_draft',
+        'receipt_breakdown_id' => $draft->id,
+        'expected_revision' => 1,
+        'line_items' => $lineItems,
+    ];
+    $preparation['interaction']['message_id'] = 'telegram-owner-receipt-update-prepare';
+    $unsafePreparation = $preparation;
+    $unsafePreparation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf39f';
+    $unsafePreparation['input']['line_items'][0]['line_total_minor'] = 9_007_199_254_740_992;
+    $unsafePreparation['interaction']['message_id'] = 'telegram-owner-receipt-update-unsafe';
+
+    ($this->callOpenClaw)($unsafePreparation)->assertUnprocessable();
+
+    expect(OpenClawPendingOperation::query()->count())->toBe(0);
+
+    $operation = ($this->callOpenClaw)($preparation)
+        ->assertSuccessful()
+        ->assertJsonPath(
+            'pending_operation.effect_summary',
+            "Replace draft Receipt Breakdown #{$draft->id} at revision 1 with 2 purchased items totaling 2500 minor units.",
+        )
+        ->json('pending_operation');
+
+    $lineItems[0]['description'] = 'Coffee beans';
+
+    $this->actingAs($owner)->put(route('receipt_breakdowns.update', $draft), [
+        'expected_revision' => 1,
+        'line_items' => $lineItems,
+    ])->assertSessionHasNoErrors();
+
+    $confirmation = ($this->validCategoryConfirmation)($operation);
+    $confirmation['capability'] = 'receipt.breakdown.mutation.confirm';
+    $confirmation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf3a1';
+    $confirmation['interaction']['message_id'] = 'telegram-owner-receipt-update-approve-stale';
+
+    ($this->callOpenClaw)($confirmation)->assertConflict();
+
+    expect($draft->refresh()->revision)->toBe(2)
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(0)
+        ->and(OpenClawAuditEvent::query()->latest('id')->value('outcome'))->toBe('stale_revision');
+
+    $preparation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf3a2';
+    $preparation['input']['expected_revision'] = 2;
+    $preparation['interaction']['message_id'] = 'telegram-owner-receipt-update-fresh';
+    $operation = ($this->callOpenClaw)($preparation)->assertSuccessful()->json('pending_operation');
+    $confirmation = ($this->validCategoryConfirmation)($operation);
+    $confirmation['capability'] = 'receipt.breakdown.mutation.confirm';
+    $confirmation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf3a3';
+    $confirmation['interaction']['message_id'] = 'telegram-owner-receipt-update-approve';
+
+    ($this->callOpenClaw)($confirmation)
+        ->assertSuccessful()
+        ->assertJsonPath('mutation.operation', 'update_draft')
+        ->assertJsonPath('mutation.revision', 3);
+
+    $confirmationPreparation = $preparation;
+    $confirmationPreparation['input'] = [
+        'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf3a4',
+        'operation' => 'confirm_draft',
+        'receipt_breakdown_id' => $draft->id,
+        'expected_revision' => 3,
+    ];
+    $confirmationPreparation['interaction']['message_id'] = 'telegram-owner-receipt-confirm-prepare';
+    $operation = ($this->callOpenClaw)($confirmationPreparation)
+        ->assertSuccessful()
+        ->json('pending_operation');
+    $confirmation = ($this->validCategoryConfirmation)($operation);
+    $confirmation['capability'] = 'receipt.breakdown.mutation.confirm';
+    $confirmation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf3a5';
+    $confirmation['interaction']['message_id'] = 'telegram-owner-receipt-confirm-approve';
+
+    $category->increment('revision');
+
+    ($this->callOpenClaw)($confirmation)->assertConflict();
+
+    expect(OpenClawConfirmationGrant::query()->count())->toBe(1)
+        ->and($draft->refresh()->status)->toBe('draft');
+
+    $confirmationPreparation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf3a6';
+    $confirmationPreparation['interaction']['message_id'] = 'telegram-owner-receipt-confirm-fresh';
+    $operation = ($this->callOpenClaw)($confirmationPreparation)
+        ->assertSuccessful()
+        ->json('pending_operation');
+    $confirmation = ($this->validCategoryConfirmation)($operation);
+    $confirmation['capability'] = 'receipt.breakdown.mutation.confirm';
+    $confirmation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf3a7';
+    $confirmation['interaction']['message_id'] = 'telegram-owner-receipt-confirm-approve-fresh';
+
+    ($this->callOpenClaw)($confirmation)
+        ->assertSuccessful()
+        ->assertJsonPath('mutation.operation', 'confirm_draft')
+        ->assertJsonPath('mutation.status', 'confirmed')
+        ->assertJsonPath('mutation.revision', 3);
+
+    $readPayload = ($this->validPayload)($transaction->id);
+    $readPayload['interaction']['message_id'] = 'telegram-owner-receipt-read-confirmed';
+
+    ($this->callOpenClaw)($readPayload)
+        ->assertSuccessful()
+        ->assertJsonPath('transaction.receipt_breakdown.draft', null)
+        ->assertJsonPath('transaction.receipt_breakdown.confirmed.revision', 3)
+        ->assertJsonPath('transaction.receipt_breakdown.confirmed.total_minor', '2500');
 });
 
 test('OpenClaw Category assignment confirmation expires when the target Category changes', function () {
@@ -731,6 +864,10 @@ test('OpenClaw can read one field-minimized owner Transaction', function () {
                 'merchant_description' => 'Neighborhood market',
                 'status' => 'active',
                 'category' => null,
+                'receipt_breakdown' => [
+                    'draft' => null,
+                    'confirmed' => null,
+                ],
             ],
         ]);
 

@@ -19,6 +19,8 @@ use Throwable;
 
 final class AuthorizeOpenClawCapability
 {
+    private const int MAX_SAFE_INTEGER = 9_007_199_254_740_991;
+
     private const int MAXIMUM_CLOCK_SKEW_IN_SECONDS = 300;
 
     private const int MAXIMUM_INTERACTION_AGE_IN_SECONDS = 1800;
@@ -90,6 +92,8 @@ final class AuthorizeOpenClawCapability
             'category.mutation.prepare',
             'category.mutation.confirm',
             'receipt.proposal.submit',
+            'receipt.breakdown.mutation.prepare',
+            'receipt.breakdown.mutation.confirm',
             'reminder.read',
             'reminder.delivery.record',
             'reminder.respond',
@@ -183,6 +187,14 @@ final class AuthorizeOpenClawCapability
                 'input.idempotency_key' => ['required', 'uuid'],
                 'input.operation' => ['required', 'string'],
             ];
+        } elseif ($capability === 'receipt.breakdown.mutation.prepare') {
+            $rules += [
+                'input' => ['required', 'array'],
+                'input.idempotency_key' => ['required', 'uuid'],
+                'input.operation' => ['required', 'string', Rule::in(['update_draft', 'confirm_draft'])],
+                'input.receipt_breakdown_id' => ['required', 'integer', 'min:1', 'max:'.self::MAX_SAFE_INTEGER],
+                'input.expected_revision' => ['required', 'integer', 'min:1', 'max:'.self::MAX_SAFE_INTEGER],
+            ];
         } else {
             $rules += [
                 'input' => ['required', 'array:idempotency_key,pending_operation_id,pending_operation_revision,payload_digest'],
@@ -224,6 +236,11 @@ final class AuthorizeOpenClawCapability
             return $this->reject($request, 'invalid_request');
         }
 
+        if ($capability === 'receipt.breakdown.mutation.prepare'
+            && ! $this->hasValidReceiptBreakdownMutationInput($payload['input'] ?? null)) {
+            return $this->reject($request, 'invalid_request');
+        }
+
         if ($capability === 'reminder.respond'
             && ! $this->hasValidReminderResponseInput($payload['input'] ?? null)) {
             return $this->reject($request, 'invalid_request');
@@ -248,6 +265,7 @@ final class AuthorizeOpenClawCapability
         if (in_array($capability, [
             'transaction.manual.confirm',
             'category.mutation.confirm',
+            'receipt.breakdown.mutation.confirm',
         ], true)
             && ! is_int($payload['input']['pending_operation_revision'] ?? null)) {
             return $this->reject($request, 'invalid_request');
@@ -437,6 +455,78 @@ final class AuthorizeOpenClawCapability
 
         return is_string($input['snoozed_until'] ?? null)
             && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/', $input['snoozed_until']) === 1;
+    }
+
+    private function hasValidReceiptBreakdownMutationInput(mixed $input): bool
+    {
+        if (! is_array($input)
+            || ! is_string($input['idempotency_key'] ?? null)
+            || ! Str::isUuid($input['idempotency_key'])
+            || ! is_string($input['operation'] ?? null)
+            || ! is_int($input['receipt_breakdown_id'] ?? null)
+            || $input['receipt_breakdown_id'] < 1
+            || $input['receipt_breakdown_id'] > self::MAX_SAFE_INTEGER
+            || ! is_int($input['expected_revision'] ?? null)
+            || $input['expected_revision'] < 1
+            || $input['expected_revision'] > self::MAX_SAFE_INTEGER) {
+            return false;
+        }
+
+        $expectedKeys = $input['operation'] === 'update_draft'
+            ? ['expected_revision', 'idempotency_key', 'line_items', 'operation', 'receipt_breakdown_id']
+            : ['expected_revision', 'idempotency_key', 'operation', 'receipt_breakdown_id'];
+        $actualKeys = array_keys($input);
+        sort($actualKeys);
+
+        if ($actualKeys !== $expectedKeys) {
+            return false;
+        }
+
+        if ($input['operation'] === 'confirm_draft') {
+            return true;
+        }
+
+        if ($input['operation'] !== 'update_draft'
+            || ! is_array($input['line_items'] ?? null)
+            || ! array_is_list($input['line_items'])
+            || count($input['line_items']) < 1
+            || count($input['line_items']) > 200) {
+            return false;
+        }
+
+        $lineItemIds = [];
+
+        foreach ($input['line_items'] as $lineItem) {
+            if (! is_array($lineItem)) {
+                return false;
+            }
+
+            $lineItemKeys = array_keys($lineItem);
+            sort($lineItemKeys);
+
+            if ($lineItemKeys !== ['category_id', 'description', 'id', 'line_total_minor']
+                || (! is_string($lineItem['id'] ?? null) && ($lineItem['id'] ?? null) !== null)
+                || (is_string($lineItem['id']) && ! Str::isUuid($lineItem['id']))
+                || (is_string($lineItem['id']) && isset($lineItemIds[$lineItem['id']]))
+                || ! is_string($lineItem['description'] ?? null)
+                || Str::squish($lineItem['description']) === ''
+                || mb_strlen($lineItem['description']) > 255
+                || ! is_int($lineItem['line_total_minor'] ?? null)
+                || $lineItem['line_total_minor'] < 1
+                || $lineItem['line_total_minor'] > self::MAX_SAFE_INTEGER
+                || ($lineItem['category_id'] !== null
+                    && (! is_int($lineItem['category_id'])
+                        || $lineItem['category_id'] < 1
+                        || $lineItem['category_id'] > self::MAX_SAFE_INTEGER))) {
+                return false;
+            }
+
+            if (is_string($lineItem['id'])) {
+                $lineItemIds[$lineItem['id']] = true;
+            }
+        }
+
+        return true;
     }
 
     private function hasValidReceiptProposalInput(mixed $input): bool

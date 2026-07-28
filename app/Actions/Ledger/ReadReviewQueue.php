@@ -3,6 +3,7 @@
 namespace App\Actions\Ledger;
 
 use App\ExactInteger;
+use App\Models\LineItem;
 use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
 use App\Models\User;
@@ -83,6 +84,16 @@ class ReadReviewQueue
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
             ->whereNull('category_id')
+            ->whereDoesntHave('receiptBreakdowns', fn ($query) => $query
+                ->where('status', 'confirmed')
+                ->whereHas('lineItems'))
+            ->count();
+        $unresolvedCategoryCount += LineItem::query()
+            ->whereNull('category_id')
+            ->whereHas('receiptBreakdown', fn ($query) => $query
+                ->whereBelongsTo($owner, 'owner')
+                ->where('status', 'confirmed')
+                ->whereHas('transaction', fn ($query) => $query->whereNull('voided_at')))
             ->count();
         $reviewQuery = Transaction::query()
             ->whereBelongsTo($owner, 'owner')

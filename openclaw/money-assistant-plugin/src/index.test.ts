@@ -14,6 +14,7 @@ import plugin, {
   admittedReceiptPhoto,
   isApprovedReceiptModel,
   inspectReceiptImage,
+  isReceiptBreakdownMutationInput,
   RECEIPT_PRIVACY_DISCLOSURE,
   receiptEffectiveAuthStateReady,
   receiptAdmissionBlockCategory,
@@ -47,6 +48,8 @@ test('the plugin exposes only bounded Transaction Category Receipt Proposal and 
     'money_assistant_category_prepare',
     'money_assistant_category_confirm',
     'money_assistant_receipt_proposal_submit',
+    'money_assistant_receipt_breakdown_prepare',
+    'money_assistant_receipt_breakdown_confirm',
     'money_assistant_reminder_read',
     'money_assistant_reminder_respond',
   ]);
@@ -937,6 +940,46 @@ test('prepare and confirm serialize exact state-bound capability requests', () =
     )).interaction.message_id,
     'telegram-message-approve',
   );
+});
+
+test('Receipt Breakdown tools accept bounded replacement edits and exact revision confirmations', () => {
+  const lineItemId = '01983d79-a780-72f0-bb34-9b4f3f0cf390';
+  const update = {
+    idempotency_key: '01983d79-a780-72f0-bb34-9b4f3f0cf391',
+    operation: 'update_draft',
+    receipt_breakdown_id: 12,
+    expected_revision: 3,
+    line_items: [
+      {
+        id: lineItemId,
+        description: 'Coffee beans',
+        line_total_minor: 1200,
+        category_id: 4,
+      },
+      {
+        id: null,
+        description: 'Bread',
+        line_total_minor: 1300,
+        category_id: null,
+      },
+    ],
+  };
+
+  assert.equal(isReceiptBreakdownMutationInput(update), true);
+  assert.equal(isReceiptBreakdownMutationInput({
+    ...update,
+    line_items: [update.line_items[0], update.line_items[0]],
+  }), false);
+  assert.equal(isReceiptBreakdownMutationInput({
+    ...update,
+    line_items: [{ ...update.line_items[0], line_total_minor: Number.MAX_SAFE_INTEGER + 1 }],
+  }), false);
+  assert.equal(isReceiptBreakdownMutationInput({
+    idempotency_key: '01983d79-a780-72f0-bb34-9b4f3f0cf392',
+    operation: 'confirm_draft',
+    receipt_breakdown_id: 12,
+    expected_revision: 3,
+  }), true);
 });
 
 test('authorization signs timestamp nonce method path and exact body digest', () => {
