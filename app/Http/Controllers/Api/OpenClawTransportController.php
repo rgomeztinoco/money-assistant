@@ -8,6 +8,7 @@ use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\Ledger\ConfirmOpenClawManualTransaction;
 use App\Actions\Ledger\PrepareOpenClawManualTransaction;
 use App\Actions\Ledger\ReadTransactionForOpenClaw;
+use App\Actions\ReceiptReconciliation\SubmitReceiptProposal;
 use App\Actions\Reminders\ReadReminderForOpenClaw;
 use App\Actions\Reminders\RecordReminderChannelDelivery;
 use App\Actions\Reminders\RespondToReminder;
@@ -40,6 +41,7 @@ final class OpenClawTransportController extends Controller
         private ReadReminderForOpenClaw $readReminder,
         private RecordReminderChannelDelivery $recordReminderChannelDelivery,
         private RespondToReminder $respondToReminder,
+        private SubmitReceiptProposal $submitReceiptProposal,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -77,6 +79,10 @@ final class OpenClawTransportController extends Controller
 
         if ($capability === 'reminder.respond') {
             return $this->respondToReminder($request, $owner);
+        }
+
+        if ($capability === 'receipt.proposal.submit') {
+            return $this->submitReceiptProposal($request, $owner);
         }
 
         $transactionId = $request->attributes->get('openclaw.transaction_id');
@@ -294,6 +300,106 @@ final class OpenClawTransportController extends Controller
         return response()->json([
             'schema_version' => 1,
             'reminder' => $this->readReminder->state($result['reminder']),
+        ]);
+    }
+
+    private function submitReceiptProposal(Request $request, ?User $owner): JsonResponse
+    {
+        $input = $request->attributes->get('openclaw.input');
+        $serviceKeyId = $request->attributes->get('openclaw.key_id');
+        $schemaVersion = $request->attributes->get('openclaw.schema_version');
+        $interactionDigest = $request->attributes->get('openclaw.interaction_digest');
+        $nonce = $request->attributes->get('openclaw.nonce');
+
+        if ($owner === null
+            || ! is_array($input)
+            || ! is_array($input['transaction'] ?? null)
+            || ! is_array($input['line_items'] ?? null)
+            || ! is_string($serviceKeyId)
+            || ! is_int($schemaVersion)
+            || ! is_string($interactionDigest)
+            || ! is_string($nonce)) {
+            $request->attributes->set('openclaw.audit.outcome', 'not_found');
+
+            return response()->json(['message' => 'Owner not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        $transaction = $input['transaction'];
+
+        if (! is_string($transaction['occurred_on'] ?? null)
+            || ! is_int($transaction['amount_minor'] ?? null)
+            || ! is_string($transaction['currency'] ?? null)
+            || ! is_string($transaction['kind'] ?? null)
+            || ! is_string($transaction['merchant_description'] ?? null)) {
+            $request->attributes->set('openclaw.audit.outcome', 'invalid_request');
+
+            return response()->json(['message' => 'Receipt Proposal is invalid.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $proposedTransaction = [
+            'occurred_on' => $transaction['occurred_on'],
+            'amount_minor' => $transaction['amount_minor'],
+            'currency' => $transaction['currency'],
+            'kind' => $transaction['kind'],
+            'merchant_description' => $transaction['merchant_description'],
+        ];
+        $proposedLineItems = [];
+
+        foreach ($input['line_items'] as $lineItem) {
+            if (! is_array($lineItem)
+                || ! is_string($lineItem['description'] ?? null)
+                || ! is_int($lineItem['line_total_minor'] ?? null)) {
+                $request->attributes->set('openclaw.audit.outcome', 'invalid_request');
+
+                return response()->json(['message' => 'Receipt Proposal is invalid.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+
+            $proposedLineItems[] = [
+                'description' => $lineItem['description'],
+                'line_total_minor' => $lineItem['line_total_minor'],
+            ];
+        }
+
+        try {
+            $result = $this->submitReceiptProposal->handle(
+                owner: $owner,
+                serviceKeyId: $serviceKeyId,
+                schemaVersion: $schemaVersion,
+                nonceDigest: hash('sha256', $nonce),
+                requestDigest: hash('sha256', $request->getContent()),
+                interactionDigest: $interactionDigest,
+                proposalId: (string) $input['proposal_id'],
+                sourceKind: (string) $input['source_kind'],
+                processedAt: CarbonImmutable::parse((string) $input['processed_at']),
+                provider: (string) $input['provider'],
+                model: (string) $input['model'],
+                contractVersion: (int) $input['contract_version'],
+                proposedTransaction: $proposedTransaction,
+                proposedLineItems: $proposedLineItems,
+            );
+        } catch (IdempotencyKeyConflict) {
+            $request->attributes->set('openclaw.audit.outcome', 'idempotency_conflict');
+
+            return response()->json(
+                ['message' => 'Proposal identifier conflicts with an earlier proposal.'],
+                Response::HTTP_CONFLICT,
+            );
+        }
+
+        $request->attributes->set(
+            'openclaw.audit.outcome',
+            $result['replayed'] ? 'idempotent_replay' : 'success',
+        );
+        $request->attributes->set('openclaw.audit.resource_type', 'receipt_proposal');
+        $request->attributes->set('openclaw.audit.result_count', 1);
+        $request->attributes->set('openclaw.audit.recorded', true);
+
+        return response()->json([
+            'schema_version' => 1,
+            'receipt_proposal' => [
+                'id' => $result['proposal']->proposal_id,
+                'status' => 'accepted',
+            ],
         ]);
     }
 

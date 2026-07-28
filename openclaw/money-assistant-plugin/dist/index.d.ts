@@ -1,17 +1,49 @@
+export declare const RECEIPT_PRIVACY_DISCLOSURE = "Receipt processing uses the existing OpenAI OAuth account and only openai/gpt-5.6. OpenAI OAuth has no published fixed retention ceiling. Before enabling receipts, disable account-wide model improvement and Codex full-environment training. Receipt interactions are never submitted as feedback. OpenClaw deletes local images after proposal submission or terminal failure, enforces a one-hour crash-cleanup ceiling, then attempts to delete the Telegram source and warns if manual removal is needed. Money Assistant retains only the opaque proposal identifier, receipt_photo source kind, processing time, actual provider/model, contract version, and structured financial proposal.";
 type BindingConfiguration = {
     agentId: string;
     accountId: string;
     conversationId: string;
     ownerSenderId: string;
 };
-type PluginConfiguration = BindingConfiguration & {
+type CapabilityConfiguration = BindingConfiguration & {
     keyId: string;
     privateKey: string;
 };
+type PluginConfiguration = CapabilityConfiguration & {
+    receiptMediaRoot: string;
+    receiptProcessingEnabled: boolean;
+    receiptDisclosureDelivered: boolean;
+    receiptDisclosureAccepted: boolean;
+    openAiModelImprovementDisabled: boolean;
+    codexFullEnvironmentTrainingDisabled: boolean;
+    openAiOAuthProfileId: string;
+    openAiOAuthCredentialVersion: string;
+    receiptPolicyVersion: string;
+    receiptConfirmedPolicyVersion: string;
+    receiptConfirmedOAuthProfileId: string;
+    receiptConfirmedOAuthCredentialVersion: string;
+};
+type ReceiptPolicyConfiguration = Pick<PluginConfiguration, 'receiptProcessingEnabled' | 'receiptDisclosureDelivered' | 'receiptDisclosureAccepted' | 'openAiModelImprovementDisabled' | 'codexFullEnvironmentTrainingDisabled' | 'openAiOAuthProfileId' | 'openAiOAuthCredentialVersion' | 'receiptPolicyVersion' | 'receiptConfirmedPolicyVersion' | 'receiptConfirmedOAuthProfileId' | 'receiptConfirmedOAuthCredentialVersion'>;
 type AdmittedOwnerMessage = {
     sessionKey: string;
     messageId: string;
     occurredAtSeconds: number;
+};
+type ReceiptBindingConfiguration = BindingConfiguration & {
+    receiptMediaRoot: string;
+};
+type ValidatedReceiptPhoto = AdmittedOwnerMessage & {
+    runId?: string;
+    mediaPath: string;
+};
+type AdmittedReceiptPhoto = ValidatedReceiptPhoto & {
+    proposalId: string;
+    interactionId: string;
+    processable: boolean;
+    cleanupPaths: string[];
+    provider?: string;
+    model?: string;
+    cleanupTimer?: unknown;
 };
 type AdmittedReminderEvent = {
     eventId: string;
@@ -23,6 +55,8 @@ type InboundMessage = {
     messageId?: string;
     timestamp?: number;
     sessionKey?: string;
+    runId?: string;
+    metadata?: Record<string, unknown>;
 };
 type InboundMessageContext = {
     channelId: string;
@@ -69,8 +103,56 @@ export declare function admittedOwnerMessage(event: InboundMessage, context: Inb
 export declare class OwnerMessageAdmissions {
     private readonly messages;
     admit(event: InboundMessage, context: InboundMessageContext, config: BindingConfiguration): void;
+    clear(sessionKey: string | undefined): void;
     freshForSession(sessionKey: string | undefined, nowSeconds: number): AdmittedOwnerMessage | null;
 }
+export declare function receiptProcessingReady(config: ReceiptPolicyConfiguration): boolean;
+export declare function receiptRuntimePolicyReady(runtimeConfig: unknown, agentId: string): boolean;
+export declare function receiptEffectiveAuthStateReady(profiles: Record<string, unknown>, resolvedOrder: string[], sessionEntry?: unknown): boolean;
+declare function safeReceiptPath(path: string, root: string): string | null;
+export declare function inspectReceiptImage(path: string, root: string, declaredMimeType: string): string | null;
+export declare function admittedReceiptPhoto(event: InboundMessage, context: InboundMessageContext, config: ReceiptBindingConfiguration, inspectImage?: typeof inspectReceiptImage): ValidatedReceiptPhoto | null;
+export declare function isApprovedReceiptModel(provider: string, model: string): boolean;
+type ReceiptAdmissionDependencies = {
+    removeFile: (path: string) => Promise<void>;
+    setTimer: (callback: () => Promise<void> | void, delay: number) => unknown;
+    clearTimer: (timer: unknown) => void;
+    createProposalId: () => string;
+    createInteractionId: () => string;
+    nowSeconds: () => number;
+    inspectImage: typeof inspectReceiptImage;
+    safePath: typeof safeReceiptPath;
+    managedMediaRoot: () => string;
+};
+export declare class ReceiptPhotoAdmissions {
+    private readonly dependencies;
+    private readonly photos;
+    private readonly pendingSourceDeletions;
+    private readonly rejectedRuns;
+    private readonly rejectedSessionsWithoutRun;
+    private readonly identitiesBySourceMessage;
+    private readonly sensitiveSessions;
+    constructor(dependencies?: ReceiptAdmissionDependencies);
+    admit(event: InboundMessage, context: InboundMessageContext, config: ReceiptBindingConfiguration): boolean;
+    freshForSession(sessionKey: string | undefined, nowSeconds: number): AdmittedReceiptPhoto | null;
+    freshForRun(runId: string | undefined, sessionKey: string | undefined, nowSeconds: number): AdmittedReceiptPhoto | null;
+    hasConflictingRun(runId: string | undefined, sessionKey: string | undefined): boolean;
+    consumeRejectedRun(runId: string | undefined, sessionKey: string | undefined): boolean;
+    clearRejectedRun(runId: string | undefined): void;
+    activeForSession(sessionKey: string | undefined): AdmittedReceiptPhoto | null;
+    recordActualModel(runId: string, provider: string, model: string): boolean;
+    isSensitiveSession(sessionKey: string | undefined): boolean;
+    finishForSession(sessionKey: string | undefined): Promise<void>;
+    finishAdmission(photo: AdmittedReceiptPhoto): Promise<void>;
+    finishForRun(runId: string | undefined, sessionKey?: string): Promise<void>;
+    takePendingSourceDeletions(sessionKey: string | undefined): AdmittedReceiptPhoto[];
+    private expire;
+    private removeLocalImage;
+    private queueSourceDeletion;
+}
+type ReceiptAdmissionBlockCategory = 'receipt_photo_concurrent' | 'receipt_photo_invalid' | 'receipt_photo_stale';
+export declare function receiptAdmissionBlockCategory(admissions: ReceiptPhotoAdmissions, runId: string | undefined, sessionKey: string | undefined, nowSeconds: number): ReceiptAdmissionBlockCategory | null;
+export declare function shouldBlockReceiptMessageWrite(admissions: ReceiptPhotoAdmissions, eventSessionKey: string | undefined, contextSessionKey: string | undefined): boolean;
 export declare class ReminderEventAdmissions {
     private readonly events;
     admit(sessionKey: string, eventId: string, occurredAtSeconds: number): void;
@@ -87,7 +169,13 @@ export declare function shouldSuppressReminderDelivery(event: OutgoingMessage, c
 export declare function consumeAlreadyDeliveredReminder(sessionKey: string | undefined, admissions: ReminderEventAdmissions, nowSeconds: number): boolean;
 export declare function authorizationHeaders(body: string, keyId: string, encodedPrivateKey: string, timestamp: string, nonce: string): Record<string, string>;
 export declare function capabilityRequestBody(capability: string, input: CapabilityInput, toolContext: TrustedToolContext, admission: AdmittedOwnerMessage): string;
+export declare function receiptProposalCapabilityRequestBody(input: CapabilityInput, toolContext: TrustedToolContext, admission: AdmittedReceiptPhoto, processedAtSeconds: number): string;
 export declare function reminderEventCapabilityRequestBody(capability: string, input: CapabilityInput, config: BindingConfiguration, eventId: string, occurredAtSeconds: number): string;
-export declare function recordReminderChannelDelivery(admission: AdmittedReminderEvent, config: PluginConfiguration): Promise<void>;
+export declare function recordReminderChannelDelivery(admission: AdmittedReminderEvent, config: CapabilityConfiguration): Promise<void>;
+type GatewayRequestRuntime = {
+    request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+};
+export declare function deleteReceiptSourceMessage(gateway: GatewayRequestRuntime, admission: AdmittedReceiptPhoto, config: CapabilityConfiguration): Promise<void>;
+export declare function warnReceiptSourceDeletionFailed(gateway: GatewayRequestRuntime, admission: AdmittedReceiptPhoto, config: CapabilityConfiguration): Promise<void>;
 declare const plugin: import("openclaw/plugin-sdk/tool-plugin").DefinedToolPluginEntry;
 export default plugin;

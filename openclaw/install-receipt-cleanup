@@ -1,0 +1,31 @@
+#!/bin/sh
+
+set -eu
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+systemd_directory="${SYSTEMD_DIRECTORY:-/etc/systemd/system}"
+
+if [ "$(id -u)" -ne 0 ]; then
+    printf '%s\n' 'Receipt cleanup installation failed: run this installer as root.' >&2
+    exit 1
+fi
+
+if [ ! -r /etc/money-assistant/openclaw-receipt-cleanup.env ]; then
+    printf '%s\n' 'Receipt cleanup installation failed: /etc/money-assistant/openclaw-receipt-cleanup.env is not readable.' >&2
+    exit 1
+fi
+
+if [ ! -x /opt/money-assistant/openclaw/cleanup-receipt-media ]; then
+    printf '%s\n' 'Receipt cleanup installation failed: cleanup-receipt-media is not installed under /opt/money-assistant/openclaw.' >&2
+    exit 1
+fi
+
+install -m 0644 \
+    "${script_directory}/money-assistant-receipt-cleanup.service" \
+    "${systemd_directory}/money-assistant-receipt-cleanup.service"
+install -m 0644 \
+    "${script_directory}/money-assistant-receipt-cleanup.timer" \
+    "${systemd_directory}/money-assistant-receipt-cleanup.timer"
+
+systemctl daemon-reload
+systemctl enable --now money-assistant-receipt-cleanup.timer

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+receipt_media_root="${OPENCLAW_MONEY_ASSISTANT_RECEIPT_MEDIA_ROOT:?Set the dedicated receipt media root}"
+
+if [[ "${receipt_media_root}" == "/" ]]; then
+    exit 1
+fi
+
+if [[ ! -d "${receipt_media_root}" ]]; then
+    exit 0
+fi
+
+find "${receipt_media_root}" -xdev -type f -mmin +54 -delete

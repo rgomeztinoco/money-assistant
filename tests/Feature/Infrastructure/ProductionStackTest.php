@@ -134,7 +134,7 @@ test('OpenClaw integrations have isolated transport and directional credentials'
     }
 });
 
-test('the dedicated Money Assistant agent exposes only its bounded Transaction plugin', function () {
+test('the dedicated Money Assistant agent exposes only its bounded financial plugin', function () {
     $pluginRoot = base_path('openclaw/money-assistant-plugin');
     $manifest = json_decode(
         file_get_contents($pluginRoot.'/openclaw.plugin.json'),
@@ -152,6 +152,7 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
         flags: JSON_THROW_ON_ERROR,
     );
     $agent = collect($policy['agents']['list'])->firstWhere('id', 'money-assistant');
+    $receiptConfig = $policy['plugins']['entries']['money-assistant']['config'];
 
     expect($manifest['id'])->toBe('money-assistant')
         ->and($manifest['contracts'])->toBe([
@@ -162,6 +163,7 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
                 'money_assistant_category_read',
                 'money_assistant_category_prepare',
                 'money_assistant_category_confirm',
+                'money_assistant_receipt_proposal_submit',
                 'money_assistant_reminder_read',
                 'money_assistant_reminder_respond',
             ],
@@ -178,7 +180,9 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
             'allowConversationAccess' => true,
         ])
         ->and($agent['skills'])->toBe([])
-        ->and($agent['timeoutSeconds'])->toBe(1800)
+        ->and($agent)->not->toHaveKey('model')
+        ->and($agent['memorySearch'])->toBe(['enabled' => false])
+        ->and($policy['agents']['defaults']['timeoutSeconds'])->toBe(1800)
         ->and($agent['heartbeat']['every'])->toBe('0m')
         ->and($agent['tools']['allow'])->toBe([
             'money_assistant_transaction_read',
@@ -187,6 +191,7 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
             'money_assistant_category_read',
             'money_assistant_category_prepare',
             'money_assistant_category_confirm',
+            'money_assistant_receipt_proposal_submit',
             'money_assistant_reminder_read',
             'money_assistant_reminder_respond',
         ])
@@ -225,7 +230,59 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
             ]],
         ])
         ->and($policy['channels']['telegram']['defaultAccount'])
-        ->toBe('${OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID}');
+        ->toBe('${OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID}')
+        ->and($policy['channels']['telegram']['actions'])->toBe([
+            'sendMessage' => true,
+            'deleteMessage' => true,
+        ])
+        ->and($policy['auth']['profiles'])->toBe([
+            'openai:money-assistant-oauth' => [
+                'provider' => 'openai',
+                'mode' => 'oauth',
+                'displayName' => 'Existing Money Assistant OpenAI OAuth account',
+            ],
+        ])
+        ->and($policy['auth']['order']['openai'])->toBe([
+            'openai:money-assistant-oauth',
+        ])
+        ->and($policy['agents']['defaults']['imageModel'])->toBe([
+            'primary' => 'openai/gpt-5.6',
+            'fallbacks' => [],
+        ])
+        ->and($policy['agents']['defaults']['model'])->toBe([
+            'primary' => 'openai/gpt-5.6',
+            'fallbacks' => [],
+        ])
+        ->and(array_keys($policy['agents']['defaults']['models']))->toBe(['openai/gpt-5.6'])
+        ->and($policy['commands'])->toBe([
+            'native' => false,
+            'nativeSkills' => false,
+            'text' => false,
+            'bash' => false,
+            'config' => false,
+            'mcp' => false,
+            'plugins' => false,
+            'debug' => false,
+            'restart' => false,
+        ])
+        ->and($policy['agents']['defaults']['mediaGenerationAutoProviderFallback'])->toBeFalse()
+        ->and($policy['logging']['redactSensitive'])->toBe('tools')
+        ->and($policy['logging']['level'])->toBe('warn')
+        ->and($policy['logging']['consoleLevel'])->toBe('warn')
+        ->and($receiptConfig['receiptMediaRoot'])
+        ->toBe('${OPENCLAW_MONEY_ASSISTANT_RECEIPT_MEDIA_ROOT}')
+        ->and($receiptConfig['receiptProcessingEnabled'])->toBeFalse()
+        ->and($receiptConfig['receiptDisclosureDelivered'])->toBeFalse()
+        ->and($receiptConfig['receiptDisclosureAccepted'])->toBeFalse()
+        ->and($receiptConfig['openAiModelImprovementDisabled'])->toBeFalse()
+        ->and($receiptConfig['codexFullEnvironmentTrainingDisabled'])->toBeFalse()
+        ->and($receiptConfig['openAiOAuthProfileId'])->toBe('openai:money-assistant-oauth')
+        ->and($receiptConfig['openAiOAuthCredentialVersion'])
+        ->toBe('${OPENCLAW_MONEY_ASSISTANT_OPENAI_OAUTH_CREDENTIAL_VERSION}')
+        ->and($receiptConfig['receiptPolicyVersion'])->toBe('openai-oauth-gpt-5.6-v1')
+        ->and($receiptConfig['receiptConfirmedPolicyVersion'])->toBe('')
+        ->and($receiptConfig['receiptConfirmedOAuthProfileId'])->toBe('')
+        ->and($receiptConfig['receiptConfirmedOAuthCredentialVersion'])->toBe('');
 
     expect(file_get_contents($pluginRoot.'/src/index.ts'))
         ->toContain("const CAPABILITY_PATH = '/api/openclaw/v1/transport'")
@@ -234,11 +291,13 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
         ->toContain('toolContext.sessionId')
         ->toContain("api.on('message_received'")
         ->toContain('message_id: admission.messageId')
+        ->toContain('message_id: admission.interactionId')
         ->toContain('admission.occurredAtSeconds')
         ->toContain("'transaction.manual.prepare'")
         ->toContain("'transaction.manual.confirm'")
         ->toContain("'category.mutation.prepare'")
         ->toContain("'category.mutation.confirm'")
+        ->toContain("'receipt.proposal.submit'")
         ->toContain("'reminder.read'")
         ->toContain("'reminder.respond'")
         ->toContain("'reminder.delivery.record'")
@@ -246,6 +305,32 @@ test('the dedicated Money Assistant agent exposes only its bounded Transaction p
         ->toContain("createHash('sha256').update(body).digest('hex')")
         ->not->toContain('${toolContext.sessionId}:${toolCallId}')
         ->not->toContain('OPENCLAW_GATEWAY_TOKEN');
+});
+
+test('OpenClaw receipt media has an independent one-hour crash cleanup ceiling', function () {
+    $cleanup = file_get_contents(base_path('openclaw/cleanup-receipt-media'));
+    $service = file_get_contents(base_path('openclaw/money-assistant-receipt-cleanup.service'));
+    $timer = file_get_contents(base_path('openclaw/money-assistant-receipt-cleanup.timer'));
+    $installer = file_get_contents(base_path('openclaw/install-receipt-cleanup'));
+
+    expect($cleanup)
+        ->toContain('OPENCLAW_MONEY_ASSISTANT_RECEIPT_MEDIA_ROOT')
+        ->toContain('-mmin +54')
+        ->toContain('-delete')
+        ->and($service)
+        ->toContain('EnvironmentFile=/etc/money-assistant/openclaw-receipt-cleanup.env')
+        ->toContain('ExecStart=/opt/money-assistant/openclaw/cleanup-receipt-media')
+        ->toContain('ProtectSystem=full')
+        ->not->toContain('ReadWritePaths=${')
+        ->and($timer)
+        ->toContain('OnBootSec=5m')
+        ->toContain('OnUnitActiveSec=5m')
+        ->toContain('Persistent=true')
+        ->and($installer)
+        ->toContain('openclaw-receipt-cleanup.env')
+        ->toContain('money-assistant-receipt-cleanup.service')
+        ->toContain('money-assistant-receipt-cleanup.timer')
+        ->toContain('systemctl enable --now money-assistant-receipt-cleanup.timer');
 });
 
 test('the production stack ships a private ingress verifier', function () {

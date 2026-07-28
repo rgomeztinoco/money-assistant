@@ -89,6 +89,7 @@ final class AuthorizeOpenClawCapability
             'category.read',
             'category.mutation.prepare',
             'category.mutation.confirm',
+            'receipt.proposal.submit',
             'reminder.read',
             'reminder.delivery.record',
             'reminder.respond',
@@ -156,6 +157,26 @@ final class AuthorizeOpenClawCapability
                 'input.kind' => ['required', Rule::enum(TransactionKind::class)],
                 'input.merchant_description' => ['required', 'string', 'max:255'],
             ];
+        } elseif ($capability === 'receipt.proposal.submit') {
+            $rules += [
+                'input' => ['required', 'array:proposal_id,source_kind,processed_at,provider,model,contract_version,transaction,line_items'],
+                'input.proposal_id' => ['required', 'uuid'],
+                'input.source_kind' => ['required', 'string', Rule::in(['receipt_photo'])],
+                'input.processed_at' => ['required', 'string', 'max:35'],
+                'input.provider' => ['required', 'string', Rule::in(['openai'])],
+                'input.model' => ['required', 'string', Rule::in(['openai/gpt-5.6'])],
+                'input.contract_version' => ['required', 'integer', Rule::in([1])],
+                'input.transaction' => ['required', 'array:occurred_on,amount_minor,currency,kind,merchant_description'],
+                'input.transaction.occurred_on' => ['required', 'date_format:Y-m-d'],
+                'input.transaction.amount_minor' => ['required', 'integer', 'min:1', 'max:'.PHP_INT_MAX],
+                'input.transaction.currency' => ['required', Rule::enum(Currency::class)],
+                'input.transaction.kind' => ['required', Rule::enum(TransactionKind::class)],
+                'input.transaction.merchant_description' => ['required', 'string', 'max:255'],
+                'input.line_items' => ['required', 'array', 'min:1', 'max:200'],
+                'input.line_items.*' => ['required', 'array:description,line_total_minor'],
+                'input.line_items.*.description' => ['required', 'string', 'max:255'],
+                'input.line_items.*.line_total_minor' => ['required', 'integer', 'not_in:0'],
+            ];
         } elseif ($capability === 'category.mutation.prepare') {
             $rules += [
                 'input' => ['required', 'array'],
@@ -213,6 +234,11 @@ final class AuthorizeOpenClawCapability
             return $this->reject($request, 'invalid_request');
         }
 
+        if ($capability === 'receipt.proposal.submit'
+            && ! $this->hasValidReceiptProposalInput($payload['input'] ?? null)) {
+            return $this->reject($request, 'invalid_request');
+        }
+
         if ($capability === 'category.read'
             && (! is_int($payload['input']['page'] ?? null)
                 || ! is_int($payload['input']['per_page'] ?? null))) {
@@ -245,7 +271,11 @@ final class AuthorizeOpenClawCapability
 
         if (! $this->hasExpectedInteractionBinding(
             $payload['interaction'] ?? null,
-            $isReminderEventCapability ? 'money_assistant_event' : 'owner_message',
+            match (true) {
+                $isReminderEventCapability => 'money_assistant_event',
+                $capability === 'receipt.proposal.submit' => 'owner_photo_message',
+                default => 'owner_message',
+            },
         )
             || ! $this->hasFreshInteraction($payload['interaction']['occurred_at'] ?? null)) {
             return $this->reject($request, 'unbound_interaction');
@@ -407,6 +437,40 @@ final class AuthorizeOpenClawCapability
 
         return is_string($input['snoozed_until'] ?? null)
             && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/', $input['snoozed_until']) === 1;
+    }
+
+    private function hasValidReceiptProposalInput(mixed $input): bool
+    {
+        if (! is_array($input)
+            || ! is_int($input['contract_version'] ?? null)
+            || ! is_array($input['transaction'] ?? null)
+            || ! is_int($input['transaction']['amount_minor'] ?? null)
+            || ! is_array($input['line_items'] ?? null)
+            || ! array_is_list($input['line_items'])
+            || ! is_string($input['processed_at'] ?? null)
+            || preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/', $input['processed_at']) !== 1) {
+            return false;
+        }
+
+        try {
+            $processedAt = CarbonImmutable::parse($input['processed_at']);
+        } catch (Throwable) {
+            return false;
+        }
+
+        if ($processedAt->isFuture()) {
+            return false;
+        }
+
+        foreach ($input['line_items'] as $lineItem) {
+            if (! is_array($lineItem)
+                || ! is_int($lineItem['line_total_minor'] ?? null)
+                || $lineItem['line_total_minor'] === 0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function hasFreshInteraction(mixed $occurredAt): bool

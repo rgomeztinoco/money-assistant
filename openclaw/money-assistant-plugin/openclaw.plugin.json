@@ -1,7 +1,7 @@
 {
   "id": "money-assistant",
   "name": "Money Assistant",
-  "description": "Reads and confirms bounded Money Assistant financial operations.",
+  "description": "Reads and confirms bounded Money Assistant financial operations and submits image-free Receipt Proposals.",
   "version": "1.0.0",
   "activation": {
     "onStartup": true
@@ -14,7 +14,19 @@
       "agentId",
       "accountId",
       "conversationId",
-      "ownerSenderId"
+      "ownerSenderId",
+      "receiptMediaRoot",
+      "receiptProcessingEnabled",
+      "receiptDisclosureDelivered",
+      "receiptDisclosureAccepted",
+      "openAiModelImprovementDisabled",
+      "codexFullEnvironmentTrainingDisabled",
+      "openAiOAuthProfileId",
+      "openAiOAuthCredentialVersion",
+      "receiptPolicyVersion",
+      "receiptConfirmedPolicyVersion",
+      "receiptConfirmedOAuthProfileId",
+      "receiptConfirmedOAuthCredentialVersion"
     ],
     "properties": {
       "keyId": {
@@ -45,6 +57,46 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 128
+      },
+      "receiptMediaRoot": {
+        "type": "string",
+        "minLength": 1
+      },
+      "receiptProcessingEnabled": {
+        "type": "boolean"
+      },
+      "receiptDisclosureDelivered": {
+        "type": "boolean"
+      },
+      "receiptDisclosureAccepted": {
+        "type": "boolean"
+      },
+      "openAiModelImprovementDisabled": {
+        "type": "boolean"
+      },
+      "codexFullEnvironmentTrainingDisabled": {
+        "type": "boolean"
+      },
+      "openAiOAuthProfileId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "openAiOAuthCredentialVersion": {
+        "type": "string",
+        "minLength": 1
+      },
+      "receiptPolicyVersion": {
+        "type": "string",
+        "minLength": 1
+      },
+      "receiptConfirmedPolicyVersion": {
+        "type": "string"
+      },
+      "receiptConfirmedOAuthProfileId": {
+        "type": "string"
+      },
+      "receiptConfirmedOAuthCredentialVersion": {
+        "type": "string"
       }
     },
     "additionalProperties": false
@@ -63,6 +115,7 @@
       "money_assistant_category_read",
       "money_assistant_category_prepare",
       "money_assistant_category_confirm",
+      "money_assistant_receipt_proposal_submit",
       "money_assistant_reminder_read",
       "money_assistant_reminder_respond"
     ]

@@ -1,0 +1,11 @@
+[Unit]
+Description=Enforce the Money Assistant receipt-media cleanup ceiling
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=5m
+Persistent=true
+Unit=money-assistant-receipt-cleanup.service
+
+[Install]
+WantedBy=timers.target

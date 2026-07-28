@@ -1,4 +1,10 @@
 import { createHash, createPrivateKey, randomUUID, sign, } from 'node:crypto';
+import { readFileSync, realpathSync, statSync, } from 'node:fs';
+import { unlink } from 'node:fs/promises';
+import { extname, isAbsolute, relative, resolve } from 'node:path';
+import { loadAuthProfileStoreForRuntime, resolveAgentDir, resolveAuthProfileOrder, } from 'openclaw/plugin-sdk/agent-runtime';
+import { getMediaDir } from 'openclaw/plugin-sdk/media-runtime';
+import { getSessionEntry } from 'openclaw/plugin-sdk/session-store-runtime';
 import { defineToolPlugin } from 'openclaw/plugin-sdk/tool-plugin';
 import { Type } from 'typebox';
 const CAPABILITY_ORIGIN = 'http://127.0.0.1:8443';
@@ -6,6 +12,14 @@ const CAPABILITY_PATH = '/api/openclaw/v1/transport';
 const REMINDER_HOOK_SESSION_KEY = 'hook:money-assistant:reminders';
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
 const SHA256_PATTERN = '^[a-f0-9]{64}$';
+const APPROVED_RECEIPT_PROVIDER = 'openai';
+const APPROVED_RECEIPT_MODEL = 'openai/gpt-5.6';
+const RECEIPT_CONTRACT_VERSION = 1;
+const RECEIPT_CLEANUP_CEILING_SECONDS = 3600;
+const RECEIPT_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+const RECEIPT_POLICY_VERSION = 'openai-oauth-gpt-5.6-v1';
+const APPROVED_OPENAI_OAUTH_PROFILE = 'openai:money-assistant-oauth';
+export const RECEIPT_PRIVACY_DISCLOSURE = 'Receipt processing uses the existing OpenAI OAuth account and only openai/gpt-5.6. OpenAI OAuth has no published fixed retention ceiling. Before enabling receipts, disable account-wide model improvement and Codex full-environment training. Receipt interactions are never submitted as feedback. OpenClaw deletes local images after proposal submission or terminal failure, enforces a one-hour crash-cleanup ceiling, then attempts to delete the Telegram source and warns if manual removal is needed. Money Assistant retains only the opaque proposal identifier, receipt_photo source kind, processing time, actual provider/model, contract version, and structured financial proposal.';
 const pluginConfigSchema = Type.Object({
     keyId: Type.String({ minLength: 1, maxLength: 128 }),
     privateKey: Type.String({ minLength: 1 }),
@@ -13,6 +27,18 @@ const pluginConfigSchema = Type.Object({
     accountId: Type.String({ minLength: 1, maxLength: 128 }),
     conversationId: Type.String({ minLength: 1, maxLength: 128 }),
     ownerSenderId: Type.String({ minLength: 1, maxLength: 128 }),
+    receiptMediaRoot: Type.String({ minLength: 1 }),
+    receiptProcessingEnabled: Type.Boolean(),
+    receiptDisclosureDelivered: Type.Boolean(),
+    receiptDisclosureAccepted: Type.Boolean(),
+    openAiModelImprovementDisabled: Type.Boolean(),
+    codexFullEnvironmentTrainingDisabled: Type.Boolean(),
+    openAiOAuthProfileId: Type.String({ minLength: 1 }),
+    openAiOAuthCredentialVersion: Type.String({ minLength: 1 }),
+    receiptPolicyVersion: Type.String({ minLength: 1 }),
+    receiptConfirmedPolicyVersion: Type.String(),
+    receiptConfirmedOAuthProfileId: Type.String(),
+    receiptConfirmedOAuthCredentialVersion: Type.String(),
 }, { additionalProperties: false });
 const transactionParameters = Type.Object({
     transaction_id: Type.Integer({ minimum: 1 }),
@@ -86,6 +112,22 @@ const reminderResponseParameters = Type.Union([
         }),
     }, { additionalProperties: false }),
 ]);
+const receiptProposalParameters = Type.Object({
+    transaction: Type.Object({
+        occurred_on: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
+        amount_minor: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+        currency: Type.Union([Type.Literal('USD'), Type.Literal('PEN')]),
+        kind: Type.Union([Type.Literal('purchase'), Type.Literal('refund')]),
+        merchant_description: Type.String({ minLength: 1, maxLength: 255 }),
+    }, { additionalProperties: false }),
+    line_items: Type.Array(Type.Object({
+        description: Type.String({ minLength: 1, maxLength: 255 }),
+        line_total_minor: Type.Union([
+            Type.Integer({ minimum: Number.MIN_SAFE_INTEGER, maximum: -1 }),
+            Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+        ]),
+    }, { additionalProperties: false }), { minItems: 1, maxItems: 200 }),
+}, { additionalProperties: false });
 class CapabilityRequestError extends Error {
     status;
     constructor(message, status) {
@@ -132,6 +174,11 @@ export class OwnerMessageAdmissions {
             this.messages.set(admission.sessionKey, admission);
         }
     }
+    clear(sessionKey) {
+        if (sessionKey) {
+            this.messages.delete(sessionKey);
+        }
+    }
     freshForSession(sessionKey, nowSeconds) {
         const admission = this.messages.get(sessionKey ?? '');
         if (!admission) {
@@ -142,6 +189,540 @@ export class OwnerMessageAdmissions {
     }
 }
 const ownerMessageAdmissions = new OwnerMessageAdmissions();
+export function receiptProcessingReady(config) {
+    return config.receiptProcessingEnabled
+        && config.receiptDisclosureDelivered
+        && config.receiptDisclosureAccepted
+        && config.openAiModelImprovementDisabled
+        && config.codexFullEnvironmentTrainingDisabled
+        && config.openAiOAuthProfileId === APPROVED_OPENAI_OAUTH_PROFILE
+        && config.openAiOAuthCredentialVersion !== ''
+        && config.receiptPolicyVersion === RECEIPT_POLICY_VERSION
+        && config.receiptConfirmedPolicyVersion === config.receiptPolicyVersion
+        && config.receiptConfirmedOAuthProfileId === config.openAiOAuthProfileId
+        && config.receiptConfirmedOAuthCredentialVersion === config.openAiOAuthCredentialVersion;
+}
+function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+export function receiptRuntimePolicyReady(runtimeConfig, agentId) {
+    if (!isRecord(runtimeConfig)
+        || !isRecord(runtimeConfig.auth)
+        || !isRecord(runtimeConfig.auth.profiles)
+        || !isRecord(runtimeConfig.auth.order)
+        || !isRecord(runtimeConfig.commands)
+        || !isRecord(runtimeConfig.agents)
+        || !isRecord(runtimeConfig.agents.defaults)) {
+        return false;
+    }
+    const profiles = runtimeConfig.auth.profiles;
+    const approvedProfile = profiles[APPROVED_OPENAI_OAUTH_PROFILE];
+    const openAiProfiles = Object.entries(profiles).filter(([, profile]) => (isRecord(profile) && profile.provider === APPROVED_RECEIPT_PROVIDER));
+    const defaultAgentPolicy = runtimeConfig.agents.defaults;
+    const models = defaultAgentPolicy.models;
+    const model = defaultAgentPolicy.model;
+    const imageModel = defaultAgentPolicy.imageModel;
+    return isRecord(approvedProfile)
+        && approvedProfile.provider === APPROVED_RECEIPT_PROVIDER
+        && approvedProfile.mode === 'oauth'
+        && openAiProfiles.length === 1
+        && Array.isArray(runtimeConfig.auth.order.openai)
+        && runtimeConfig.auth.order.openai.length === 1
+        && runtimeConfig.auth.order.openai[0] === APPROVED_OPENAI_OAUTH_PROFILE
+        && runtimeConfig.commands.text === false
+        && runtimeConfig.commands.native === false
+        && isRecord(models)
+        && Object.keys(models).length === 1
+        && isRecord(models[APPROVED_RECEIPT_MODEL])
+        && isRecord(model)
+        && model.primary === APPROVED_RECEIPT_MODEL
+        && Array.isArray(model.fallbacks)
+        && model.fallbacks.length === 0
+        && isRecord(imageModel)
+        && imageModel.primary === APPROVED_RECEIPT_MODEL
+        && Array.isArray(imageModel.fallbacks)
+        && imageModel.fallbacks.length === 0
+        && Array.isArray(runtimeConfig.agents.list)
+        && runtimeConfig.agents.list.some((agent) => isRecord(agent) && agent.id === agentId);
+}
+export function receiptEffectiveAuthStateReady(profiles, resolvedOrder, sessionEntry) {
+    const credential = profiles[APPROVED_OPENAI_OAUTH_PROFILE];
+    const sessionProfile = isRecord(sessionEntry)
+        ? sessionEntry.authProfileOverride
+        : undefined;
+    return isRecord(credential)
+        && credential.type === 'oauth'
+        && resolvedOrder.length === 1
+        && resolvedOrder[0] === APPROVED_OPENAI_OAUTH_PROFILE
+        && (sessionProfile === undefined || sessionProfile === APPROVED_OPENAI_OAUTH_PROFILE);
+}
+function receiptEffectiveAuthReady(runtimeConfig, agentId, sessionKey) {
+    try {
+        const agentDir = resolveAgentDir(runtimeConfig, agentId);
+        const store = loadAuthProfileStoreForRuntime(agentDir, {
+            allowKeychainPrompt: false,
+            config: runtimeConfig,
+            readOnly: true,
+        });
+        const resolvedOrder = resolveAuthProfileOrder({
+            cfg: runtimeConfig,
+            store,
+            provider: APPROVED_RECEIPT_PROVIDER,
+        });
+        const sessionEntry = sessionKey
+            ? getSessionEntry({ agentId, sessionKey, readConsistency: 'latest' })
+            : undefined;
+        return receiptEffectiveAuthStateReady(store.profiles, resolvedOrder, sessionEntry);
+    }
+    catch {
+        return false;
+    }
+}
+function oneMediaValue(metadata, singular, plural) {
+    const multiple = metadata[plural];
+    if (Array.isArray(multiple)) {
+        return multiple.filter((value) => typeof value === 'string');
+    }
+    return typeof metadata[singular] === 'string'
+        ? [metadata[singular]]
+        : [];
+}
+function pathIsInsideRoot(path, root) {
+    const relativePath = relative(resolve(root), resolve(path));
+    return relativePath !== ''
+        && relativePath !== '..'
+        && !relativePath.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)
+        && !isAbsolute(relativePath);
+}
+function safeReceiptPath(path, root) {
+    try {
+        const realRoot = realpathSync(root);
+        const realPath = realpathSync(path);
+        return pathIsInsideRoot(realPath, realRoot) && statSync(realPath).isFile()
+            ? realPath
+            : null;
+    }
+    catch {
+        return null;
+    }
+}
+function hasJpegStructure(bytes) {
+    if (bytes.length < 12
+        || bytes[0] !== 0xff
+        || bytes[1] !== 0xd8
+        || bytes[bytes.length - 2] !== 0xff
+        || bytes[bytes.length - 1] !== 0xd9) {
+        return false;
+    }
+    let offset = 2;
+    let hasFrame = false;
+    while (offset < bytes.length - 2) {
+        if (bytes[offset] !== 0xff) {
+            return false;
+        }
+        while (bytes[offset] === 0xff) {
+            offset++;
+        }
+        const marker = bytes[offset++];
+        if (marker === undefined || marker === 0x00 || marker === 0xd9) {
+            return false;
+        }
+        if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+            continue;
+        }
+        if (offset + 2 > bytes.length - 2) {
+            return false;
+        }
+        const segmentLength = bytes.readUInt16BE(offset);
+        const segmentEnd = offset + segmentLength;
+        if (segmentLength < 2 || segmentEnd > bytes.length - 2) {
+            return false;
+        }
+        if ((marker >= 0xc0 && marker <= 0xc3)
+            || (marker >= 0xc5 && marker <= 0xc7)
+            || (marker >= 0xc9 && marker <= 0xcb)
+            || (marker >= 0xcd && marker <= 0xcf)) {
+            if (segmentLength < 8
+                || bytes.readUInt16BE(offset + 3) === 0
+                || bytes.readUInt16BE(offset + 5) === 0) {
+                return false;
+            }
+            hasFrame = true;
+        }
+        if (marker === 0xda) {
+            return hasFrame && segmentLength >= 6 && segmentEnd < bytes.length - 2;
+        }
+        offset = segmentEnd;
+    }
+    return false;
+}
+function hasPngStructure(bytes) {
+    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    if (bytes.length < 45 || !bytes.subarray(0, 8).equals(signature)) {
+        return false;
+    }
+    let offset = 8;
+    let hasHeader = false;
+    let hasImageData = false;
+    while (offset + 12 <= bytes.length) {
+        const chunkLength = bytes.readUInt32BE(offset);
+        const chunkType = bytes.subarray(offset + 4, offset + 8).toString('ascii');
+        const chunkEnd = offset + 12 + chunkLength;
+        if (chunkEnd > bytes.length) {
+            return false;
+        }
+        if (!hasHeader) {
+            if (chunkType !== 'IHDR'
+                || chunkLength !== 13
+                || bytes.readUInt32BE(offset + 8) === 0
+                || bytes.readUInt32BE(offset + 12) === 0) {
+                return false;
+            }
+            hasHeader = true;
+        }
+        else if (chunkType === 'IDAT') {
+            hasImageData = hasImageData || chunkLength > 0;
+        }
+        else if (chunkType === 'IEND') {
+            return chunkLength === 0 && hasImageData && chunkEnd === bytes.length;
+        }
+        offset = chunkEnd;
+    }
+    return false;
+}
+function hasWebpStructure(bytes) {
+    if (bytes.length < 26
+        || bytes.subarray(0, 4).toString('ascii') !== 'RIFF'
+        || bytes.subarray(8, 12).toString('ascii') !== 'WEBP'
+        || bytes.readUInt32LE(4) !== bytes.length - 8) {
+        return false;
+    }
+    let offset = 12;
+    let hasImageChunk = false;
+    while (offset + 8 <= bytes.length) {
+        const chunkType = bytes.subarray(offset, offset + 4).toString('ascii');
+        const chunkLength = bytes.readUInt32LE(offset + 4);
+        const dataOffset = offset + 8;
+        const chunkEnd = dataOffset + chunkLength;
+        const paddedChunkEnd = chunkEnd + (chunkLength % 2);
+        if (chunkEnd > bytes.length || paddedChunkEnd > bytes.length) {
+            return false;
+        }
+        if (chunkType === 'VP8 ') {
+            hasImageChunk = chunkLength >= 10
+                && bytes.subarray(dataOffset + 3, dataOffset + 6).equals(Buffer.from([0x9d, 0x01, 0x2a]));
+        }
+        else if (chunkType === 'VP8L') {
+            hasImageChunk = chunkLength >= 5 && bytes[dataOffset] === 0x2f;
+        }
+        offset = paddedChunkEnd;
+    }
+    return hasImageChunk && offset === bytes.length;
+}
+export function inspectReceiptImage(path, root, declaredMimeType) {
+    const realPath = safeReceiptPath(path, root);
+    if (!realPath) {
+        return null;
+    }
+    const size = statSync(realPath).size;
+    if (size < 12 || size > RECEIPT_IMAGE_MAX_BYTES) {
+        return null;
+    }
+    const bytes = readFileSync(realPath);
+    const extension = extname(realPath).toLowerCase();
+    const normalizedMimeType = declaredMimeType.toLowerCase() === 'image/jpg'
+        ? 'image/jpeg'
+        : declaredMimeType.toLowerCase();
+    const isJpeg = hasJpegStructure(bytes);
+    const isPng = hasPngStructure(bytes);
+    const isWebp = hasWebpStructure(bytes);
+    if ((isJpeg && normalizedMimeType === 'image/jpeg' && ['.jpg', '.jpeg'].includes(extension))
+        || (isPng && normalizedMimeType === 'image/png' && extension === '.png')
+        || (isWebp && normalizedMimeType === 'image/webp' && extension === '.webp')) {
+        return realPath;
+    }
+    return null;
+}
+export function admittedReceiptPhoto(event, context, config, inspectImage = inspectReceiptImage) {
+    const ownerMessage = admittedOwnerMessage(event, context, config);
+    const metadata = event.metadata;
+    if (!ownerMessage || !metadata) {
+        return null;
+    }
+    const mediaPaths = oneMediaValue(metadata, 'mediaPath', 'mediaPaths');
+    const mediaTypes = oneMediaValue(metadata, 'mediaType', 'mediaTypes');
+    if (mediaPaths.length !== 1
+        || mediaTypes.length !== 1
+        || !mediaTypes[0]?.toLowerCase().startsWith('image/')) {
+        return null;
+    }
+    const mediaPath = inspectImage(mediaPaths[0], config.receiptMediaRoot, mediaTypes[0]);
+    if (!mediaPath) {
+        return null;
+    }
+    return {
+        ...ownerMessage,
+        ...(event.runId ? { runId: event.runId } : {}),
+        mediaPath,
+    };
+}
+export function isApprovedReceiptModel(provider, model) {
+    const normalizedModel = model.startsWith(`${provider}/`)
+        ? model
+        : `${provider}/${model}`;
+    return provider === APPROVED_RECEIPT_PROVIDER
+        && normalizedModel === APPROVED_RECEIPT_MODEL;
+}
+const defaultReceiptAdmissionDependencies = {
+    async removeFile(path) {
+        try {
+            await unlink(path);
+        }
+        catch (error) {
+            if (error.code !== 'ENOENT') {
+                throw error;
+            }
+        }
+    },
+    setTimer(callback, delay) {
+        const timer = setTimeout(() => {
+            void Promise.resolve(callback()).catch(() => { });
+        }, delay);
+        timer.unref();
+        return timer;
+    },
+    clearTimer(timer) {
+        clearTimeout(timer);
+    },
+    createProposalId: randomUUID,
+    createInteractionId: randomUUID,
+    nowSeconds: () => Math.floor(Date.now() / 1000),
+    inspectImage: inspectReceiptImage,
+    safePath: safeReceiptPath,
+    managedMediaRoot: () => resolve(getMediaDir(), 'inbound'),
+};
+export class ReceiptPhotoAdmissions {
+    dependencies;
+    photos = new Map();
+    pendingSourceDeletions = new Map();
+    rejectedRuns = new Map();
+    rejectedSessionsWithoutRun = new Map();
+    identitiesBySourceMessage = new Map();
+    sensitiveSessions = new Set();
+    constructor(dependencies = defaultReceiptAdmissionDependencies) {
+        this.dependencies = dependencies;
+    }
+    admit(event, context, config) {
+        const ownerMessage = admittedOwnerMessage(event, context, config);
+        const metadata = event.metadata;
+        if (!ownerMessage || !metadata) {
+            return false;
+        }
+        const mediaPaths = oneMediaValue(metadata, 'mediaPath', 'mediaPaths');
+        const mediaTypes = oneMediaValue(metadata, 'mediaType', 'mediaTypes');
+        if (mediaPaths.length === 0 && mediaTypes.length === 0) {
+            return false;
+        }
+        const admitted = admittedReceiptPhoto(event, context, config, this.dependencies.inspectImage);
+        const cleanupRoots = [
+            config.receiptMediaRoot,
+            this.dependencies.managedMediaRoot(),
+        ];
+        const cleanupPaths = admitted
+            ? [admitted.mediaPath]
+            : mediaPaths
+                .map((path) => cleanupRoots
+                .map((root) => this.dependencies.safePath(path, root))
+                .find((safePath) => safePath !== null) ?? null)
+                .filter((path) => path !== null);
+        const existing = this.photos.get(ownerMessage.sessionKey);
+        if (existing?.messageId === ownerMessage.messageId) {
+            for (const path of cleanupPaths) {
+                if (!existing.cleanupPaths.includes(path)) {
+                    void this.dependencies.removeFile(path).catch(() => { });
+                }
+            }
+            return true;
+        }
+        const nowSeconds = this.dependencies.nowSeconds();
+        const sourceMessageKey = `${ownerMessage.sessionKey}\u0000${ownerMessage.messageId}`;
+        for (const [key, identity] of this.identitiesBySourceMessage) {
+            if (identity.expiresAtSeconds < nowSeconds) {
+                this.identitiesBySourceMessage.delete(key);
+            }
+        }
+        const identity = this.identitiesBySourceMessage.get(sourceMessageKey) ?? {
+            proposalId: this.dependencies.createProposalId(),
+            interactionId: this.dependencies.createInteractionId(),
+            expiresAtSeconds: ownerMessage.occurredAtSeconds + RECEIPT_CLEANUP_CEILING_SECONDS,
+        };
+        this.identitiesBySourceMessage.set(sourceMessageKey, identity);
+        const photo = {
+            ...ownerMessage,
+            ...(event.runId ? { runId: event.runId } : {}),
+            mediaPath: admitted?.mediaPath ?? cleanupPaths[0] ?? '',
+            proposalId: identity.proposalId,
+            interactionId: identity.interactionId,
+            processable: admitted !== null,
+            cleanupPaths,
+        };
+        if (existing) {
+            this.queueSourceDeletion(photo);
+            this.sensitiveSessions.add(ownerMessage.sessionKey);
+            if (photo.runId) {
+                this.rejectedRuns.set(photo.runId, ownerMessage.sessionKey);
+            }
+            else {
+                const rejectedUntil = Math.max(this.rejectedSessionsWithoutRun.get(ownerMessage.sessionKey) ?? 0, ownerMessage.occurredAtSeconds + RECEIPT_CLEANUP_CEILING_SECONDS);
+                this.rejectedSessionsWithoutRun.set(ownerMessage.sessionKey, rejectedUntil);
+            }
+            void this.removeLocalImage(photo).catch(() => { });
+            return true;
+        }
+        const remainingSeconds = Math.max(0, ownerMessage.occurredAtSeconds
+            + RECEIPT_CLEANUP_CEILING_SECONDS
+            - nowSeconds);
+        photo.cleanupTimer = this.dependencies.setTimer(() => this.expire(ownerMessage.sessionKey, photo.proposalId), remainingSeconds * 1000);
+        this.photos.set(ownerMessage.sessionKey, photo);
+        this.sensitiveSessions.add(ownerMessage.sessionKey);
+        return true;
+    }
+    freshForSession(sessionKey, nowSeconds) {
+        const photo = this.photos.get(sessionKey ?? '');
+        if (!photo) {
+            return null;
+        }
+        const ageInSeconds = nowSeconds - photo.occurredAtSeconds;
+        return photo.processable && ageInSeconds >= 0 && ageInSeconds <= 1800
+            ? photo
+            : null;
+    }
+    freshForRun(runId, sessionKey, nowSeconds) {
+        const photo = this.photos.get(sessionKey ?? '');
+        if (!photo || (photo.runId !== undefined && photo.runId !== runId)) {
+            return null;
+        }
+        if (runId !== undefined) {
+            photo.runId = runId;
+        }
+        return this.freshForSession(sessionKey, nowSeconds);
+    }
+    hasConflictingRun(runId, sessionKey) {
+        const photo = this.photos.get(sessionKey ?? '');
+        return photo?.runId !== undefined && photo.runId !== runId;
+    }
+    consumeRejectedRun(runId, sessionKey) {
+        const key = sessionKey ?? '';
+        if (runId !== undefined && this.rejectedRuns.get(runId) === key) {
+            this.rejectedRuns.delete(runId);
+            return true;
+        }
+        const rejectedUntil = this.rejectedSessionsWithoutRun.get(key);
+        if (rejectedUntil !== undefined && rejectedUntil >= this.dependencies.nowSeconds()) {
+            return true;
+        }
+        if (rejectedUntil !== undefined) {
+            this.rejectedSessionsWithoutRun.delete(key);
+        }
+        return false;
+    }
+    clearRejectedRun(runId) {
+        if (runId !== undefined) {
+            this.rejectedRuns.delete(runId);
+        }
+    }
+    activeForSession(sessionKey) {
+        return this.photos.get(sessionKey ?? '') ?? null;
+    }
+    recordActualModel(runId, provider, model) {
+        const photo = [...this.photos.values()].find((candidate) => candidate.runId === runId);
+        if (!photo || !photo.processable || !isApprovedReceiptModel(provider, model)) {
+            return false;
+        }
+        photo.provider = provider;
+        photo.model = model.startsWith(`${provider}/`) ? model : `${provider}/${model}`;
+        return true;
+    }
+    isSensitiveSession(sessionKey) {
+        return this.sensitiveSessions.has(sessionKey ?? '');
+    }
+    async finishForSession(sessionKey) {
+        const key = sessionKey ?? '';
+        const photo = this.photos.get(key);
+        if (!photo) {
+            return;
+        }
+        await this.finishAdmission(photo);
+    }
+    async finishAdmission(photo) {
+        if (this.photos.get(photo.sessionKey) !== photo) {
+            return;
+        }
+        this.photos.delete(photo.sessionKey);
+        try {
+            await this.removeLocalImage(photo);
+        }
+        finally {
+            this.queueSourceDeletion(photo);
+        }
+    }
+    async finishForRun(runId, sessionKey) {
+        const photo = runId ? [...this.photos.values()].find((candidate) => candidate.runId === runId) : this.photos.get(sessionKey ?? '');
+        if (photo) {
+            await this.finishAdmission(photo);
+        }
+    }
+    takePendingSourceDeletions(sessionKey) {
+        const key = sessionKey ?? '';
+        const photos = this.pendingSourceDeletions.get(key) ?? [];
+        if (photos.length > 0) {
+            this.pendingSourceDeletions.delete(key);
+            if (!this.photos.has(key)) {
+                this.sensitiveSessions.delete(key);
+            }
+        }
+        return photos;
+    }
+    async expire(sessionKey, proposalId) {
+        const photo = this.photos.get(sessionKey);
+        if (!photo || photo.proposalId !== proposalId) {
+            return;
+        }
+        await this.finishForSession(sessionKey);
+    }
+    async removeLocalImage(photo) {
+        if (photo.cleanupTimer !== undefined) {
+            this.dependencies.clearTimer(photo.cleanupTimer);
+            photo.cleanupTimer = undefined;
+        }
+        for (const path of photo.cleanupPaths) {
+            await this.dependencies.removeFile(path);
+        }
+    }
+    queueSourceDeletion(photo) {
+        const pending = this.pendingSourceDeletions.get(photo.sessionKey) ?? [];
+        if (!pending.some((candidate) => candidate.messageId === photo.messageId)) {
+            pending.push(photo);
+            this.pendingSourceDeletions.set(photo.sessionKey, pending);
+        }
+    }
+}
+export function receiptAdmissionBlockCategory(admissions, runId, sessionKey, nowSeconds) {
+    if (admissions.consumeRejectedRun(runId, sessionKey)
+        || admissions.hasConflictingRun(runId, sessionKey)) {
+        return 'receipt_photo_concurrent';
+    }
+    const activeReceiptPhoto = admissions.activeForSession(sessionKey);
+    const receiptPhoto = admissions.freshForRun(runId, sessionKey, nowSeconds);
+    if (activeReceiptPhoto && !activeReceiptPhoto.processable) {
+        return 'receipt_photo_invalid';
+    }
+    return activeReceiptPhoto && !receiptPhoto ? 'receipt_photo_stale' : null;
+}
+export function shouldBlockReceiptMessageWrite(admissions, eventSessionKey, contextSessionKey) {
+    return admissions.isSensitiveSession(eventSessionKey ?? contextSessionKey);
+}
+const receiptPhotoAdmissions = new ReceiptPhotoAdmissions();
 export class ReminderEventAdmissions {
     events = new Map();
     admit(sessionKey, eventId, occurredAtSeconds) {
@@ -311,6 +892,41 @@ export function capabilityRequestBody(capability, input, toolContext, admission)
         input,
     });
 }
+export function receiptProposalCapabilityRequestBody(input, toolContext, admission, processedAtSeconds) {
+    if (!admission.provider
+        || !admission.model
+        || !isApprovedReceiptModel(admission.provider, admission.model)) {
+        throw new Error('Approved Receipt Proposal model provenance is unavailable.');
+    }
+    const occurredAt = new Date(admission.occurredAtSeconds * 1000)
+        .toISOString()
+        .replace('.000Z', 'Z');
+    const processedAt = new Date(processedAtSeconds * 1000)
+        .toISOString()
+        .replace('.000Z', 'Z');
+    return JSON.stringify({
+        schema_version: 1,
+        capability: 'receipt.proposal.submit',
+        interaction: {
+            kind: 'owner_photo_message',
+            agent_id: toolContext.agentId,
+            account_id: toolContext.agentAccountId,
+            conversation_id: toolContext.deliveryContext?.to,
+            owner_sender_id: toolContext.requesterSenderId,
+            message_id: admission.interactionId,
+            occurred_at: occurredAt,
+        },
+        input: {
+            proposal_id: admission.proposalId,
+            source_kind: 'receipt_photo',
+            processed_at: processedAt,
+            provider: admission.provider,
+            model: admission.model,
+            contract_version: RECEIPT_CONTRACT_VERSION,
+            ...input,
+        },
+    });
+}
 export function reminderEventCapabilityRequestBody(capability, input, config, eventId, occurredAtSeconds) {
     const occurredAt = new Date(occurredAtSeconds * 1000)
         .toISOString()
@@ -356,6 +972,41 @@ async function executeCapability(capability, input, config, toolContext, signal)
         details,
     };
 }
+async function requestReceiptProposal(body, config, signal) {
+    const delays = [200, 1000];
+    for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+        try {
+            return await requestCapability('receipt.proposal.submit', body, config, signal);
+        }
+        catch (error) {
+            const isTransient = !(error instanceof CapabilityRequestError)
+                || error.status === 429
+                || (error.status !== undefined && error.status >= 500);
+            if (!isTransient || attempt === delays.length) {
+                throw error;
+            }
+            await new Promise((resolveDelay) => setTimeout(resolveDelay, delays[attempt]));
+        }
+    }
+    throw new Error('Receipt Proposal submission failed.');
+}
+async function executeReceiptProposal(input, config, toolContext, signal) {
+    const admission = receiptPhotoAdmissions.freshForSession(toolContext.sessionKey, Math.floor(Date.now() / 1000));
+    if (!admission) {
+        throw new Error('Money Assistant receipt-photo admission is unavailable.');
+    }
+    try {
+        const body = receiptProposalCapabilityRequestBody(input, toolContext, admission, Math.floor(Date.now() / 1000));
+        const details = await requestReceiptProposal(body, config, signal);
+        return {
+            content: [{ type: 'text', text: JSON.stringify(details) }],
+            details,
+        };
+    }
+    finally {
+        await receiptPhotoAdmissions.finishAdmission(admission);
+    }
+}
 async function executeReminderEventCapability(capability, input, eventId, config, toolContext, signal) {
     if (!isBoundReminderEventInteraction(toolContext, config)
         || toolContext.sessionKey === undefined) {
@@ -400,6 +1051,44 @@ export async function recordReminderChannelDelivery(admission, config) {
             await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
         }
     }
+}
+export async function deleteReceiptSourceMessage(gateway, admission, config) {
+    const messageId = Number(admission.messageId);
+    if (!Number.isSafeInteger(messageId) || messageId < 1) {
+        throw new Error('Telegram source message identifier is invalid.');
+    }
+    const result = await gateway.request('message.action', {
+        channel: 'telegram',
+        action: 'delete',
+        accountId: config.accountId,
+        agentId: config.agentId,
+        sessionKey: admission.sessionKey,
+        idempotencyKey: admission.proposalId,
+        params: {
+            target: config.conversationId,
+            messageId,
+        },
+    });
+    if (typeof result === 'object'
+        && result !== null
+        && 'ok' in result
+        && result.ok !== true) {
+        throw new Error('Telegram source message deletion failed.');
+    }
+}
+export async function warnReceiptSourceDeletionFailed(gateway, admission, config) {
+    await gateway.request('message.action', {
+        channel: 'telegram',
+        action: 'send',
+        accountId: config.accountId,
+        agentId: config.agentId,
+        sessionKey: admission.sessionKey,
+        idempotencyKey: randomUUID(),
+        params: {
+            target: config.conversationId,
+            message: 'I could not delete the receipt photo from Telegram. Please remove it manually.',
+        },
+    });
 }
 function isPositiveSafeInteger(value) {
     return Number.isSafeInteger(value) && Number(value) > 0;
@@ -453,6 +1142,52 @@ function isReminderResponseInput(input) {
     const snoozedUntil = Date.parse(input.snoozed_until);
     return Number.isFinite(snoozedUntil) && snoozedUntil > Date.now();
 }
+function hasExactKeys(input, expected) {
+    return Object.keys(input).sort().join('\0') === [...expected].sort().join('\0');
+}
+function isReceiptProposalInput(input) {
+    if (!hasExactKeys(input, ['transaction', 'line_items'])
+        || typeof input.transaction !== 'object'
+        || input.transaction === null
+        || Array.isArray(input.transaction)
+        || !Array.isArray(input.line_items)
+        || input.line_items.length < 1
+        || input.line_items.length > 200) {
+        return false;
+    }
+    const transaction = input.transaction;
+    if (!hasExactKeys(transaction, [
+        'occurred_on',
+        'amount_minor',
+        'currency',
+        'kind',
+        'merchant_description',
+    ])
+        || typeof transaction.occurred_on !== 'string'
+        || !/^\d{4}-\d{2}-\d{2}$/.test(transaction.occurred_on)
+        || !isPositiveSafeInteger(transaction.amount_minor)
+        || (transaction.currency !== 'USD' && transaction.currency !== 'PEN')
+        || (transaction.kind !== 'purchase' && transaction.kind !== 'refund')
+        || typeof transaction.merchant_description !== 'string'
+        || transaction.merchant_description.trim() === ''
+        || transaction.merchant_description.length > 255) {
+        return false;
+    }
+    return input.line_items.every((candidate) => {
+        if (typeof candidate !== 'object'
+            || candidate === null
+            || Array.isArray(candidate)) {
+            return false;
+        }
+        const lineItem = candidate;
+        return hasExactKeys(lineItem, ['description', 'line_total_minor'])
+            && typeof lineItem.description === 'string'
+            && lineItem.description.trim() !== ''
+            && lineItem.description.length <= 255
+            && Number.isSafeInteger(lineItem.line_total_minor)
+            && Number(lineItem.line_total_minor) !== 0;
+    });
+}
 const transactionToolDefinition = {
     name: 'money_assistant_transaction_read',
     label: 'Read Money Assistant Transaction',
@@ -501,10 +1236,16 @@ const reminderResponseToolDefinition = {
     description: 'Acknowledge, snooze, or dismiss one Reminder from an admitted owner message.',
     parameters: reminderResponseParameters,
 };
+const receiptProposalToolDefinition = {
+    name: 'money_assistant_receipt_proposal_submit',
+    label: 'Submit Money Assistant Receipt Proposal',
+    description: 'Submit structured image-free Transaction and Line Item details from the admitted receipt photo.',
+    parameters: receiptProposalParameters,
+};
 const plugin = defineToolPlugin({
     id: 'money-assistant',
     name: 'Money Assistant',
-    description: 'Reads and confirms bounded Money Assistant financial operations.',
+    description: 'Reads and confirms bounded Money Assistant financial operations and submits image-free Receipt Proposals.',
     configSchema: pluginConfigSchema,
     tools: (tool) => [
         tool({
@@ -676,6 +1417,25 @@ const plugin = defineToolPlugin({
             },
         }),
         tool({
+            ...receiptProposalToolDefinition,
+            factory({ config, toolContext }) {
+                if (!isBoundOwnerInteraction(toolContext, config)
+                    || !receiptProcessingReady(config)) {
+                    return null;
+                }
+                return {
+                    ...receiptProposalToolDefinition,
+                    async execute(_toolCallId, params, signal) {
+                        const input = params;
+                        if (!isReceiptProposalInput(input)) {
+                            throw new Error('Money Assistant Receipt Proposal is invalid.');
+                        }
+                        return executeReceiptProposal(input, config, toolContext, signal);
+                    },
+                };
+            },
+        }),
+        tool({
             ...reminderReadToolDefinition,
             factory({ config, toolContext }) {
                 if (!isBoundReminderEventInteraction(toolContext, config)) {
@@ -717,14 +1477,79 @@ const plugin = defineToolPlugin({
 const registerTool = plugin.register;
 plugin.register = (api) => {
     const config = api.pluginConfig;
+    const runtimeReceiptPolicyReady = receiptRuntimePolicyReady(api.config, config.agentId);
     api.on('message_received', (event, context) => {
+        if (receiptPhotoAdmissions.admit(event, context, config)) {
+            ownerMessageAdmissions.clear(event.sessionKey ?? context.sessionKey);
+            return;
+        }
         ownerMessageAdmissions.admit(event, context, config);
     });
     api.on('before_model_resolve', (event, context) => {
+        const receiptPhoto = receiptPhotoAdmissions.freshForRun(context.runId, context.sessionKey, Math.floor(Date.now() / 1000));
+        if (receiptPhoto
+            && receiptProcessingReady(config)
+            && runtimeReceiptPolicyReady
+            && receiptEffectiveAuthReady(api.config, config.agentId, context.sessionKey)) {
+            return {
+                providerOverride: APPROVED_RECEIPT_PROVIDER,
+                modelOverride: 'gpt-5.6',
+            };
+        }
         const admission = admittedReminderEvent(event.prompt, context, config, Math.floor(Date.now() / 1000));
         if (admission && context.sessionKey) {
             reminderEventAdmissions.admit(context.sessionKey, admission.eventId, admission.occurredAtSeconds);
         }
+    });
+    api.on('before_agent_run', (_event, context) => {
+        const blockCategory = receiptAdmissionBlockCategory(receiptPhotoAdmissions, context.runId, context.sessionKey, Math.floor(Date.now() / 1000));
+        if (blockCategory === 'receipt_photo_concurrent') {
+            return {
+                outcome: 'block',
+                reason: 'Another receipt photo is already active for this conversation.',
+                message: 'I am still processing the previous receipt photo. Please retry this receipt after it finishes.',
+                category: 'receipt_photo_concurrent',
+            };
+        }
+        const receiptPhoto = receiptPhotoAdmissions.freshForRun(context.runId, context.sessionKey, Math.floor(Date.now() / 1000));
+        if (blockCategory === 'receipt_photo_invalid') {
+            return {
+                outcome: 'block',
+                reason: 'Receipt photo failed strict local validation.',
+                message: 'That receipt photo could not be processed safely. Send one JPEG, PNG, or WebP image up to 20 MB and try again.',
+                category: 'receipt_photo_invalid',
+            };
+        }
+        if (blockCategory === 'receipt_photo_stale') {
+            return {
+                outcome: 'block',
+                reason: 'Receipt-photo admission is stale or not bound to this run.',
+                message: 'That receipt photo is no longer available for processing. Please send it again.',
+                category: 'receipt_photo_stale',
+            };
+        }
+        if (receiptPhoto && (!receiptProcessingReady(config)
+            || !runtimeReceiptPolicyReady
+            || !receiptEffectiveAuthReady(api.config, config.agentId, context.sessionKey))) {
+            return {
+                outcome: 'block',
+                reason: 'Receipt-photo privacy policy is not confirmed.',
+                message: RECEIPT_PRIVACY_DISCLOSURE,
+                category: 'receipt_privacy_policy',
+            };
+        }
+    });
+    api.on('model_call_started', (event) => {
+        receiptPhotoAdmissions.recordActualModel(event.runId, event.provider, event.model);
+    });
+    api.on('before_message_write', (event, context) => {
+        if (shouldBlockReceiptMessageWrite(receiptPhotoAdmissions, event.sessionKey, context.sessionKey)) {
+            return { block: true };
+        }
+    });
+    api.on('agent_end', async (event, context) => {
+        await receiptPhotoAdmissions.finishForRun(event.runId, context.sessionKey);
+        receiptPhotoAdmissions.clearRejectedRun(event.runId);
     });
     api.on('before_agent_reply', (_event, context) => {
         if (context.agentId === config.agentId
@@ -746,20 +1571,35 @@ plugin.register = (api) => {
     });
     api.on('message_sent', async (event, context) => {
         const sessionKey = event.sessionKey ?? context.sessionKey;
-        if (!isBoundReminderChannelDelivery(event, context, config)
-            || sessionKey === undefined) {
+        if (sessionKey === undefined) {
             return;
         }
-        const admission = reminderEventAdmissions.takeFreshForSession(sessionKey, Math.floor(Date.now() / 1000));
-        if (!admission) {
+        if (isBoundReminderChannelDelivery(event, context, config)) {
+            const reminderAdmission = reminderEventAdmissions.takeFreshForSession(sessionKey, Math.floor(Date.now() / 1000));
+            if (reminderAdmission) {
+                try {
+                    await recordReminderChannelDelivery(reminderAdmission, config);
+                }
+                catch (error) {
+                    reminderEventAdmissions.admit(sessionKey, reminderAdmission.eventId, reminderAdmission.occurredAtSeconds);
+                    throw error;
+                }
+            }
+        }
+        if (event.success !== true
+            || context.channelId !== 'telegram'
+            || context.accountId !== config.accountId
+            || context.conversationId !== config.conversationId) {
             return;
         }
-        try {
-            await recordReminderChannelDelivery(admission, config);
-        }
-        catch (error) {
-            reminderEventAdmissions.admit(sessionKey, admission.eventId, admission.occurredAtSeconds);
-            throw error;
+        const receiptAdmissions = receiptPhotoAdmissions.takePendingSourceDeletions(sessionKey);
+        for (const receiptAdmission of receiptAdmissions) {
+            try {
+                await deleteReceiptSourceMessage(api.runtime.gateway, receiptAdmission, config);
+            }
+            catch {
+                await warnReceiptSourceDeletionFailed(api.runtime.gateway, receiptAdmission, config);
+            }
         }
     });
     registerTool(api);
