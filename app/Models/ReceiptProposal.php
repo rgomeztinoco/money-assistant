@@ -21,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string $model
  * @property int $contract_version
  * @property array{occurred_on: string, amount_minor: int, currency: string, kind: string, merchant_description: string} $proposed_transaction
- * @property list<array{description: string, line_total_minor: int}> $proposed_line_items
+ * @property list<array{description: string, role?: string, quantity?: string|null, unit_price_minor?: int|null, line_total_minor: int}> $proposed_line_items
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */

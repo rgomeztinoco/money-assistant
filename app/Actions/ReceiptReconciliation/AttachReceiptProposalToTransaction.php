@@ -2,11 +2,11 @@
 
 namespace App\Actions\ReceiptReconciliation;
 
+use App\LineItemRole;
 use App\Models\ReceiptBreakdown;
 use App\Models\ReceiptProposal;
 use App\Models\Transaction;
 use App\Models\User;
-use App\TransactionKind;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -38,10 +38,20 @@ final class AttachReceiptProposalToTransaction
             ]);
 
             foreach ($proposal->proposed_line_items as $lineItem) {
+                $role = LineItemRole::tryFrom($lineItem['role'] ?? 'purchased_item');
+
+                if ($role === null) {
+                    throw ValidationException::withMessages([
+                        'receipt_proposal_id' => 'The Receipt Proposal contains an invalid Line Item role.',
+                    ]);
+                }
+
                 $breakdown->lineItems()->create([
                     'line_item_id' => (string) Str::uuid(),
                     'description' => $lineItem['description'],
-                    'role' => 'purchased_item',
+                    'role' => $role,
+                    'quantity' => $lineItem['quantity'] ?? null,
+                    'unit_price_minor' => $lineItem['unit_price_minor'] ?? null,
                     'line_total_minor' => $lineItem['line_total_minor'],
                 ]);
             }
@@ -55,12 +65,6 @@ final class AttachReceiptProposalToTransaction
         if ($transaction->voided_at !== null) {
             throw ValidationException::withMessages([
                 'receipt_proposal_id' => 'A Receipt Proposal cannot attach to a Voided Transaction.',
-            ]);
-        }
-
-        if ($transaction->kind !== TransactionKind::Purchase) {
-            throw ValidationException::withMessages([
-                'receipt_proposal_id' => 'Basic purchased-item breakdowns attach only to purchase Transactions.',
             ]);
         }
 
@@ -79,17 +83,21 @@ final class AttachReceiptProposalToTransaction
         $proposedTransaction = $proposal->proposed_transaction;
 
         if ($proposedTransaction['currency'] !== $transaction->currency->value
-            || $proposedTransaction['kind'] !== TransactionKind::Purchase->value) {
+            || $proposedTransaction['kind'] !== $transaction->kind->value) {
             throw ValidationException::withMessages([
-                'receipt_proposal_id' => 'Choose a purchase Transaction in the Receipt Proposal currency.',
+                'receipt_proposal_id' => 'Choose a Transaction with the Receipt Proposal currency and kind.',
             ]);
         }
 
         foreach ($proposal->proposed_line_items as $lineItem) {
-            if (Str::squish($lineItem['description']) === ''
-                || $lineItem['line_total_minor'] < 1) {
+            $role = LineItemRole::tryFrom($lineItem['role'] ?? 'purchased_item');
+
+            if ($role === null
+                || $role === LineItemRole::Unidentified
+                || Str::squish($lineItem['description']) === ''
+                || ! $role->acceptsLineTotal($lineItem['line_total_minor'])) {
                 throw ValidationException::withMessages([
-                    'receipt_proposal_id' => 'The Receipt Proposal contains an invalid purchased item.',
+                    'receipt_proposal_id' => 'The Receipt Proposal contains an invalid Line Item.',
                 ]);
             }
         }

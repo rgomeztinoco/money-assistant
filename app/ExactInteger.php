@@ -46,6 +46,19 @@ final readonly class ExactInteger
         return self::from(bcdiv($this->value, $other->value, 0));
     }
 
+    public function floorDivide(self $positiveDivisor): self
+    {
+        if ($positiveDivisor->compare(self::from(0)) !== 1) {
+            throw new InvalidArgumentException('Floor division requires a positive divisor.');
+        }
+
+        $quotient = $this->divide($positiveDivisor);
+
+        return $this->remainder($positiveDivisor)->compare(self::from(0)) === -1
+            ? $quotient->subtract(self::from(1))
+            : $quotient;
+    }
+
     public function remainder(self $other): self
     {
         if ($other->compare(self::from(0)) === 0) {

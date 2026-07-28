@@ -13,7 +13,7 @@ final class SubmitReceiptProposal
 {
     /**
      * @param  array{occurred_on: string, amount_minor: int, currency: string, kind: string, merchant_description: string}  $proposedTransaction
-     * @param  list<array{description: string, line_total_minor: int}>  $proposedLineItems
+     * @param  list<array{description: string, role?: string, quantity?: string|null, unit_price_minor?: int|null, line_total_minor: int}>  $proposedLineItems
      * @return array{proposal: ReceiptProposal, replayed: bool}
      */
     public function handle(

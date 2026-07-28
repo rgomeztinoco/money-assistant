@@ -48,9 +48,35 @@ import type {
     DuplicateRelationship,
     DuplicateTransaction,
     ReviewField,
+    ReceiptLineItem,
     SelectedTransaction,
     CategoryOption,
 } from '@/types';
+
+const receiptLineItemRoleOptions: Array<{
+    value: ReceiptLineItem['role'];
+    label: string;
+}> = [
+    { value: 'purchased_item', label: 'Purchased item' },
+    { value: 'tax', label: 'Tax' },
+    { value: 'discount', label: 'Discount' },
+    { value: 'tip', label: 'Tip' },
+    { value: 'fee', label: 'Fee' },
+    { value: 'rounding', label: 'Rounding' },
+    { value: 'other_adjustment', label: 'Other adjustment' },
+    { value: 'unidentified', label: 'Unidentified known amount' },
+];
+
+function receiptLineItemRoleLabel(role: ReceiptLineItem['role']): string {
+    return (
+        receiptLineItemRoleOptions.find((option) => option.value === role)
+            ?.label ?? role
+    );
+}
+
+function isAdjustmentRole(role: ReceiptLineItem['role']): boolean {
+    return role !== 'purchased_item' && role !== 'unidentified';
+}
 
 function CorrectionControl({
     transactionId,
@@ -500,22 +526,37 @@ function ReceiptBreakdownSection({
             draftLineItems.map((lineItem) => ({
                 id: lineItem.id || null,
                 description: lineItem.description,
+                role: lineItem.role,
+                quantity: lineItem.quantity,
+                unit_price_minor: lineItem.unit_price_minor,
                 line_total_minor: lineItem.line_total_minor,
                 category_id: lineItem.category?.id ?? null,
+                related_line_item_id: lineItem.related_line_item_id,
             })),
         ) !==
             JSON.stringify(
                 draft.line_items.map((lineItem) => ({
                     id: lineItem.id,
                     description: lineItem.description,
+                    role: lineItem.role,
+                    quantity: lineItem.quantity,
+                    unit_price_minor: lineItem.unit_price_minor,
                     line_total_minor: lineItem.line_total_minor,
                     category_id: lineItem.category?.id ?? null,
+                    related_line_item_id: lineItem.related_line_item_id,
                 })),
             );
 
     function updateDraftLineItem(
         clientId: string,
-        field: 'description' | 'line_total_minor' | 'category_id',
+        field:
+            | 'description'
+            | 'role'
+            | 'quantity'
+            | 'unit_price_minor'
+            | 'line_total_minor'
+            | 'category_id'
+            | 'related_line_item_id',
         value: string,
     ) {
         setDraftLineItems((lineItems) =>
@@ -534,6 +575,36 @@ function ReceiptBreakdownSection({
                         category: category
                             ? { id: category.id, name: category.path }
                             : null,
+                    };
+                }
+
+                if (field === 'related_line_item_id') {
+                    const relatedLineItem = lineItems.find(
+                        (candidate) => candidate.id === value,
+                    );
+
+                    return {
+                        ...lineItem,
+                        related_line_item_id: value || null,
+                        category:
+                            lineItem.category ??
+                            relatedLineItem?.category ??
+                            null,
+                    };
+                }
+
+                if (field === 'role') {
+                    const role = value as ReceiptLineItem['role'];
+
+                    return {
+                        ...lineItem,
+                        role,
+                        category:
+                            role === 'unidentified' ? null : lineItem.category,
+                        related_line_item_id: isAdjustmentRole(role)
+                            ? lineItem.related_line_item_id
+                            : null,
+                        requires_review: role === 'unidentified',
                     };
                 }
 
@@ -576,8 +647,27 @@ function ReceiptBreakdownSection({
                                         {lineItem.description}
                                     </p>
                                     <p className="text-xs text-muted-foreground">
+                                        {receiptLineItemRoleLabel(
+                                            lineItem.role,
+                                        )}{' '}
+                                        ·{' '}
                                         {lineItem.category?.name ??
                                             'Uncategorized'}
+                                        {lineItem.quantity !== null && (
+                                            <> · Quantity {lineItem.quantity}</>
+                                        )}
+                                        {lineItem.unit_price_minor !== null && (
+                                            <>
+                                                {' '}
+                                                · Unit{' '}
+                                                {formatMinorUnits(
+                                                    lineItem.unit_price_minor,
+                                                    transaction.currency,
+                                                )}
+                                            </>
+                                        )}
+                                        {lineItem.related_line_item_id !==
+                                            null && <> · Item-specific</>}
                                     </p>
                                 </div>
                                 <p className="tabular-nums">
@@ -640,14 +730,87 @@ function ReceiptBreakdownSection({
                                             name={`line_items[${index}][id]`}
                                             value={lineItem.id}
                                         />
-                                        <div className="grid gap-2 sm:col-span-2">
+                                        <div className="grid gap-2">
                                             <Label
-                                                htmlFor={`receipt-line-${lineItem.id}-description`}
+                                                htmlFor={`receipt-line-${lineItem.clientId}-role`}
                                             >
-                                                Purchased item
+                                                Role
+                                            </Label>
+                                            <NativeSelect
+                                                id={`receipt-line-${lineItem.clientId}-role`}
+                                                name={`line_items[${index}][role]`}
+                                                value={lineItem.role}
+                                                onChange={(event) =>
+                                                    updateDraftLineItem(
+                                                        lineItem.clientId,
+                                                        'role',
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                options={
+                                                    receiptLineItemRoleOptions
+                                                }
+                                            />
+                                        </div>
+                                        {isAdjustmentRole(lineItem.role) && (
+                                            <div className="grid gap-2">
+                                                <Label
+                                                    htmlFor={`receipt-line-${lineItem.clientId}-related-item`}
+                                                >
+                                                    Applies to
+                                                </Label>
+                                                <NativeSelect
+                                                    id={`receipt-line-${lineItem.clientId}-related-item`}
+                                                    name={`line_items[${index}][related_line_item_id]`}
+                                                    value={
+                                                        lineItem.related_line_item_id ??
+                                                        ''
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateDraftLineItem(
+                                                            lineItem.clientId,
+                                                            'related_line_item_id',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                    options={[
+                                                        {
+                                                            value: '',
+                                                            label: 'Whole receipt',
+                                                        },
+                                                        ...draftLineItems
+                                                            .filter(
+                                                                (candidate) =>
+                                                                    candidate.role ===
+                                                                        'purchased_item' &&
+                                                                    candidate.id !==
+                                                                        '',
+                                                            )
+                                                            .map(
+                                                                (
+                                                                    candidate,
+                                                                ) => ({
+                                                                    value: candidate.id,
+                                                                    label: candidate.description,
+                                                                }),
+                                                            ),
+                                                    ]}
+                                                />
+                                                <p className="text-xs text-muted-foreground">
+                                                    Item-specific adjustments
+                                                    default to the purchased
+                                                    item&apos;s Category.
+                                                </p>
+                                            </div>
+                                        )}
+                                        <div className="grid gap-2">
+                                            <Label
+                                                htmlFor={`receipt-line-${lineItem.clientId}-description`}
+                                            >
+                                                Description
                                             </Label>
                                             <Input
-                                                id={`receipt-line-${lineItem.id}-description`}
+                                                id={`receipt-line-${lineItem.clientId}-description`}
                                                 name={`line_items[${index}][description]`}
                                                 value={lineItem.description}
                                                 onChange={(event) =>
@@ -662,15 +825,67 @@ function ReceiptBreakdownSection({
                                         </div>
                                         <div className="grid gap-2">
                                             <Label
-                                                htmlFor={`receipt-line-${lineItem.id}-total`}
+                                                htmlFor={`receipt-line-${lineItem.clientId}-quantity`}
+                                            >
+                                                Printed quantity
+                                            </Label>
+                                            <Input
+                                                id={`receipt-line-${lineItem.clientId}-quantity`}
+                                                name={`line_items[${index}][quantity]`}
+                                                inputMode="decimal"
+                                                value={lineItem.quantity ?? ''}
+                                                onChange={(event) =>
+                                                    updateDraftLineItem(
+                                                        lineItem.clientId,
+                                                        'quantity',
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                placeholder="Optional context"
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label
+                                                htmlFor={`receipt-line-${lineItem.clientId}-unit-price`}
+                                            >
+                                                Printed unit price in minor
+                                                units
+                                            </Label>
+                                            <Input
+                                                id={`receipt-line-${lineItem.clientId}-unit-price`}
+                                                name={`line_items[${index}][unit_price_minor]`}
+                                                type="number"
+                                                step="1"
+                                                value={
+                                                    lineItem.unit_price_minor ??
+                                                    ''
+                                                }
+                                                onChange={(event) =>
+                                                    updateDraftLineItem(
+                                                        lineItem.clientId,
+                                                        'unit_price_minor',
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                placeholder="Optional context"
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label
+                                                htmlFor={`receipt-line-${lineItem.clientId}-total`}
                                             >
                                                 Signed total in minor units
                                             </Label>
                                             <Input
-                                                id={`receipt-line-${lineItem.id}-total`}
+                                                id={`receipt-line-${lineItem.clientId}-total`}
                                                 name={`line_items[${index}][line_total_minor]`}
                                                 type="number"
-                                                min="1"
+                                                min={
+                                                    lineItem.role ===
+                                                    'purchased_item'
+                                                        ? '1'
+                                                        : undefined
+                                                }
                                                 step="1"
                                                 value={
                                                     lineItem.line_total_minor
@@ -687,13 +902,30 @@ function ReceiptBreakdownSection({
                                         </div>
                                         <div className="grid gap-2">
                                             <Label
-                                                htmlFor={`receipt-line-${lineItem.id}-category`}
+                                                htmlFor={`receipt-line-${lineItem.clientId}-category`}
                                             >
                                                 Category
                                             </Label>
+                                            {lineItem.role ===
+                                                'unidentified' && (
+                                                <input
+                                                    type="hidden"
+                                                    name={`line_items[${index}][category_id]`}
+                                                    value=""
+                                                />
+                                            )}
                                             <NativeSelect
-                                                id={`receipt-line-${lineItem.id}-category`}
-                                                name={`line_items[${index}][category_id]`}
+                                                id={`receipt-line-${lineItem.clientId}-category`}
+                                                name={
+                                                    lineItem.role ===
+                                                    'unidentified'
+                                                        ? undefined
+                                                        : `line_items[${index}][category_id]`
+                                                }
+                                                disabled={
+                                                    lineItem.role ===
+                                                    'unidentified'
+                                                }
                                                 value={
                                                     lineItem.category?.id.toString() ??
                                                     ''
@@ -718,6 +950,14 @@ function ReceiptBreakdownSection({
                                                     ),
                                                 ]}
                                             />
+                                            {lineItem.role ===
+                                                'unidentified' && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Unidentified amounts stay
+                                                    Uncategorized and in the
+                                                    Review Queue.
+                                                </p>
+                                            )}
                                         </div>
                                         <Button
                                             type="button"
@@ -757,14 +997,17 @@ function ReceiptBreakdownSection({
                                                 clientId,
                                                 description: '',
                                                 role: 'purchased_item' as const,
+                                                quantity: null,
+                                                unit_price_minor: null,
                                                 line_total_minor: '1',
                                                 category: null,
+                                                related_line_item_id: null,
                                                 requires_review: false,
                                             },
                                         ]);
                                     }}
                                 >
-                                    <Plus /> Add purchased item
+                                    <Plus /> Add Line Item
                                 </Button>
                                 <InputError
                                     message={

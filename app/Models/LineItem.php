@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\LineItemRole;
 use Database\Factories\LineItemFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,7 +16,10 @@ use Illuminate\Support\Carbon;
  * @property int $receipt_breakdown_id
  * @property int|null $category_id
  * @property string $description
- * @property string $role
+ * @property LineItemRole $role
+ * @property string|null $quantity
+ * @property int|null $unit_price_minor
+ * @property string|null $related_line_item_id
  * @property int $line_total_minor
  * @property bool $requires_review
  * @property Carbon|null $created_at
@@ -27,6 +31,9 @@ use Illuminate\Support\Carbon;
     'category_id',
     'description',
     'role',
+    'quantity',
+    'unit_price_minor',
+    'related_line_item_id',
     'line_total_minor',
     'requires_review',
 ])]
@@ -37,7 +44,7 @@ final class LineItem extends Model
 
     /** @var array<string, mixed> */
     protected $attributes = [
-        'role' => 'purchased_item',
+        'role' => LineItemRole::PurchasedItem,
         'requires_review' => false,
     ];
 
@@ -57,6 +64,8 @@ final class LineItem extends Model
     protected function casts(): array
     {
         return [
+            'role' => LineItemRole::class,
+            'unit_price_minor' => 'integer',
             'line_total_minor' => 'integer',
             'requires_review' => 'boolean',
         ];

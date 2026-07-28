@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Currency;
+use App\LineItemRole;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -169,7 +170,7 @@ final class AuthorizeOpenClawCapability
                 'input.processed_at' => ['required', 'string', 'max:35'],
                 'input.provider' => ['required', 'string', Rule::in(['openai'])],
                 'input.model' => ['required', 'string', Rule::in(['openai/gpt-5.6'])],
-                'input.contract_version' => ['required', 'integer', Rule::in([1])],
+                'input.contract_version' => ['required', 'integer', Rule::in([1, 2])],
                 'input.transaction' => ['required', 'array:occurred_on,amount_minor,currency,kind,merchant_description'],
                 'input.transaction.occurred_on' => ['required', 'date_format:Y-m-d'],
                 'input.transaction.amount_minor' => ['required', 'integer', 'min:1', 'max:'.PHP_INT_MAX],
@@ -177,9 +178,23 @@ final class AuthorizeOpenClawCapability
                 'input.transaction.kind' => ['required', Rule::enum(TransactionKind::class)],
                 'input.transaction.merchant_description' => ['required', 'string', 'max:255'],
                 'input.line_items' => ['required', 'array', 'min:1', 'max:200'],
-                'input.line_items.*' => ['required', 'array:description,line_total_minor'],
+                'input.line_items.*' => ['required', 'array'],
                 'input.line_items.*.description' => ['required', 'string', 'max:255'],
-                'input.line_items.*.line_total_minor' => ['required', 'integer', 'not_in:0'],
+                'input.line_items.*.role' => ['nullable', 'string', Rule::enum(LineItemRole::class)],
+                'input.line_items.*.quantity' => ['nullable', 'string', 'max:64'],
+                'input.line_items.*.unit_price_minor' => [
+                    'nullable',
+                    'integer',
+                    'min:-'.self::MAX_SAFE_INTEGER,
+                    'max:'.self::MAX_SAFE_INTEGER,
+                ],
+                'input.line_items.*.line_total_minor' => [
+                    'required',
+                    'integer',
+                    'not_in:0',
+                    'min:-'.self::MAX_SAFE_INTEGER,
+                    'max:'.self::MAX_SAFE_INTEGER,
+                ],
             ];
         } elseif ($capability === 'category.mutation.prepare') {
             $rules += [
@@ -503,8 +518,31 @@ final class AuthorizeOpenClawCapability
 
             $lineItemKeys = array_keys($lineItem);
             sort($lineItemKeys);
+            $allowedLineItemKeys = [
+                'category_id',
+                'description',
+                'id',
+                'line_total_minor',
+                'quantity',
+                'related_line_item_id',
+                'role',
+                'unit_price_minor',
+            ];
+            $requiredLineItemKeys = [
+                'category_id',
+                'description',
+                'id',
+                'line_total_minor',
+            ];
+            $role = is_string($lineItem['role'] ?? null)
+                ? LineItemRole::tryFrom($lineItem['role'])
+                : LineItemRole::PurchasedItem;
+            $quantity = $lineItem['quantity'] ?? null;
+            $unitPriceMinor = $lineItem['unit_price_minor'] ?? null;
+            $relatedLineItemId = $lineItem['related_line_item_id'] ?? null;
 
-            if ($lineItemKeys !== ['category_id', 'description', 'id', 'line_total_minor']
+            if (array_diff($lineItemKeys, $allowedLineItemKeys) !== []
+                || array_diff($requiredLineItemKeys, $lineItemKeys) !== []
                 || (! is_string($lineItem['id'] ?? null) && ($lineItem['id'] ?? null) !== null)
                 || (is_string($lineItem['id']) && ! Str::isUuid($lineItem['id']))
                 || (is_string($lineItem['id']) && isset($lineItemIds[$lineItem['id']]))
@@ -512,12 +550,26 @@ final class AuthorizeOpenClawCapability
                 || Str::squish($lineItem['description']) === ''
                 || mb_strlen($lineItem['description']) > 255
                 || ! is_int($lineItem['line_total_minor'] ?? null)
-                || $lineItem['line_total_minor'] < 1
+                || $role === null
+                || ! $role->acceptsLineTotal($lineItem['line_total_minor'])
                 || $lineItem['line_total_minor'] > self::MAX_SAFE_INTEGER
+                || $lineItem['line_total_minor'] < -self::MAX_SAFE_INTEGER
+                || ($quantity !== null
+                    && (! is_string($quantity)
+                        || preg_match('/^(?=.*[1-9])\d+(?:\.\d{1,6})?$/D', $quantity) !== 1))
+                || ($unitPriceMinor !== null
+                    && (! is_int($unitPriceMinor)
+                        || $unitPriceMinor > self::MAX_SAFE_INTEGER
+                        || $unitPriceMinor < -self::MAX_SAFE_INTEGER))
+                || ($relatedLineItemId !== null
+                    && (! is_string($relatedLineItemId) || ! Str::isUuid($relatedLineItemId)))
                 || ($lineItem['category_id'] !== null
                     && (! is_int($lineItem['category_id'])
                         || $lineItem['category_id'] < 1
-                        || $lineItem['category_id'] > self::MAX_SAFE_INTEGER))) {
+                        || $lineItem['category_id'] > self::MAX_SAFE_INTEGER))
+                || ($role === LineItemRole::Unidentified && $lineItem['category_id'] !== null)
+                || ($relatedLineItemId !== null
+                    && in_array($role, [LineItemRole::PurchasedItem, LineItemRole::Unidentified], true))) {
                 return false;
             }
 
@@ -553,9 +605,41 @@ final class AuthorizeOpenClawCapability
         }
 
         foreach ($input['line_items'] as $lineItem) {
-            if (! is_array($lineItem)
-                || ! is_int($lineItem['line_total_minor'] ?? null)
-                || $lineItem['line_total_minor'] === 0) {
+            if (! is_array($lineItem)) {
+                return false;
+            }
+
+            $lineItemKeys = array_keys($lineItem);
+            sort($lineItemKeys);
+            $expectedKeys = $input['contract_version'] === 1
+                ? ['description', 'line_total_minor']
+                : ['description', 'line_total_minor', 'quantity', 'role', 'unit_price_minor'];
+
+            if ($lineItemKeys !== $expectedKeys
+                || ! is_int($lineItem['line_total_minor'] ?? null)) {
+                return false;
+            }
+
+            if ($input['contract_version'] === 1) {
+                if ($lineItem['line_total_minor'] === 0) {
+                    return false;
+                }
+
+                continue;
+            }
+
+            $role = is_string($lineItem['role'] ?? null)
+                ? LineItemRole::tryFrom($lineItem['role'])
+                : null;
+
+            if ($role === null
+                || $role === LineItemRole::Unidentified
+                || ! $role->acceptsLineTotal($lineItem['line_total_minor'])
+                || ($lineItem['quantity'] !== null
+                    && (! is_string($lineItem['quantity'])
+                        || preg_match('/^(?=.*[1-9])\d+(?:\.\d{1,6})?$/D', $lineItem['quantity']) !== 1))
+                || ($lineItem['unit_price_minor'] !== null
+                    && ! is_int($lineItem['unit_price_minor']))) {
                 return false;
             }
         }

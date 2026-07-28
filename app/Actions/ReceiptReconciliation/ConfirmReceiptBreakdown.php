@@ -5,11 +5,11 @@ namespace App\Actions\ReceiptReconciliation;
 use App\ExactInteger;
 use App\Exceptions\ReceiptBreakdownNotReconciled;
 use App\Exceptions\StaleReceiptBreakdownRevision;
+use App\LineItemRole;
 use App\Models\Category;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
-use App\TransactionKind;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -42,9 +42,9 @@ final class ConfirmReceiptBreakdown
                 throw (new ModelNotFoundException)->setModel(ReceiptBreakdown::class, [$breakdown->getKey()]);
             }
 
-            if ($transaction->voided_at !== null || $transaction->kind !== TransactionKind::Purchase) {
+            if ($transaction->voided_at !== null) {
                 throw ValidationException::withMessages([
-                    'reconciliation' => 'Only an active purchase Transaction can confirm this purchased-item breakdown.',
+                    'reconciliation' => 'Only an active Transaction can confirm this Receipt Breakdown.',
                 ]);
             }
 
@@ -80,8 +80,36 @@ final class ConfirmReceiptBreakdown
             }
 
             $total = ExactInteger::from(0);
+            $lineItemsByPublicId = $lineItems->keyBy('line_item_id');
 
             foreach ($lineItems as $lineItem) {
+                $relatedLineItem = $lineItem->related_line_item_id === null
+                    ? null
+                    : $lineItemsByPublicId->get($lineItem->related_line_item_id);
+
+                if ($lineItem->related_line_item_id !== null
+                    && ($relatedLineItem === null
+                        || $relatedLineItem->role !== LineItemRole::PurchasedItem)) {
+                    throw ValidationException::withMessages([
+                        'line_items' => 'Every item-specific adjustment must reference a purchased Line Item in this draft.',
+                    ]);
+                }
+
+                if ($lineItem->role->requiresCategoryForConfirmation()
+                    && $lineItem->related_line_item_id === null
+                    && $lineItem->category_id === null) {
+                    throw ValidationException::withMessages([
+                        'line_items' => 'Every receipt-level adjustment needs an explicit Category before confirmation.',
+                    ]);
+                }
+
+                if ($lineItem->role === LineItemRole::Unidentified
+                    && ($lineItem->category_id !== null || ! $lineItem->requires_review)) {
+                    throw ValidationException::withMessages([
+                        'line_items' => 'An Unidentified Line Item must remain Uncategorized and in review.',
+                    ]);
+                }
+
                 $total = $total->add(ExactInteger::from($lineItem->line_total_minor));
             }
 

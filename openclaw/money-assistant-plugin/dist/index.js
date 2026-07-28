@@ -1,5 +1,5 @@
-import { createHash, createPrivateKey, randomUUID, sign, } from 'node:crypto';
-import { readFileSync, realpathSync, statSync, } from 'node:fs';
+import { createHash, createPrivateKey, randomUUID, sign } from 'node:crypto';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { loadAuthProfileStoreForRuntime, resolveAgentDir, resolveAuthProfileOrder, } from 'openclaw/plugin-sdk/agent-runtime';
@@ -14,11 +14,24 @@ const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const SHA256_PATTERN = '^[a-f0-9]{64}$';
 const APPROVED_RECEIPT_PROVIDER = 'openai';
 const APPROVED_RECEIPT_MODEL = 'openai/gpt-5.6';
-const RECEIPT_CONTRACT_VERSION = 1;
+const RECEIPT_CONTRACT_VERSION = 2;
 const RECEIPT_CLEANUP_CEILING_SECONDS = 3600;
 const RECEIPT_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 const RECEIPT_POLICY_VERSION = 'openai-oauth-gpt-5.6-v1';
 const APPROVED_OPENAI_OAUTH_PROFILE = 'openai:money-assistant-oauth';
+const PROPOSABLE_LINE_ITEM_ROLES = [
+    'purchased_item',
+    'tax',
+    'discount',
+    'tip',
+    'fee',
+    'rounding',
+    'other_adjustment',
+];
+const OWNER_LINE_ITEM_ROLES = [
+    ...PROPOSABLE_LINE_ITEM_ROLES,
+    'unidentified',
+];
 export const RECEIPT_PRIVACY_DISCLOSURE = 'Receipt processing uses the existing OpenAI OAuth account and only openai/gpt-5.6. OpenAI OAuth has no published fixed retention ceiling. Before enabling receipts, disable account-wide model improvement and Codex full-environment training. Receipt interactions are never submitted as feedback. OpenClaw deletes local images after proposal submission or terminal failure, enforces a one-hour crash-cleanup ceiling, then attempts to delete the Telegram source and warns if manual removal is needed. Money Assistant retains only the opaque proposal identifier, receipt_photo source kind, processing time, actual provider/model, contract version, and structured financial proposal.';
 const pluginConfigSchema = Type.Object({
     keyId: Type.String({ minLength: 1, maxLength: 128 }),
@@ -46,7 +59,10 @@ const transactionParameters = Type.Object({
 const manualTransactionPreparationParameters = Type.Object({
     idempotency_key: Type.String({ pattern: UUID_PATTERN }),
     occurred_on: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
-    amount_minor: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+    amount_minor: Type.Integer({
+        minimum: 1,
+        maximum: Number.MAX_SAFE_INTEGER,
+    }),
     currency: Type.Union([Type.Literal('USD'), Type.Literal('PEN')]),
     kind: Type.Union([Type.Literal('purchase'), Type.Literal('refund')]),
     merchant_description: Type.String({ minLength: 1, maxLength: 255 }),
@@ -82,7 +98,10 @@ const categoryMutationPreparationParameters = Type.Union([
     }, { additionalProperties: false }),
     Type.Object({
         idempotency_key: Type.String({ pattern: UUID_PATTERN }),
-        operation: Type.Union([Type.Literal('retire'), Type.Literal('reactivate')]),
+        operation: Type.Union([
+            Type.Literal('retire'),
+            Type.Literal('reactivate'),
+        ]),
         category_id: Type.Integer({ minimum: 1 }),
         expected_revision: Type.Integer({ minimum: 1 }),
     }, { additionalProperties: false }),
@@ -101,7 +120,10 @@ const reminderResponseParameters = Type.Union([
     Type.Object({
         idempotency_key: Type.String({ pattern: UUID_PATTERN }),
         reminder_id: Type.Integer({ minimum: 1 }),
-        action: Type.Union([Type.Literal('acknowledge'), Type.Literal('dismiss')]),
+        action: Type.Union([
+            Type.Literal('acknowledge'),
+            Type.Literal('dismiss'),
+        ]),
     }, { additionalProperties: false }),
     Type.Object({
         idempotency_key: Type.String({ pattern: UUID_PATTERN }),
@@ -115,16 +137,43 @@ const reminderResponseParameters = Type.Union([
 const receiptProposalParameters = Type.Object({
     transaction: Type.Object({
         occurred_on: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
-        amount_minor: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+        amount_minor: Type.Integer({
+            minimum: 1,
+            maximum: Number.MAX_SAFE_INTEGER,
+        }),
         currency: Type.Union([Type.Literal('USD'), Type.Literal('PEN')]),
         kind: Type.Union([Type.Literal('purchase'), Type.Literal('refund')]),
-        merchant_description: Type.String({ minLength: 1, maxLength: 255 }),
+        merchant_description: Type.String({
+            minLength: 1,
+            maxLength: 255,
+        }),
     }, { additionalProperties: false }),
     line_items: Type.Array(Type.Object({
         description: Type.String({ minLength: 1, maxLength: 255 }),
+        role: Type.Union(PROPOSABLE_LINE_ITEM_ROLES.map((role) => Type.Literal(role))),
+        quantity: Type.Union([
+            Type.String({
+                pattern: '^(?=.*[1-9])\\d+(?:\\.\\d{1,6})?$',
+                maxLength: 64,
+            }),
+            Type.Null(),
+        ]),
+        unit_price_minor: Type.Union([
+            Type.Integer({
+                minimum: Number.MIN_SAFE_INTEGER,
+                maximum: Number.MAX_SAFE_INTEGER,
+            }),
+            Type.Null(),
+        ]),
         line_total_minor: Type.Union([
-            Type.Integer({ minimum: Number.MIN_SAFE_INTEGER, maximum: -1 }),
-            Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+            Type.Integer({
+                minimum: Number.MIN_SAFE_INTEGER,
+                maximum: -1,
+            }),
+            Type.Integer({
+                minimum: 1,
+                maximum: Number.MAX_SAFE_INTEGER,
+            }),
         ]),
     }, { additionalProperties: false }), { minItems: 1, maxItems: 200 }),
 }, { additionalProperties: false });
@@ -135,10 +184,44 @@ const receiptBreakdownMutationPreparationParameters = Type.Union([
         receipt_breakdown_id: Type.Integer({ minimum: 1 }),
         expected_revision: Type.Integer({ minimum: 1 }),
         line_items: Type.Array(Type.Object({
-            id: Type.Union([Type.String({ pattern: UUID_PATTERN }), Type.Null()]),
-            description: Type.String({ minLength: 1, maxLength: 255 }),
-            line_total_minor: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
-            category_id: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+            id: Type.Union([
+                Type.String({ pattern: UUID_PATTERN }),
+                Type.Null(),
+            ]),
+            description: Type.String({
+                minLength: 1,
+                maxLength: 255,
+            }),
+            role: Type.Optional(Type.Union(OWNER_LINE_ITEM_ROLES.map((role) => Type.Literal(role)))),
+            quantity: Type.Optional(Type.Union([
+                Type.String({
+                    pattern: '^(?=.*[1-9])\\d+(?:\\.\\d{1,6})?$',
+                    maxLength: 64,
+                }),
+                Type.Null(),
+            ])),
+            unit_price_minor: Type.Optional(Type.Union([
+                Type.Integer({
+                    minimum: Number.MIN_SAFE_INTEGER,
+                    maximum: Number.MAX_SAFE_INTEGER,
+                }),
+                Type.Null(),
+            ])),
+            related_line_item_id: Type.Optional(Type.Union([Type.String({ pattern: UUID_PATTERN }), Type.Null()])),
+            line_total_minor: Type.Union([
+                Type.Integer({
+                    minimum: Number.MIN_SAFE_INTEGER,
+                    maximum: -1,
+                }),
+                Type.Integer({
+                    minimum: 1,
+                    maximum: Number.MAX_SAFE_INTEGER,
+                }),
+            ]),
+            category_id: Type.Union([
+                Type.Integer({ minimum: 1 }),
+                Type.Null(),
+            ]),
         }, { additionalProperties: false }), { minItems: 1, maxItems: 200 }),
     }, { additionalProperties: false }),
     Type.Object({
@@ -164,16 +247,14 @@ function timestampInSeconds(timestamp) {
 export function admittedOwnerMessage(event, context, config) {
     const sessionKey = event.sessionKey ?? context.sessionKey;
     const messageId = event.messageId ?? context.messageId;
-    const occurredAtSeconds = event.timestamp === undefined
-        ? null
-        : timestampInSeconds(event.timestamp);
-    if (context.channelId !== 'telegram'
-        || context.accountId !== config.accountId
-        || context.conversationId !== config.conversationId
-        || (event.senderId ?? context.senderId) !== config.ownerSenderId
-        || !sessionKey
-        || !messageId
-        || occurredAtSeconds === null) {
+    const occurredAtSeconds = event.timestamp === undefined ? null : timestampInSeconds(event.timestamp);
+    if (context.channelId !== 'telegram' ||
+        context.accountId !== config.accountId ||
+        context.conversationId !== config.conversationId ||
+        (event.senderId ?? context.senderId) !== config.ownerSenderId ||
+        !sessionKey ||
+        !messageId ||
+        occurredAtSeconds === null) {
         return null;
     }
     return {
@@ -210,71 +291,73 @@ export class OwnerMessageAdmissions {
 }
 const ownerMessageAdmissions = new OwnerMessageAdmissions();
 export function receiptProcessingReady(config) {
-    return config.receiptProcessingEnabled
-        && config.receiptDisclosureDelivered
-        && config.receiptDisclosureAccepted
-        && config.openAiModelImprovementDisabled
-        && config.codexFullEnvironmentTrainingDisabled
-        && config.openAiOAuthProfileId === APPROVED_OPENAI_OAUTH_PROFILE
-        && config.openAiOAuthCredentialVersion !== ''
-        && config.receiptPolicyVersion === RECEIPT_POLICY_VERSION
-        && config.receiptConfirmedPolicyVersion === config.receiptPolicyVersion
-        && config.receiptConfirmedOAuthProfileId === config.openAiOAuthProfileId
-        && config.receiptConfirmedOAuthCredentialVersion === config.openAiOAuthCredentialVersion;
+    return (config.receiptProcessingEnabled &&
+        config.receiptDisclosureDelivered &&
+        config.receiptDisclosureAccepted &&
+        config.openAiModelImprovementDisabled &&
+        config.codexFullEnvironmentTrainingDisabled &&
+        config.openAiOAuthProfileId === APPROVED_OPENAI_OAUTH_PROFILE &&
+        config.openAiOAuthCredentialVersion !== '' &&
+        config.receiptPolicyVersion === RECEIPT_POLICY_VERSION &&
+        config.receiptConfirmedPolicyVersion === config.receiptPolicyVersion &&
+        config.receiptConfirmedOAuthProfileId === config.openAiOAuthProfileId &&
+        config.receiptConfirmedOAuthCredentialVersion ===
+            config.openAiOAuthCredentialVersion);
 }
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 export function receiptRuntimePolicyReady(runtimeConfig, agentId) {
-    if (!isRecord(runtimeConfig)
-        || !isRecord(runtimeConfig.auth)
-        || !isRecord(runtimeConfig.auth.profiles)
-        || !isRecord(runtimeConfig.auth.order)
-        || !isRecord(runtimeConfig.commands)
-        || !isRecord(runtimeConfig.agents)
-        || !isRecord(runtimeConfig.agents.defaults)) {
+    if (!isRecord(runtimeConfig) ||
+        !isRecord(runtimeConfig.auth) ||
+        !isRecord(runtimeConfig.auth.profiles) ||
+        !isRecord(runtimeConfig.auth.order) ||
+        !isRecord(runtimeConfig.commands) ||
+        !isRecord(runtimeConfig.agents) ||
+        !isRecord(runtimeConfig.agents.defaults)) {
         return false;
     }
     const profiles = runtimeConfig.auth.profiles;
     const approvedProfile = profiles[APPROVED_OPENAI_OAUTH_PROFILE];
-    const openAiProfiles = Object.entries(profiles).filter(([, profile]) => (isRecord(profile) && profile.provider === APPROVED_RECEIPT_PROVIDER));
+    const openAiProfiles = Object.entries(profiles).filter(([, profile]) => isRecord(profile) && profile.provider === APPROVED_RECEIPT_PROVIDER);
     const defaultAgentPolicy = runtimeConfig.agents.defaults;
     const models = defaultAgentPolicy.models;
     const model = defaultAgentPolicy.model;
     const imageModel = defaultAgentPolicy.imageModel;
-    return isRecord(approvedProfile)
-        && approvedProfile.provider === APPROVED_RECEIPT_PROVIDER
-        && approvedProfile.mode === 'oauth'
-        && openAiProfiles.length === 1
-        && Array.isArray(runtimeConfig.auth.order.openai)
-        && runtimeConfig.auth.order.openai.length === 1
-        && runtimeConfig.auth.order.openai[0] === APPROVED_OPENAI_OAUTH_PROFILE
-        && runtimeConfig.commands.text === false
-        && runtimeConfig.commands.native === false
-        && isRecord(models)
-        && Object.keys(models).length === 1
-        && isRecord(models[APPROVED_RECEIPT_MODEL])
-        && isRecord(model)
-        && model.primary === APPROVED_RECEIPT_MODEL
-        && Array.isArray(model.fallbacks)
-        && model.fallbacks.length === 0
-        && isRecord(imageModel)
-        && imageModel.primary === APPROVED_RECEIPT_MODEL
-        && Array.isArray(imageModel.fallbacks)
-        && imageModel.fallbacks.length === 0
-        && Array.isArray(runtimeConfig.agents.list)
-        && runtimeConfig.agents.list.some((agent) => isRecord(agent) && agent.id === agentId);
+    return (isRecord(approvedProfile) &&
+        approvedProfile.provider === APPROVED_RECEIPT_PROVIDER &&
+        approvedProfile.mode === 'oauth' &&
+        openAiProfiles.length === 1 &&
+        Array.isArray(runtimeConfig.auth.order.openai) &&
+        runtimeConfig.auth.order.openai.length === 1 &&
+        runtimeConfig.auth.order.openai[0] === APPROVED_OPENAI_OAUTH_PROFILE &&
+        runtimeConfig.commands.text === false &&
+        runtimeConfig.commands.native === false &&
+        isRecord(models) &&
+        Object.keys(models).length === 1 &&
+        isRecord(models[APPROVED_RECEIPT_MODEL]) &&
+        isRecord(model) &&
+        model.primary === APPROVED_RECEIPT_MODEL &&
+        Array.isArray(model.fallbacks) &&
+        model.fallbacks.length === 0 &&
+        isRecord(imageModel) &&
+        imageModel.primary === APPROVED_RECEIPT_MODEL &&
+        Array.isArray(imageModel.fallbacks) &&
+        imageModel.fallbacks.length === 0 &&
+        Array.isArray(runtimeConfig.agents.list) &&
+        runtimeConfig.agents.list.some((agent) => isRecord(agent) && agent.id === agentId));
 }
 export function receiptEffectiveAuthStateReady(profiles, resolvedOrder, sessionEntry) {
     const credential = profiles[APPROVED_OPENAI_OAUTH_PROFILE];
     const sessionProfile = isRecord(sessionEntry)
         ? sessionEntry.authProfileOverride
         : undefined;
-    return isRecord(credential)
-        && credential.type === 'oauth'
-        && resolvedOrder.length === 1
-        && resolvedOrder[0] === APPROVED_OPENAI_OAUTH_PROFILE
-        && (sessionProfile === undefined || sessionProfile === APPROVED_OPENAI_OAUTH_PROFILE);
+    return (isRecord(credential) &&
+        credential.type === 'oauth' &&
+        resolvedOrder.length === 1 &&
+        resolvedOrder[0] === APPROVED_OPENAI_OAUTH_PROFILE &&
+        (sessionProfile === undefined ||
+            sessionProfile === APPROVED_OPENAI_OAUTH_PROFILE));
 }
 function receiptEffectiveAuthReady(runtimeConfig, agentId, sessionKey) {
     try {
@@ -290,7 +373,11 @@ function receiptEffectiveAuthReady(runtimeConfig, agentId, sessionKey) {
             provider: APPROVED_RECEIPT_PROVIDER,
         });
         const sessionEntry = sessionKey
-            ? getSessionEntry({ agentId, sessionKey, readConsistency: 'latest' })
+            ? getSessionEntry({
+                agentId,
+                sessionKey,
+                readConsistency: 'latest',
+            })
             : undefined;
         return receiptEffectiveAuthStateReady(store.profiles, resolvedOrder, sessionEntry);
     }
@@ -303,16 +390,14 @@ function oneMediaValue(metadata, singular, plural) {
     if (Array.isArray(multiple)) {
         return multiple.filter((value) => typeof value === 'string');
     }
-    return typeof metadata[singular] === 'string'
-        ? [metadata[singular]]
-        : [];
+    return typeof metadata[singular] === 'string' ? [metadata[singular]] : [];
 }
 function pathIsInsideRoot(path, root) {
     const relativePath = relative(resolve(root), resolve(path));
-    return relativePath !== ''
-        && relativePath !== '..'
-        && !relativePath.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)
-        && !isAbsolute(relativePath);
+    return (relativePath !== '' &&
+        relativePath !== '..' &&
+        !relativePath.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) &&
+        !isAbsolute(relativePath));
 }
 function safeReceiptPath(path, root) {
     try {
@@ -327,11 +412,11 @@ function safeReceiptPath(path, root) {
     }
 }
 function hasJpegStructure(bytes) {
-    if (bytes.length < 12
-        || bytes[0] !== 0xff
-        || bytes[1] !== 0xd8
-        || bytes[bytes.length - 2] !== 0xff
-        || bytes[bytes.length - 1] !== 0xd9) {
+    if (bytes.length < 12 ||
+        bytes[0] !== 0xff ||
+        bytes[1] !== 0xd8 ||
+        bytes[bytes.length - 2] !== 0xff ||
+        bytes[bytes.length - 1] !== 0xd9) {
         return false;
     }
     let offset = 2;
@@ -358,13 +443,13 @@ function hasJpegStructure(bytes) {
         if (segmentLength < 2 || segmentEnd > bytes.length - 2) {
             return false;
         }
-        if ((marker >= 0xc0 && marker <= 0xc3)
-            || (marker >= 0xc5 && marker <= 0xc7)
-            || (marker >= 0xc9 && marker <= 0xcb)
-            || (marker >= 0xcd && marker <= 0xcf)) {
-            if (segmentLength < 8
-                || bytes.readUInt16BE(offset + 3) === 0
-                || bytes.readUInt16BE(offset + 5) === 0) {
+        if ((marker >= 0xc0 && marker <= 0xc3) ||
+            (marker >= 0xc5 && marker <= 0xc7) ||
+            (marker >= 0xc9 && marker <= 0xcb) ||
+            (marker >= 0xcd && marker <= 0xcf)) {
+            if (segmentLength < 8 ||
+                bytes.readUInt16BE(offset + 3) === 0 ||
+                bytes.readUInt16BE(offset + 5) === 0) {
                 return false;
             }
             hasFrame = true;
@@ -377,7 +462,9 @@ function hasJpegStructure(bytes) {
     return false;
 }
 function hasPngStructure(bytes) {
-    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const signature = Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
     if (bytes.length < 45 || !bytes.subarray(0, 8).equals(signature)) {
         return false;
     }
@@ -392,10 +479,10 @@ function hasPngStructure(bytes) {
             return false;
         }
         if (!hasHeader) {
-            if (chunkType !== 'IHDR'
-                || chunkLength !== 13
-                || bytes.readUInt32BE(offset + 8) === 0
-                || bytes.readUInt32BE(offset + 12) === 0) {
+            if (chunkType !== 'IHDR' ||
+                chunkLength !== 13 ||
+                bytes.readUInt32BE(offset + 8) === 0 ||
+                bytes.readUInt32BE(offset + 12) === 0) {
                 return false;
             }
             hasHeader = true;
@@ -411,10 +498,10 @@ function hasPngStructure(bytes) {
     return false;
 }
 function hasWebpStructure(bytes) {
-    if (bytes.length < 26
-        || bytes.subarray(0, 4).toString('ascii') !== 'RIFF'
-        || bytes.subarray(8, 12).toString('ascii') !== 'WEBP'
-        || bytes.readUInt32LE(4) !== bytes.length - 8) {
+    if (bytes.length < 26 ||
+        bytes.subarray(0, 4).toString('ascii') !== 'RIFF' ||
+        bytes.subarray(8, 12).toString('ascii') !== 'WEBP' ||
+        bytes.readUInt32LE(4) !== bytes.length - 8) {
         return false;
     }
     let offset = 12;
@@ -429,8 +516,11 @@ function hasWebpStructure(bytes) {
             return false;
         }
         if (chunkType === 'VP8 ') {
-            hasImageChunk = chunkLength >= 10
-                && bytes.subarray(dataOffset + 3, dataOffset + 6).equals(Buffer.from([0x9d, 0x01, 0x2a]));
+            hasImageChunk =
+                chunkLength >= 10 &&
+                    bytes
+                        .subarray(dataOffset + 3, dataOffset + 6)
+                        .equals(Buffer.from([0x9d, 0x01, 0x2a]));
         }
         else if (chunkType === 'VP8L') {
             hasImageChunk = chunkLength >= 5 && bytes[dataOffset] === 0x2f;
@@ -456,9 +546,11 @@ export function inspectReceiptImage(path, root, declaredMimeType) {
     const isJpeg = hasJpegStructure(bytes);
     const isPng = hasPngStructure(bytes);
     const isWebp = hasWebpStructure(bytes);
-    if ((isJpeg && normalizedMimeType === 'image/jpeg' && ['.jpg', '.jpeg'].includes(extension))
-        || (isPng && normalizedMimeType === 'image/png' && extension === '.png')
-        || (isWebp && normalizedMimeType === 'image/webp' && extension === '.webp')) {
+    if ((isJpeg &&
+        normalizedMimeType === 'image/jpeg' &&
+        ['.jpg', '.jpeg'].includes(extension)) ||
+        (isPng && normalizedMimeType === 'image/png' && extension === '.png') ||
+        (isWebp && normalizedMimeType === 'image/webp' && extension === '.webp')) {
         return realPath;
     }
     return null;
@@ -471,9 +563,9 @@ export function admittedReceiptPhoto(event, context, config, inspectImage = insp
     }
     const mediaPaths = oneMediaValue(metadata, 'mediaPath', 'mediaPaths');
     const mediaTypes = oneMediaValue(metadata, 'mediaType', 'mediaTypes');
-    if (mediaPaths.length !== 1
-        || mediaTypes.length !== 1
-        || !mediaTypes[0]?.toLowerCase().startsWith('image/')) {
+    if (mediaPaths.length !== 1 ||
+        mediaTypes.length !== 1 ||
+        !mediaTypes[0]?.toLowerCase().startsWith('image/')) {
         return null;
     }
     const mediaPath = inspectImage(mediaPaths[0], config.receiptMediaRoot, mediaTypes[0]);
@@ -490,8 +582,8 @@ export function isApprovedReceiptModel(provider, model) {
     const normalizedModel = model.startsWith(`${provider}/`)
         ? model
         : `${provider}/${model}`;
-    return provider === APPROVED_RECEIPT_PROVIDER
-        && normalizedModel === APPROVED_RECEIPT_MODEL;
+    return (provider === APPROVED_RECEIPT_PROVIDER &&
+        normalizedModel === APPROVED_RECEIPT_MODEL);
 }
 const defaultReceiptAdmissionDependencies = {
     async removeFile(path) {
@@ -599,9 +691,9 @@ export class ReceiptPhotoAdmissions {
             void this.removeLocalImage(photo).catch(() => { });
             return true;
         }
-        const remainingSeconds = Math.max(0, ownerMessage.occurredAtSeconds
-            + RECEIPT_CLEANUP_CEILING_SECONDS
-            - nowSeconds);
+        const remainingSeconds = Math.max(0, ownerMessage.occurredAtSeconds +
+            RECEIPT_CLEANUP_CEILING_SECONDS -
+            nowSeconds);
         photo.cleanupTimer = this.dependencies.setTimer(() => this.expire(ownerMessage.sessionKey, photo.proposalId), remainingSeconds * 1000);
         this.photos.set(ownerMessage.sessionKey, photo);
         this.sensitiveSessions.add(ownerMessage.sessionKey);
@@ -638,7 +730,8 @@ export class ReceiptPhotoAdmissions {
             return true;
         }
         const rejectedUntil = this.rejectedSessionsWithoutRun.get(key);
-        if (rejectedUntil !== undefined && rejectedUntil >= this.dependencies.nowSeconds()) {
+        if (rejectedUntil !== undefined &&
+            rejectedUntil >= this.dependencies.nowSeconds()) {
             return true;
         }
         if (rejectedUntil !== undefined) {
@@ -656,11 +749,15 @@ export class ReceiptPhotoAdmissions {
     }
     recordActualModel(runId, provider, model) {
         const photo = [...this.photos.values()].find((candidate) => candidate.runId === runId);
-        if (!photo || !photo.processable || !isApprovedReceiptModel(provider, model)) {
+        if (!photo ||
+            !photo.processable ||
+            !isApprovedReceiptModel(provider, model)) {
             return false;
         }
         photo.provider = provider;
-        photo.model = model.startsWith(`${provider}/`) ? model : `${provider}/${model}`;
+        photo.model = model.startsWith(`${provider}/`)
+            ? model
+            : `${provider}/${model}`;
         return true;
     }
     isSensitiveSession(sessionKey) {
@@ -687,7 +784,9 @@ export class ReceiptPhotoAdmissions {
         }
     }
     async finishForRun(runId, sessionKey) {
-        const photo = runId ? [...this.photos.values()].find((candidate) => candidate.runId === runId) : this.photos.get(sessionKey ?? '');
+        const photo = runId
+            ? [...this.photos.values()].find((candidate) => candidate.runId === runId)
+            : this.photos.get(sessionKey ?? '');
         if (photo) {
             await this.finishAdmission(photo);
         }
@@ -728,8 +827,8 @@ export class ReceiptPhotoAdmissions {
     }
 }
 export function receiptAdmissionBlockCategory(admissions, runId, sessionKey, nowSeconds) {
-    if (admissions.consumeRejectedRun(runId, sessionKey)
-        || admissions.hasConflictingRun(runId, sessionKey)) {
+    if (admissions.consumeRejectedRun(runId, sessionKey) ||
+        admissions.hasConflictingRun(runId, sessionKey)) {
         return 'receipt_photo_concurrent';
     }
     const activeReceiptPhoto = admissions.activeForSession(sessionKey);
@@ -765,15 +864,17 @@ export class ReminderEventAdmissions {
     }
     freshEventForSession(sessionKey, eventId, nowSeconds) {
         const admissions = this.events.get(sessionKey ?? '') ?? [];
-        return admissions.find((admission) => {
+        return (admissions.find((admission) => {
             const ageInSeconds = nowSeconds - admission.occurredAtSeconds;
-            return admission.eventId === eventId
-                && ageInSeconds >= 0
-                && ageInSeconds <= 1800;
-        }) ?? null;
+            return (admission.eventId === eventId &&
+                ageInSeconds >= 0 &&
+                ageInSeconds <= 1800);
+        }) ?? null);
     }
     markAlreadyDelivered(sessionKey, eventId) {
-        const admission = this.events.get(sessionKey)?.find((candidate) => candidate.eventId === eventId);
+        const admission = this.events
+            .get(sessionKey)
+            ?.find((candidate) => candidate.eventId === eventId);
         if (admission) {
             admission.alreadyDelivered = true;
         }
@@ -803,30 +904,29 @@ export function isBoundOwnerInteraction(toolContext, config) {
     if (toolContext.senderIsOwner !== true) {
         return false;
     }
-    return toolContext.agentId === config.agentId
-        && toolContext.messageChannel === 'telegram'
-        && toolContext.agentAccountId === config.accountId
-        && toolContext.requesterSenderId === config.ownerSenderId
-        && toolContext.sessionId !== undefined
-        && toolContext.deliveryContext?.channel === 'telegram'
-        && toolContext.deliveryContext.accountId === config.accountId
-        && toolContext.deliveryContext.to === config.conversationId;
+    return (toolContext.agentId === config.agentId &&
+        toolContext.messageChannel === 'telegram' &&
+        toolContext.agentAccountId === config.accountId &&
+        toolContext.requesterSenderId === config.ownerSenderId &&
+        toolContext.sessionId !== undefined &&
+        toolContext.deliveryContext?.channel === 'telegram' &&
+        toolContext.deliveryContext.accountId === config.accountId &&
+        toolContext.deliveryContext.to === config.conversationId);
 }
 export function isBoundReminderEventInteraction(toolContext, config) {
-    return toolContext.agentId === config.agentId
-        && toolContext.sessionKey === REMINDER_HOOK_SESSION_KEY
-        && toolContext.deliveryContext?.channel === 'telegram'
-        && toolContext.deliveryContext.accountId === config.accountId
-        && toolContext.deliveryContext.to === config.conversationId;
+    return (toolContext.agentId === config.agentId &&
+        toolContext.sessionKey === REMINDER_HOOK_SESSION_KEY &&
+        toolContext.deliveryContext?.channel === 'telegram' &&
+        toolContext.deliveryContext.accountId === config.accountId &&
+        toolContext.deliveryContext.to === config.conversationId);
 }
 export function admittedReminderEvent(prompt, context, config, nowSeconds) {
-    if (context.agentId !== config.agentId
-        || context.sessionKey !== REMINDER_HOOK_SESSION_KEY) {
+    if (context.agentId !== config.agentId ||
+        context.sessionKey !== REMINDER_HOOK_SESSION_KEY) {
         return null;
     }
     const match = prompt.match(/Fetch Reminder event ([0-9a-f-]{36}) that occurred at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z with money_assistant_reminder_read/);
-    if (!match
-        || !new RegExp(UUID_PATTERN).test(match[1] ?? '')) {
+    if (!match || !new RegExp(UUID_PATTERN).test(match[1] ?? '')) {
         return null;
     }
     return {
@@ -836,26 +936,27 @@ export function admittedReminderEvent(prompt, context, config, nowSeconds) {
 }
 export function isBoundReminderChannelDelivery(event, context, config) {
     const sessionKey = event.sessionKey ?? context.sessionKey;
-    return event.success === true
-        && sessionKey === REMINDER_HOOK_SESSION_KEY
-        && context.channelId === 'telegram'
-        && context.accountId === config.accountId
-        && context.conversationId === config.conversationId
-        && event.to === config.conversationId;
+    return (event.success === true &&
+        sessionKey === REMINDER_HOOK_SESSION_KEY &&
+        context.channelId === 'telegram' &&
+        context.accountId === config.accountId &&
+        context.conversationId === config.conversationId &&
+        event.to === config.conversationId);
 }
 export function shouldSuppressReminderDelivery(event, context, config, admissions, nowSeconds) {
     const sessionKey = context.sessionKey;
-    if (sessionKey !== REMINDER_HOOK_SESSION_KEY
-        || context.channelId !== 'telegram'
-        || context.accountId !== config.accountId
-        || context.conversationId !== config.conversationId
-        || event.to !== config.conversationId) {
+    if (sessionKey !== REMINDER_HOOK_SESSION_KEY ||
+        context.channelId !== 'telegram' ||
+        context.accountId !== config.accountId ||
+        context.conversationId !== config.conversationId ||
+        event.to !== config.conversationId) {
         return false;
     }
     return consumeAlreadyDeliveredReminder(sessionKey, admissions, nowSeconds);
 }
 export function consumeAlreadyDeliveredReminder(sessionKey, admissions, nowSeconds) {
-    if (admissions.freshForSession(sessionKey, nowSeconds)?.alreadyDelivered !== true) {
+    if (admissions.freshForSession(sessionKey, nowSeconds)?.alreadyDelivered !==
+        true) {
         return false;
     }
     admissions.takeFreshForSession(sessionKey, nowSeconds);
@@ -913,9 +1014,9 @@ export function capabilityRequestBody(capability, input, toolContext, admission)
     });
 }
 export function receiptProposalCapabilityRequestBody(input, toolContext, admission, processedAtSeconds) {
-    if (!admission.provider
-        || !admission.model
-        || !isApprovedReceiptModel(admission.provider, admission.model)) {
+    if (!admission.provider ||
+        !admission.model ||
+        !isApprovedReceiptModel(admission.provider, admission.model)) {
         throw new Error('Approved Receipt Proposal model provenance is unavailable.');
     }
     const occurredAt = new Date(admission.occurredAtSeconds * 1000)
@@ -999,9 +1100,9 @@ async function requestReceiptProposal(body, config, signal) {
             return await requestCapability('receipt.proposal.submit', body, config, signal);
         }
         catch (error) {
-            const isTransient = !(error instanceof CapabilityRequestError)
-                || error.status === 429
-                || (error.status !== undefined && error.status >= 500);
+            const isTransient = !(error instanceof CapabilityRequestError) ||
+                error.status === 429 ||
+                (error.status !== undefined && error.status >= 500);
             if (!isTransient || attempt === delays.length) {
                 throw error;
             }
@@ -1028,8 +1129,8 @@ async function executeReceiptProposal(input, config, toolContext, signal) {
     }
 }
 async function executeReminderEventCapability(capability, input, eventId, config, toolContext, signal) {
-    if (!isBoundReminderEventInteraction(toolContext, config)
-        || toolContext.sessionKey === undefined) {
+    if (!isBoundReminderEventInteraction(toolContext, config) ||
+        toolContext.sessionKey === undefined) {
         throw new Error('Money Assistant Reminder event binding is unavailable.');
     }
     const admission = reminderEventAdmissions.freshEventForSession(toolContext.sessionKey, eventId, Math.floor(Date.now() / 1000));
@@ -1038,14 +1139,14 @@ async function executeReminderEventCapability(capability, input, eventId, config
     }
     const body = reminderEventCapabilityRequestBody(capability, input, config, eventId, admission.occurredAtSeconds);
     const details = await requestCapability(capability, body, config, signal);
-    if (capability === 'reminder.read'
-        && typeof details === 'object'
-        && details !== null
-        && 'delivery' in details
-        && typeof details.delivery === 'object'
-        && details.delivery !== null
-        && 'channel_delivered_at' in details.delivery
-        && details.delivery.channel_delivered_at !== null) {
+    if (capability === 'reminder.read' &&
+        typeof details === 'object' &&
+        details !== null &&
+        'delivery' in details &&
+        typeof details.delivery === 'object' &&
+        details.delivery !== null &&
+        'channel_delivered_at' in details.delivery &&
+        details.delivery.channel_delivered_at !== null) {
         reminderEventAdmissions.markAlreadyDelivered(toolContext.sessionKey, eventId);
     }
     return {
@@ -1062,9 +1163,9 @@ export async function recordReminderChannelDelivery(admission, config) {
             return;
         }
         catch (error) {
-            const isTransient = !(error instanceof CapabilityRequestError)
-                || error.status === 429
-                || (error.status !== undefined && error.status >= 500);
+            const isTransient = !(error instanceof CapabilityRequestError) ||
+                error.status === 429 ||
+                (error.status !== undefined && error.status >= 500);
             if (!isTransient || attempt === delays.length) {
                 throw error;
             }
@@ -1089,10 +1190,10 @@ export async function deleteReceiptSourceMessage(gateway, admission, config) {
             messageId,
         },
     });
-    if (typeof result === 'object'
-        && result !== null
-        && 'ok' in result
-        && result.ok !== true) {
+    if (typeof result === 'object' &&
+        result !== null &&
+        'ok' in result &&
+        result.ok !== true) {
         throw new Error('Telegram source message deletion failed.');
     }
 }
@@ -1115,64 +1216,85 @@ function isPositiveSafeInteger(value) {
 }
 function isCategoryMutationInput(input) {
     const operation = input.operation;
-    if (typeof input.idempotency_key !== 'string'
-        || !new RegExp(UUID_PATTERN).test(input.idempotency_key)
-        || typeof operation !== 'string') {
+    if (typeof input.idempotency_key !== 'string' ||
+        !new RegExp(UUID_PATTERN).test(input.idempotency_key) ||
+        typeof operation !== 'string') {
         return false;
     }
     if (operation === 'assign_transaction') {
-        return isPositiveSafeInteger(input.transaction_id)
-            && isPositiveSafeInteger(input.expected_revision)
-            && (input.category_id === null || isPositiveSafeInteger(input.category_id));
+        return (isPositiveSafeInteger(input.transaction_id) &&
+            isPositiveSafeInteger(input.expected_revision) &&
+            (input.category_id === null || isPositiveSafeInteger(input.category_id)));
     }
     if (operation === 'retire' || operation === 'reactivate') {
-        return isPositiveSafeInteger(input.category_id)
-            && isPositiveSafeInteger(input.expected_revision);
+        return (isPositiveSafeInteger(input.category_id) &&
+            isPositiveSafeInteger(input.expected_revision));
     }
     if (operation !== 'create' && operation !== 'update') {
         return false;
     }
-    return (operation === 'create'
-        || (isPositiveSafeInteger(input.category_id)
-            && isPositiveSafeInteger(input.expected_revision)))
-        && typeof input.name === 'string'
-        && input.name.trim() !== ''
-        && input.name.length <= 255
-        && (input.parent_id === null || isPositiveSafeInteger(input.parent_id))
-        && (input.description === null
-            || (typeof input.description === 'string' && input.description.length <= 2000))
-        && Array.isArray(input.examples)
-        && input.examples.length <= 20
-        && input.examples.every((example) => typeof example === 'string' && example.length <= 100);
+    return ((operation === 'create' ||
+        (isPositiveSafeInteger(input.category_id) &&
+            isPositiveSafeInteger(input.expected_revision))) &&
+        typeof input.name === 'string' &&
+        input.name.trim() !== '' &&
+        input.name.length <= 255 &&
+        (input.parent_id === null || isPositiveSafeInteger(input.parent_id)) &&
+        (input.description === null ||
+            (typeof input.description === 'string' &&
+                input.description.length <= 2000)) &&
+        Array.isArray(input.examples) &&
+        input.examples.length <= 20 &&
+        input.examples.every((example) => typeof example === 'string' && example.length <= 100));
 }
 function isReminderResponseInput(input) {
-    if (typeof input.idempotency_key !== 'string'
-        || !new RegExp(UUID_PATTERN).test(input.idempotency_key)
-        || !isPositiveSafeInteger(input.reminder_id)) {
+    if (typeof input.idempotency_key !== 'string' ||
+        !new RegExp(UUID_PATTERN).test(input.idempotency_key) ||
+        !isPositiveSafeInteger(input.reminder_id)) {
         return false;
     }
     if (input.action === 'acknowledge' || input.action === 'dismiss') {
         return Object.keys(input).length === 3;
     }
-    if (input.action !== 'snooze'
-        || typeof input.snoozed_until !== 'string'
-        || Object.keys(input).length !== 4) {
+    if (input.action !== 'snooze' ||
+        typeof input.snoozed_until !== 'string' ||
+        Object.keys(input).length !== 4) {
         return false;
     }
     const snoozedUntil = Date.parse(input.snoozed_until);
     return Number.isFinite(snoozedUntil) && snoozedUntil > Date.now();
 }
 function hasExactKeys(input, expected) {
-    return Object.keys(input).sort().join('\0') === [...expected].sort().join('\0');
+    return (Object.keys(input).sort().join('\0') === [...expected].sort().join('\0'));
+}
+function hasAllowedAndRequiredKeys(input, allowed, required) {
+    const actual = Object.keys(input);
+    return (actual.every((key) => allowed.includes(key)) &&
+        required.every((key) => actual.includes(key)));
+}
+function hasValidLineItemRole(role, supportedRoles, lineTotalMinor) {
+    return (typeof role === 'string' &&
+        supportedRoles.includes(role) &&
+        Number.isSafeInteger(lineTotalMinor) &&
+        (role === 'purchased_item'
+            ? Number(lineTotalMinor) > 0
+            : Number(lineTotalMinor) !== 0));
+}
+function hasValidPrintedContext(quantity, unitPriceMinor) {
+    return ((quantity === null ||
+        (typeof quantity === 'string' &&
+            quantity.length <= 64 &&
+            /^(?=.*[1-9])\d+(?:\.\d{1,6})?$/.test(quantity))) &&
+        (unitPriceMinor === null || Number.isSafeInteger(unitPriceMinor)));
 }
 function isReceiptProposalInput(input) {
-    if (!hasExactKeys(input, ['transaction', 'line_items'])
-        || typeof input.transaction !== 'object'
-        || input.transaction === null
-        || Array.isArray(input.transaction)
-        || !Array.isArray(input.line_items)
-        || input.line_items.length < 1
-        || input.line_items.length > 200) {
+    if (!hasExactKeys(input, ['transaction', 'line_items']) ||
+        typeof input.transaction !== 'object' ||
+        input.transaction === null ||
+        Array.isArray(input.transaction) ||
+        !Array.isArray(input.line_items) ||
+        input.line_items.length < 1 ||
+        input.line_items.length > 200) {
         return false;
     }
     const transaction = input.transaction;
@@ -1182,37 +1304,43 @@ function isReceiptProposalInput(input) {
         'currency',
         'kind',
         'merchant_description',
-    ])
-        || typeof transaction.occurred_on !== 'string'
-        || !/^\d{4}-\d{2}-\d{2}$/.test(transaction.occurred_on)
-        || !isPositiveSafeInteger(transaction.amount_minor)
-        || (transaction.currency !== 'USD' && transaction.currency !== 'PEN')
-        || (transaction.kind !== 'purchase' && transaction.kind !== 'refund')
-        || typeof transaction.merchant_description !== 'string'
-        || transaction.merchant_description.trim() === ''
-        || transaction.merchant_description.length > 255) {
+    ]) ||
+        typeof transaction.occurred_on !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(transaction.occurred_on) ||
+        !isPositiveSafeInteger(transaction.amount_minor) ||
+        (transaction.currency !== 'USD' && transaction.currency !== 'PEN') ||
+        (transaction.kind !== 'purchase' && transaction.kind !== 'refund') ||
+        typeof transaction.merchant_description !== 'string' ||
+        transaction.merchant_description.trim() === '' ||
+        transaction.merchant_description.length > 255) {
         return false;
     }
     return input.line_items.every((candidate) => {
-        if (typeof candidate !== 'object'
-            || candidate === null
-            || Array.isArray(candidate)) {
+        if (typeof candidate !== 'object' ||
+            candidate === null ||
+            Array.isArray(candidate)) {
             return false;
         }
         const lineItem = candidate;
-        return hasExactKeys(lineItem, ['description', 'line_total_minor'])
-            && typeof lineItem.description === 'string'
-            && lineItem.description.trim() !== ''
-            && lineItem.description.length <= 255
-            && Number.isSafeInteger(lineItem.line_total_minor)
-            && Number(lineItem.line_total_minor) !== 0;
+        return (hasExactKeys(lineItem, [
+            'description',
+            'role',
+            'quantity',
+            'unit_price_minor',
+            'line_total_minor',
+        ]) &&
+            typeof lineItem.description === 'string' &&
+            lineItem.description.trim() !== '' &&
+            lineItem.description.length <= 255 &&
+            hasValidLineItemRole(lineItem.role, PROPOSABLE_LINE_ITEM_ROLES, lineItem.line_total_minor) &&
+            hasValidPrintedContext(lineItem.quantity, lineItem.unit_price_minor));
     });
 }
 export function isReceiptBreakdownMutationInput(input) {
-    if (typeof input.idempotency_key !== 'string'
-        || !new RegExp(UUID_PATTERN).test(input.idempotency_key)
-        || !isPositiveSafeInteger(input.receipt_breakdown_id)
-        || !isPositiveSafeInteger(input.expected_revision)) {
+    if (typeof input.idempotency_key !== 'string' ||
+        !new RegExp(UUID_PATTERN).test(input.idempotency_key) ||
+        !isPositiveSafeInteger(input.receipt_breakdown_id) ||
+        !isPositiveSafeInteger(input.expected_revision)) {
         return false;
     }
     if (input.operation === 'confirm_draft') {
@@ -1223,40 +1351,83 @@ export function isReceiptBreakdownMutationInput(input) {
             'expected_revision',
         ]);
     }
-    if (input.operation !== 'update_draft'
-        || !hasExactKeys(input, [
+    if (input.operation !== 'update_draft' ||
+        !hasExactKeys(input, [
             'idempotency_key',
             'operation',
             'receipt_breakdown_id',
             'expected_revision',
             'line_items',
-        ])
-        || !Array.isArray(input.line_items)
-        || input.line_items.length < 1
-        || input.line_items.length > 200) {
+        ]) ||
+        !Array.isArray(input.line_items) ||
+        input.line_items.length < 1 ||
+        input.line_items.length > 200) {
         return false;
     }
     const seenIds = new Set();
-    return input.line_items.every((candidate) => {
-        if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+    const lineItemsAreValid = input.line_items.every((candidate) => {
+        if (typeof candidate !== 'object' ||
+            candidate === null ||
+            Array.isArray(candidate)) {
             return false;
         }
         const lineItem = candidate;
-        if (!hasExactKeys(lineItem, ['id', 'description', 'line_total_minor', 'category_id'])
-            || (lineItem.id !== null && typeof lineItem.id !== 'string')
-            || (typeof lineItem.id === 'string' && !new RegExp(UUID_PATTERN).test(lineItem.id))
-            || (typeof lineItem.id === 'string' && seenIds.has(lineItem.id))
-            || typeof lineItem.description !== 'string'
-            || lineItem.description.trim() === ''
-            || Array.from(lineItem.description).length > 255
-            || !isPositiveSafeInteger(lineItem.line_total_minor)
-            || (lineItem.category_id !== null && !isPositiveSafeInteger(lineItem.category_id))) {
+        if (!hasAllowedAndRequiredKeys(lineItem, [
+            'id',
+            'description',
+            'role',
+            'quantity',
+            'unit_price_minor',
+            'related_line_item_id',
+            'line_total_minor',
+            'category_id',
+        ], ['id', 'description', 'line_total_minor', 'category_id']) ||
+            (lineItem.id !== null && typeof lineItem.id !== 'string') ||
+            (typeof lineItem.id === 'string' &&
+                !new RegExp(UUID_PATTERN).test(lineItem.id)) ||
+            (typeof lineItem.id === 'string' && seenIds.has(lineItem.id)) ||
+            typeof lineItem.description !== 'string' ||
+            lineItem.description.trim() === '' ||
+            Array.from(lineItem.description).length > 255 ||
+            !hasValidLineItemRole(lineItem.role ?? 'purchased_item', OWNER_LINE_ITEM_ROLES, lineItem.line_total_minor) ||
+            !hasValidPrintedContext(lineItem.quantity ?? null, lineItem.unit_price_minor ?? null) ||
+            (lineItem.related_line_item_id !== undefined &&
+                lineItem.related_line_item_id !== null &&
+                (typeof lineItem.related_line_item_id !== 'string' ||
+                    !new RegExp(UUID_PATTERN).test(lineItem.related_line_item_id))) ||
+            (lineItem.category_id !== null &&
+                !isPositiveSafeInteger(lineItem.category_id)) ||
+            (lineItem.role === 'unidentified' && lineItem.category_id !== null) ||
+            (lineItem.related_line_item_id != null &&
+                (lineItem.role === undefined ||
+                    lineItem.role === 'purchased_item' ||
+                    lineItem.role === 'unidentified'))) {
             return false;
         }
         if (typeof lineItem.id === 'string') {
             seenIds.add(lineItem.id);
         }
         return true;
+    });
+    if (!lineItemsAreValid) {
+        return false;
+    }
+    const lineItems = input.line_items;
+    const lineItemsById = new Map();
+    for (const lineItem of lineItems) {
+        if (typeof lineItem.id === 'string') {
+            lineItemsById.set(lineItem.id, lineItem);
+        }
+    }
+    return lineItems.every((lineItem) => {
+        if (lineItem.related_line_item_id == null) {
+            return true;
+        }
+        const relatedLineItem = lineItemsById.get(lineItem.related_line_item_id);
+        return (lineItem.id !== lineItem.related_line_item_id &&
+            relatedLineItem !== undefined &&
+            (relatedLineItem.role === undefined ||
+                relatedLineItem.role === 'purchased_item'));
     });
 }
 const transactionToolDefinition = {
@@ -1340,8 +1511,10 @@ const plugin = defineToolPlugin({
                 return {
                     ...transactionToolDefinition,
                     async execute(_toolCallId, params, signal) {
-                        const transactionId = params.transaction_id;
-                        if (!Number.isSafeInteger(transactionId) || Number(transactionId) < 1) {
+                        const transactionId = params
+                            .transaction_id;
+                        if (!Number.isSafeInteger(transactionId) ||
+                            Number(transactionId) < 1) {
                             throw new Error('Money Assistant Transaction identifier is invalid.');
                         }
                         return executeCapability('transaction.read', { transaction_id: Number(transactionId) }, config, toolContext, signal);
@@ -1365,17 +1538,17 @@ const plugin = defineToolPlugin({
                         const currency = input.currency;
                         const kind = input.kind;
                         const merchantDescription = input.merchant_description;
-                        if (typeof idempotencyKey !== 'string'
-                            || !new RegExp(UUID_PATTERN).test(idempotencyKey)
-                            || typeof occurredOn !== 'string'
-                            || !/^\d{4}-\d{2}-\d{2}$/.test(occurredOn)
-                            || !Number.isSafeInteger(amountMinor)
-                            || Number(amountMinor) < 1
-                            || (currency !== 'USD' && currency !== 'PEN')
-                            || (kind !== 'purchase' && kind !== 'refund')
-                            || typeof merchantDescription !== 'string'
-                            || merchantDescription.trim() === ''
-                            || merchantDescription.length > 255) {
+                        if (typeof idempotencyKey !== 'string' ||
+                            !new RegExp(UUID_PATTERN).test(idempotencyKey) ||
+                            typeof occurredOn !== 'string' ||
+                            !/^\d{4}-\d{2}-\d{2}$/.test(occurredOn) ||
+                            !Number.isSafeInteger(amountMinor) ||
+                            Number(amountMinor) < 1 ||
+                            (currency !== 'USD' && currency !== 'PEN') ||
+                            (kind !== 'purchase' && kind !== 'refund') ||
+                            typeof merchantDescription !== 'string' ||
+                            merchantDescription.trim() === '' ||
+                            merchantDescription.length > 255) {
                             throw new Error('Money Assistant manual Transaction input is invalid.');
                         }
                         return executeCapability('transaction.manual.prepare', {
@@ -1404,14 +1577,14 @@ const plugin = defineToolPlugin({
                         const pendingOperationId = input.pending_operation_id;
                         const pendingOperationRevision = input.pending_operation_revision;
                         const payloadDigest = input.payload_digest;
-                        if (typeof idempotencyKey !== 'string'
-                            || !new RegExp(UUID_PATTERN).test(idempotencyKey)
-                            || typeof pendingOperationId !== 'string'
-                            || !new RegExp(UUID_PATTERN).test(pendingOperationId)
-                            || !Number.isSafeInteger(pendingOperationRevision)
-                            || Number(pendingOperationRevision) < 1
-                            || typeof payloadDigest !== 'string'
-                            || !new RegExp(SHA256_PATTERN).test(payloadDigest)) {
+                        if (typeof idempotencyKey !== 'string' ||
+                            !new RegExp(UUID_PATTERN).test(idempotencyKey) ||
+                            typeof pendingOperationId !== 'string' ||
+                            !new RegExp(UUID_PATTERN).test(pendingOperationId) ||
+                            !Number.isSafeInteger(pendingOperationRevision) ||
+                            Number(pendingOperationRevision) < 1 ||
+                            typeof payloadDigest !== 'string' ||
+                            !new RegExp(SHA256_PATTERN).test(payloadDigest)) {
                             throw new Error('Money Assistant Confirmation Grant input is invalid.');
                         }
                         return executeCapability('transaction.manual.confirm', {
@@ -1434,9 +1607,9 @@ const plugin = defineToolPlugin({
                     ...categoryReadToolDefinition,
                     async execute(_toolCallId, params, signal) {
                         const input = params;
-                        if (!isPositiveSafeInteger(input.page)
-                            || !isPositiveSafeInteger(input.per_page)
-                            || Number(input.per_page) > 100) {
+                        if (!isPositiveSafeInteger(input.page) ||
+                            !isPositiveSafeInteger(input.per_page) ||
+                            Number(input.per_page) > 100) {
                             throw new Error('Money Assistant Category page input is invalid.');
                         }
                         return executeCapability('category.read', {
@@ -1479,14 +1652,14 @@ const plugin = defineToolPlugin({
                         const pendingOperationId = input.pending_operation_id;
                         const pendingOperationRevision = input.pending_operation_revision;
                         const payloadDigest = input.payload_digest;
-                        if (typeof idempotencyKey !== 'string'
-                            || !new RegExp(UUID_PATTERN).test(idempotencyKey)
-                            || typeof pendingOperationId !== 'string'
-                            || !new RegExp(UUID_PATTERN).test(pendingOperationId)
-                            || !Number.isSafeInteger(pendingOperationRevision)
-                            || Number(pendingOperationRevision) < 1
-                            || typeof payloadDigest !== 'string'
-                            || !new RegExp(SHA256_PATTERN).test(payloadDigest)) {
+                        if (typeof idempotencyKey !== 'string' ||
+                            !new RegExp(UUID_PATTERN).test(idempotencyKey) ||
+                            typeof pendingOperationId !== 'string' ||
+                            !new RegExp(UUID_PATTERN).test(pendingOperationId) ||
+                            !Number.isSafeInteger(pendingOperationRevision) ||
+                            Number(pendingOperationRevision) < 1 ||
+                            typeof payloadDigest !== 'string' ||
+                            !new RegExp(SHA256_PATTERN).test(payloadDigest)) {
                             throw new Error('Money Assistant Confirmation Grant input is invalid.');
                         }
                         return executeCapability('category.mutation.confirm', {
@@ -1502,8 +1675,8 @@ const plugin = defineToolPlugin({
         tool({
             ...receiptProposalToolDefinition,
             factory({ config, toolContext }) {
-                if (!isBoundOwnerInteraction(toolContext, config)
-                    || !receiptProcessingReady(config)) {
+                if (!isBoundOwnerInteraction(toolContext, config) ||
+                    !receiptProcessingReady(config)) {
                     return null;
                 }
                 return {
@@ -1550,13 +1723,13 @@ const plugin = defineToolPlugin({
                         const pendingOperationId = input.pending_operation_id;
                         const pendingOperationRevision = input.pending_operation_revision;
                         const payloadDigest = input.payload_digest;
-                        if (typeof idempotencyKey !== 'string'
-                            || !new RegExp(UUID_PATTERN).test(idempotencyKey)
-                            || typeof pendingOperationId !== 'string'
-                            || !new RegExp(UUID_PATTERN).test(pendingOperationId)
-                            || !isPositiveSafeInteger(pendingOperationRevision)
-                            || typeof payloadDigest !== 'string'
-                            || !new RegExp(SHA256_PATTERN).test(payloadDigest)) {
+                        if (typeof idempotencyKey !== 'string' ||
+                            !new RegExp(UUID_PATTERN).test(idempotencyKey) ||
+                            typeof pendingOperationId !== 'string' ||
+                            !new RegExp(UUID_PATTERN).test(pendingOperationId) ||
+                            !isPositiveSafeInteger(pendingOperationRevision) ||
+                            typeof payloadDigest !== 'string' ||
+                            !new RegExp(SHA256_PATTERN).test(payloadDigest)) {
                             throw new Error('Money Assistant Confirmation Grant input is invalid.');
                         }
                         return executeCapability('receipt.breakdown.mutation.confirm', {
@@ -1579,8 +1752,8 @@ const plugin = defineToolPlugin({
                     ...reminderReadToolDefinition,
                     async execute(_toolCallId, params, signal) {
                         const eventId = params.event_id;
-                        if (typeof eventId !== 'string'
-                            || !new RegExp(UUID_PATTERN).test(eventId)) {
+                        if (typeof eventId !== 'string' ||
+                            !new RegExp(UUID_PATTERN).test(eventId)) {
                             throw new Error('Money Assistant Reminder event identifier is invalid.');
                         }
                         return executeReminderEventCapability('reminder.read', { event_id: eventId }, eventId, config, toolContext, signal);
@@ -1621,10 +1794,10 @@ plugin.register = (api) => {
     });
     api.on('before_model_resolve', (event, context) => {
         const receiptPhoto = receiptPhotoAdmissions.freshForRun(context.runId, context.sessionKey, Math.floor(Date.now() / 1000));
-        if (receiptPhoto
-            && receiptProcessingReady(config)
-            && runtimeReceiptPolicyReady
-            && receiptEffectiveAuthReady(api.config, config.agentId, context.sessionKey)) {
+        if (receiptPhoto &&
+            receiptProcessingReady(config) &&
+            runtimeReceiptPolicyReady &&
+            receiptEffectiveAuthReady(api.config, config.agentId, context.sessionKey)) {
             return {
                 providerOverride: APPROVED_RECEIPT_PROVIDER,
                 modelOverride: 'gpt-5.6',
@@ -1662,9 +1835,10 @@ plugin.register = (api) => {
                 category: 'receipt_photo_stale',
             };
         }
-        if (receiptPhoto && (!receiptProcessingReady(config)
-            || !runtimeReceiptPolicyReady
-            || !receiptEffectiveAuthReady(api.config, config.agentId, context.sessionKey))) {
+        if (receiptPhoto &&
+            (!receiptProcessingReady(config) ||
+                !runtimeReceiptPolicyReady ||
+                !receiptEffectiveAuthReady(api.config, config.agentId, context.sessionKey))) {
             return {
                 outcome: 'block',
                 reason: 'Receipt-photo privacy policy is not confirmed.',
@@ -1686,9 +1860,9 @@ plugin.register = (api) => {
         receiptPhotoAdmissions.clearRejectedRun(event.runId);
     });
     api.on('before_agent_reply', (_event, context) => {
-        if (context.agentId === config.agentId
-            && context.sessionKey === REMINDER_HOOK_SESSION_KEY
-            && consumeAlreadyDeliveredReminder(context.sessionKey, reminderEventAdmissions, Math.floor(Date.now() / 1000))) {
+        if (context.agentId === config.agentId &&
+            context.sessionKey === REMINDER_HOOK_SESSION_KEY &&
+            consumeAlreadyDeliveredReminder(context.sessionKey, reminderEventAdmissions, Math.floor(Date.now() / 1000))) {
             return {
                 handled: true,
                 reason: 'Money Assistant Reminder event was already delivered.',
@@ -1720,10 +1894,10 @@ plugin.register = (api) => {
                 }
             }
         }
-        if (event.success !== true
-            || context.channelId !== 'telegram'
-            || context.accountId !== config.accountId
-            || context.conversationId !== config.conversationId) {
+        if (event.success !== true ||
+            context.channelId !== 'telegram' ||
+            context.accountId !== config.accountId ||
+            context.conversationId !== config.conversationId) {
             return;
         }
         const receiptAdmissions = receiptPhotoAdmissions.takePendingSourceDeletions(sessionKey);

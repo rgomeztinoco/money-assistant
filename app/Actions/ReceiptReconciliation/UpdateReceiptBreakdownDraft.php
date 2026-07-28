@@ -3,6 +3,7 @@
 namespace App\Actions\ReceiptReconciliation;
 
 use App\Exceptions\StaleReceiptBreakdownRevision;
+use App\LineItemRole;
 use App\Models\Category;
 use App\Models\ReceiptBreakdown;
 use App\Models\User;
@@ -13,8 +14,12 @@ use LogicException;
 
 final class UpdateReceiptBreakdownDraft
 {
+    public function __construct(
+        private ResolveReceiptAdjustmentCategories $resolveAdjustmentCategories,
+    ) {}
+
     /**
-     * @param  list<array{id: string|null, description: string, line_total_minor: int, category_id: int|null}>  $lineItems
+     * @param  list<array{id: string|null, description: string, role?: string, quantity?: string|null, unit_price_minor?: int|null, line_total_minor: int, category_id: int|null, related_line_item_id?: string|null}>  $lineItems
      */
     public function handle(
         User $owner,
@@ -38,7 +43,31 @@ final class UpdateReceiptBreakdownDraft
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('line_item_id');
-            $submittedIds = collect($lineItems)->pluck('id')->filter();
+            $normalizedLineItems = collect($lineItems)->map(function (array $lineItem): array {
+                $role = LineItemRole::tryFrom(
+                    $lineItem['role'] ?? LineItemRole::PurchasedItem->value,
+                );
+                $quantity = $lineItem['quantity'] ?? null;
+
+                if ($role === null
+                    || ! $role->acceptsLineTotal($lineItem['line_total_minor'])
+                    || ($quantity !== null
+                        && preg_match('/^(?=.*[1-9])\d+(?:\.\d{1,6})?$/D', $quantity) !== 1)
+                    || ($role === LineItemRole::Unidentified && $lineItem['category_id'] !== null)) {
+                    throw ValidationException::withMessages([
+                        'line_items' => 'Every Line Item must have a valid role, signed total, and review context.',
+                    ]);
+                }
+
+                return [
+                    ...$lineItem,
+                    'role' => $role,
+                    'quantity' => $quantity,
+                    'unit_price_minor' => $lineItem['unit_price_minor'] ?? null,
+                    'related_line_item_id' => $lineItem['related_line_item_id'] ?? null,
+                ];
+            });
+            $submittedIds = $normalizedLineItems->pluck('id')->filter();
 
             if ($submittedIds->duplicates()->isNotEmpty()
                 || $submittedIds->diff($currentLineItems->keys())->isNotEmpty()) {
@@ -47,11 +76,11 @@ final class UpdateReceiptBreakdownDraft
                 ]);
             }
 
-            $draft->lineItems()
-                ->whereNotIn('line_item_id', $submittedIds)
-                ->delete();
+            $normalizedLineItems = collect($this->resolveAdjustmentCategories->handle(
+                $normalizedLineItems->values()->all(),
+            ));
 
-            $categoryIds = collect($lineItems)
+            $categoryIds = $normalizedLineItems
                 ->pluck('category_id')
                 ->filter()
                 ->unique()
@@ -72,13 +101,26 @@ final class UpdateReceiptBreakdownDraft
                 ]);
             }
 
-            foreach ($lineItems as $lineItem) {
+            $draft->lineItems()
+                ->whereNotIn('line_item_id', $submittedIds)
+                ->delete();
+
+            foreach ($normalizedLineItems as $lineItem) {
+                $attributes = [
+                    'description' => $lineItem['description'],
+                    'role' => $lineItem['role'],
+                    'quantity' => $lineItem['quantity'],
+                    'unit_price_minor' => $lineItem['unit_price_minor'],
+                    'line_total_minor' => $lineItem['line_total_minor'],
+                    'category_id' => $lineItem['category_id'],
+                    'related_line_item_id' => $lineItem['related_line_item_id'],
+                    'requires_review' => $lineItem['role'] === LineItemRole::Unidentified,
+                ];
+
                 if ($lineItem['id'] === null) {
                     $draft->lineItems()->create([
                         'line_item_id' => (string) Str::uuid(),
-                        'description' => $lineItem['description'],
-                        'line_total_minor' => $lineItem['line_total_minor'],
-                        'category_id' => $lineItem['category_id'],
+                        ...$attributes,
                     ]);
 
                     continue;
@@ -90,11 +132,7 @@ final class UpdateReceiptBreakdownDraft
                     throw new LogicException('A validated Line Item could not be loaded.');
                 }
 
-                $currentLineItem->update([
-                    'description' => $lineItem['description'],
-                    'line_total_minor' => $lineItem['line_total_minor'],
-                    'category_id' => $lineItem['category_id'],
-                ]);
+                $currentLineItem->update($attributes);
             }
 
             $draft->revision++;

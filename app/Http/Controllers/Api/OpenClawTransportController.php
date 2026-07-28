@@ -368,10 +368,22 @@ final class OpenClawTransportController extends Controller
                 return response()->json(['message' => 'Receipt Proposal is invalid.'], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
-            $proposedLineItems[] = [
+            $proposedLineItem = [
                 'description' => $lineItem['description'],
                 'line_total_minor' => $lineItem['line_total_minor'],
             ];
+
+            if ($input['contract_version'] === 2) {
+                $proposedLineItem = [
+                    'description' => $lineItem['description'],
+                    'role' => $lineItem['role'],
+                    'quantity' => $lineItem['quantity'],
+                    'unit_price_minor' => $lineItem['unit_price_minor'],
+                    'line_total_minor' => $lineItem['line_total_minor'],
+                ];
+            }
+
+            $proposedLineItems[] = $proposedLineItem;
         }
 
         try {

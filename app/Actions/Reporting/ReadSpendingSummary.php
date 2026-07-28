@@ -253,13 +253,13 @@ final class ReadSpendingSummary
 
         foreach ($lineItems as $lineItem) {
             $product = ExactInteger::from($lineItem->line_total_minor)->multiply($convertedAmount);
-            $amount = $product->divide($transactionAmount);
+            $amount = $product->floorDivide($transactionAmount);
             $allocatedTotal = $allocatedTotal->add($amount);
             $allocations[] = [
                 'line_item_id' => $lineItem->line_item_id,
                 'category_keys' => $this->categoryKeys($lineItem->category_id, $categoriesById),
                 'amount' => $amount,
-                'remainder' => $product->remainder($transactionAmount),
+                'remainder' => $product->subtract($amount->multiply($transactionAmount)),
             ];
         }
 

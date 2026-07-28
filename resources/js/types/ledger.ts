@@ -80,15 +80,28 @@ export type DuplicateRelationship = {
     second_transaction: DuplicateTransaction;
 };
 
+export type ReceiptLineItemRole =
+    | 'purchased_item'
+    | 'tax'
+    | 'discount'
+    | 'tip'
+    | 'fee'
+    | 'rounding'
+    | 'other_adjustment'
+    | 'unidentified';
+
 export type ReceiptLineItem = {
     id: string;
     description: string;
-    role: 'purchased_item';
+    role: ReceiptLineItemRole;
+    quantity: string | null;
+    unit_price_minor: string | null;
     line_total_minor: string;
     category: {
         id: number;
         name: string;
     } | null;
+    related_line_item_id: string | null;
     requires_review: boolean;
 };
 

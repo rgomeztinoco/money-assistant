@@ -336,9 +336,20 @@ test('OpenClaw edits and confirms the same expected Receipt Breakdown revision a
             'category_id' => $category->id,
         ],
         [
+            'id' => null,
+            'description' => 'Item tax',
+            'role' => 'tax',
+            'line_total_minor' => 100,
+            'category_id' => null,
+            'related_line_item_id' => $firstLineItem->line_item_id,
+        ],
+        [
             'id' => $secondLineItem->line_item_id,
-            'description' => 'Fruit',
-            'line_total_minor' => 1500,
+            'description' => 'Receipt detail unavailable',
+            'role' => 'unidentified',
+            'quantity' => null,
+            'unit_price_minor' => null,
+            'line_total_minor' => 1400,
             'category_id' => null,
         ],
     ];
@@ -365,7 +376,7 @@ test('OpenClaw edits and confirms the same expected Receipt Breakdown revision a
         ->assertSuccessful()
         ->assertJsonPath(
             'pending_operation.effect_summary',
-            "Replace draft Receipt Breakdown #{$draft->id} at revision 1 with 2 purchased items totaling 2500 minor units.",
+            "Replace draft Receipt Breakdown #{$draft->id} at revision 1 with 3 Line Items totaling 2500 minor units.",
         )
         ->json('pending_operation');
 
@@ -439,6 +450,13 @@ test('OpenClaw edits and confirms the same expected Receipt Breakdown revision a
         ->assertJsonPath('mutation.operation', 'confirm_draft')
         ->assertJsonPath('mutation.status', 'confirmed')
         ->assertJsonPath('mutation.revision', 3);
+
+    expect($draft->refresh()->lineItems()->where('role', 'unidentified')->sole())
+        ->category_id->toBeNull()
+        ->requires_review->toBeTrue();
+    expect($draft->lineItems()->where('role', 'tax')->sole())
+        ->related_line_item_id->toBe($firstLineItem->line_item_id)
+        ->category_id->toBe($category->id);
 
     $readPayload = ($this->validPayload)($transaction->id);
     $readPayload['interaction']['message_id'] = 'telegram-owner-receipt-read-confirmed';

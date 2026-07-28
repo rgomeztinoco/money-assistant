@@ -5,6 +5,7 @@ namespace App\Actions\ReceiptReconciliation;
 use App\ExactInteger;
 use App\Exceptions\IdempotencyKeyConflict;
 use App\Exceptions\StaleReceiptBreakdownRevision;
+use App\LineItemRole;
 use App\Models\Category;
 use App\Models\OpenClawPendingOperation;
 use App\Models\ReceiptBreakdown;
@@ -18,6 +19,10 @@ use InvalidArgumentException;
 final class PrepareOpenClawReceiptBreakdown
 {
     private const string CAPABILITY = 'receipt.breakdown.mutation.prepare';
+
+    public function __construct(
+        private ResolveReceiptAdjustmentCategories $resolveAdjustmentCategories,
+    ) {}
 
     /** @param array<string, mixed> $input */
     public function handle(
@@ -177,16 +182,37 @@ final class PrepareOpenClawReceiptBreakdown
             if (! is_array($lineItem)
                 || (! is_string($lineItem['id'] ?? null) && ($lineItem['id'] ?? null) !== null)
                 || ! is_string($lineItem['description'] ?? null)
+                || (! is_string($lineItem['role'] ?? null) && array_key_exists('role', $lineItem))
+                || (! is_string($lineItem['quantity'] ?? null) && ($lineItem['quantity'] ?? null) !== null)
+                || (! is_string($lineItem['related_line_item_id'] ?? null)
+                    && ($lineItem['related_line_item_id'] ?? null) !== null)
+                || (! is_int($lineItem['unit_price_minor'] ?? null)
+                    && ($lineItem['unit_price_minor'] ?? null) !== null)
                 || ! is_int($lineItem['line_total_minor'] ?? null)
                 || (! is_int($lineItem['category_id'] ?? null) && ($lineItem['category_id'] ?? null) !== null)) {
+                throw new InvalidArgumentException('Receipt Breakdown Line Item input is invalid.');
+            }
+
+            $role = LineItemRole::tryFrom($lineItem['role'] ?? LineItemRole::PurchasedItem->value);
+            $quantity = $lineItem['quantity'] ?? null;
+
+            if ($role === null
+                || ! $role->acceptsLineTotal($lineItem['line_total_minor'])
+                || ($quantity !== null
+                    && preg_match('/^(?=.*[1-9])\d+(?:\.\d{1,6})?$/D', $quantity) !== 1)
+                || ($role === LineItemRole::Unidentified && $lineItem['category_id'] !== null)) {
                 throw new InvalidArgumentException('Receipt Breakdown Line Item input is invalid.');
             }
 
             $normalizedLineItems[] = [
                 'id' => $lineItem['id'] ?? null,
                 'description' => $lineItem['description'],
+                'role' => $role->value,
+                'quantity' => $quantity,
+                'unit_price_minor' => $lineItem['unit_price_minor'] ?? null,
                 'line_total_minor' => $lineItem['line_total_minor'],
                 'category_id' => $lineItem['category_id'],
+                'related_line_item_id' => $lineItem['related_line_item_id'] ?? null,
             ];
         }
 
@@ -198,6 +224,8 @@ final class PrepareOpenClawReceiptBreakdown
                 'line_items' => 'Every retained Line Item identity must belong to this draft and appear once.',
             ]);
         }
+
+        $normalizedLineItems = $this->resolveAdjustmentCategories->handle($normalizedLineItems);
 
         $categoryIds = collect($normalizedLineItems)->pluck('category_id')->filter()->unique()->values();
         $categories = Category::query()
@@ -231,7 +259,7 @@ final class PrepareOpenClawReceiptBreakdown
     {
         if ($payload['operation'] === 'confirm_draft') {
             return sprintf(
-                'Confirm draft Receipt Breakdown #%d at revision %d only if its purchased-item total exactly reconciles.',
+                'Confirm draft Receipt Breakdown #%d at revision %d only if its signed Line Item total exactly reconciles.',
                 $payload['receipt_breakdown_id'],
                 $payload['expected_revision'],
             );
@@ -244,7 +272,7 @@ final class PrepareOpenClawReceiptBreakdown
         }
 
         return sprintf(
-            'Replace draft Receipt Breakdown #%d at revision %d with %d purchased items totaling %s minor units.',
+            'Replace draft Receipt Breakdown #%d at revision %d with %d Line Items totaling %s minor units.',
             $payload['receipt_breakdown_id'],
             $payload['expected_revision'],
             count($payload['line_items']),

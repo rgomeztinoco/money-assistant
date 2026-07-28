@@ -7,7 +7,7 @@ use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 
 /**
- * @phpstan-type ReceiptLineItemData array{id: string, description: string, role: string, line_total_minor: string, category: array{id: int, name: string}|null, requires_review: bool}
+ * @phpstan-type ReceiptLineItemData array{id: string, description: string, role: string, quantity: string|null, unit_price_minor: string|null, line_total_minor: string, category: array{id: int, name: string}|null, related_line_item_id: string|null, requires_review: bool}
  * @phpstan-type ReceiptBreakdownData array{id: int, revision: int, status: string, total_minor: string, delta_minor: string, confirmed_at: string|null, line_items: list<ReceiptLineItemData>}
  * @phpstan-type ReceiptBreakdownState array{draft: ReceiptBreakdownData|null, confirmed: ReceiptBreakdownData|null}
  */
@@ -40,11 +40,16 @@ final class ReadReceiptBreakdownState
             $lineItems[] = [
                 'id' => $lineItem->line_item_id,
                 'description' => $lineItem->description,
-                'role' => $lineItem->role,
+                'role' => $lineItem->role->value,
+                'quantity' => $lineItem->quantity,
+                'unit_price_minor' => $lineItem->unit_price_minor === null
+                    ? null
+                    : (string) $lineItem->unit_price_minor,
                 'line_total_minor' => (string) $lineItem->line_total_minor,
                 'category' => $lineItem->category === null
                     ? null
                     : ['id' => $lineItem->category->id, 'name' => $lineItem->category->name],
+                'related_line_item_id' => $lineItem->related_line_item_id,
                 'requires_review' => $lineItem->requires_review,
             ];
         }

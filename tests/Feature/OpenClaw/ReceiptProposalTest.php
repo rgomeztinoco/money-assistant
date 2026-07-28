@@ -125,6 +125,67 @@ test('an image-free Receipt Proposal from a distinct owner photo is accepted wit
         ->and($auditEvent->domain_action)->toBe('receipt_proposal.submit');
 });
 
+test('the v2 Receipt Proposal contract accepts signed adjustments and printed item context', function () {
+    User::factory()->create();
+    $payload = ($this->validReceiptProposal)();
+    $payload['input']['contract_version'] = 2;
+    $payload['input']['transaction']['amount_minor'] = 2600;
+    $payload['input']['line_items'] = [
+        [
+            'description' => 'Coffee beans',
+            'role' => 'purchased_item',
+            'quantity' => '2',
+            'unit_price_minor' => 1250,
+            'line_total_minor' => 2500,
+        ],
+        [
+            'description' => 'Tax',
+            'role' => 'tax',
+            'quantity' => null,
+            'unit_price_minor' => null,
+            'line_total_minor' => 300,
+        ],
+        [
+            'description' => 'Printed discount',
+            'role' => 'discount',
+            'quantity' => null,
+            'unit_price_minor' => null,
+            'line_total_minor' => -200,
+        ],
+    ];
+
+    ($this->callOpenClaw)($payload)->assertSuccessful();
+
+    expect(ReceiptProposal::query()->sole()->proposed_line_items)
+        ->toEqual($payload['input']['line_items']);
+});
+
+test('Receipt Proposals reject non-contributing rows and owner-only Unidentified lines', function (
+    string $role,
+) {
+    User::factory()->create();
+    $payload = ($this->validReceiptProposal)();
+    $payload['input']['contract_version'] = 2;
+    $payload['input']['line_items'] = [[
+        'description' => 'Printed receipt row',
+        'role' => $role,
+        'quantity' => null,
+        'unit_price_minor' => null,
+        'line_total_minor' => 2590,
+    ]];
+
+    ($this->callOpenClaw)($payload)->assertUnprocessable();
+
+    expect(ReceiptProposal::query()->count())->toBe(0);
+})->with([
+    'subtotal' => 'subtotal',
+    'total' => 'total',
+    'tendered' => 'tendered',
+    'payment method' => 'payment_method',
+    'change' => 'change',
+    'Unidentified' => 'unidentified',
+]);
+
 test('rolling back the proposal audit contract removes unsupported append-only events', function () {
     User::factory()->create();
 
