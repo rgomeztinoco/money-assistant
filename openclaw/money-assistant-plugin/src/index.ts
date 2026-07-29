@@ -1501,10 +1501,20 @@ export function isBoundReminderEventInteraction(
 ): boolean {
   return (
     toolContext.agentId === config.agentId &&
-    toolContext.sessionKey === REMINDER_HOOK_SESSION_KEY &&
+    isReminderHookSessionKey(toolContext.sessionKey, config.agentId) &&
     toolContext.deliveryContext?.channel === 'telegram' &&
     toolContext.deliveryContext.accountId === config.accountId &&
     toolContext.deliveryContext.to === config.conversationId
+  );
+}
+
+function isReminderHookSessionKey(
+  sessionKey: string | undefined,
+  agentId: string,
+): boolean {
+  return (
+    sessionKey === REMINDER_HOOK_SESSION_KEY ||
+    sessionKey === `agent:${agentId}:${REMINDER_HOOK_SESSION_KEY}`
   );
 }
 
@@ -1516,7 +1526,7 @@ export function admittedReminderEvent(
 ): AdmittedReminderEvent | null {
   if (
     context.agentId !== config.agentId ||
-    context.sessionKey !== REMINDER_HOOK_SESSION_KEY
+    !isReminderHookSessionKey(context.sessionKey, config.agentId)
   ) {
     return null;
   }
@@ -1544,7 +1554,7 @@ export function isBoundReminderChannelDelivery(
 
   return (
     event.success === true &&
-    sessionKey === REMINDER_HOOK_SESSION_KEY &&
+    isReminderHookSessionKey(sessionKey, config.agentId) &&
     context.channelId === 'telegram' &&
     context.accountId === config.accountId &&
     context.conversationId === config.conversationId &&
@@ -1562,7 +1572,7 @@ export function shouldSuppressReminderDelivery(
   const sessionKey = context.sessionKey;
 
   if (
-    sessionKey !== REMINDER_HOOK_SESSION_KEY ||
+    !isReminderHookSessionKey(sessionKey, config.agentId) ||
     context.channelId !== 'telegram' ||
     context.accountId !== config.accountId ||
     context.conversationId !== config.conversationId ||
@@ -2999,7 +3009,7 @@ plugin.register = (api): void => {
   api.on('before_agent_reply', (_event, context) => {
     if (
       context.agentId === config.agentId &&
-      context.sessionKey === REMINDER_HOOK_SESSION_KEY &&
+      isReminderHookSessionKey(context.sessionKey, config.agentId) &&
       consumeAlreadyDeliveredReminder(
         context.sessionKey,
         reminderEventAdmissions,

@@ -836,6 +836,33 @@ test('the mapped hook binds Reminder events to one fixed unattended session and 
   assert.equal(isBoundReminderEventInteraction(context, config), true);
   assert.equal(
     isBoundReminderEventInteraction(
+      {
+        ...context,
+        sessionKey:
+          'agent:money-assistant:hook:money-assistant:reminders',
+      },
+      config,
+    ),
+    true,
+  );
+  assert.deepEqual(
+    admittedReminderEvent(
+      'Fetch Reminder event 01983d79-a780-72f0-bb34-9b4f3f0cf390 that occurred at 2026-07-26T15:05:00Z with money_assistant_reminder_read.',
+      {
+        agentId: 'money-assistant',
+        sessionKey:
+          'agent:money-assistant:hook:money-assistant:reminders',
+      },
+      config,
+      1_785_078_301,
+    ),
+    {
+      eventId: '01983d79-a780-72f0-bb34-9b4f3f0cf390',
+      occurredAtSeconds: 1_785_078_301,
+    },
+  );
+  assert.equal(
+    isBoundReminderEventInteraction(
       { ...context, sessionKey: 'caller-selected' },
       config,
     ),
@@ -858,6 +885,23 @@ test('the mapped hook binds Reminder events to one fixed unattended session and 
         to: 'telegram-owner-123',
         success: true,
         sessionKey: 'hook:money-assistant:reminders',
+      },
+      {
+        channelId: 'telegram',
+        accountId: 'money-assistant-owner',
+        conversationId: 'telegram-owner-123',
+      },
+      config,
+    ),
+    true,
+  );
+  assert.equal(
+    isBoundReminderChannelDelivery(
+      {
+        to: 'telegram-owner-123',
+        success: true,
+        sessionKey:
+          'agent:money-assistant:hook:money-assistant:reminders',
       },
       {
         channelId: 'telegram',

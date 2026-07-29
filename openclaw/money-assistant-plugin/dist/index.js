@@ -915,14 +915,18 @@ export function isBoundOwnerInteraction(toolContext, config) {
 }
 export function isBoundReminderEventInteraction(toolContext, config) {
     return (toolContext.agentId === config.agentId &&
-        toolContext.sessionKey === REMINDER_HOOK_SESSION_KEY &&
+        isReminderHookSessionKey(toolContext.sessionKey, config.agentId) &&
         toolContext.deliveryContext?.channel === 'telegram' &&
         toolContext.deliveryContext.accountId === config.accountId &&
         toolContext.deliveryContext.to === config.conversationId);
 }
+function isReminderHookSessionKey(sessionKey, agentId) {
+    return (sessionKey === REMINDER_HOOK_SESSION_KEY ||
+        sessionKey === `agent:${agentId}:${REMINDER_HOOK_SESSION_KEY}`);
+}
 export function admittedReminderEvent(prompt, context, config, nowSeconds) {
     if (context.agentId !== config.agentId ||
-        context.sessionKey !== REMINDER_HOOK_SESSION_KEY) {
+        !isReminderHookSessionKey(context.sessionKey, config.agentId)) {
         return null;
     }
     const match = prompt.match(/Fetch Reminder event ([0-9a-f-]{36}) that occurred at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z with money_assistant_reminder_read/);
@@ -937,7 +941,7 @@ export function admittedReminderEvent(prompt, context, config, nowSeconds) {
 export function isBoundReminderChannelDelivery(event, context, config) {
     const sessionKey = event.sessionKey ?? context.sessionKey;
     return (event.success === true &&
-        sessionKey === REMINDER_HOOK_SESSION_KEY &&
+        isReminderHookSessionKey(sessionKey, config.agentId) &&
         context.channelId === 'telegram' &&
         context.accountId === config.accountId &&
         context.conversationId === config.conversationId &&
@@ -945,7 +949,7 @@ export function isBoundReminderChannelDelivery(event, context, config) {
 }
 export function shouldSuppressReminderDelivery(event, context, config, admissions, nowSeconds) {
     const sessionKey = context.sessionKey;
-    if (sessionKey !== REMINDER_HOOK_SESSION_KEY ||
+    if (!isReminderHookSessionKey(sessionKey, config.agentId) ||
         context.channelId !== 'telegram' ||
         context.accountId !== config.accountId ||
         context.conversationId !== config.conversationId ||
@@ -1861,7 +1865,7 @@ plugin.register = (api) => {
     });
     api.on('before_agent_reply', (_event, context) => {
         if (context.agentId === config.agentId &&
-            context.sessionKey === REMINDER_HOOK_SESSION_KEY &&
+            isReminderHookSessionKey(context.sessionKey, config.agentId) &&
             consumeAlreadyDeliveredReminder(context.sessionKey, reminderEventAdmissions, Math.floor(Date.now() / 1000))) {
             return {
                 handled: true,
