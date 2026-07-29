@@ -223,7 +223,7 @@ class ClassifyTransactionWithAi
                     validationContextRevision: $validationContext->revision,
                 );
             $outcome = match (true) {
-                $proposalIsMissing => AiClassificationOutcome::MissingCategory,
+                $proposalIsMissing && $trustContextIsCurrent => AiClassificationOutcome::MissingCategory,
                 $category === null => AiClassificationOutcome::InvalidCategory,
                 $trustGateIsOpen => AiClassificationOutcome::High,
                 $result->confidence >= 60 => AiClassificationOutcome::Medium,

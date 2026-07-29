@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Categorization\ClassifyTransactionWithAi;
+use App\Actions\Categorization\UpdateCategory;
 use App\AiCategoryProposalResult;
 use App\AiClassificationInput;
 use App\AiClassificationOutcome;
@@ -145,6 +146,64 @@ test('proposal confirmation is transaction scoped and rejects stale state withou
     expect(Category::query()->where('name', 'Bakeries')->exists())->toBeFalse()
         ->and($transaction->fresh()->category_id)->toBeNull()
         ->and($proposal->fresh()->confirmed_at)->toBeNull();
+});
+
+test('a proposal based on taxonomy guidance that changed in flight is not persisted', function () {
+    $owner = User::factory()->create();
+    $parent = Category::factory()->for($owner, 'owner')->create([
+        'name' => 'Food',
+        'description' => 'Original guidance.',
+    ]);
+    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+    $classificationRequest = AiClassificationRequest::factory()
+        ->for($owner, 'owner')
+        ->for($transaction)
+        ->create();
+
+    app()->instance(AiClassifier::class, new class($owner, $parent) implements AiClassifier
+    {
+        public function __construct(
+            private User $owner,
+            private Category $parent,
+        ) {}
+
+        public function version(): string
+        {
+            return 'classifier-2026-07';
+        }
+
+        public function classify(AiClassificationInput $input): AiClassificationResult
+        {
+            app(UpdateCategory::class)->handle(
+                owner: $this->owner,
+                categoryId: $this->parent->id,
+                expectedRevision: $this->parent->revision,
+                name: $this->parent->name,
+                parentId: null,
+                description: 'Current guidance now covers bakeries.',
+                examples: [],
+            );
+
+            return new AiClassificationResult(
+                categoryPath: null,
+                confidence: 91,
+                explanation: 'This proposal used stale guidance.',
+                categoryProposal: new AiCategoryProposalResult(
+                    name: 'Bakeries',
+                    parentCategoryPath: $this->parent->name,
+                    description: 'Bread and pastries.',
+                    examples: [],
+                ),
+            );
+        }
+    });
+
+    app(ClassifyTransactionWithAi::class)->handle($classificationRequest->id);
+
+    expect(AiCategoryProposal::query()->doesntExist())->toBeTrue()
+        ->and(CategoryAssignment::query()->sole()->ai_outcome)
+        ->toBe(AiClassificationOutcome::InvalidCategory)
+        ->and($transaction->fresh()->category_id)->toBeNull();
 });
 
 function bindMissingCategoryProposal(Category $parent): void
