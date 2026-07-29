@@ -1,12 +1,18 @@
 <?php
 
 use App\Actions\Ledger\MarkSuspectedDuplicate;
+use App\CategoryAssignmentProvenance;
+use App\Models\Category;
+use App\Models\LineItem;
+use App\Models\ReceiptBreakdown;
 use App\Models\SpendingNotificationReference;
 use App\Models\SuspectedDuplicate;
+use App\Models\SuspectedDuplicateReceiptBreakdownMove;
 use App\Models\SuspectedDuplicateResolution;
 use App\Models\SuspectedDuplicateSourceMove;
 use App\Models\Transaction;
 use App\Models\User;
+use App\ReceiptBreakdownSetFingerprint;
 use App\SourceReferenceSetFingerprint;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +24,13 @@ function suspectedDuplicateSourceReferenceFingerprint(Transaction $transaction):
         $transaction->spendingNotificationReferences()
             ->orderBy('id')
             ->pluck('id'),
+    );
+}
+
+function suspectedDuplicateReceiptBreakdownFingerprint(Transaction $transaction): string
+{
+    return ReceiptBreakdownSetFingerprint::fromBreakdowns(
+        $transaction->receiptBreakdowns()->orderBy('id')->get(),
     );
 }
 
@@ -38,6 +51,8 @@ function suspectedDuplicateResolutionPayload(
         'expected_second_transaction_revision' => $suspectedDuplicate->secondTransaction->revision,
         'expected_first_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($suspectedDuplicate->firstTransaction),
         'expected_second_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($suspectedDuplicate->secondTransaction),
+        'expected_first_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($suspectedDuplicate->firstTransaction),
+        'expected_second_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($suspectedDuplicate->secondTransaction),
         'idempotency_key' => $idempotencyKey,
     ];
 }
@@ -140,6 +155,8 @@ test('the owner can choose either compatible Transaction as survivor and preserv
             'expected_second_transaction_revision' => 1,
             'expected_first_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($firstTransaction),
             'expected_second_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($secondTransaction),
+            'expected_first_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($firstTransaction),
+            'expected_second_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($secondTransaction),
             'idempotency_key' => '78b252e5-fd6f-4f45-a531-edc57a700ae7',
         ])
         ->assertSessionHasNoErrors()
@@ -200,6 +217,8 @@ test('repeated or stale duplicate resolutions cannot move evidence or change spe
         'expected_second_transaction_revision' => 1,
         'expected_first_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($firstTransaction),
         'expected_second_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($secondTransaction),
+        'expected_first_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($firstTransaction),
+        'expected_second_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($secondTransaction),
         'idempotency_key' => '23979433-90e5-4fb4-8214-234988eb9aac',
     ];
     $this->actingAs($owner);
@@ -259,6 +278,8 @@ test('changed reuse of a duplicate resolution idempotency key is rejected', func
         'expected_second_transaction_revision' => 1,
         'expected_first_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($firstTransaction),
         'expected_second_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($secondTransaction),
+        'expected_first_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($firstTransaction),
+        'expected_second_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($secondTransaction),
         'idempotency_key' => '4de328aa-f7f7-44ec-89df-d70bc2c8514f',
     ];
     $this->actingAs($owner)
@@ -312,6 +333,8 @@ test('the owner can reopen a resolved pair and restore only the source reference
             'expected_second_transaction_revision' => 1,
             'expected_first_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($firstTransaction),
             'expected_second_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($secondTransaction),
+            'expected_first_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($firstTransaction),
+            'expected_second_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($secondTransaction),
             'idempotency_key' => '869cf416-8f57-4639-b6f5-a926b36ac204',
         ])
         ->assertSessionHasNoErrors();
@@ -375,6 +398,179 @@ test('the owner can reopen a resolved pair and restore only the source reference
         );
 });
 
+test('duplicate resolution moves a compatible Receipt Breakdown whole and reopening restores it', function () {
+    $owner = User::factory()->create();
+    $survivorCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
+    $lineItemCategory = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
+    [$survivor, $transactionToVoid] = Transaction::factory()
+        ->count(2)
+        ->for($owner, 'owner')
+        ->purchase()
+        ->pen()
+        ->create([
+            'amount_minor' => 4_000,
+            'category_id' => $survivorCategory->id,
+            'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+        ]);
+    $breakdown = ReceiptBreakdown::factory()
+        ->recycle($owner)
+        ->for($transactionToVoid)
+        ->create();
+    $lineItem = LineItem::factory()->for($breakdown)->create([
+        'category_id' => $lineItemCategory->id,
+        'line_total_minor' => 4_000,
+    ]);
+    $suspectedDuplicate = app(MarkSuspectedDuplicate::class)->handle(
+        owner: $owner,
+        firstTransaction: $survivor,
+        secondTransaction: $transactionToVoid,
+    );
+    $this->actingAs($owner)
+        ->post(
+            route('suspected_duplicates.resolution.store', $suspectedDuplicate),
+            suspectedDuplicateResolutionPayload(
+                $suspectedDuplicate,
+                $survivor,
+                '27fab0c1-5e9c-4751-b351-6c34f51d4225',
+            ),
+        )
+        ->assertSessionHasNoErrors();
+
+    expect($breakdown->refresh()->transaction_id)->toBe($survivor->id)
+        ->and($lineItem->refresh()->receipt_breakdown_id)->toBe($breakdown->id)
+        ->and(SuspectedDuplicateReceiptBreakdownMove::query()->count())->toBe(1);
+
+    $this->get(route('transactions.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('totals.PEN', '4000')
+            ->where('category_totals.0.category.name', 'Groceries')
+            ->where('category_totals.0.totals.PEN', '4000')
+            ->has('transactions', 1));
+
+    $this->delete(
+        route('suspected_duplicates.resolution.destroy', $suspectedDuplicate),
+        [
+            'expected_suspected_duplicate_revision' => 2,
+            'expected_first_transaction_revision' => 2,
+            'expected_second_transaction_revision' => 2,
+            'idempotency_key' => '642828bb-3d7a-4db4-ae74-f1334bfbf110',
+        ],
+    )->assertSessionHasNoErrors();
+
+    expect($breakdown->refresh()->transaction_id)->toBe($transactionToVoid->id)
+        ->and($lineItem->refresh()->receipt_breakdown_id)->toBe($breakdown->id);
+
+    $this->get(route('transactions.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('totals.PEN', '8000')
+            ->has('transactions', 2));
+});
+
+test('duplicate resolution rejects conflicting draft states without merging Line Items', function () {
+    $owner = User::factory()->create();
+    [$survivor, $transactionToVoid] = Transaction::factory()
+        ->count(2)
+        ->for($owner, 'owner')
+        ->purchase()
+        ->pen()
+        ->create(['amount_minor' => 4_000]);
+    $survivorDraft = ReceiptBreakdown::factory()
+        ->recycle($owner)
+        ->for($survivor)
+        ->draft()
+        ->create();
+    $voidedDraft = ReceiptBreakdown::factory()
+        ->recycle($owner)
+        ->for($transactionToVoid)
+        ->draft()
+        ->create();
+    $survivorItem = LineItem::factory()->for($survivorDraft)->create([
+        'description' => 'Survivor work',
+        'line_total_minor' => 4_000,
+    ]);
+    $voidedItem = LineItem::factory()->for($voidedDraft)->create([
+        'description' => 'Other work',
+        'line_total_minor' => 4_000,
+    ]);
+    $suspectedDuplicate = app(MarkSuspectedDuplicate::class)->handle(
+        owner: $owner,
+        firstTransaction: $survivor,
+        secondTransaction: $transactionToVoid,
+    );
+
+    $this->actingAs($owner)
+        ->from(route('review_queue.index'))
+        ->post(
+            route('suspected_duplicates.resolution.store', $suspectedDuplicate),
+            suspectedDuplicateResolutionPayload(
+                $suspectedDuplicate,
+                $survivor,
+                '376ca064-7388-462a-955b-30535500a740',
+            ),
+        )
+        ->assertRedirect(route('review_queue.index'))
+        ->assertSessionHasErrors('suspected_duplicate_resolution');
+
+    expect($survivor->refresh()->voided_at)->toBeNull()
+        ->and($transactionToVoid->refresh()->voided_at)->toBeNull()
+        ->and($survivorDraft->refresh()->transaction_id)->toBe($survivor->id)
+        ->and($voidedDraft->refresh()->transaction_id)->toBe($transactionToVoid->id)
+        ->and($survivorItem->refresh()->description)->toBe('Survivor work')
+        ->and($voidedItem->refresh()->description)->toBe('Other work')
+        ->and(SuspectedDuplicateReceiptBreakdownMove::query()->count())->toBe(0);
+});
+
+test('reopening duplicate resolution cannot overwrite changes to a moved Receipt Breakdown', function () {
+    $owner = User::factory()->create();
+    [$survivor, $transactionToVoid] = Transaction::factory()
+        ->count(2)
+        ->for($owner, 'owner')
+        ->purchase()
+        ->pen()
+        ->create(['amount_minor' => 4_000]);
+    $draft = ReceiptBreakdown::factory()
+        ->recycle($owner)
+        ->for($transactionToVoid)
+        ->draft()
+        ->create();
+    LineItem::factory()->for($draft)->create(['line_total_minor' => 4_000]);
+    $suspectedDuplicate = app(MarkSuspectedDuplicate::class)->handle(
+        owner: $owner,
+        firstTransaction: $survivor,
+        secondTransaction: $transactionToVoid,
+    );
+    $this->actingAs($owner)
+        ->post(
+            route('suspected_duplicates.resolution.store', $suspectedDuplicate),
+            suspectedDuplicateResolutionPayload(
+                $suspectedDuplicate,
+                $survivor,
+                '9bf82fb1-bbb8-4bf8-9098-2cdfa720b381',
+            ),
+        )
+        ->assertSessionHasNoErrors();
+    $draft->update(['revision' => 2]);
+
+    $this->from(route('transactions.index'))
+        ->delete(
+            route('suspected_duplicates.resolution.destroy', $suspectedDuplicate),
+            [
+                'expected_suspected_duplicate_revision' => 2,
+                'expected_first_transaction_revision' => 2,
+                'expected_second_transaction_revision' => 2,
+                'idempotency_key' => 'a11b6d40-1aa6-488a-95df-5d94daec7adf',
+            ],
+        )
+        ->assertRedirect(route('transactions.index'))
+        ->assertSessionHasErrors('suspected_duplicate_resolution');
+
+    expect($draft->refresh()->transaction_id)->toBe($survivor->id)
+        ->and($draft->revision)->toBe(2)
+        ->and($survivor->refresh()->voided_at)->toBeNull()
+        ->and($transactionToVoid->refresh()->voided_at)->not->toBeNull()
+        ->and($suspectedDuplicate->refresh()->resolved_at)->not->toBeNull();
+});
+
 test('incompatible Transactions cannot be resolved as duplicates', function () {
     $owner = User::factory()->create();
     $firstTransaction = Transaction::factory()
@@ -406,6 +602,8 @@ test('incompatible Transactions cannot be resolved as duplicates', function () {
             'expected_second_transaction_revision' => 1,
             'expected_first_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($firstTransaction),
             'expected_second_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($secondTransaction),
+            'expected_first_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($firstTransaction),
+            'expected_second_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($secondTransaction),
             'idempotency_key' => '3345406c-e8b1-483a-b68c-84fe1dd0b864',
         ])
         ->assertRedirect(route('review_queue.index'))
@@ -445,6 +643,8 @@ test('stale or unauthorized duplicate resolution requests leave both records and
         'expected_second_transaction_revision' => 1,
         'expected_first_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($firstTransaction),
         'expected_second_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($secondTransaction),
+        'expected_first_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($firstTransaction),
+        'expected_second_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($secondTransaction),
         'idempotency_key' => '7df38684-dc5e-4992-a9a2-54d6bcff6275',
     ];
 
@@ -500,6 +700,8 @@ test('source reference changes invalidate the reviewed duplicate resolution effe
         'expected_second_transaction_revision' => 1,
         'expected_first_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($firstTransaction),
         'expected_second_source_reference_fingerprint' => suspectedDuplicateSourceReferenceFingerprint($secondTransaction),
+        'expected_first_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($firstTransaction),
+        'expected_second_receipt_breakdown_fingerprint' => suspectedDuplicateReceiptBreakdownFingerprint($secondTransaction),
         'idempotency_key' => '918c6397-d325-4494-9cad-512a299a791d',
     ];
     $newSourceReference = SpendingNotificationReference::factory()
@@ -524,6 +726,47 @@ test('source reference changes invalidate the reviewed duplicate resolution effe
         ->and($suspectedDuplicate->refresh()->revision)->toBe(1)
         ->and(SuspectedDuplicateResolution::query()->count())->toBe(0)
         ->and(SuspectedDuplicateSourceMove::query()->count())->toBe(0);
+});
+
+test('Receipt Breakdown changes invalidate the reviewed duplicate resolution effect', function () {
+    $owner = User::factory()->create();
+    [$firstTransaction, $secondTransaction] = Transaction::factory()
+        ->count(2)
+        ->for($owner, 'owner')
+        ->purchase()
+        ->pen()
+        ->create(['amount_minor' => 3_300]);
+    $suspectedDuplicate = app(MarkSuspectedDuplicate::class)->handle(
+        owner: $owner,
+        firstTransaction: $firstTransaction,
+        secondTransaction: $secondTransaction,
+    );
+    $reviewedPayload = suspectedDuplicateResolutionPayload(
+        $suspectedDuplicate,
+        $firstTransaction,
+        'd3217948-c26a-45c6-9a9c-1f5ff8d7864e',
+    );
+    $newerDraft = ReceiptBreakdown::factory()
+        ->recycle($owner)
+        ->for($secondTransaction)
+        ->draft()
+        ->create();
+    LineItem::factory()->for($newerDraft)->create(['line_total_minor' => 3_300]);
+
+    $this->actingAs($owner)
+        ->from(route('review_queue.index'))
+        ->post(
+            route('suspected_duplicates.resolution.store', $suspectedDuplicate),
+            $reviewedPayload,
+        )
+        ->assertRedirect(route('review_queue.index'))
+        ->assertSessionHasErrors('suspected_duplicate_resolution');
+
+    expect($firstTransaction->refresh()->voided_at)->toBeNull()
+        ->and($secondTransaction->refresh()->voided_at)->toBeNull()
+        ->and($newerDraft->refresh()->transaction_id)->toBe($secondTransaction->id)
+        ->and($suspectedDuplicate->refresh()->resolved_at)->toBeNull()
+        ->and(SuspectedDuplicateReceiptBreakdownMove::query()->count())->toBe(0);
 });
 
 test('a duplicate resolution cannot void the survivor of another resolved pair', function () {

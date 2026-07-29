@@ -50,6 +50,16 @@ class ResolveSuspectedDuplicateRequest extends FormRequest
                 'string',
                 'regex:/^[a-f0-9]{64}$/',
             ],
+            'expected_first_receipt_breakdown_fingerprint' => [
+                'required',
+                'string',
+                'regex:/^[a-f0-9]{64}$/',
+            ],
+            'expected_second_receipt_breakdown_fingerprint' => [
+                'required',
+                'string',
+                'regex:/^[a-f0-9]{64}$/',
+            ],
             'idempotency_key' => ['required', 'uuid'],
         ];
     }

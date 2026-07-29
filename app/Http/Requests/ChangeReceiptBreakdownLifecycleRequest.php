@@ -6,7 +6,7 @@ use App\Models\ReceiptBreakdown;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-final class ConfirmReceiptBreakdownRequest extends FormRequest
+final class ChangeReceiptBreakdownLifecycleRequest extends FormRequest
 {
     public function authorize(): bool
     {

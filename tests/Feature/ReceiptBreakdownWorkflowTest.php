@@ -628,6 +628,99 @@ test('an incompatible Transaction Correction demotes its confirmed breakdown and
     'kind' => [ReviewableTransactionField::Kind, 'refund', '-2500', '0'],
 ]);
 
+test('removing a confirmed Receipt Breakdown demotes it to a draft before it can be discarded', function () {
+    $owner = User::factory()->create();
+    $fallbackCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
+    $lineItemCategory = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+        'amount_minor' => 2500,
+        'category_id' => $fallbackCategory->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $breakdown = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->create();
+    LineItem::factory()->for($breakdown)->create([
+        'category_id' => $lineItemCategory->id,
+        'line_total_minor' => 2500,
+    ]);
+
+    $this->actingAs($owner)
+        ->delete(route('receipt_breakdowns.confirmation.destroy', $breakdown), [
+            'expected_revision' => 1,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $this->get(route('transactions.index', ['selected' => $transaction->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('category_totals.0.category.name', 'Shopping')
+            ->where('category_totals.0.totals.PEN', '2500')
+            ->where('selected_transaction.receipt_breakdown.confirmed', null)
+            ->where('selected_transaction.receipt_breakdown.draft.revision', 2));
+
+    expect($breakdown->refresh()->status)->toBe('draft')
+        ->and($breakdown->confirmed_at)->toBeNull()
+        ->and($breakdown->lineItems()->count())->toBe(1);
+});
+
+test('removing a confirmed Receipt Breakdown never overwrites a replacement draft', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+        'amount_minor' => 2500,
+    ]);
+    $confirmed = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->create();
+    $confirmedItem = LineItem::factory()->for($confirmed)->create([
+        'description' => 'Confirmed work',
+        'line_total_minor' => 2500,
+    ]);
+    $draft = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->draft()->create();
+    $draftItem = LineItem::factory()->for($draft)->create([
+        'description' => 'Newer owner work',
+        'line_total_minor' => 2500,
+    ]);
+
+    $this->actingAs($owner)
+        ->from(route('transactions.index'))
+        ->delete(route('receipt_breakdowns.confirmation.destroy', $confirmed), [
+            'expected_revision' => 1,
+        ])
+        ->assertRedirect(route('transactions.index'))
+        ->assertSessionHasErrors('receipt_breakdown');
+
+    expect($confirmed->refresh()->status)->toBe('confirmed')
+        ->and($draft->refresh()->status)->toBe('draft')
+        ->and($confirmedItem->refresh()->description)->toBe('Confirmed work')
+        ->and($draftItem->refresh()->description)->toBe('Newer owner work');
+});
+
+test('permanent draft discard is explicit and cannot delete a newer revision', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+        'amount_minor' => 2500,
+    ]);
+    $draft = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->draft()->create();
+    LineItem::factory()->for($draft)->create(['line_total_minor' => 2500]);
+    $draft->update(['revision' => 2]);
+    $this->actingAs($owner);
+
+    $this->from(route('transactions.index'))
+        ->delete(route('receipt_breakdowns.destroy', $draft), [
+            'expected_revision' => 1,
+        ])
+        ->assertRedirect(route('transactions.index'))
+        ->assertSessionHasErrors('expected_revision');
+
+    expect($draft->fresh())->not->toBeNull()
+        ->and($draft->lineItems()->count())->toBe(1);
+
+    $this->delete(route('receipt_breakdowns.destroy', $draft), [
+        'expected_revision' => 2,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect($draft->fresh())->toBeNull()
+        ->and(LineItem::query()->count())->toBe(0);
+});
+
 test('confirmation rejects a draft whose Transaction became Voided', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([

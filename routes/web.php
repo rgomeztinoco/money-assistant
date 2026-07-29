@@ -37,8 +37,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('transactions.receipt_proposal_attachments.store');
     Route::put('receipt-breakdowns/{receipt_breakdown}', [ReceiptBreakdownController::class, 'update'])
         ->name('receipt_breakdowns.update');
+    Route::delete('receipt-breakdowns/{receipt_breakdown}', [ReceiptBreakdownController::class, 'destroy'])
+        ->name('receipt_breakdowns.destroy');
     Route::post('receipt-breakdowns/{receipt_breakdown}/confirmation', [ReceiptBreakdownConfirmationController::class, 'store'])
         ->name('receipt_breakdowns.confirmation.store');
+    Route::delete('receipt-breakdowns/{receipt_breakdown}/confirmation', [ReceiptBreakdownConfirmationController::class, 'destroy'])
+        ->name('receipt_breakdowns.confirmation.destroy');
     Route::put('transactions/{transaction}/category', [TransactionCategoryController::class, 'update'])
         ->name('transactions.category.update');
     Route::post('transactions/{transaction}/category-proposals/{ai_category_proposal}/confirmation', [AiCategoryProposalConfirmationController::class, 'store'])

@@ -15,8 +15,14 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { store as confirmCategoryProposal } from '@/actions/App/Http/Controllers/AiCategoryProposalConfirmationController';
-import { store as confirmReceiptBreakdown } from '@/actions/App/Http/Controllers/ReceiptBreakdownConfirmationController';
-import { update as updateReceiptBreakdown } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
+import {
+    destroy as removeConfirmedReceiptBreakdown,
+    store as confirmReceiptBreakdown,
+} from '@/actions/App/Http/Controllers/ReceiptBreakdownConfirmationController';
+import {
+    destroy as discardReceiptBreakdown,
+    update as updateReceiptBreakdown,
+} from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
 import { store as attachReceiptProposal } from '@/actions/App/Http/Controllers/ReceiptProposalAttachmentController';
 import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { update as updateCategory } from '@/actions/App/Http/Controllers/TransactionCategoryController';
@@ -243,8 +249,15 @@ function survivorChoiceBlockReason(
         return 'The records have different original purchase relationships.';
     }
 
-    if (transactionToVoid.has_receipt_breakdown) {
-        return 'This choice would void a Receipt Breakdown that requires separate review.';
+    const conflictingReceiptBreakdownStatus =
+        transactionToVoid.receipt_breakdown_statuses.find(
+            (status) =>
+                status !== 'superseded' &&
+                survivor.receipt_breakdown_statuses.includes(status),
+        );
+
+    if (conflictingReceiptBreakdownStatus) {
+        return `Both Transactions have a ${conflictingReceiptBreakdownStatus} Receipt Breakdown.`;
     }
 
     if (transactionToVoid.has_linked_refunds) {
@@ -336,6 +349,22 @@ function SuspectedDuplicateDialog({
                                 value={
                                     relationship.second_transaction
                                         .source_reference_fingerprint
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="expected_first_receipt_breakdown_fingerprint"
+                                value={
+                                    relationship.first_transaction
+                                        .receipt_breakdown_fingerprint
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="expected_second_receipt_breakdown_fingerprint"
+                                value={
+                                    relationship.second_transaction
+                                        .receipt_breakdown_fingerprint
                                 }
                             />
                             <input
@@ -438,6 +467,29 @@ function SuspectedDuplicateDialog({
                                         {transactionToVoid.merchant_description}{' '}
                                         to {survivor.merchant_description}.
                                     </p>
+                                    {transactionToVoid
+                                        .receipt_breakdown_statuses.length >
+                                        0 && (
+                                        <p>
+                                            Move{' '}
+                                            {
+                                                transactionToVoid
+                                                    .receipt_breakdown_statuses
+                                                    .length
+                                            }{' '}
+                                            Receipt{' '}
+                                            {transactionToVoid
+                                                .receipt_breakdown_statuses
+                                                .length === 1
+                                                ? 'Breakdown'
+                                                : 'Breakdowns'}{' '}
+                                            with all Line Items intact from{' '}
+                                            {
+                                                transactionToVoid.merchant_description
+                                            }{' '}
+                                            to {survivor.merchant_description}.
+                                        </p>
+                                    )}
                                     <p>
                                         Void{' '}
                                         {transactionToVoid.merchant_description}{' '}
@@ -684,6 +736,53 @@ function ReceiptBreakdownSection({
                         These Line Items replace the Transaction Category in
                         reports; they do not add another contribution.
                     </p>
+                    {!draft ? (
+                        <Form
+                            {...removeConfirmedReceiptBreakdown.form(
+                                confirmed.id,
+                            )}
+                            options={{
+                                preserveScroll: true,
+                                preserveState: true,
+                            }}
+                            className="grid gap-1"
+                        >
+                            {({ errors, processing }) => (
+                                <>
+                                    <input
+                                        type="hidden"
+                                        name="expected_revision"
+                                        value={confirmed.revision}
+                                    />
+                                    <Button
+                                        type="submit"
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-fit"
+                                        disabled={processing}
+                                    >
+                                        {processing ? <Spinner /> : <History />}
+                                        Remove from reports
+                                    </Button>
+                                    <InputError
+                                        message={
+                                            errors.receipt_breakdown ??
+                                            errors.expected_revision
+                                        }
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        This returns the confirmed breakdown to
+                                        draft without deleting its Line Items.
+                                    </p>
+                                </>
+                            )}
+                        </Form>
+                    ) : (
+                        <p className="text-xs text-muted-foreground">
+                            Discard the replacement draft before removing this
+                            confirmed breakdown from reports.
+                        </p>
+                    )}
                 </div>
             )}
 
@@ -1062,6 +1161,38 @@ function ReceiptBreakdownSection({
                                         before confirming.
                                     </p>
                                 )}
+                            </>
+                        )}
+                    </Form>
+                    <Form
+                        {...discardReceiptBreakdown.form(draft.id)}
+                        options={{ preserveScroll: true, preserveState: true }}
+                        className="grid gap-1"
+                    >
+                        {({ errors, processing }) => (
+                            <>
+                                <input
+                                    type="hidden"
+                                    name="expected_revision"
+                                    value={draft.revision}
+                                />
+                                <Button
+                                    type="submit"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-fit text-destructive"
+                                    disabled={processing}
+                                >
+                                    {processing ? <Spinner /> : <Trash2 />}
+                                    Permanently discard draft
+                                </Button>
+                                <InputError
+                                    message={errors.expected_revision}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    This permanently deletes only this draft and
+                                    its Line Items. Reporting is unchanged.
+                                </p>
                             </>
                         )}
                     </Form>

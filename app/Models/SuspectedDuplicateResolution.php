@@ -22,6 +22,8 @@ use Illuminate\Support\Carbon;
  * @property int $expected_second_transaction_revision
  * @property string|null $expected_first_source_reference_fingerprint
  * @property string|null $expected_second_source_reference_fingerprint
+ * @property string|null $expected_first_receipt_breakdown_fingerprint
+ * @property string|null $expected_second_receipt_breakdown_fingerprint
  * @property int $result_suspected_duplicate_revision
  * @property int $result_first_transaction_revision
  * @property int $result_second_transaction_revision
@@ -42,6 +44,8 @@ use Illuminate\Support\Carbon;
     'expected_second_transaction_revision',
     'expected_first_source_reference_fingerprint',
     'expected_second_source_reference_fingerprint',
+    'expected_first_receipt_breakdown_fingerprint',
+    'expected_second_receipt_breakdown_fingerprint',
     'result_suspected_duplicate_revision',
     'result_first_transaction_revision',
     'result_second_transaction_revision',
@@ -73,6 +77,14 @@ class SuspectedDuplicateResolution extends Model
     public function sourceMoves(): HasMany
     {
         return $this->hasMany(SuspectedDuplicateSourceMove::class);
+    }
+
+    /**
+     * @return HasMany<SuspectedDuplicateReceiptBreakdownMove, $this>
+     */
+    public function receiptBreakdownMoves(): HasMany
+    {
+        return $this->hasMany(SuspectedDuplicateReceiptBreakdownMove::class);
     }
 
     /**

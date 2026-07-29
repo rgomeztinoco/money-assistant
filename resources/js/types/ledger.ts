@@ -60,10 +60,11 @@ export type DuplicateTransaction = RelatedTransaction & {
     revision: number;
     original_purchase_id: number | null;
     has_linked_refunds: boolean;
-    has_receipt_breakdown: boolean;
+    receipt_breakdown_statuses: Array<'draft' | 'confirmed' | 'superseded'>;
     protects_resolved_duplicate: boolean;
     source_reference_count: number;
     source_reference_fingerprint: string;
+    receipt_breakdown_fingerprint: string;
 };
 
 export type DuplicateRelationship = {

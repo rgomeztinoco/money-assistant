@@ -40,6 +40,8 @@ class SuspectedDuplicateResolutionController extends Controller
                 expectedSecondTransactionRevision: (int) $validated['expected_second_transaction_revision'],
                 expectedFirstSourceReferenceFingerprint: $validated['expected_first_source_reference_fingerprint'],
                 expectedSecondSourceReferenceFingerprint: $validated['expected_second_source_reference_fingerprint'],
+                expectedFirstReceiptBreakdownFingerprint: $validated['expected_first_receipt_breakdown_fingerprint'],
+                expectedSecondReceiptBreakdownFingerprint: $validated['expected_second_receipt_breakdown_fingerprint'],
                 idempotencyKey: $validated['idempotency_key'],
             );
         } catch (StaleTransactionRevision|IdempotencyKeyConflict|InvalidArgumentException $exception) {

@@ -3,6 +3,8 @@
 use App\Actions\Ledger\MarkSuspectedDuplicate;
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
+use App\Models\LineItem;
+use App\Models\ReceiptBreakdown;
 use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
@@ -44,6 +46,14 @@ test('the inspector shows both records and the exact duplicate resolution effect
         ->for($owner, 'owner')
         ->for($receiptTransaction)
         ->create();
+    $receiptBreakdown = ReceiptBreakdown::factory()
+        ->recycle($owner)
+        ->for($notificationTransaction)
+        ->create();
+    LineItem::factory()->for($receiptBreakdown)->create([
+        'category_id' => $category->id,
+        'line_total_minor' => 2_500,
+    ]);
     app(MarkSuspectedDuplicate::class)->handle(
         owner: $owner,
         firstTransaction: $notificationTransaction,
@@ -61,6 +71,7 @@ test('the inspector shows both records and the exact duplicate resolution effect
         ->click('Keep Market receipt')
         ->assertSee('Keep Market receipt active.')
         ->assertSee('Move 1 source reference from Market notification to Market receipt.')
+        ->assertSee('Move 1 Receipt Breakdown with all Line Items intact from Market notification to Market receipt.')
         ->assertSee('Void Market notification and remove $ 25.00 from USD net spending.')
         ->assertSee('Remove $ 25.00 from Groceries Category spending.')
         ->press('Confirm resolution')

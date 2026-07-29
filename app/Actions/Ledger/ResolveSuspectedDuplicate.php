@@ -4,12 +4,15 @@ namespace App\Actions\Ledger;
 
 use App\Exceptions\IdempotencyKeyConflict;
 use App\Exceptions\StaleTransactionRevision;
+use App\Models\ReceiptBreakdown;
 use App\Models\SpendingNotificationReference;
 use App\Models\SuspectedDuplicate;
+use App\Models\SuspectedDuplicateReceiptBreakdownMove;
 use App\Models\SuspectedDuplicateResolution;
 use App\Models\SuspectedDuplicateSourceMove;
 use App\Models\Transaction;
 use App\Models\User;
+use App\ReceiptBreakdownSetFingerprint;
 use App\SourceReferenceSetFingerprint;
 use App\SuspectedDuplicateOperation;
 use Illuminate\Database\QueryException;
@@ -28,6 +31,8 @@ class ResolveSuspectedDuplicate
         int $expectedSecondTransactionRevision,
         string $expectedFirstSourceReferenceFingerprint,
         string $expectedSecondSourceReferenceFingerprint,
+        string $expectedFirstReceiptBreakdownFingerprint,
+        string $expectedSecondReceiptBreakdownFingerprint,
         string $idempotencyKey,
     ): SuspectedDuplicateResolution {
         if (
@@ -51,6 +56,15 @@ class ResolveSuspectedDuplicate
             throw new InvalidArgumentException('Source reference fingerprints must be valid SHA-256 values.');
         }
 
+        if (
+            ! ctype_xdigit($expectedFirstReceiptBreakdownFingerprint)
+            || Str::length($expectedFirstReceiptBreakdownFingerprint) !== 64
+            || ! ctype_xdigit($expectedSecondReceiptBreakdownFingerprint)
+            || Str::length($expectedSecondReceiptBreakdownFingerprint) !== 64
+        ) {
+            throw new InvalidArgumentException('Receipt Breakdown fingerprints must be valid SHA-256 values.');
+        }
+
         try {
             return DB::transaction(function () use (
                 $owner,
@@ -61,6 +75,8 @@ class ResolveSuspectedDuplicate
                 $expectedSecondTransactionRevision,
                 $expectedFirstSourceReferenceFingerprint,
                 $expectedSecondSourceReferenceFingerprint,
+                $expectedFirstReceiptBreakdownFingerprint,
+                $expectedSecondReceiptBreakdownFingerprint,
                 $idempotencyKey,
             ): SuspectedDuplicateResolution {
                 $currentSuspectedDuplicate = SuspectedDuplicate::query()
@@ -83,6 +99,8 @@ class ResolveSuspectedDuplicate
                         expectedSecondTransactionRevision: $expectedSecondTransactionRevision,
                         expectedFirstSourceReferenceFingerprint: $expectedFirstSourceReferenceFingerprint,
                         expectedSecondSourceReferenceFingerprint: $expectedSecondSourceReferenceFingerprint,
+                        expectedFirstReceiptBreakdownFingerprint: $expectedFirstReceiptBreakdownFingerprint,
+                        expectedSecondReceiptBreakdownFingerprint: $expectedSecondReceiptBreakdownFingerprint,
                     );
                 }
 
@@ -130,6 +148,50 @@ class ResolveSuspectedDuplicate
                     $currentSurvivor,
                     $voidedTransaction,
                 );
+
+                $receiptBreakdowns = ReceiptBreakdown::query()
+                    ->whereIn('transaction_id', [
+                        $currentSurvivor->id,
+                        $voidedTransaction->id,
+                    ])
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+                $receiptBreakdownsToMove = $receiptBreakdowns
+                    ->where('transaction_id', $voidedTransaction->id);
+                $firstReceiptBreakdowns = $receiptBreakdowns
+                    ->where('transaction_id', $firstTransaction->id);
+                $secondReceiptBreakdowns = $receiptBreakdowns
+                    ->where('transaction_id', $secondTransaction->id);
+
+                if (
+                    ! hash_equals(
+                        $expectedFirstReceiptBreakdownFingerprint,
+                        ReceiptBreakdownSetFingerprint::fromBreakdowns($firstReceiptBreakdowns),
+                    )
+                    || ! hash_equals(
+                        $expectedSecondReceiptBreakdownFingerprint,
+                        ReceiptBreakdownSetFingerprint::fromBreakdowns($secondReceiptBreakdowns),
+                    )
+                ) {
+                    throw new InvalidArgumentException('The Receipt Breakdowns changed while you were reviewing this Suspected Duplicate.');
+                }
+
+                $survivorActiveStatuses = $receiptBreakdowns
+                    ->where('transaction_id', $currentSurvivor->id)
+                    ->whereIn('status', ['draft', 'confirmed'])
+                    ->pluck('status');
+                $conflictingStatus = $receiptBreakdownsToMove
+                    ->whereIn('status', ['draft', 'confirmed'])
+                    ->pluck('status')
+                    ->intersect($survivorActiveStatuses)
+                    ->first();
+
+                if (is_string($conflictingStatus)) {
+                    throw new InvalidArgumentException(
+                        "Both Transactions have a {$conflictingStatus} Receipt Breakdown. Discard or reconcile one before resolving this pair.",
+                    );
+                }
 
                 $firstSourceReferences = SpendingNotificationReference::query()
                     ->whereBelongsTo($owner, 'owner')
@@ -181,6 +243,8 @@ class ResolveSuspectedDuplicate
                     'expected_second_transaction_revision' => $expectedSecondTransactionRevision,
                     'expected_first_source_reference_fingerprint' => $expectedFirstSourceReferenceFingerprint,
                     'expected_second_source_reference_fingerprint' => $expectedSecondSourceReferenceFingerprint,
+                    'expected_first_receipt_breakdown_fingerprint' => $expectedFirstReceiptBreakdownFingerprint,
+                    'expected_second_receipt_breakdown_fingerprint' => $expectedSecondReceiptBreakdownFingerprint,
                     'result_suspected_duplicate_revision' => $currentSuspectedDuplicate->revision,
                     'result_first_transaction_revision' => $firstTransaction->revision,
                     'result_second_transaction_revision' => $secondTransaction->revision,
@@ -202,6 +266,20 @@ class ResolveSuspectedDuplicate
                         'spending_notification_reference_id' => $sourceReference->id,
                         'from_transaction_id' => $voidedTransaction->id,
                         'to_transaction_id' => $currentSurvivor->id,
+                    ]);
+                }
+
+                foreach ($receiptBreakdownsToMove as $receiptBreakdown) {
+                    $receiptBreakdown->transaction_id = $currentSurvivor->id;
+                    $receiptBreakdown->save();
+
+                    SuspectedDuplicateReceiptBreakdownMove::create([
+                        'suspected_duplicate_resolution_id' => $resolution->id,
+                        'receipt_breakdown_id' => $receiptBreakdown->id,
+                        'from_transaction_id' => $voidedTransaction->id,
+                        'to_transaction_id' => $currentSurvivor->id,
+                        'receipt_breakdown_revision' => $receiptBreakdown->revision,
+                        'receipt_breakdown_status' => $receiptBreakdown->status,
                     ]);
                 }
 
@@ -229,6 +307,8 @@ class ResolveSuspectedDuplicate
                 expectedSecondTransactionRevision: $expectedSecondTransactionRevision,
                 expectedFirstSourceReferenceFingerprint: $expectedFirstSourceReferenceFingerprint,
                 expectedSecondSourceReferenceFingerprint: $expectedSecondSourceReferenceFingerprint,
+                expectedFirstReceiptBreakdownFingerprint: $expectedFirstReceiptBreakdownFingerprint,
+                expectedSecondReceiptBreakdownFingerprint: $expectedSecondReceiptBreakdownFingerprint,
             );
         }
     }
@@ -252,10 +332,6 @@ class ResolveSuspectedDuplicate
             || $survivor->amount_minor !== $voidedTransaction->amount_minor
         ) {
             throw new InvalidArgumentException('Only Transactions with the same kind, currency, and amount can be resolved as duplicates.');
-        }
-
-        if ($voidedTransaction->receiptBreakdowns()->exists()) {
-            throw new InvalidArgumentException('A Receipt Breakdown must be reviewed before choosing its other Transaction as survivor.');
         }
 
         if ($survivor->original_purchase_id !== $voidedTransaction->original_purchase_id) {
@@ -284,6 +360,8 @@ class ResolveSuspectedDuplicate
         int $expectedSecondTransactionRevision,
         string $expectedFirstSourceReferenceFingerprint,
         string $expectedSecondSourceReferenceFingerprint,
+        string $expectedFirstReceiptBreakdownFingerprint,
+        string $expectedSecondReceiptBreakdownFingerprint,
     ): SuspectedDuplicateResolution {
         if (
             $resolution->operation !== SuspectedDuplicateOperation::Resolve
@@ -294,6 +372,8 @@ class ResolveSuspectedDuplicate
             || $resolution->expected_second_transaction_revision !== $expectedSecondTransactionRevision
             || $resolution->expected_first_source_reference_fingerprint !== $expectedFirstSourceReferenceFingerprint
             || $resolution->expected_second_source_reference_fingerprint !== $expectedSecondSourceReferenceFingerprint
+            || $resolution->expected_first_receipt_breakdown_fingerprint !== $expectedFirstReceiptBreakdownFingerprint
+            || $resolution->expected_second_receipt_breakdown_fingerprint !== $expectedSecondReceiptBreakdownFingerprint
         ) {
             throw new IdempotencyKeyConflict;
         }

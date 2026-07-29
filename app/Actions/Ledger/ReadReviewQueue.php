@@ -7,6 +7,7 @@ use App\Models\LineItem;
 use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
 use App\Models\User;
+use App\ReceiptBreakdownSetFingerprint;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
 use App\SourceReferenceSetFingerprint;
@@ -54,10 +55,11 @@ class ReadReviewQueue
      *             category_name: string|null,
      *             original_purchase_id: int|null,
      *             has_linked_refunds: bool,
-     *             has_receipt_breakdown: bool,
+     *             receipt_breakdown_statuses: list<string>,
      *             protects_resolved_duplicate: bool,
      *             source_reference_count: int,
-     *             source_reference_fingerprint: string
+     *             source_reference_fingerprint: string,
+     *             receipt_breakdown_fingerprint: string
      *         },
      *         second_transaction: array{
      *             id: int,
@@ -70,10 +72,11 @@ class ReadReviewQueue
      *             category_name: string|null,
      *             original_purchase_id: int|null,
      *             has_linked_refunds: bool,
-     *             has_receipt_breakdown: bool,
+     *             receipt_breakdown_statuses: list<string>,
      *             protects_resolved_duplicate: bool,
      *             source_reference_count: int,
-     *             source_reference_fingerprint: string
+     *             source_reference_fingerprint: string,
+     *             receipt_breakdown_fingerprint: string
      *         }
      *     }>
      * }
@@ -238,20 +241,20 @@ class ReadReviewQueue
                     ->with([
                         'category:id,name',
                         'spendingNotificationReferences:id,transaction_id',
+                        'receiptBreakdowns:id,transaction_id,status,revision',
                     ])
                     ->withExists([
                         'linkedRefunds',
-                        'receiptBreakdowns',
                         'resolvedDuplicateRelationshipsAsSurvivor',
                     ]),
                 'secondTransaction' => fn ($query) => $query
                     ->with([
                         'category:id,name',
                         'spendingNotificationReferences:id,transaction_id',
+                        'receiptBreakdowns:id,transaction_id,status,revision',
                     ])
                     ->withExists([
                         'linkedRefunds',
-                        'receiptBreakdowns',
                         'resolvedDuplicateRelationshipsAsSurvivor',
                     ]),
             ])
@@ -302,14 +305,21 @@ class ReadReviewQueue
      *     category_name: string|null,
      *     original_purchase_id: int|null,
      *     has_linked_refunds: bool,
-     *     has_receipt_breakdown: bool,
+     *     receipt_breakdown_statuses: list<string>,
      *     protects_resolved_duplicate: bool,
      *     source_reference_count: int,
-     *     source_reference_fingerprint: string
+     *     source_reference_fingerprint: string,
+     *     receipt_breakdown_fingerprint: string
      * }
      */
     private function suspectedDuplicateTransactionData(Transaction $transaction): array
     {
+        $receiptBreakdownStatuses = [];
+
+        foreach ($transaction->receiptBreakdowns as $receiptBreakdown) {
+            $receiptBreakdownStatuses[] = $receiptBreakdown->status;
+        }
+
         return [
             'id' => $transaction->id,
             'revision' => $transaction->revision,
@@ -321,11 +331,14 @@ class ReadReviewQueue
             'category_name' => $transaction->category?->name,
             'original_purchase_id' => $transaction->original_purchase_id,
             'has_linked_refunds' => (bool) $transaction->linked_refunds_exists,
-            'has_receipt_breakdown' => (bool) $transaction->receipt_breakdowns_exists,
+            'receipt_breakdown_statuses' => $receiptBreakdownStatuses,
             'protects_resolved_duplicate' => (bool) $transaction->resolved_duplicate_relationships_as_survivor_exists,
             'source_reference_count' => $transaction->spendingNotificationReferences->count(),
             'source_reference_fingerprint' => SourceReferenceSetFingerprint::fromIds(
                 $transaction->spendingNotificationReferences->modelKeys(),
+            ),
+            'receipt_breakdown_fingerprint' => ReceiptBreakdownSetFingerprint::fromBreakdowns(
+                $transaction->receiptBreakdowns,
             ),
         ];
     }

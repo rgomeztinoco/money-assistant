@@ -4,6 +4,7 @@ namespace App\Actions\Ledger;
 
 use App\Exceptions\IdempotencyKeyConflict;
 use App\Exceptions\StaleTransactionRevision;
+use App\Models\ReceiptBreakdown;
 use App\Models\SpendingNotificationReference;
 use App\Models\SuspectedDuplicate;
 use App\Models\SuspectedDuplicateResolution;
@@ -122,9 +123,44 @@ class ReopenSuspectedDuplicate
                         'result_suspected_duplicate_revision',
                         $currentSuspectedDuplicate->revision,
                     )
-                    ->with('sourceMoves')
+                    ->with(['sourceMoves', 'receiptBreakdownMoves'])
                     ->lockForUpdate()
                     ->firstOrFail();
+
+                $receiptBreakdowns = ReceiptBreakdown::query()
+                    ->whereIn('transaction_id', [
+                        $survivor->id,
+                        $voidedTransaction->id,
+                    ])
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+
+                foreach ($resolveOutcome->receiptBreakdownMoves as $receiptBreakdownMove) {
+                    $receiptBreakdown = $receiptBreakdowns->firstWhere(
+                        'id',
+                        $receiptBreakdownMove->receipt_breakdown_id,
+                    );
+
+                    if ($receiptBreakdown === null) {
+                        continue;
+                    }
+
+                    if (
+                        $receiptBreakdown->transaction_id !== $receiptBreakdownMove->to_transaction_id
+                        || $receiptBreakdown->revision !== $receiptBreakdownMove->receipt_breakdown_revision
+                        || $receiptBreakdown->status !== $receiptBreakdownMove->receipt_breakdown_status
+                    ) {
+                        throw new InvalidArgumentException('A moved Receipt Breakdown changed before the relationship could be reopened.');
+                    }
+
+                    if (in_array($receiptBreakdown->status, ['draft', 'confirmed'], true)
+                        && $receiptBreakdowns
+                            ->where('transaction_id', $receiptBreakdownMove->from_transaction_id)
+                            ->contains('status', $receiptBreakdown->status)) {
+                        throw new InvalidArgumentException('Reopening would overwrite newer Receipt Breakdown work.');
+                    }
+                }
 
                 foreach ($resolveOutcome->sourceMoves as $sourceMove) {
                     $sourceReference = SpendingNotificationReference::query()
@@ -139,6 +175,18 @@ class ReopenSuspectedDuplicate
 
                     $sourceReference->transaction_id = $sourceMove->from_transaction_id;
                     $sourceReference->save();
+                }
+
+                foreach ($resolveOutcome->receiptBreakdownMoves as $receiptBreakdownMove) {
+                    $receiptBreakdown = $receiptBreakdowns->firstWhere(
+                        'id',
+                        $receiptBreakdownMove->receipt_breakdown_id,
+                    );
+
+                    if ($receiptBreakdown !== null) {
+                        $receiptBreakdown->transaction_id = $receiptBreakdownMove->from_transaction_id;
+                        $receiptBreakdown->save();
+                    }
                 }
 
                 $survivor->revision++;
@@ -164,6 +212,8 @@ class ReopenSuspectedDuplicate
                     'expected_second_transaction_revision' => $expectedSecondTransactionRevision,
                     'expected_first_source_reference_fingerprint' => null,
                     'expected_second_source_reference_fingerprint' => null,
+                    'expected_first_receipt_breakdown_fingerprint' => null,
+                    'expected_second_receipt_breakdown_fingerprint' => null,
                     'result_suspected_duplicate_revision' => $currentSuspectedDuplicate->revision,
                     'result_first_transaction_revision' => $firstTransaction->revision,
                     'result_second_transaction_revision' => $secondTransaction->revision,
