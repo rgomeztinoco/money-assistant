@@ -12,6 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 final class CreateCategory
 {
+    public function __construct(
+        private InvalidateAiClassificationValidationContext $invalidateValidationContext,
+    ) {}
+
     /**
      * @param  list<string>  $examples
      */
@@ -39,13 +43,17 @@ final class CreateCategory
 
                 $this->ensureNameAvailable($owner, $name, $parent?->id);
 
-                return Category::query()->create([
+                $category = Category::query()->create([
                     'user_id' => $owner->getKey(),
                     'parent_id' => $parent?->id,
                     'name' => $name,
                     'description' => $description,
                     'examples' => $examples,
                 ]);
+
+                $this->invalidateValidationContext->handle($owner);
+
+                return $category;
             }, 3);
         } catch (QueryException $exception) {
             if ($exception->getCode() !== '23505') {

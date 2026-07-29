@@ -2,6 +2,7 @@
 
 use App\Actions\Categorization\AssignCategoryToTransaction;
 use App\Actions\Categorization\ClassifyTransactionWithAi;
+use App\Actions\Categorization\UpdateCategory;
 use App\AiClassificationInput;
 use App\AiClassificationOutcome;
 use App\AiClassificationResult;
@@ -189,6 +190,111 @@ test('classifier version changes reset high confidence trust', function () {
 
     expect(classifyHighConfidenceTransaction($owner)->currentCategoryAssignment)
         ->ai_outcome->toBe(AiClassificationOutcome::Medium);
+});
+
+test('reverting classifier version or Category guidance does not restore old trust', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create([
+        'name' => 'Groceries',
+        'description' => 'Original guidance.',
+    ]);
+
+    bindTrustGateClassifier($category);
+    earnTrustGateEvidence($owner, $category);
+
+    bindTrustGateClassifier($category, 'classifier-2026-08');
+    expect(classifyHighConfidenceTransaction($owner)->currentCategoryAssignment)
+        ->ai_outcome->toBe(AiClassificationOutcome::Medium);
+
+    bindTrustGateClassifier($category, 'classifier-2026-07');
+    expect(classifyHighConfidenceTransaction($owner)->currentCategoryAssignment)
+        ->ai_outcome->toBe(AiClassificationOutcome::Medium);
+
+    app(UpdateCategory::class)->handle(
+        owner: $owner,
+        categoryId: $category->id,
+        expectedRevision: $category->revision,
+        name: $category->name,
+        parentId: null,
+        description: 'Changed guidance.',
+        examples: [],
+    );
+    $category->refresh();
+    app(UpdateCategory::class)->handle(
+        owner: $owner,
+        categoryId: $category->id,
+        expectedRevision: $category->revision,
+        name: $category->name,
+        parentId: null,
+        description: 'Original guidance.',
+        examples: [],
+    );
+    bindTrustGateClassifier($category->fresh());
+
+    expect(classifyHighConfidenceTransaction($owner)->currentCategoryAssignment)
+        ->ai_outcome->toBe(AiClassificationOutcome::Medium);
+});
+
+test('a taxonomy change while classification is in flight downgrades stale validated output to review', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create([
+        'name' => 'Groceries',
+        'description' => 'Original guidance.',
+    ]);
+
+    bindTrustGateClassifier($category);
+    earnTrustGateEvidence($owner, $category);
+
+    app()->instance(AiClassifier::class, new class($owner, $category) implements AiClassifier
+    {
+        public function __construct(
+            private User $owner,
+            private Category $category,
+        ) {}
+
+        public function version(): string
+        {
+            return 'classifier-2026-07';
+        }
+
+        public function classify(AiClassificationInput $input): AiClassificationResult
+        {
+            app(UpdateCategory::class)->handle(
+                owner: $this->owner,
+                categoryId: $this->category->id,
+                expectedRevision: $this->category->revision,
+                name: $this->category->name,
+                parentId: null,
+                description: 'Changed while classification was in flight.',
+                examples: [],
+            );
+
+            return new AiClassificationResult(
+                categoryPath: $this->category->name,
+                confidence: 99,
+                explanation: 'This output used stale guidance.',
+            );
+        }
+    });
+
+    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+    $classificationRequest = AiClassificationRequest::factory()
+        ->for($owner, 'owner')
+        ->for($transaction)
+        ->create();
+
+    app(ClassifyTransactionWithAi::class)->handle($classificationRequest->id);
+
+    expect($transaction->fresh())
+        ->category_id->toBe($category->id)
+        ->and($transaction->fresh()->hasProvisionalAiCategory())->toBeTrue()
+        ->and(CategoryAssignment::query()
+            ->whereBelongsTo($transaction)
+            ->sole())
+        ->ai_outcome->toBe(AiClassificationOutcome::Medium)
+        ->ai_requires_review->toBeTrue()
+        ->and($classificationRequest->fresh())
+        ->completed_at->not->toBeNull();
 });
 
 function bindTrustGateClassifier(Category $category, string $version = 'classifier-2026-07'): void

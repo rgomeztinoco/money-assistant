@@ -11,6 +11,10 @@ use Illuminate\Support\Facades\DB;
 
 final class ReactivateCategory
 {
+    public function __construct(
+        private InvalidateAiClassificationValidationContext $invalidateValidationContext,
+    ) {}
+
     public function handle(
         User $owner,
         int $categoryId,
@@ -70,6 +74,7 @@ final class ReactivateCategory
                 $category->retired_at = null;
                 $category->revision++;
                 $category->save();
+                $this->invalidateValidationContext->handle($owner);
 
                 return $category;
             }, 3);

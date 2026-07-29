@@ -175,17 +175,10 @@ class Transaction extends Model
      */
     public function scopeWhereHasProvisionalAiCategory(Builder $query): Builder
     {
-        return $query->whereHas('currentCategoryAssignment', fn (Builder $query) => $query
-            ->where('source', CategoryAssignmentProvenance::Ai)
-            ->whereIn('ai_outcome', [
-                AiClassificationOutcome::Medium->value,
-                AiClassificationOutcome::High->value,
-            ])
-            ->where(fn (Builder $query) => $query
-                ->where('ai_requires_review', true)
-                ->orWhere(fn (Builder $query) => $query
-                    ->where('ai_outcome', AiClassificationOutcome::Medium->value)
-                    ->whereNull('ai_requires_review'))));
+        return $query->whereHas(
+            'currentCategoryAssignment',
+            fn (Builder $query) => $query->whereRequiresAiReview(),
+        );
     }
 
     /**
@@ -194,17 +187,10 @@ class Transaction extends Model
      */
     public function scopeWhereDoesntHaveProvisionalAiCategory(Builder $query): Builder
     {
-        return $query->whereDoesntHave('currentCategoryAssignment', fn (Builder $query) => $query
-            ->where('source', CategoryAssignmentProvenance::Ai)
-            ->whereIn('ai_outcome', [
-                AiClassificationOutcome::Medium->value,
-                AiClassificationOutcome::High->value,
-            ])
-            ->where(fn (Builder $query) => $query
-                ->where('ai_requires_review', true)
-                ->orWhere(fn (Builder $query) => $query
-                    ->where('ai_outcome', AiClassificationOutcome::Medium->value)
-                    ->whereNull('ai_requires_review'))));
+        return $query->whereDoesntHave(
+            'currentCategoryAssignment',
+            fn (Builder $query) => $query->whereRequiresAiReview(),
+        );
     }
 
     /**

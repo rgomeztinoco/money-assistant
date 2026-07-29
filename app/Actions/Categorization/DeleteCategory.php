@@ -10,6 +10,10 @@ use Illuminate\Support\Facades\DB;
 
 final class DeleteCategory
 {
+    public function __construct(
+        private InvalidateAiClassificationValidationContext $invalidateValidationContext,
+    ) {}
+
     public function handle(User $owner, int $categoryId, int $expectedRevision): void
     {
         DB::transaction(function () use ($owner, $categoryId, $expectedRevision): void {
@@ -38,6 +42,7 @@ final class DeleteCategory
             }
 
             $category->delete();
+            $this->invalidateValidationContext->handle($owner);
         }, 3);
     }
 }

@@ -6,6 +6,7 @@ use App\AiClassificationOutcome;
 use App\CategoryAssignmentProvenance;
 use Database\Factories\CategoryAssignmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property AiClassificationOutcome|null $ai_outcome
  * @property string|null $ai_explanation
  * @property string|null $ai_taxonomy_fingerprint
+ * @property int|null $ai_validation_context_revision
  * @property bool|null $ai_requires_review
  * @property Carbon|null $ai_reviewed_at
  * @property bool|null $ai_approved_unchanged
@@ -52,6 +54,7 @@ use Illuminate\Support\Carbon;
     'ai_outcome',
     'ai_explanation',
     'ai_taxonomy_fingerprint',
+    'ai_validation_context_revision',
     'ai_requires_review',
     'ai_reviewed_at',
     'ai_approved_unchanged',
@@ -96,6 +99,25 @@ class CategoryAssignment extends Model
         return $this->belongsTo(Transaction::class, 'linked_purchase_id');
     }
 
+    /**
+     * @param  Builder<CategoryAssignment>  $query
+     * @return Builder<CategoryAssignment>
+     */
+    public function scopeWhereRequiresAiReview(Builder $query): Builder
+    {
+        return $query
+            ->where('source', CategoryAssignmentProvenance::Ai)
+            ->whereIn('ai_outcome', [
+                AiClassificationOutcome::Medium->value,
+                AiClassificationOutcome::High->value,
+            ])
+            ->where(fn (Builder $query) => $query
+                ->where('ai_requires_review', true)
+                ->orWhere(fn (Builder $query) => $query
+                    ->where('ai_outcome', AiClassificationOutcome::Medium->value)
+                    ->whereNull('ai_requires_review')));
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -109,6 +131,7 @@ class CategoryAssignment extends Model
             'ai_confidence' => 'integer',
             'ai_outcome' => AiClassificationOutcome::class,
             'ai_requires_review' => 'boolean',
+            'ai_validation_context_revision' => 'integer',
             'ai_reviewed_at' => 'immutable_datetime',
             'ai_approved_unchanged' => 'boolean',
         ];

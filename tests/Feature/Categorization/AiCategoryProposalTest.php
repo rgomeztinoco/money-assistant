@@ -100,6 +100,12 @@ test('only explicit owner confirmation creates the proposed Category and assigns
         ->and($proposal->fresh())
         ->confirmed_category_id->toBe($createdCategory->id)
         ->confirmed_at->not->toBeNull();
+
+    $this->get(route('transactions.index', ['selected' => $transaction->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('selected_transaction.ai_category_proposal', null)
+            ->where('selected_transaction.learned_rule_candidate.category_id', $createdCategory->id)
+            ->where('selected_transaction.learned_rule_candidate.transaction_id', $transaction->id));
 });
 
 test('proposal confirmation is transaction scoped and rejects stale state without creating a Category', function () {

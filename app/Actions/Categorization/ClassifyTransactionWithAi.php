@@ -27,6 +27,7 @@ class ClassifyTransactionWithAi
         private MerchantNormalizer $merchantNormalizer,
         private AiClassificationTaxonomyFingerprint $taxonomyFingerprint,
         private EvaluateAiClassificationTrustGate $evaluateTrustGate,
+        private ResolveAiClassificationValidationContext $resolveValidationContext,
     ) {}
 
     public function handle(int $classificationRequestId): void
@@ -74,6 +75,11 @@ class ClassifyTransactionWithAi
 
         $categories = $this->activeCategories($classificationRequest->user_id);
         $taxonomyFingerprint = $this->taxonomyFingerprint->make($categories);
+        $validationContext = $this->resolveValidationContext->handle(
+            ownerId: $classificationRequest->user_id,
+            classifierVersion: $this->aiClassifier->version(),
+            taxonomyFingerprint: $taxonomyFingerprint,
+        );
         try {
             $result = $this->aiClassifier->classify(new AiClassificationInput(
                 merchantDescription: $this->merchantNormalizer->normalize(
@@ -102,7 +108,7 @@ class ClassifyTransactionWithAi
 
         $offeredCategoryId = null;
         $proposedParentId = null;
-        $hasValidCategoryProposal = false;
+        $proposalParentResolved = false;
 
         if ($result->categoryPath !== null) {
             $matchingCategories = $categories->filter(
@@ -114,9 +120,9 @@ class ClassifyTransactionWithAi
             }
         }
 
-        if ($offeredCategoryId === null && $result->categoryProposal !== null) {
+        if ($result->categoryPath === null && $result->categoryProposal !== null) {
             if ($result->categoryProposal->parentCategoryPath === null) {
-                $hasValidCategoryProposal = true;
+                $proposalParentResolved = true;
             } else {
                 $matchingParents = $categories->filter(
                     fn (Category $category): bool => $category->parent_id === null
@@ -125,7 +131,7 @@ class ClassifyTransactionWithAi
 
                 if ($matchingParents->count() === 1) {
                     $proposedParentId = $matchingParents->first()?->id;
-                    $hasValidCategoryProposal = true;
+                    $proposalParentResolved = true;
                 }
             }
         }
@@ -136,7 +142,8 @@ class ClassifyTransactionWithAi
             $result,
             $taxonomyFingerprint,
             $proposedParentId,
-            $hasValidCategoryProposal,
+            $proposalParentResolved,
+            $validationContext,
         ): void {
             $currentRequest = AiClassificationRequest::query()
                 ->lockForUpdate()
@@ -184,7 +191,7 @@ class ClassifyTransactionWithAi
                     ->whereNull('retired_at')
                     ->lockForUpdate()
                     ->first();
-            $proposalIsMissing = $hasValidCategoryProposal
+            $proposalIsMissing = $proposalParentResolved
                 && $result->categoryProposal !== null
                 && ($proposedParentId === null || $proposedParent !== null)
                 && ! Category::query()
@@ -197,12 +204,23 @@ class ClassifyTransactionWithAi
                         fn ($query) => $query->where('parent_id', $proposedParentId),
                     )
                     ->exists();
+            $currentCategories = $this->activeCategories($transaction->user_id);
+            $currentTaxonomyFingerprint = $this->taxonomyFingerprint->make($currentCategories);
+            $currentValidationContext = $this->resolveValidationContext->handle(
+                ownerId: $transaction->user_id,
+                classifierVersion: $this->aiClassifier->version(),
+                taxonomyFingerprint: $currentTaxonomyFingerprint,
+            );
+            $trustContextIsCurrent = $currentValidationContext->revision === $validationContext->revision
+                && $currentTaxonomyFingerprint === $taxonomyFingerprint;
             $trustGateIsOpen = $category !== null
                 && $result->confidence >= 95
+                && $trustContextIsCurrent
                 && $this->evaluateTrustGate->handle(
                     ownerId: $transaction->user_id,
                     classifierVersion: $this->aiClassifier->version(),
                     taxonomyFingerprint: $taxonomyFingerprint,
+                    validationContextRevision: $validationContext->revision,
                 );
             $outcome = match (true) {
                 $proposalIsMissing => AiClassificationOutcome::MissingCategory,
@@ -238,6 +256,7 @@ class ClassifyTransactionWithAi
                 'ai_outcome' => $outcome,
                 'ai_explanation' => $result->explanation,
                 'ai_taxonomy_fingerprint' => $taxonomyFingerprint,
+                'ai_validation_context_revision' => $validationContext->revision,
                 'ai_requires_review' => $requiresReview,
             ]);
 

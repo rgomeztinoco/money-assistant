@@ -12,6 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 final class UpdateCategory
 {
+    public function __construct(
+        private InvalidateAiClassificationValidationContext $invalidateValidationContext,
+    ) {}
+
     /**
      * @param  list<string>  $examples
      */
@@ -64,6 +68,8 @@ final class UpdateCategory
                     $this->ensureNameAvailable($owner, $category, $name, $parent?->id);
                 }
 
+                $guidanceChanged = $category->description !== ($description === '' ? null : $description)
+                    || $category->examples !== $examples;
                 $category->fill([
                     'parent_id' => $parent?->id,
                     'name' => $name,
@@ -71,6 +77,10 @@ final class UpdateCategory
                     'examples' => $examples,
                     'revision' => $category->revision + 1,
                 ])->save();
+
+                if ($guidanceChanged) {
+                    $this->invalidateValidationContext->handle($owner);
+                }
 
                 return $category;
             }, 3);

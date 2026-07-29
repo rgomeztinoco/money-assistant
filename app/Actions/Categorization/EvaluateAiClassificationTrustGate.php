@@ -12,12 +12,14 @@ final class EvaluateAiClassificationTrustGate
         int $ownerId,
         string $classifierVersion,
         string $taxonomyFingerprint,
+        int $validationContextRevision,
     ): bool {
         $qualifyingReviews = CategoryAssignment::query()
             ->where('user_id', $ownerId)
             ->where('source', CategoryAssignmentProvenance::Ai)
             ->where('ai_classifier_version', $classifierVersion)
             ->where('ai_taxonomy_fingerprint', $taxonomyFingerprint)
+            ->where('ai_validation_context_revision', $validationContextRevision)
             ->where('ai_confidence', '>=', 95)
             ->whereIn('ai_outcome', [
                 AiClassificationOutcome::Medium->value,

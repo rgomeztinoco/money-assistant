@@ -11,6 +11,10 @@ use Illuminate\Support\Facades\DB;
 
 final class RetireCategory
 {
+    public function __construct(
+        private InvalidateAiClassificationValidationContext $invalidateValidationContext,
+    ) {}
+
     public function handle(User $owner, int $categoryId, int $expectedRevision): Category
     {
         return DB::transaction(function () use ($owner, $categoryId, $expectedRevision): Category {
@@ -43,6 +47,7 @@ final class RetireCategory
             $category->retired_at = now()->toImmutable();
             $category->revision++;
             $category->save();
+            $this->invalidateValidationContext->handle($owner);
 
             return $category;
         }, 3);
