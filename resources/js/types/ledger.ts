@@ -147,6 +147,14 @@ export type SelectedTransaction = {
         transaction_revision: number;
         created_at: string | null;
     }>;
+    ai_category_proposal: {
+        id: number;
+        revision: number;
+        name: string;
+        parent_path: string | null;
+        description: string | null;
+        examples: string[];
+    } | null;
     learned_rule_candidate: LearnedRuleCandidate | null;
     state_changes: Array<{
         id: number;

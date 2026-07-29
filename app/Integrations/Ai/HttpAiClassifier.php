@@ -2,6 +2,7 @@
 
 namespace App\Integrations\Ai;
 
+use App\AiCategoryProposalResult;
 use App\AiClassificationInput;
 use App\AiClassificationResult;
 use App\Contracts\AiClassifier;
@@ -67,6 +68,7 @@ final class HttpAiClassifier implements AiClassifier
         }
 
         $categoryPath = $response->json('category_path');
+        $categoryProposal = $response->json('category_proposal');
         $confidence = $response->json('confidence');
         $explanation = $response->json('explanation');
 
@@ -84,11 +86,75 @@ final class HttpAiClassifier implements AiClassifier
         $categoryPath = is_string($categoryPath) && Str::squish($categoryPath) !== ''
             ? Str::squish($categoryPath)
             : null;
+        $categoryProposal = $this->categoryProposal($categoryProposal);
+
+        if ($categoryPath !== null && $categoryProposal !== null) {
+            throw new AiClassifierUnavailable(
+                'The AI classifier returned an invalid structured result.',
+            );
+        }
 
         return new AiClassificationResult(
             categoryPath: $categoryPath,
             confidence: $confidence,
             explanation: Str::squish($explanation),
+            categoryProposal: $categoryProposal,
+        );
+    }
+
+    private function categoryProposal(mixed $value): ?AiCategoryProposalResult
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_array($value)) {
+            $this->throwInvalidResult();
+        }
+
+        $name = $value['name'] ?? null;
+        $parentCategoryPath = $value['parent_category_path'] ?? null;
+        $description = $value['description'] ?? null;
+        $examples = $value['examples'] ?? null;
+
+        if (! is_string($name)
+            || Str::squish($name) === ''
+            || Str::length(Str::squish($name)) > 255
+            || ($parentCategoryPath !== null
+                && (! is_string($parentCategoryPath)
+                    || Str::squish($parentCategoryPath) === ''
+                    || Str::length(Str::squish($parentCategoryPath)) > 255))
+            || ($description !== null
+                && (! is_string($description)
+                    || Str::length(Str::squish($description)) > 2000))
+            || ! is_array($examples)
+            || ! array_is_list($examples)
+            || count($examples) > 20
+            || collect($examples)->contains(fn (mixed $example): bool => ! is_string($example)
+                || Str::squish($example) === ''
+                || Str::length(Str::squish($example)) > 100)) {
+            $this->throwInvalidResult();
+        }
+
+        $normalizedDescription = Str::squish((string) $description);
+
+        return new AiCategoryProposalResult(
+            name: Str::squish($name),
+            parentCategoryPath: $parentCategoryPath === null
+                ? null
+                : Str::squish($parentCategoryPath),
+            description: $normalizedDescription === '' ? null : $normalizedDescription,
+            examples: array_values(collect($examples)
+                ->map(fn (string $example): string => Str::squish($example))
+                ->unique(fn (string $example): string => Str::lower($example))
+                ->all()),
+        );
+    }
+
+    private function throwInvalidResult(): never
+    {
+        throw new AiClassifierUnavailable(
+            'The AI classifier returned an invalid structured result.',
         );
     }
 }

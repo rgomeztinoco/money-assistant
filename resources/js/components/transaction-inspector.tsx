@@ -14,6 +14,7 @@ import {
     Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
+import { store as confirmCategoryProposal } from '@/actions/App/Http/Controllers/AiCategoryProposalConfirmationController';
 import { store as confirmReceiptBreakdown } from '@/actions/App/Http/Controllers/ReceiptBreakdownConfirmationController';
 import { update as updateReceiptBreakdown } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
 import { store as attachReceiptProposal } from '@/actions/App/Http/Controllers/ReceiptProposalAttachmentController';
@@ -1254,6 +1255,105 @@ export function TransactionInspector({
                                 Confirmed{' '}
                                 {transaction.confirmed_at.slice(0, 10)}.
                             </p>
+                            {transaction.ai_category_proposal && (
+                                <div className="grid gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                                    <div className="flex items-start gap-3">
+                                        <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+                                        <div className="grid gap-1">
+                                            <h2 className="font-semibold">
+                                                Create the proposed Category?
+                                            </h2>
+                                            <p className="text-sm text-muted-foreground">
+                                                AI found no adequate active
+                                                Category and proposed{' '}
+                                                <span className="font-medium text-foreground">
+                                                    {transaction
+                                                        .ai_category_proposal
+                                                        .parent_path
+                                                        ? `${transaction.ai_category_proposal.parent_path} > `
+                                                        : ''}
+                                                    {
+                                                        transaction
+                                                            .ai_category_proposal
+                                                            .name
+                                                    }
+                                                </span>
+                                                . Confirming creates it and
+                                                assigns only this Transaction.
+                                                Applying it elsewhere remains a
+                                                separate previewed bulk
+                                                operation.
+                                            </p>
+                                            {transaction.ai_category_proposal
+                                                .description && (
+                                                <p className="text-sm text-muted-foreground">
+                                                    {
+                                                        transaction
+                                                            .ai_category_proposal
+                                                            .description
+                                                    }
+                                                </p>
+                                            )}
+                                            {transaction.ai_category_proposal
+                                                .examples.length > 0 && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Examples:{' '}
+                                                    {transaction.ai_category_proposal.examples.join(
+                                                        ', ',
+                                                    )}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <Form
+                                        {...confirmCategoryProposal.form({
+                                            transaction: transaction.id,
+                                            ai_category_proposal:
+                                                transaction.ai_category_proposal
+                                                    .id,
+                                        })}
+                                        options={{ preserveScroll: true }}
+                                    >
+                                        {({ errors, processing }) => (
+                                            <div className="grid gap-1">
+                                                <input
+                                                    type="hidden"
+                                                    name="expected_transaction_revision"
+                                                    value={transaction.revision}
+                                                />
+                                                <input
+                                                    type="hidden"
+                                                    name="expected_proposal_revision"
+                                                    value={
+                                                        transaction
+                                                            .ai_category_proposal
+                                                            ?.revision
+                                                    }
+                                                />
+                                                <Button
+                                                    type="submit"
+                                                    size="sm"
+                                                    className="w-fit"
+                                                    disabled={processing}
+                                                >
+                                                    {processing ? (
+                                                        <Spinner />
+                                                    ) : (
+                                                        <Plus />
+                                                    )}
+                                                    Create and assign
+                                                </Button>
+                                                <InputError
+                                                    message={
+                                                        errors.expected_proposal_revision ??
+                                                        errors.expected_transaction_revision
+                                                    }
+                                                />
+                                            </div>
+                                        )}
+                                    </Form>
+                                </div>
+                            )}
                             <Form
                                 {...updateCategory.form(transaction.id)}
                                 options={{

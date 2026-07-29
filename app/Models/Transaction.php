@@ -155,10 +155,18 @@ class Transaction extends Model
         return $this->hasOne(CategoryAssignment::class)->ofMany('transaction_revision', 'max');
     }
 
+    /** @return HasOne<AiCategoryProposal, $this> */
+    public function aiCategoryProposal(): HasOne
+    {
+        return $this->hasOne(AiCategoryProposal::class);
+    }
+
     public function hasProvisionalAiCategory(): bool
     {
         return $this->currentCategoryAssignment?->source === CategoryAssignmentProvenance::Ai
-            && $this->currentCategoryAssignment->ai_outcome === AiClassificationOutcome::Medium;
+            && ($this->currentCategoryAssignment->ai_outcome === AiClassificationOutcome::Medium
+                || $this->currentCategoryAssignment->ai_outcome === AiClassificationOutcome::High)
+            && $this->currentCategoryAssignment->ai_requires_review !== false;
     }
 
     /**
@@ -169,7 +177,15 @@ class Transaction extends Model
     {
         return $query->whereHas('currentCategoryAssignment', fn (Builder $query) => $query
             ->where('source', CategoryAssignmentProvenance::Ai)
-            ->where('ai_outcome', AiClassificationOutcome::Medium->value));
+            ->whereIn('ai_outcome', [
+                AiClassificationOutcome::Medium->value,
+                AiClassificationOutcome::High->value,
+            ])
+            ->where(fn (Builder $query) => $query
+                ->where('ai_requires_review', true)
+                ->orWhere(fn (Builder $query) => $query
+                    ->where('ai_outcome', AiClassificationOutcome::Medium->value)
+                    ->whereNull('ai_requires_review'))));
     }
 
     /**
@@ -180,7 +196,15 @@ class Transaction extends Model
     {
         return $query->whereDoesntHave('currentCategoryAssignment', fn (Builder $query) => $query
             ->where('source', CategoryAssignmentProvenance::Ai)
-            ->where('ai_outcome', AiClassificationOutcome::Medium->value));
+            ->whereIn('ai_outcome', [
+                AiClassificationOutcome::Medium->value,
+                AiClassificationOutcome::High->value,
+            ])
+            ->where(fn (Builder $query) => $query
+                ->where('ai_requires_review', true)
+                ->orWhere(fn (Builder $query) => $query
+                    ->where('ai_outcome', AiClassificationOutcome::Medium->value)
+                    ->whereNull('ai_requires_review'))));
     }
 
     /**

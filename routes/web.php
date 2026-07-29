@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AiCategoryProposalConfirmationController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryRetirementController;
 use App\Http\Controllers\DailyExchangeRateController;
@@ -40,6 +41,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('receipt_breakdowns.confirmation.store');
     Route::put('transactions/{transaction}/category', [TransactionCategoryController::class, 'update'])
         ->name('transactions.category.update');
+    Route::post('transactions/{transaction}/category-proposals/{ai_category_proposal}/confirmation', [AiCategoryProposalConfirmationController::class, 'store'])
+        ->name('transactions.ai_category_proposals.confirmation.store');
     Route::resource('categories', CategoryController::class)
         ->only(['index', 'store', 'update']);
     Route::resource('daily-exchange-rates', DailyExchangeRateController::class)

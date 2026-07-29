@@ -5,23 +5,28 @@ namespace App\Actions\Categorization;
 use App\AiClassificationError;
 use App\AiClassificationInput;
 use App\AiClassificationOutcome;
+use App\AiClassificationTaxonomyFingerprint;
 use App\CategoryAssignmentProvenance;
 use App\Contracts\AiClassifier;
 use App\Exceptions\AiClassifierTimedOut;
 use App\Exceptions\AiClassifierUnavailable;
 use App\MerchantNormalizer;
+use App\Models\AiCategoryProposal;
 use App\Models\AiClassificationRequest;
 use App\Models\Category;
 use App\Models\CategoryAssignment;
 use App\Models\Transaction;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Lottery;
 
 class ClassifyTransactionWithAi
 {
     public function __construct(
         private AiClassifier $aiClassifier,
         private MerchantNormalizer $merchantNormalizer,
+        private AiClassificationTaxonomyFingerprint $taxonomyFingerprint,
+        private EvaluateAiClassificationTrustGate $evaluateTrustGate,
     ) {}
 
     public function handle(int $classificationRequestId): void
@@ -68,6 +73,7 @@ class ClassifyTransactionWithAi
         }
 
         $categories = $this->activeCategories($classificationRequest->user_id);
+        $taxonomyFingerprint = $this->taxonomyFingerprint->make($categories);
         try {
             $result = $this->aiClassifier->classify(new AiClassificationInput(
                 merchantDescription: $this->merchantNormalizer->normalize(
@@ -95,6 +101,8 @@ class ClassifyTransactionWithAi
         }
 
         $offeredCategoryId = null;
+        $proposedParentId = null;
+        $hasValidCategoryProposal = false;
 
         if ($result->categoryPath !== null) {
             $matchingCategories = $categories->filter(
@@ -106,7 +114,30 @@ class ClassifyTransactionWithAi
             }
         }
 
-        DB::transaction(function () use ($classificationRequest, $offeredCategoryId, $result): void {
+        if ($offeredCategoryId === null && $result->categoryProposal !== null) {
+            if ($result->categoryProposal->parentCategoryPath === null) {
+                $hasValidCategoryProposal = true;
+            } else {
+                $matchingParents = $categories->filter(
+                    fn (Category $category): bool => $category->parent_id === null
+                        && $this->categoryPath($category) === $result->categoryProposal->parentCategoryPath,
+                );
+
+                if ($matchingParents->count() === 1) {
+                    $proposedParentId = $matchingParents->first()?->id;
+                    $hasValidCategoryProposal = true;
+                }
+            }
+        }
+
+        DB::transaction(function () use (
+            $classificationRequest,
+            $offeredCategoryId,
+            $result,
+            $taxonomyFingerprint,
+            $proposedParentId,
+            $hasValidCategoryProposal,
+        ): void {
             $currentRequest = AiClassificationRequest::query()
                 ->lockForUpdate()
                 ->find($classificationRequest->id);
@@ -144,12 +175,47 @@ class ClassifyTransactionWithAi
                         ->orWhereHas('parent', fn ($query) => $query->whereNull('retired_at')))
                     ->lockForUpdate()
                     ->first();
+            $proposedParent = $proposedParentId === null
+                ? null
+                : Category::query()
+                    ->where('user_id', $transaction->user_id)
+                    ->whereKey($proposedParentId)
+                    ->whereNull('parent_id')
+                    ->whereNull('retired_at')
+                    ->lockForUpdate()
+                    ->first();
+            $proposalIsMissing = $hasValidCategoryProposal
+                && $result->categoryProposal !== null
+                && ($proposedParentId === null || $proposedParent !== null)
+                && ! Category::query()
+                    ->where('user_id', $transaction->user_id)
+                    ->whereNull('retired_at')
+                    ->whereRaw('lower(name) = lower(?)', [$result->categoryProposal->name])
+                    ->when(
+                        $proposedParentId === null,
+                        fn ($query) => $query->whereNull('parent_id'),
+                        fn ($query) => $query->where('parent_id', $proposedParentId),
+                    )
+                    ->exists();
+            $trustGateIsOpen = $category !== null
+                && $result->confidence >= 95
+                && $this->evaluateTrustGate->handle(
+                    ownerId: $transaction->user_id,
+                    classifierVersion: $this->aiClassifier->version(),
+                    taxonomyFingerprint: $taxonomyFingerprint,
+                );
             $outcome = match (true) {
+                $proposalIsMissing => AiClassificationOutcome::MissingCategory,
                 $category === null => AiClassificationOutcome::InvalidCategory,
+                $trustGateIsOpen => AiClassificationOutcome::High,
                 $result->confidence >= 60 => AiClassificationOutcome::Medium,
                 default => AiClassificationOutcome::LowConfidence,
             };
+            $requiresReview = $outcome === AiClassificationOutcome::High
+                ? Lottery::odds(1, 10)->choose()
+                : true;
             $categoryId = $outcome === AiClassificationOutcome::Medium
+                || $outcome === AiClassificationOutcome::High
                 ? $category->id
                 : null;
             $previousCategoryId = $transaction->category_id;
@@ -160,7 +226,7 @@ class ClassifyTransactionWithAi
             $transaction->revision++;
             $transaction->save();
 
-            CategoryAssignment::create([
+            $assignment = CategoryAssignment::create([
                 'user_id' => $transaction->user_id,
                 'transaction_id' => $transaction->id,
                 'category_id' => $categoryId,
@@ -171,7 +237,21 @@ class ClassifyTransactionWithAi
                 'ai_confidence' => $result->confidence,
                 'ai_outcome' => $outcome,
                 'ai_explanation' => $result->explanation,
+                'ai_taxonomy_fingerprint' => $taxonomyFingerprint,
+                'ai_requires_review' => $requiresReview,
             ]);
+
+            if ($outcome === AiClassificationOutcome::MissingCategory) {
+                AiCategoryProposal::query()->create([
+                    'user_id' => $transaction->user_id,
+                    'transaction_id' => $transaction->id,
+                    'category_assignment_id' => $assignment->id,
+                    'parent_id' => $proposedParent?->id,
+                    'name' => $result->categoryProposal->name,
+                    'description' => $result->categoryProposal->description,
+                    'examples' => $result->categoryProposal->examples,
+                ]);
+            }
 
             $currentRequest->forceFill([
                 'completed_at' => now(),

@@ -8,5 +8,6 @@ final readonly class AiClassificationResult
         public ?string $categoryPath,
         public int $confidence,
         public string $explanation,
+        public ?AiCategoryProposalResult $categoryProposal = null,
     ) {}
 }

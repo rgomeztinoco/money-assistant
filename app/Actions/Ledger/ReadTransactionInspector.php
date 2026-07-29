@@ -75,6 +75,7 @@ class ReadTransactionInspector
      *     original_purchase: RelatedTransactionData|null,
      *     linked_refunds: list<RelatedTransactionData>,
      *     corrections: list<array{id: int, field: string, field_label: string, previous_value: string, corrected_value: string, transaction_revision: int, created_at: string|null}>,
+     *     ai_category_proposal: array{id: int, revision: int, name: string, parent_path: string|null, description: string|null, examples: list<string>}|null,
      *     learned_rule_candidate: array{transaction_id: int, transaction_revision: int, category_id: int, category_name: string, merchant_pattern: string, merchant_key: string, match_mode: string, transaction_kind: string, currency: string, payment_instrument_label: null, payment_instrument_last_four: null}|null,
      *     state_changes: list<array{id: int, operation: string, result_revision: int, result_voided_at: string|null, created_at: string|null}>,
      *     source_reference_count: int,
@@ -109,6 +110,7 @@ class ReadTransactionInspector
                 'category:id,name',
                 'currentCategoryAssignment.owner:id,name',
                 'currentCategoryAssignment.linkedPurchase:id,merchant_description',
+                'aiCategoryProposal.parent:id,name',
                 'originalPurchase:id,occurred_on,amount_minor,currency,kind,merchant_description,category_id',
                 'originalPurchase.category:id,name',
                 'linkedRefunds' => fn ($query) => $query
@@ -242,6 +244,17 @@ class ReadTransactionInspector
                     'created_at' => $correction->created_at?->toIso8601String(),
                 ])
                 ->all()),
+            'ai_category_proposal' => $transaction->aiCategoryProposal === null
+                || $transaction->aiCategoryProposal->confirmed_at !== null
+                    ? null
+                    : [
+                        'id' => $transaction->aiCategoryProposal->id,
+                        'revision' => $transaction->aiCategoryProposal->revision,
+                        'name' => $transaction->aiCategoryProposal->name,
+                        'parent_path' => $transaction->aiCategoryProposal->parent?->name,
+                        'description' => $transaction->aiCategoryProposal->description,
+                        'examples' => $transaction->aiCategoryProposal->examples,
+                    ],
             'learned_rule_candidate' => $this->readLearnedRuleCandidateFromCorrection->handle($transaction),
             'state_changes' => array_values($transaction->stateChanges
                 ->map(fn (TransactionStateChange $stateChange): array => [

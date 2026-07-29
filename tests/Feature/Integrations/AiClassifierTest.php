@@ -94,6 +94,72 @@ test('a malformed Category reference is preserved as an invalid Category result'
     'blank' => '   ',
 ]);
 
+test('the HTTP classifier accepts a structured missing Category proposal', function () {
+    Http::fake([
+        'https://classifier.example.test/v1/classify' => Http::response([
+            'category_path' => null,
+            'category_proposal' => [
+                'name' => '  Bakeries ',
+                'parent_category_path' => ' Food ',
+                'description' => ' Bread, pastries, and baked goods. ',
+                'examples' => [' Neighborhood bakery ', 'Neighborhood bakery'],
+            ],
+            'confidence' => 91,
+            'explanation' => 'No active Category adequately fits.',
+        ]),
+    ]);
+
+    $result = app(AiClassifier::class)->classify(aiClassifierInput());
+
+    expect($result)
+        ->categoryPath->toBeNull()
+        ->categoryProposal->name->toBe('Bakeries')
+        ->categoryProposal->parentCategoryPath->toBe('Food')
+        ->categoryProposal->description->toBe('Bread, pastries, and baked goods.')
+        ->categoryProposal->examples->toBe(['Neighborhood bakery']);
+});
+
+test('ambiguous or malformed missing Category proposals fail closed', function (array $response) {
+    Http::fake([
+        'https://classifier.example.test/v1/classify' => Http::response([
+            'confidence' => 91,
+            'explanation' => 'A proposal was returned.',
+            ...$response,
+        ]),
+    ]);
+
+    expect(fn () => app(AiClassifier::class)->classify(aiClassifierInput()))
+        ->toThrow(AiClassifierUnavailable::class);
+})->with([
+    'existing path and proposal together' => [[
+        'category_path' => 'Food > Groceries',
+        'category_proposal' => [
+            'name' => 'Bakeries',
+            'parent_category_path' => 'Food',
+            'description' => null,
+            'examples' => [],
+        ],
+    ]],
+    'blank proposal name' => [[
+        'category_path' => null,
+        'category_proposal' => [
+            'name' => '   ',
+            'parent_category_path' => null,
+            'description' => null,
+            'examples' => [],
+        ],
+    ]],
+    'invalid examples' => [[
+        'category_path' => null,
+        'category_proposal' => [
+            'name' => 'Bakeries',
+            'parent_category_path' => null,
+            'description' => null,
+            'examples' => ['Valid', 42],
+        ],
+    ]],
+]);
+
 test('malformed confidence and explanation responses are rejected', function (array $response) {
     Http::fake([
         'https://classifier.example.test/v1/classify' => Http::response($response),

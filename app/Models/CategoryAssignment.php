@@ -28,6 +28,10 @@ use Illuminate\Support\Carbon;
  * @property int|null $ai_confidence
  * @property AiClassificationOutcome|null $ai_outcome
  * @property string|null $ai_explanation
+ * @property string|null $ai_taxonomy_fingerprint
+ * @property bool|null $ai_requires_review
+ * @property Carbon|null $ai_reviewed_at
+ * @property bool|null $ai_approved_unchanged
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -47,6 +51,10 @@ use Illuminate\Support\Carbon;
     'ai_confidence',
     'ai_outcome',
     'ai_explanation',
+    'ai_taxonomy_fingerprint',
+    'ai_requires_review',
+    'ai_reviewed_at',
+    'ai_approved_unchanged',
 ])]
 class CategoryAssignment extends Model
 {
@@ -100,6 +108,9 @@ class CategoryAssignment extends Model
             'learned_rule_bulk_action_id' => 'integer',
             'ai_confidence' => 'integer',
             'ai_outcome' => AiClassificationOutcome::class,
+            'ai_requires_review' => 'boolean',
+            'ai_reviewed_at' => 'immutable_datetime',
+            'ai_approved_unchanged' => 'boolean',
         ];
     }
 }
