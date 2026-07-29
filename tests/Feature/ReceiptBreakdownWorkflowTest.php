@@ -774,6 +774,68 @@ test('combined reporting allocates one converted Transaction total across confir
             ->where('category_totals.1.combined_total.amount_minor', '1'));
 });
 
+test('combined reporting resolves equal remainder ties by stable Line Item identity', function () {
+    $owner = User::factory()->create(['reporting_currency' => 'PEN']);
+    $coffee = Category::factory()->recycle($owner)->create(['name' => 'Coffee']);
+    $fruit = Category::factory()->recycle($owner)->create(['name' => 'Fruit']);
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
+        'occurred_on' => '2026-07-28',
+        'amount_minor' => 2,
+    ]);
+    $breakdown = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->create();
+    LineItem::factory()->for($breakdown)->create([
+        'line_item_id' => '01983d79-a780-72f0-bb34-9b4f3f0cf391',
+        'category_id' => $coffee->id,
+        'line_total_minor' => 1,
+    ]);
+    LineItem::factory()->for($breakdown)->create([
+        'line_item_id' => '01983d79-a780-72f0-bb34-9b4f3f0cf390',
+        'category_id' => $fruit->id,
+        'line_total_minor' => 1,
+    ]);
+    $rate = DailyExchangeRate::factory()->recycle($owner)->create([
+        'applicable_on' => '2026-07-28',
+        'pen_per_usd_scaled' => 1_500_000,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('transactions.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('combined_total.amount_minor', '3')
+            ->where('category_totals.0.category.name', 'Coffee')
+            ->where('category_totals.0.combined_total.amount_minor', '1')
+            ->where('category_totals.1.category.name', 'Fruit')
+            ->where('category_totals.1.combined_total.amount_minor', '2'));
+
+    $this->patch(route('daily_exchange_rates.update', $rate), [
+        'expected_revision' => 1,
+        'pen_per_usd' => '2.500000',
+    ])->assertSessionHasNoErrors();
+
+    $this->get(route('transactions.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('combined_total.amount_minor', '5')
+            ->where('category_totals.0.combined_total.amount_minor', '2')
+            ->where('category_totals.1.combined_total.amount_minor', '3'));
+
+    $this->patch(route('daily_exchange_rates.update', $rate), [
+        'expected_revision' => 2,
+        'pen_per_usd' => '1.500000',
+    ])->assertSessionHasNoErrors();
+
+    $this->get(route('transactions.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('combined_total.amount_minor', '3')
+            ->where('category_totals.0.combined_total.amount_minor', '1')
+            ->where('category_totals.1.combined_total.amount_minor', '2'));
+
+    expect($transaction->fresh()->revision)->toBe(1)
+        ->and($breakdown->lineItems()->count())->toBe(2);
+});
+
 test('combined reporting apportions signed adjustments by mathematical largest remainder', function () {
     $owner = User::factory()->create(['reporting_currency' => 'PEN']);
     $discounts = Category::factory()->recycle($owner)->create(['name' => 'Discounts']);

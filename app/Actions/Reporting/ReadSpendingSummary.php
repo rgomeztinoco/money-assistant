@@ -65,7 +65,7 @@ final class ReadSpendingSummary
                 'receiptBreakdowns' => fn ($query) => $query
                     ->where('status', 'confirmed')
                     ->select(['id', 'transaction_id']),
-                'receiptBreakdowns.lineItems:id,receipt_breakdown_id,category_id,line_total_minor',
+                'receiptBreakdowns.lineItems:id,line_item_id,receipt_breakdown_id,category_id,line_total_minor',
             ])
             ->lazyById();
 
