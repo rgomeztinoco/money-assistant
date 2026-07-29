@@ -20,6 +20,30 @@ test('development services publish ports only on loopback', function () {
     ]);
 });
 
+test('development runs its queue worker and scheduler as supervised services', function () {
+    $services = $this->developmentCompose['services'];
+
+    expect($services)->toHaveKeys(['laravel.test', 'queue', 'scheduler', 'pgsql', 'mailpit'])
+        ->and($services['queue']['restart'])->toBe('unless-stopped')
+        ->and($services['queue']['command'])->toBe([
+            'php',
+            'artisan',
+            'queue:work',
+            'database',
+            '--sleep=3',
+            '--tries=3',
+            '--timeout=60',
+            '--no-interaction',
+        ])
+        ->and($services['scheduler']['restart'])->toBe('unless-stopped')
+        ->and($services['scheduler']['command'])->toBe([
+            'php',
+            'artisan',
+            'schedule:work',
+            '--no-interaction',
+        ]);
+});
+
 test('the default development application port matches the OpenClaw capability origin', function () {
     $environment = file_get_contents(base_path('.env.example'));
     $plugin = file_get_contents(base_path('openclaw/money-assistant-plugin/src/index.ts'));
