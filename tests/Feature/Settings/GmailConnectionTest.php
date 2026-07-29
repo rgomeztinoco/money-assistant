@@ -83,6 +83,7 @@ test('the state-bound callback stores hidden encrypted credentials for the Gmail
         accessTokenExpiresAt: now()->addHour(),
         grantedScopes: [Gmail::READ_ONLY_SCOPE],
         accountIdentity: 'receipts@example.test',
+        historyId: 'bootstrap-history-100',
     );
     app()->instance(Gmail::class, $gmail);
 
@@ -111,6 +112,8 @@ test('the state-bound callback stores hidden encrypted credentials for the Gmail
         ->and($stored->access_token)->not->toBe('sensitive-access-token')
         ->and($stored->refresh_token)->not->toBe('sensitive-refresh-token')
         ->and($connection->connected_at?->toIso8601String())->toBe(now()->toIso8601String())
+        ->and($connection->history_id)->toBe('bootstrap-history-100')
+        ->and($connection->initial_sync_completed_at)->toBeNull()
         ->and($connection->last_successful_check_at?->toIso8601String())->toBe(now()->toIso8601String())
         ->and($connection->reauthorization_required_at)->toBeNull()
         ->and($connection->toArray())->not->toHaveKeys(['access_token', 'refresh_token']);
@@ -177,6 +180,7 @@ test('a broader fake Gmail grant is rejected without replacing retained credenti
         accessTokenExpiresAt: now()->addHour(),
         grantedScopes: [Gmail::READ_ONLY_SCOPE, 'https://mail.google.com/'],
         accountIdentity: $connection->gmail_account_identity,
+        historyId: '200',
     );
     app()->instance(Gmail::class, $gmail);
 
@@ -324,7 +328,7 @@ test('an explicit health check refreshes access and records a successful Gmail p
         accessToken: 'checked-access-token',
         accessTokenExpiresAt: now()->addHour(),
     );
-    $gmail->profile = new GmailProfile('receipts@example.test');
+    $gmail->profile = new GmailProfile('receipts@example.test', '300');
     app()->instance(Gmail::class, $gmail);
 
     $this->actingAs($connection->owner)
@@ -377,7 +381,7 @@ test('a checked Gmail account identity mismatch pauses ingestion for owner reaut
         accessToken: 'unexpected-account-access-token',
         accessTokenExpiresAt: now()->addHour(),
     );
-    $gmail->profile = new GmailProfile('another-account@example.test');
+    $gmail->profile = new GmailProfile('another-account@example.test', '300');
     app()->instance(Gmail::class, $gmail);
 
     $this->actingAs($connection->owner)
@@ -410,6 +414,7 @@ test('explicit reauthorization updates the stable connection and resumes ingesti
         accessTokenExpiresAt: now()->addHour(),
         grantedScopes: [Gmail::READ_ONLY_SCOPE],
         accountIdentity: 'receipts@example.test',
+        historyId: '400',
     );
     app()->instance(Gmail::class, $gmail);
 
@@ -448,6 +453,7 @@ test('reauthorization cannot silently replace the dedicated Gmail account identi
         accessTokenExpiresAt: now()->addHour(),
         grantedScopes: [Gmail::READ_ONLY_SCOPE],
         accountIdentity: 'another-account@example.test',
+        historyId: '500',
     );
     app()->instance(Gmail::class, $gmail);
 

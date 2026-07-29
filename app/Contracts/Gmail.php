@@ -4,6 +4,9 @@ namespace App\Contracts;
 
 use App\Integrations\Gmail\GmailAccess;
 use App\Integrations\Gmail\GmailAuthorization;
+use App\Integrations\Gmail\GmailHistoryPage;
+use App\Integrations\Gmail\GmailMessageIdentity;
+use App\Integrations\Gmail\GmailMessagePage;
 use App\Integrations\Gmail\GmailProfile;
 
 interface Gmail
@@ -17,4 +20,21 @@ interface Gmail
     public function refresh(string $refreshToken): GmailAccess;
 
     public function profile(string $accessToken): GmailProfile;
+
+    public function history(
+        string $accessToken,
+        string $startHistoryId,
+        ?string $pageToken = null,
+    ): GmailHistoryPage;
+
+    public function messagesAfter(
+        string $accessToken,
+        int $afterEpochSeconds,
+        ?string $pageToken = null,
+    ): GmailMessagePage;
+
+    public function messageIdentity(
+        string $accessToken,
+        string $messageId,
+    ): GmailMessageIdentity;
 }

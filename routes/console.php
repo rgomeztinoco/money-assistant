@@ -1,10 +1,12 @@
 <?php
 
 use App\Actions\Categorization\DispatchPendingAiClassifications;
+use App\Actions\NotificationIngestion\DispatchGmailSynchronizations;
 use App\Actions\Reminders\DispatchPendingReminderDeliveries;
 use App\Actions\Reminders\EnqueueDueReminderDeliveries;
 use App\Actions\Reporting\DiscoverMissingDailyExchangeRates;
 use App\Actions\Reporting\DispatchPendingDailyExchangeRateSeeds;
+use App\GmailSynchronizationType;
 use App\Operations\DeploymentRehearsal;
 use App\Operations\RuntimeHealth;
 use Illuminate\Foundation\Inspiring;
@@ -12,6 +14,15 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::useCache('database');
+
+Schedule::call(
+    fn () => app(DispatchGmailSynchronizations::class)
+        ->handle(GmailSynchronizationType::Reconciliation),
+)
+    ->dailyAt('00:00')
+    ->name('gmail-seven-day-reconciliation')
+    ->onOneServer()
+    ->withoutOverlapping();
 
 Schedule::everyMinute()
     ->name('money-assistant-minute')
@@ -45,6 +56,13 @@ Schedule::everyMinute()
             fn () => app(DispatchPendingAiClassifications::class)->handle(),
         )
             ->name('ai-transaction-classifications')
+            ->withoutOverlapping();
+
+        Schedule::call(
+            fn () => app(DispatchGmailSynchronizations::class)
+                ->handle(GmailSynchronizationType::Incremental),
+        )
+            ->name('gmail-history-synchronization')
             ->withoutOverlapping();
 
         Schedule::call(

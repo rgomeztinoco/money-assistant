@@ -1,6 +1,7 @@
 <?php
 
 use App\Contracts\Gmail;
+use App\Integrations\Gmail\GmailHistoryExpired;
 use App\Integrations\Gmail\GmailReauthorizationRequired;
 use App\Integrations\Gmail\GmailRequestFailed;
 use App\Integrations\Gmail\GoogleGmail;
@@ -85,6 +86,7 @@ test('the Google adapter exchanges a web-server code and reads the Gmail account
         ->and($authorization->accessTokenExpiresAt->toIso8601String())->toBe('2026-07-28T17:00:00+00:00')
         ->and($authorization->grantedScopes)->toBe([Gmail::READ_ONLY_SCOPE])
         ->and($authorization->accountIdentity)->toBe('receipts@example.test')
+        ->and($authorization->historyId)->toBe('123456')
         ->and($requests)->toHaveCount(2);
 
     parse_str((string) $requests[0]['request']->getBody(), $tokenRequest);
@@ -191,4 +193,180 @@ test('the Google adapter identifies a terminal refresh rejection without exposin
         expect($exception->getMessage())->not->toContain('sensitive')
             ->and($exception->getPrevious())->toBeNull();
     }
+});
+
+test('the Google adapter reads only added message identities from a history page', function () {
+    $requests = [];
+    $observedAuthorization = null;
+    $mockHandler = new MockHandler([
+        function (RequestInterface $request) use (&$observedAuthorization): Response {
+            $observedAuthorization = $request->getHeaderLine('Authorization');
+
+            return new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'history' => [
+                    [
+                        'id' => '101',
+                        'messages' => [
+                            ['id' => 'generic-message', 'threadId' => 'thread-1'],
+                        ],
+                        'messagesAdded' => [
+                            ['message' => ['id' => 'immutable-message-1', 'threadId' => 'thread-2']],
+                            ['message' => ['id' => 'immutable-message-2', 'threadId' => 'thread-3']],
+                        ],
+                    ],
+                ],
+                'historyId' => '120',
+                'nextPageToken' => 'next-history-page',
+            ], JSON_THROW_ON_ERROR));
+        },
+    ]);
+    $handlerStack = HandlerStack::create($mockHandler);
+    $handlerStack->push(Middleware::history($requests));
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+        httpClient: new Client(['handler' => $handlerStack]),
+    );
+
+    $page = $gmail->history(
+        accessToken: 'access-token',
+        startHistoryId: '100',
+        pageToken: 'requested-history-page',
+    );
+
+    expect($page->messageIds)->toBe(['immutable-message-1', 'immutable-message-2'])
+        ->and($page->historyId)->toBe('120')
+        ->and($page->nextPageToken)->toBe('next-history-page')
+        ->and($requests)->toHaveCount(1);
+
+    $request = $requests[0]['request'];
+    parse_str((string) $request->getUri()->getQuery(), $query);
+
+    expect($request->getMethod())->toBe('GET')
+        ->and($observedAuthorization)->toBe('Bearer access-token')
+        ->and($request->getUri()->getPath())->toBe('/gmail/v1/users/me/history')
+        ->and($query)->toMatchArray([
+            'historyTypes' => 'messageAdded',
+            'maxResults' => '500',
+            'pageToken' => 'requested-history-page',
+            'startHistoryId' => '100',
+        ]);
+});
+
+test('the Google adapter lists an overlapping mailbox window and reads only message identity metadata', function () {
+    $requests = [];
+    $mockHandler = new MockHandler([
+        new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'messages' => [
+                ['id' => 'immutable-message-1', 'threadId' => 'thread-1'],
+                ['id' => 'immutable-message-2', 'threadId' => 'thread-2'],
+            ],
+            'nextPageToken' => 'next-message-page',
+            'resultSizeEstimate' => 2,
+        ], JSON_THROW_ON_ERROR)),
+        new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'id' => 'immutable-message-1',
+            'threadId' => 'thread-1',
+            'historyId' => '130',
+            'internalDate' => '1785258000000',
+            'labelIds' => ['INBOX'],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+    $handlerStack = HandlerStack::create($mockHandler);
+    $handlerStack->push(Middleware::history($requests));
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+        httpClient: new Client(['handler' => $handlerStack]),
+    );
+
+    $page = $gmail->messagesAfter(
+        accessToken: 'access-token',
+        afterEpochSeconds: 1785250000,
+        pageToken: 'requested-message-page',
+    );
+    $identity = $gmail->messageIdentity('access-token', 'immutable-message-1');
+
+    expect($page->messageIds)->toBe(['immutable-message-1', 'immutable-message-2'])
+        ->and($page->nextPageToken)->toBe('next-message-page')
+        ->and($identity->messageId)->toBe('immutable-message-1')
+        ->and($identity->receivedAt->toIso8601String())->toBe('2026-07-28T17:00:00+00:00')
+        ->and($requests)->toHaveCount(2);
+
+    parse_str((string) $requests[0]['request']->getUri()->getQuery(), $listQuery);
+    parse_str((string) $requests[1]['request']->getUri()->getQuery(), $getQuery);
+
+    expect($requests[0]['request']->getUri()->getPath())->toBe('/gmail/v1/users/me/messages')
+        ->and($listQuery)->toMatchArray([
+            'includeSpamTrash' => 'true',
+            'maxResults' => '500',
+            'pageToken' => 'requested-message-page',
+            'q' => 'in:anywhere after:1785250000',
+        ])
+        ->and($requests[1]['request']->getUri()->getPath())->toBe('/gmail/v1/users/me/messages/immutable-message-1')
+        ->and($getQuery)->toMatchArray([
+            'fields' => 'id,internalDate',
+            'format' => 'full',
+        ]);
+});
+
+test('the Google adapter identifies an expired history cursor without exposing mailbox data', function () {
+    $mockHandler = new MockHandler([
+        new Response(404, ['Content-Type' => 'application/json'], json_encode([
+            'error' => [
+                'code' => 404,
+                'message' => 'Requested entity was not found for sensitive-history-100.',
+                'status' => 'NOT_FOUND',
+            ],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+        httpClient: new Client(['handler' => HandlerStack::create($mockHandler)]),
+    );
+
+    expect(fn () => $gmail->history(
+        accessToken: 'sensitive-access-token',
+        startHistoryId: 'sensitive-history-100',
+    ))->toThrow(
+        GmailHistoryExpired::class,
+        'The Gmail history cursor has expired.',
+    );
+});
+
+test('the Google adapter sanitizes message discovery failures', function () {
+    $mockHandler = new MockHandler([
+        new Response(500, ['Content-Type' => 'application/json'], json_encode([
+            'error' => ['message' => 'sensitive subject and raw MIME from list'],
+        ], JSON_THROW_ON_ERROR)),
+        new Response(500, ['Content-Type' => 'application/json'], json_encode([
+            'error' => ['message' => 'sensitive subject and raw MIME from message'],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+        httpClient: new Client(['handler' => HandlerStack::create($mockHandler)]),
+    );
+
+    expect(fn () => $gmail->messagesAfter(
+        accessToken: 'sensitive-access-token',
+        afterEpochSeconds: 1785250000,
+    ))->toThrow(
+        GmailRequestFailed::class,
+        'Gmail messages could not be discovered.',
+    );
+
+    expect(fn () => $gmail->messageIdentity(
+        accessToken: 'sensitive-access-token',
+        messageId: 'sensitive-message-id',
+    ))->toThrow(
+        GmailRequestFailed::class,
+        'Gmail message identity metadata could not be read.',
+    );
 });

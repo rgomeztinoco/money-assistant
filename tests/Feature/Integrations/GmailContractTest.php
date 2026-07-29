@@ -22,6 +22,7 @@ test('notification ingestion uses a fake Gmail contract without live network acc
         accessTokenExpiresAt: now()->addHour(),
         grantedScopes: [Gmail::READ_ONLY_SCOPE],
         accountIdentity: 'receipts@example.test',
+        historyId: '100',
     );
     $gmail->access = new GmailAccess(
         accessToken: 'refreshed-fake-access-token',

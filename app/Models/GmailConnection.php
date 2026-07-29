@@ -24,6 +24,9 @@ use Illuminate\Support\Carbon;
  * @property CarbonImmutable|null $last_check_failed_at
  * @property CarbonImmutable|null $reauthorization_required_at
  * @property string|null $last_error_code
+ * @property string|null $history_id
+ * @property CarbonImmutable|null $initial_sync_completed_at
+ * @property CarbonImmutable|null $last_successful_sync_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -39,6 +42,9 @@ use Illuminate\Support\Carbon;
     'last_check_failed_at',
     'reauthorization_required_at',
     'last_error_code',
+    'history_id',
+    'initial_sync_completed_at',
+    'last_successful_sync_at',
 ])]
 #[Hidden(['access_token', 'refresh_token'])]
 class GmailConnection extends Model
@@ -75,6 +81,8 @@ class GmailConnection extends Model
             'last_successful_check_at' => 'immutable_datetime',
             'last_check_failed_at' => 'immutable_datetime',
             'reauthorization_required_at' => 'immutable_datetime',
+            'initial_sync_completed_at' => 'immutable_datetime',
+            'last_successful_sync_at' => 'immutable_datetime',
         ];
     }
 }

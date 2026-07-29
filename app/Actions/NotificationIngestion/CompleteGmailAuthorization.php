@@ -42,6 +42,7 @@ final class CompleteGmailAuthorization
                 'last_check_failed_at' => null,
                 'reauthorization_required_at' => null,
                 'last_error_code' => null,
+                'history_id' => $connection->history_id ?? $authorization->historyId,
             ])->save();
 
             return $connection;

@@ -5,6 +5,7 @@ namespace App\Integrations\Gmail;
 use App\Contracts\Gmail;
 use Carbon\CarbonImmutable;
 use Google\Client;
+use Google\Service\Exception as GoogleServiceException;
 use Google\Service\Gmail as GmailService;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\ClientInterface;
@@ -53,14 +54,15 @@ final class GoogleGmail implements Gmail
 
         $authorization = $this->authorizationCredentials($credentials);
 
-        $accountIdentity = $this->profileWithClient($client, GmailRequestFailed::authorization())->accountIdentity;
+        $profile = $this->profileWithClient($client, GmailRequestFailed::authorization());
 
         return new GmailAuthorization(
             accessToken: $authorization['access_token'],
             refreshToken: $authorization['refresh_token'],
             accessTokenExpiresAt: CarbonImmutable::now()->addSeconds($authorization['expires_in']),
             grantedScopes: $authorization['granted_scopes'],
-            accountIdentity: $accountIdentity,
+            accountIdentity: $profile->accountIdentity,
+            historyId: $profile->historyId,
         );
     }
 
@@ -105,13 +107,123 @@ final class GoogleGmail implements Gmail
     public function profile(string $accessToken): GmailProfile
     {
         $client = $this->client();
-        $client->setAccessToken([
-            'access_token' => $accessToken,
-            'expires_in' => 3600,
-            'created' => time(),
-        ]);
+        $this->setAccessToken($client, $accessToken);
 
         return $this->profileWithClient($client, GmailRequestFailed::profile());
+    }
+
+    public function history(
+        string $accessToken,
+        string $startHistoryId,
+        ?string $pageToken = null,
+    ): GmailHistoryPage {
+        $client = $this->client();
+        $this->setAccessToken($client, $accessToken);
+
+        try {
+            $response = (new GmailService($client))->users_history->listUsersHistory('me', array_filter([
+                'historyTypes' => 'messageAdded',
+                'maxResults' => 500,
+                'pageToken' => $pageToken,
+                'startHistoryId' => $startHistoryId,
+            ], static fn (mixed $value): bool => $value !== null));
+        } catch (GoogleServiceException $exception) {
+            if ($exception->getCode() === 404) {
+                throw new GmailHistoryExpired;
+            }
+
+            throw GmailRequestFailed::history();
+        } catch (Throwable) {
+            throw GmailRequestFailed::history();
+        }
+
+        $messageIds = [];
+
+        foreach ($response->getHistory() ?? [] as $history) {
+            foreach ($history->getMessagesAdded() ?? [] as $messageAdded) {
+                $messageId = $messageAdded->getMessage()?->getId();
+
+                if (is_string($messageId) && $messageId !== '') {
+                    $messageIds[$messageId] = true;
+                }
+            }
+        }
+
+        return new GmailHistoryPage(
+            messageIds: array_keys($messageIds),
+            historyId: (string) $response->getHistoryId(),
+            nextPageToken: filled($response->getNextPageToken())
+                ? (string) $response->getNextPageToken()
+                : null,
+        );
+    }
+
+    public function messagesAfter(
+        string $accessToken,
+        int $afterEpochSeconds,
+        ?string $pageToken = null,
+    ): GmailMessagePage {
+        $client = $this->client();
+        $this->setAccessToken($client, $accessToken);
+
+        try {
+            $response = (new GmailService($client))->users_messages->listUsersMessages('me', array_filter([
+                'includeSpamTrash' => true,
+                'maxResults' => 500,
+                'pageToken' => $pageToken,
+                'q' => "in:anywhere after:{$afterEpochSeconds}",
+            ], static fn (mixed $value): bool => $value !== null));
+        } catch (Throwable) {
+            throw GmailRequestFailed::messages();
+        }
+
+        $messageIds = [];
+
+        foreach ($response->getMessages() ?? [] as $message) {
+            $messageId = $message->getId();
+
+            if (is_string($messageId) && $messageId !== '') {
+                $messageIds[$messageId] = true;
+            }
+        }
+
+        return new GmailMessagePage(
+            messageIds: array_keys($messageIds),
+            nextPageToken: filled($response->getNextPageToken())
+                ? (string) $response->getNextPageToken()
+                : null,
+        );
+    }
+
+    public function messageIdentity(
+        string $accessToken,
+        string $messageId,
+    ): GmailMessageIdentity {
+        $client = $this->client();
+        $this->setAccessToken($client, $accessToken);
+
+        try {
+            $message = (new GmailService($client))->users_messages->get('me', $messageId, [
+                'fields' => 'id,internalDate',
+                'format' => 'full',
+            ]);
+        } catch (Throwable) {
+            throw GmailRequestFailed::messageIdentity();
+        }
+        $returnedMessageId = $message->getId();
+        $receivedAt = $message->getInternalDate();
+
+        if (! is_string($returnedMessageId)
+            || $returnedMessageId !== $messageId
+            || ! is_string($receivedAt)
+            || ! ctype_digit($receivedAt)) {
+            throw GmailRequestFailed::messageIdentity();
+        }
+
+        return new GmailMessageIdentity(
+            messageId: $returnedMessageId,
+            receivedAt: CarbonImmutable::createFromTimestampMsUTC($receivedAt),
+        );
     }
 
     private function client(): Client
@@ -126,6 +238,16 @@ final class GoogleGmail implements Gmail
         $client->setHttpClient($this->httpClient ?? $this->defaultHttpClient());
 
         return $client;
+    }
+
+    private function setAccessToken(Client $client, string $accessToken): void
+    {
+        $client->setAccessToken([
+            'access_token' => $accessToken,
+            'expires_in' => 3600,
+            'created' => time(),
+            'token_type' => 'Bearer',
+        ]);
     }
 
     private function defaultHttpClient(): ClientInterface
@@ -203,11 +325,15 @@ final class GoogleGmail implements Gmail
         }
 
         $accountIdentity = $profile->getEmailAddress();
+        $historyId = $profile->getHistoryId();
 
-        if (! is_string($accountIdentity) || $accountIdentity === '') {
+        if (! is_string($accountIdentity)
+            || $accountIdentity === ''
+            || ! is_string($historyId)
+            || $historyId === '') {
             throw $failure;
         }
 
-        return new GmailProfile($accountIdentity);
+        return new GmailProfile($accountIdentity, $historyId);
     }
 }

@@ -13,5 +13,6 @@ final readonly class GmailAuthorization
         public CarbonImmutable $accessTokenExpiresAt,
         public array $grantedScopes,
         public string $accountIdentity,
+        public string $historyId,
     ) {}
 }

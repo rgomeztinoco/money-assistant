@@ -30,6 +30,9 @@ class GmailConnectionFactory extends Factory
             'last_check_failed_at' => null,
             'reauthorization_required_at' => null,
             'last_error_code' => null,
+            'history_id' => (string) fake()->numberBetween(100_000, 999_999),
+            'initial_sync_completed_at' => now()->subDay(),
+            'last_successful_sync_at' => now()->subMinute(),
         ];
     }
 
