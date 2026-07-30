@@ -13,11 +13,11 @@ const REMINDER_HOOK_SESSION_KEY = 'hook:money-assistant:reminders';
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
 const SHA256_PATTERN = '^[a-f0-9]{64}$';
 const APPROVED_RECEIPT_PROVIDER = 'openai';
-const APPROVED_RECEIPT_MODEL = 'openai/gpt-5.6';
+const APPROVED_RECEIPT_MODEL = 'openai/gpt-5.6-sol';
 const RECEIPT_CONTRACT_VERSION = 2;
 const RECEIPT_CLEANUP_CEILING_SECONDS = 3600;
 const RECEIPT_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
-const RECEIPT_POLICY_VERSION = 'openai-oauth-gpt-5.6-v1';
+const RECEIPT_POLICY_VERSION = 'openai-oauth-gpt-5.6-sol-v1';
 const APPROVED_OPENAI_OAUTH_PROFILE = 'openai:money-assistant-oauth';
 const PROPOSABLE_LINE_ITEM_ROLES = [
     'purchased_item',
@@ -32,7 +32,7 @@ const OWNER_LINE_ITEM_ROLES = [
     ...PROPOSABLE_LINE_ITEM_ROLES,
     'unidentified',
 ];
-export const RECEIPT_PRIVACY_DISCLOSURE = 'Receipt processing uses the existing OpenAI OAuth account and only openai/gpt-5.6. OpenAI OAuth has no published fixed retention ceiling. Before enabling receipts, disable account-wide model improvement and Codex full-environment training. Receipt interactions are never submitted as feedback. OpenClaw deletes local images after proposal submission or terminal failure, enforces a one-hour crash-cleanup ceiling, then attempts to delete the Telegram source and warns if manual removal is needed. Money Assistant retains only the opaque proposal identifier, receipt_photo source kind, processing time, actual provider/model, contract version, and structured financial proposal.';
+export const RECEIPT_PRIVACY_DISCLOSURE = 'Receipt processing uses the existing OpenAI OAuth account and only openai/gpt-5.6-sol. OpenAI OAuth has no published fixed retention ceiling. Before enabling receipts, disable account-wide model improvement and Codex full-environment training. Receipt interactions are never submitted as feedback. OpenClaw deletes local images after proposal submission or terminal failure, enforces a one-hour crash-cleanup ceiling, then attempts to delete the Telegram source and warns if manual removal is needed. Money Assistant retains only the opaque proposal identifier, receipt_photo source kind, processing time, actual provider/model, contract version, and structured financial proposal.';
 const pluginConfigSchema = Type.Object({
     keyId: Type.String({ minLength: 1, maxLength: 128 }),
     privateKey: Type.String({ minLength: 1 }),
@@ -343,6 +343,12 @@ export function receiptRuntimePolicyReady(runtimeConfig, agentId) {
     const models = defaultAgentPolicy.models;
     const model = defaultAgentPolicy.model;
     const imageModel = defaultAgentPolicy.imageModel;
+    const targetAgent = Array.isArray(runtimeConfig.agents.list)
+        ? runtimeConfig.agents.list.find((agent) => isRecord(agent) && agent.id === agentId)
+        : undefined;
+    const targetAgentModel = isRecord(targetAgent)
+        ? targetAgent.model
+        : undefined;
     return (isRecord(approvedProfile) &&
         approvedProfile.provider === APPROVED_RECEIPT_PROVIDER &&
         approvedProfile.mode === 'oauth' &&
@@ -363,8 +369,11 @@ export function receiptRuntimePolicyReady(runtimeConfig, agentId) {
         imageModel.primary === APPROVED_RECEIPT_MODEL &&
         Array.isArray(imageModel.fallbacks) &&
         imageModel.fallbacks.length === 0 &&
-        Array.isArray(runtimeConfig.agents.list) &&
-        runtimeConfig.agents.list.some((agent) => isRecord(agent) && agent.id === agentId));
+        isRecord(targetAgent) &&
+        isRecord(targetAgentModel) &&
+        targetAgentModel.primary === APPROVED_RECEIPT_MODEL &&
+        Array.isArray(targetAgentModel.fallbacks) &&
+        targetAgentModel.fallbacks.length === 0);
 }
 export function receiptEffectiveAuthStateReady(profiles, resolvedOrder, sessionEntry) {
     const credential = profiles[APPROVED_OPENAI_OAUTH_PROFILE];
@@ -1823,7 +1832,7 @@ plugin.register = (api) => {
             receiptEffectiveAuthReady(api.config, config.agentId, context.sessionKey)) {
             return {
                 providerOverride: APPROVED_RECEIPT_PROVIDER,
-                modelOverride: 'gpt-5.6',
+                modelOverride: 'gpt-5.6-sol',
             };
         }
         const admission = admittedReminderEvent(event.prompt, context, config, Math.floor(Date.now() / 1000));

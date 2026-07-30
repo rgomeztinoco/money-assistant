@@ -169,7 +169,7 @@ final class AuthorizeOpenClawCapability
                 'input.source_kind' => ['required', 'string', Rule::in(['receipt_photo'])],
                 'input.processed_at' => ['required', 'string', 'max:35'],
                 'input.provider' => ['required', 'string', Rule::in(['openai'])],
-                'input.model' => ['required', 'string', Rule::in(['openai/gpt-5.6'])],
+                'input.model' => ['required', 'string', Rule::in(['openai/gpt-5.6-sol'])],
                 'input.contract_version' => ['required', 'integer', Rule::in([1, 2])],
                 'input.transaction' => ['required', 'array:occurred_on,amount_minor,currency,kind,merchant_description'],
                 'input.transaction.occurred_on' => ['required', 'date_format:Y-m-d'],

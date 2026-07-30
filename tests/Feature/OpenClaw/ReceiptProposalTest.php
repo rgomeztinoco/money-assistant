@@ -70,7 +70,7 @@ beforeEach(function () {
             'source_kind' => 'receipt_photo',
             'processed_at' => now()->toIso8601String(),
             'provider' => 'openai',
-            'model' => 'openai/gpt-5.6',
+            'model' => 'openai/gpt-5.6-sol',
             'contract_version' => 1,
             'transaction' => [
                 'occurred_on' => '2026-07-28',
@@ -111,7 +111,7 @@ test('an image-free Receipt Proposal from a distinct owner photo is accepted wit
         ->and($proposal->source_kind)->toBe('receipt_photo')
         ->and($proposal->processed_at->toIso8601String())->toBe($payload['input']['processed_at'])
         ->and($proposal->provider)->toBe('openai')
-        ->and($proposal->model)->toBe('openai/gpt-5.6')
+        ->and($proposal->model)->toBe('openai/gpt-5.6-sol')
         ->and($proposal->contract_version)->toBe(1)
         ->and($proposal->proposed_transaction)->toEqual($payload['input']['transaction'])
         ->and($proposal->proposed_line_items)->toEqual($payload['input']['line_items'])
@@ -302,7 +302,7 @@ test('Receipt Proposals reject unapproved provenance and sensitive content', fun
         $payload['input']['provider'] = 'other';
     }],
     'wrong model' => [function (array &$payload): void {
-        $payload['input']['model'] = 'openai/gpt-5.6-mini';
+        $payload['input']['model'] = 'openai/gpt-5.6';
     }],
     'wrong contract version' => [function (array &$payload): void {
         $payload['input']['contract_version'] = 2;

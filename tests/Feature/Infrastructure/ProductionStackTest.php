@@ -198,7 +198,10 @@ test('the dedicated Money Assistant agent exposes only its bounded financial plu
             'allowConversationAccess' => true,
         ])
         ->and($agent['skills'])->toBe([])
-        ->and($agent)->not->toHaveKey('model')
+        ->and($agent['model'])->toBe([
+            'primary' => 'openai/gpt-5.6-sol',
+            'fallbacks' => [],
+        ])
         ->and($agent['memorySearch'])->toBe(['enabled' => false])
         ->and($policy['agents']['defaults']['timeoutSeconds'])->toBe(1800)
         ->and($agent['heartbeat']['every'])->toBe('0m')
@@ -266,14 +269,14 @@ test('the dedicated Money Assistant agent exposes only its bounded financial plu
             'openai:money-assistant-oauth',
         ])
         ->and($policy['agents']['defaults']['imageModel'])->toBe([
-            'primary' => 'openai/gpt-5.6',
+            'primary' => 'openai/gpt-5.6-sol',
             'fallbacks' => [],
         ])
         ->and($policy['agents']['defaults']['model'])->toBe([
-            'primary' => 'openai/gpt-5.6',
+            'primary' => 'openai/gpt-5.6-sol',
             'fallbacks' => [],
         ])
-        ->and(array_keys($policy['agents']['defaults']['models']))->toBe(['openai/gpt-5.6'])
+        ->and(array_keys($policy['agents']['defaults']['models']))->toBe(['openai/gpt-5.6-sol'])
         ->and($policy['commands'])->toBe([
             'native' => false,
             'nativeSkills' => false,
@@ -299,7 +302,7 @@ test('the dedicated Money Assistant agent exposes only its bounded financial plu
         ->and($receiptConfig['openAiOAuthProfileId'])->toBe('openai:money-assistant-oauth')
         ->and($receiptConfig['openAiOAuthCredentialVersion'])
         ->toBe('${OPENCLAW_MONEY_ASSISTANT_OPENAI_OAUTH_CREDENTIAL_VERSION}')
-        ->and($receiptConfig['receiptPolicyVersion'])->toBe('openai-oauth-gpt-5.6-v1')
+        ->and($receiptConfig['receiptPolicyVersion'])->toBe('openai-oauth-gpt-5.6-sol-v1')
         ->and($receiptConfig['receiptConfirmedPolicyVersion'])->toBe('')
         ->and($receiptConfig['receiptConfirmedOAuthProfileId'])->toBe('')
         ->and($receiptConfig['receiptConfirmedOAuthCredentialVersion'])->toBe('');

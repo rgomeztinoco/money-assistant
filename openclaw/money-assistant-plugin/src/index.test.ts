@@ -83,8 +83,8 @@ test('receipt processing fails closed until every approved privacy gate is confi
     codexFullEnvironmentTrainingDisabled: true,
     openAiOAuthProfileId: 'openai:money-assistant-oauth',
     openAiOAuthCredentialVersion: 'oauth-credential-2026-07',
-    receiptPolicyVersion: 'openai-oauth-gpt-5.6-v1',
-    receiptConfirmedPolicyVersion: 'openai-oauth-gpt-5.6-v1',
+    receiptPolicyVersion: 'openai-oauth-gpt-5.6-sol-v1',
+    receiptConfirmedPolicyVersion: 'openai-oauth-gpt-5.6-sol-v1',
     receiptConfirmedOAuthProfileId: 'openai:money-assistant-oauth',
     receiptConfirmedOAuthCredentialVersion: 'oauth-credential-2026-07',
   };
@@ -159,11 +159,16 @@ test('receipt runtime policy pins the only OpenAI OAuth profile model and comman
     commands: { text: false, native: false },
     agents: {
       defaults: {
-        model: { primary: 'openai/gpt-5.6', fallbacks: [] },
-        models: { 'openai/gpt-5.6': {} },
-        imageModel: { primary: 'openai/gpt-5.6', fallbacks: [] },
+        model: { primary: 'openai/gpt-5.6-sol', fallbacks: [] },
+        models: { 'openai/gpt-5.6-sol': {} },
+        imageModel: { primary: 'openai/gpt-5.6-sol', fallbacks: [] },
       },
-      list: [{ id: 'money-assistant' }],
+      list: [
+        {
+          id: 'money-assistant',
+          model: { primary: 'openai/gpt-5.6-sol', fallbacks: [] },
+        },
+      ],
     },
   };
 
@@ -217,6 +222,24 @@ test('receipt runtime policy pins the only OpenAI OAuth profile model and comman
       {
         ...runtimePolicy,
         commands: { text: true, native: false },
+      },
+      'money-assistant',
+    ),
+    false,
+  );
+  assert.equal(
+    receiptRuntimePolicyReady(
+      {
+        ...runtimePolicy,
+        agents: {
+          ...runtimePolicy.agents,
+          list: [
+            {
+              id: 'money-assistant',
+              model: { primary: 'openai/gpt-5.6', fallbacks: [] },
+            },
+          ],
+        },
       },
       'money-assistant',
     ),
@@ -410,11 +433,11 @@ test('receipt admission enforces the cleanup ceiling and stages source deletion'
     true,
   );
   assert.equal(
-    admissions.recordActualModel('run-456', 'openai', 'gpt-5.6'),
+    admissions.recordActualModel('run-456', 'openai', 'gpt-5.6-sol'),
     true,
   );
-  assert.equal(isApprovedReceiptModel('openai', 'gpt-5.6'), true);
-  assert.equal(isApprovedReceiptModel('openai', 'gpt-5.6-mini'), false);
+  assert.equal(isApprovedReceiptModel('openai', 'gpt-5.6-sol'), true);
+  assert.equal(isApprovedReceiptModel('openai', 'gpt-5.6'), false);
   assert.equal(
     receiptAdmissionBlockCategory(
       admissions,
@@ -484,7 +507,7 @@ test('receipt admission enforces the cleanup ceiling and stages source deletion'
     null,
   );
   assert.equal(
-    admissions.recordActualModel('generated-run', 'openai', 'gpt-5.6'),
+    admissions.recordActualModel('generated-run', 'openai', 'gpt-5.6-sol'),
     false,
   );
   await admissions.finishForRun(undefined, 'owner-session');
@@ -512,7 +535,7 @@ test('receipt admission enforces the cleanup ceiling and stages source deletion'
     'telegram-photo-without-inbound-run',
   );
   assert.equal(
-    admissions.recordActualModel('generated-run', 'openai', 'gpt-5.6'),
+    admissions.recordActualModel('generated-run', 'openai', 'gpt-5.6-sol'),
     true,
   );
   await admissions.finishForRun('generated-run', 'owner-session');
@@ -688,7 +711,7 @@ test('Receipt Proposal transport injects approved provenance without media ident
       processable: true,
       cleanupPaths: ['/var/lib/openclaw/media/inbound/receipt.jpg'],
       provider: 'openai',
-      model: 'openai/gpt-5.6',
+      model: 'openai/gpt-5.6-sol',
     },
     1_785_283_260,
   );
@@ -699,7 +722,7 @@ test('Receipt Proposal transport injects approved provenance without media ident
     source_kind: 'receipt_photo',
     processed_at: '2026-07-29T00:01:00Z',
     provider: 'openai',
-    model: 'openai/gpt-5.6',
+    model: 'openai/gpt-5.6-sol',
     contract_version: 2,
     transaction: {
       occurred_on: '2026-07-28',

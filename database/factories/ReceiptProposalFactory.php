@@ -24,7 +24,7 @@ class ReceiptProposalFactory extends Factory
             'source_kind' => 'receipt_photo',
             'processed_at' => now(),
             'provider' => 'openai',
-            'model' => 'openai/gpt-5.6',
+            'model' => 'openai/gpt-5.6-sol',
             'contract_version' => 1,
             'proposed_transaction' => [
                 'occurred_on' => now()->toDateString(),

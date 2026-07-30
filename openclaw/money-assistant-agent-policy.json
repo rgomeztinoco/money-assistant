@@ -31,7 +31,7 @@
           "codexFullEnvironmentTrainingDisabled": false,
           "openAiOAuthProfileId": "openai:money-assistant-oauth",
           "openAiOAuthCredentialVersion": "${OPENCLAW_MONEY_ASSISTANT_OPENAI_OAUTH_CREDENTIAL_VERSION}",
-          "receiptPolicyVersion": "openai-oauth-gpt-5.6-v1",
+          "receiptPolicyVersion": "openai-oauth-gpt-5.6-sol-v1",
           "receiptConfirmedPolicyVersion": "",
           "receiptConfirmedOAuthProfileId": "",
           "receiptConfirmedOAuthCredentialVersion": ""
@@ -56,14 +56,14 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "openai/gpt-5.6",
+        "primary": "openai/gpt-5.6-sol",
         "fallbacks": []
       },
       "models": {
-        "openai/gpt-5.6": {}
+        "openai/gpt-5.6-sol": {}
       },
       "imageModel": {
-        "primary": "openai/gpt-5.6",
+        "primary": "openai/gpt-5.6-sol",
         "fallbacks": []
       },
       "mediaGenerationAutoProviderFallback": false,
@@ -74,6 +74,10 @@
         "id": "money-assistant",
         "name": "Money Assistant",
         "workspace": "~/.openclaw/workspace-money-assistant",
+        "model": {
+          "primary": "openai/gpt-5.6-sol",
+          "fallbacks": []
+        },
         "skills": [],
         "memorySearch": {
           "enabled": false
