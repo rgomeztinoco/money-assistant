@@ -231,6 +231,25 @@ const receiptBreakdownMutationPreparationParameters = Type.Union([
         expected_revision: Type.Integer({ minimum: 1 }),
     }, { additionalProperties: false }),
 ]);
+function normalizedTelegramPeerId(peerId) {
+    if (!peerId) {
+        return undefined;
+    }
+    const normalizedPeerId = peerId.startsWith('telegram:')
+        ? peerId.slice('telegram:'.length)
+        : peerId;
+    if (normalizedPeerId === '' ||
+        normalizedPeerId.startsWith('telegram:')) {
+        return undefined;
+    }
+    return normalizedPeerId;
+}
+function matchesTelegramPeer(peerId, configuredPeerId) {
+    const normalizedPeerId = normalizedTelegramPeerId(peerId);
+    const normalizedConfiguredPeerId = normalizedTelegramPeerId(configuredPeerId);
+    return (normalizedPeerId !== undefined &&
+        normalizedPeerId === normalizedConfiguredPeerId);
+}
 class CapabilityRequestError extends Error {
     status;
     constructor(message, status) {
@@ -250,8 +269,8 @@ export function admittedOwnerMessage(event, context, config) {
     const occurredAtSeconds = event.timestamp === undefined ? null : timestampInSeconds(event.timestamp);
     if (context.channelId !== 'telegram' ||
         context.accountId !== config.accountId ||
-        context.conversationId !== config.conversationId ||
-        (event.senderId ?? context.senderId) !== config.ownerSenderId ||
+        !matchesTelegramPeer(context.conversationId, config.conversationId) ||
+        !matchesTelegramPeer(event.senderId ?? context.senderId, config.ownerSenderId) ||
         !sessionKey ||
         !messageId ||
         occurredAtSeconds === null) {
@@ -907,18 +926,18 @@ export function isBoundOwnerInteraction(toolContext, config) {
     return (toolContext.agentId === config.agentId &&
         toolContext.messageChannel === 'telegram' &&
         toolContext.agentAccountId === config.accountId &&
-        toolContext.requesterSenderId === config.ownerSenderId &&
+        matchesTelegramPeer(toolContext.requesterSenderId, config.ownerSenderId) &&
         toolContext.sessionId !== undefined &&
         toolContext.deliveryContext?.channel === 'telegram' &&
         toolContext.deliveryContext.accountId === config.accountId &&
-        toolContext.deliveryContext.to === config.conversationId);
+        matchesTelegramPeer(toolContext.deliveryContext.to, config.conversationId));
 }
 export function isBoundReminderEventInteraction(toolContext, config) {
     return (toolContext.agentId === config.agentId &&
         isReminderHookSessionKey(toolContext.sessionKey, config.agentId) &&
         toolContext.deliveryContext?.channel === 'telegram' &&
         toolContext.deliveryContext.accountId === config.accountId &&
-        toolContext.deliveryContext.to === config.conversationId);
+        matchesTelegramPeer(toolContext.deliveryContext.to, config.conversationId));
 }
 function isReminderHookSessionKey(sessionKey, agentId) {
     return (sessionKey === REMINDER_HOOK_SESSION_KEY ||
@@ -944,16 +963,16 @@ export function isBoundReminderChannelDelivery(event, context, config) {
         isReminderHookSessionKey(sessionKey, config.agentId) &&
         context.channelId === 'telegram' &&
         context.accountId === config.accountId &&
-        context.conversationId === config.conversationId &&
-        event.to === config.conversationId);
+        matchesTelegramPeer(context.conversationId, config.conversationId) &&
+        matchesTelegramPeer(event.to, config.conversationId));
 }
 export function shouldSuppressReminderDelivery(event, context, config, admissions, nowSeconds) {
     const sessionKey = context.sessionKey;
     if (!isReminderHookSessionKey(sessionKey, config.agentId) ||
         context.channelId !== 'telegram' ||
         context.accountId !== config.accountId ||
-        context.conversationId !== config.conversationId ||
-        event.to !== config.conversationId) {
+        !matchesTelegramPeer(context.conversationId, config.conversationId) ||
+        !matchesTelegramPeer(event.to, config.conversationId)) {
         return false;
     }
     return consumeAlreadyDeliveredReminder(sessionKey, admissions, nowSeconds);
@@ -1009,8 +1028,8 @@ export function capabilityRequestBody(capability, input, toolContext, admission)
             kind: 'owner_message',
             agent_id: toolContext.agentId,
             account_id: toolContext.agentAccountId,
-            conversation_id: toolContext.deliveryContext?.to,
-            owner_sender_id: toolContext.requesterSenderId,
+            conversation_id: normalizedTelegramPeerId(toolContext.deliveryContext?.to),
+            owner_sender_id: normalizedTelegramPeerId(toolContext.requesterSenderId),
             message_id: admission.messageId,
             occurred_at: occurredAt,
         },
@@ -1036,8 +1055,8 @@ export function receiptProposalCapabilityRequestBody(input, toolContext, admissi
             kind: 'owner_photo_message',
             agent_id: toolContext.agentId,
             account_id: toolContext.agentAccountId,
-            conversation_id: toolContext.deliveryContext?.to,
-            owner_sender_id: toolContext.requesterSenderId,
+            conversation_id: normalizedTelegramPeerId(toolContext.deliveryContext?.to),
+            owner_sender_id: normalizedTelegramPeerId(toolContext.requesterSenderId),
             message_id: admission.interactionId,
             occurred_at: occurredAt,
         },

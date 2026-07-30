@@ -1169,6 +1169,29 @@ test('prepare and confirm serialize exact state-bound capability requests', () =
       input: preparationInput,
     },
   );
+  assert.deepEqual(
+    JSON.parse(
+      capabilityRequestBody(
+        'transaction.manual.prepare',
+        preparationInput,
+        {
+          ...toolContext,
+          requesterSenderId: 'telegram:telegram-owner-123',
+          deliveryContext: { to: 'telegram:telegram-owner-123' },
+        },
+        admission,
+      ),
+    ).interaction,
+    {
+      kind: 'owner_message',
+      agent_id: 'money-assistant',
+      account_id: 'money-assistant-owner',
+      conversation_id: 'telegram-owner-123',
+      owner_sender_id: 'telegram-owner-123',
+      message_id: 'telegram-message-prepare',
+      occurred_at: '2026-07-24T17:00:00Z',
+    },
+  );
 
   const confirmationInput = {
     idempotency_key: '01983d79-a780-72f0-bb34-9b4f3f0cf374',
@@ -1334,6 +1357,20 @@ test('only the admitted owner Telegram interaction is bound', () => {
 
   assert.equal(isBoundOwnerInteraction(context, config), true);
   assert.equal(
+    isBoundOwnerInteraction(
+      {
+        ...context,
+        requesterSenderId: 'telegram:telegram-owner-123',
+        deliveryContext: {
+          ...context.deliveryContext,
+          to: 'telegram:telegram-owner-123',
+        },
+      },
+      config,
+    ),
+    true,
+  );
+  assert.equal(
     isBoundOwnerInteraction({ ...context, senderIsOwner: false }, config),
     false,
   );
@@ -1343,6 +1380,30 @@ test('only the admitted owner Telegram interaction is bound', () => {
   );
   assert.equal(
     isBoundOwnerInteraction({ ...context, requesterSenderId: 'other' }, config),
+    false,
+  );
+  assert.equal(
+    isBoundOwnerInteraction(
+      {
+        ...context,
+        requesterSenderId: 'telegram:other',
+        deliveryContext: {
+          ...context.deliveryContext,
+          to: 'telegram:telegram-owner-123',
+        },
+      },
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    isBoundOwnerInteraction(
+      {
+        ...context,
+        requesterSenderId: 'signal:telegram-owner-123',
+      },
+      config,
+    ),
     false,
   );
 });
@@ -1371,8 +1432,32 @@ test('admission keeps the immutable inbound owner message identity and timestamp
     messageId: 'telegram-message-456',
     occurredAtSeconds: 1_784_912_400,
   });
+  assert.deepEqual(
+    admittedOwnerMessage(
+      event,
+      {
+        ...context,
+        conversationId: 'telegram:telegram-owner-123',
+        senderId: 'telegram:telegram-owner-123',
+      },
+      config,
+    ),
+    {
+      sessionKey: 'agent:money-assistant:telegram-owner-123',
+      messageId: 'telegram-message-456',
+      occurredAtSeconds: 1_784_912_400,
+    },
+  );
   assert.equal(
     admittedOwnerMessage(event, { ...context, senderId: 'other' }, config),
+    null,
+  );
+  assert.equal(
+    admittedOwnerMessage(
+      event,
+      { ...context, senderId: 'signal:telegram-owner-123' },
+      config,
+    ),
     null,
   );
   assert.equal(

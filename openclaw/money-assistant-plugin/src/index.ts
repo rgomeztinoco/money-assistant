@@ -454,6 +454,41 @@ type TrustedToolContext = {
 
 type CapabilityInput = Record<string, unknown>;
 
+function normalizedTelegramPeerId(
+  peerId: string | undefined,
+): string | undefined {
+  if (!peerId) {
+    return undefined;
+  }
+
+  const normalizedPeerId = peerId.startsWith('telegram:')
+    ? peerId.slice('telegram:'.length)
+    : peerId;
+
+  if (
+    normalizedPeerId === '' ||
+    normalizedPeerId.startsWith('telegram:')
+  ) {
+    return undefined;
+  }
+
+  return normalizedPeerId;
+}
+
+function matchesTelegramPeer(
+  peerId: string | undefined,
+  configuredPeerId: string,
+): boolean {
+  const normalizedPeerId = normalizedTelegramPeerId(peerId);
+  const normalizedConfiguredPeerId =
+    normalizedTelegramPeerId(configuredPeerId);
+
+  return (
+    normalizedPeerId !== undefined &&
+    normalizedPeerId === normalizedConfiguredPeerId
+  );
+}
+
 class CapabilityRequestError extends Error {
   constructor(
     message: string,
@@ -484,8 +519,11 @@ export function admittedOwnerMessage(
   if (
     context.channelId !== 'telegram' ||
     context.accountId !== config.accountId ||
-    context.conversationId !== config.conversationId ||
-    (event.senderId ?? context.senderId) !== config.ownerSenderId ||
+    !matchesTelegramPeer(context.conversationId, config.conversationId) ||
+    !matchesTelegramPeer(
+      event.senderId ?? context.senderId,
+      config.ownerSenderId,
+    ) ||
     !sessionKey ||
     !messageId ||
     occurredAtSeconds === null
@@ -1487,11 +1525,17 @@ export function isBoundOwnerInteraction(
     toolContext.agentId === config.agentId &&
     toolContext.messageChannel === 'telegram' &&
     toolContext.agentAccountId === config.accountId &&
-    toolContext.requesterSenderId === config.ownerSenderId &&
+    matchesTelegramPeer(
+      toolContext.requesterSenderId,
+      config.ownerSenderId,
+    ) &&
     toolContext.sessionId !== undefined &&
     toolContext.deliveryContext?.channel === 'telegram' &&
     toolContext.deliveryContext.accountId === config.accountId &&
-    toolContext.deliveryContext.to === config.conversationId
+    matchesTelegramPeer(
+      toolContext.deliveryContext.to,
+      config.conversationId,
+    )
   );
 }
 
@@ -1504,7 +1548,10 @@ export function isBoundReminderEventInteraction(
     isReminderHookSessionKey(toolContext.sessionKey, config.agentId) &&
     toolContext.deliveryContext?.channel === 'telegram' &&
     toolContext.deliveryContext.accountId === config.accountId &&
-    toolContext.deliveryContext.to === config.conversationId
+    matchesTelegramPeer(
+      toolContext.deliveryContext.to,
+      config.conversationId,
+    )
   );
 }
 
@@ -1557,8 +1604,8 @@ export function isBoundReminderChannelDelivery(
     isReminderHookSessionKey(sessionKey, config.agentId) &&
     context.channelId === 'telegram' &&
     context.accountId === config.accountId &&
-    context.conversationId === config.conversationId &&
-    event.to === config.conversationId
+    matchesTelegramPeer(context.conversationId, config.conversationId) &&
+    matchesTelegramPeer(event.to, config.conversationId)
   );
 }
 
@@ -1575,8 +1622,8 @@ export function shouldSuppressReminderDelivery(
     !isReminderHookSessionKey(sessionKey, config.agentId) ||
     context.channelId !== 'telegram' ||
     context.accountId !== config.accountId ||
-    context.conversationId !== config.conversationId ||
-    event.to !== config.conversationId
+    !matchesTelegramPeer(context.conversationId, config.conversationId) ||
+    !matchesTelegramPeer(event.to, config.conversationId)
   ) {
     return false;
   }
@@ -1666,8 +1713,12 @@ export function capabilityRequestBody(
       kind: 'owner_message',
       agent_id: toolContext.agentId,
       account_id: toolContext.agentAccountId,
-      conversation_id: toolContext.deliveryContext?.to,
-      owner_sender_id: toolContext.requesterSenderId,
+      conversation_id: normalizedTelegramPeerId(
+        toolContext.deliveryContext?.to,
+      ),
+      owner_sender_id: normalizedTelegramPeerId(
+        toolContext.requesterSenderId,
+      ),
       message_id: admission.messageId,
       occurred_at: occurredAt,
     },
@@ -1705,8 +1756,12 @@ export function receiptProposalCapabilityRequestBody(
       kind: 'owner_photo_message',
       agent_id: toolContext.agentId,
       account_id: toolContext.agentAccountId,
-      conversation_id: toolContext.deliveryContext?.to,
-      owner_sender_id: toolContext.requesterSenderId,
+      conversation_id: normalizedTelegramPeerId(
+        toolContext.deliveryContext?.to,
+      ),
+      owner_sender_id: normalizedTelegramPeerId(
+        toolContext.requesterSenderId,
+      ),
       message_id: admission.interactionId,
       occurred_at: occurredAt,
     },
