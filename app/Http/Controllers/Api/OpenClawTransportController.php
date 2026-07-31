@@ -462,7 +462,7 @@ final class OpenClawTransportController extends Controller
             $request->attributes->set('openclaw.audit.outcome', 'idempotency_conflict');
 
             return response()->json(['message' => 'Idempotency key conflicts with an earlier request.'], Response::HTTP_CONFLICT);
-        } catch (StaleReceiptBreakdownRevision) {
+        } catch (StaleReceiptBreakdownRevision|StaleTransactionRevision) {
             $request->attributes->set('openclaw.audit.outcome', 'stale_revision');
 
             return response()->json(['message' => 'Receipt Breakdown draft changed.'], Response::HTTP_CONFLICT);
@@ -535,7 +535,7 @@ final class OpenClawTransportController extends Controller
             $request->attributes->set('openclaw.audit.outcome', $exception->outcome);
 
             return response()->json(['message' => 'Confirmation request rejected.'], $exception->httpStatus);
-        } catch (StaleReceiptBreakdownRevision) {
+        } catch (StaleReceiptBreakdownRevision|StaleTransactionRevision) {
             $request->attributes->set('openclaw.audit.outcome', 'stale_revision');
 
             return response()->json(['message' => 'Receipt Breakdown draft changed.'], Response::HTTP_CONFLICT);

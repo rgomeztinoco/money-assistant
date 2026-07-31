@@ -5,10 +5,12 @@ namespace App\Actions\ReceiptReconciliation;
 use App\ExactInteger;
 use App\Exceptions\IdempotencyKeyConflict;
 use App\Exceptions\StaleReceiptBreakdownRevision;
+use App\Exceptions\StaleTransactionRevision;
 use App\LineItemRole;
 use App\Models\Category;
 use App\Models\OpenClawPendingOperation;
 use App\Models\ReceiptBreakdown;
+use App\Models\Transaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -109,64 +111,107 @@ final class PrepareOpenClawReceiptBreakdown
     private function validatedPayload(User $owner, array $input): array
     {
         $operation = $input['operation'] ?? null;
-        $breakdownId = $input['receipt_breakdown_id'] ?? null;
-        $expectedRevision = $input['expected_revision'] ?? null;
 
-        if (! in_array($operation, ['update_draft', 'confirm_draft'], true)
-            || ! is_int($breakdownId)
-            || ! is_int($expectedRevision)) {
+        if (! in_array($operation, ['create_draft', 'update_draft', 'confirm_draft'], true)) {
             throw new InvalidArgumentException('Receipt Breakdown input is invalid.');
         }
 
-        $draft = ReceiptBreakdown::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereKey($breakdownId)
-            ->where('status', 'draft')
-            ->with('transaction:id,revision,amount_minor')
-            ->lockForUpdate()
-            ->firstOrFail();
+        if ($operation === 'create_draft') {
+            $transactionId = $input['transaction_id'] ?? null;
+            $expectedTransactionRevision = $input['expected_transaction_revision'] ?? null;
 
-        if ($draft->revision !== $expectedRevision) {
-            throw StaleReceiptBreakdownRevision::fromBreakdown($draft);
-        }
+            if (! is_int($transactionId) || ! is_int($expectedTransactionRevision)) {
+                throw new InvalidArgumentException('Receipt Breakdown input is invalid.');
+            }
 
-        $payload = [
-            'operation' => $operation,
-            'receipt_breakdown_id' => $draft->id,
-            'expected_revision' => $draft->revision,
-            'transaction_id' => $draft->transaction_id,
-            'transaction_revision' => $draft->transaction->revision,
-        ];
-
-        if ($operation === 'confirm_draft') {
-            $categoryIds = $draft->lineItems()
-                ->whereNotNull('category_id')
-                ->pluck('category_id')
-                ->unique()
-                ->values();
-            $categories = Category::query()
+            $transaction = Transaction::query()
                 ->whereBelongsTo($owner, 'owner')
-                ->whereIn('id', $categoryIds)
-                ->whereNull('retired_at')
+                ->whereKey($transactionId)
                 ->lockForUpdate()
-                ->get(['id', 'revision']);
+                ->firstOrFail();
 
-            if ($categories->count() !== $categoryIds->count()) {
+            if ($transaction->revision !== $expectedTransactionRevision) {
+                throw StaleTransactionRevision::fromTransaction($transaction);
+            }
+
+            if ($transaction->voided_at !== null) {
                 throw ValidationException::withMessages([
-                    'line_items' => 'Every assigned Line Item Category must be active and owned by you.',
+                    'transaction_id' => 'A Receipt Breakdown cannot attach to a Voided Transaction.',
                 ]);
             }
 
-            $payload['category_revisions'] = $categories
-                ->sortBy('id')
-                ->map(fn (Category $category): array => [
-                    'id' => $category->id,
-                    'revision' => $category->revision,
-                ])
-                ->values()
-                ->all();
+            if ($transaction->receiptBreakdowns()->where('status', 'draft')->exists()) {
+                throw ValidationException::withMessages([
+                    'transaction_id' => 'This Transaction already has a draft Receipt Breakdown.',
+                ]);
+            }
 
-            return $payload;
+            $payload = [
+                'operation' => $operation,
+                'transaction_id' => $transaction->id,
+                'transaction_revision' => $transaction->revision,
+            ];
+            $currentLineItems = collect();
+        } else {
+            $breakdownId = $input['receipt_breakdown_id'] ?? null;
+            $expectedRevision = $input['expected_revision'] ?? null;
+
+            if (! is_int($breakdownId) || ! is_int($expectedRevision)) {
+                throw new InvalidArgumentException('Receipt Breakdown input is invalid.');
+            }
+
+            $draft = ReceiptBreakdown::query()
+                ->whereBelongsTo($owner, 'owner')
+                ->whereKey($breakdownId)
+                ->where('status', 'draft')
+                ->with('transaction:id,revision,amount_minor')
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($draft->revision !== $expectedRevision) {
+                throw StaleReceiptBreakdownRevision::fromBreakdown($draft);
+            }
+
+            $payload = [
+                'operation' => $operation,
+                'receipt_breakdown_id' => $draft->id,
+                'expected_revision' => $draft->revision,
+                'transaction_id' => $draft->transaction_id,
+                'transaction_revision' => $draft->transaction->revision,
+            ];
+
+            if ($operation === 'confirm_draft') {
+                $categoryIds = $draft->lineItems()
+                    ->whereNotNull('category_id')
+                    ->pluck('category_id')
+                    ->unique()
+                    ->values();
+                $categories = Category::query()
+                    ->whereBelongsTo($owner, 'owner')
+                    ->whereIn('id', $categoryIds)
+                    ->whereNull('retired_at')
+                    ->lockForUpdate()
+                    ->get(['id', 'revision']);
+
+                if ($categories->count() !== $categoryIds->count()) {
+                    throw ValidationException::withMessages([
+                        'line_items' => 'Every assigned Line Item Category must be active and owned by you.',
+                    ]);
+                }
+
+                $payload['category_revisions'] = $categories
+                    ->sortBy('id')
+                    ->map(fn (Category $category): array => [
+                        'id' => $category->id,
+                        'revision' => $category->revision,
+                    ])
+                    ->values()
+                    ->all();
+
+                return $payload;
+            }
+
+            $currentLineItems = $draft->lineItems()->lockForUpdate()->get()->keyBy('line_item_id');
         }
 
         $lineItems = $input['line_items'] ?? null;
@@ -175,7 +220,6 @@ final class PrepareOpenClawReceiptBreakdown
             throw new InvalidArgumentException('Receipt Breakdown Line Items are invalid.');
         }
 
-        $currentLineItems = $draft->lineItems()->lockForUpdate()->get()->keyBy('line_item_id');
         $normalizedLineItems = [];
 
         foreach ($lineItems as $lineItem) {
@@ -219,7 +263,11 @@ final class PrepareOpenClawReceiptBreakdown
         $submittedIds = collect($normalizedLineItems)->pluck('id')->filter();
 
         if ($submittedIds->duplicates()->isNotEmpty()
-            || $submittedIds->diff($currentLineItems->keys())->isNotEmpty()) {
+            || $submittedIds->diff($currentLineItems->keys())->isNotEmpty()
+            || ($operation === 'create_draft'
+                && collect($normalizedLineItems)->contains(
+                    fn (array $lineItem): bool => $lineItem['related_line_item_id'] !== null,
+                ))) {
             throw ValidationException::withMessages([
                 'line_items' => 'Every retained Line Item identity must belong to this draft and appear once.',
             ]);
@@ -269,6 +317,16 @@ final class PrepareOpenClawReceiptBreakdown
 
         foreach ($payload['line_items'] as $lineItem) {
             $total = $total->add(ExactInteger::from($lineItem['line_total_minor']));
+        }
+
+        if ($payload['operation'] === 'create_draft') {
+            return sprintf(
+                'Create a draft Receipt Breakdown for Transaction #%d at revision %d with %d Line Items totaling %s minor units.',
+                $payload['transaction_id'],
+                $payload['transaction_revision'],
+                count($payload['line_items']),
+                $total->value(),
+            );
         }
 
         return sprintf(

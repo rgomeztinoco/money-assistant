@@ -468,6 +468,83 @@ test('OpenClaw edits and confirms the same expected Receipt Breakdown revision a
         ->assertJsonPath('transaction.receipt_breakdown.confirmed.total_minor', '2500');
 });
 
+test('OpenClaw creates a manual Receipt Breakdown draft without a Receipt Proposal', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->recycle($owner)->create(['name' => 'Entertainment']);
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+        'amount_minor' => 23100,
+        'revision' => 2,
+    ]);
+    $preparation = ($this->validCategoryCreationPreparation)();
+    $preparation['capability'] = 'receipt.breakdown.mutation.prepare';
+    $preparation['interaction']['message_id'] = 'telegram-owner-receipt-create-prepare';
+    $preparation['input'] = [
+        'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf3b0',
+        'operation' => 'create_draft',
+        'transaction_id' => $transaction->id,
+        'expected_transaction_revision' => 2,
+        'line_items' => [
+            [
+                'id' => null,
+                'description' => '4 cinema tickets',
+                'quantity' => '4',
+                'unit_price_minor' => 4300,
+                'line_total_minor' => 17200,
+                'category_id' => $category->id,
+            ],
+            [
+                'id' => null,
+                'description' => 'Concessions combo',
+                'line_total_minor' => 5900,
+                'category_id' => $category->id,
+            ],
+        ],
+    ];
+
+    $operation = ($this->callOpenClaw)($preparation)
+        ->assertSuccessful()
+        ->assertJsonPath(
+            'pending_operation.effect_summary',
+            "Create a draft Receipt Breakdown for Transaction #{$transaction->id} at revision 2 with 2 Line Items totaling 23100 minor units.",
+        )
+        ->json('pending_operation');
+
+    expect($transaction->receiptBreakdowns()->exists())->toBeFalse();
+
+    $confirmation = ($this->validCategoryConfirmation)($operation);
+    $confirmation['capability'] = 'receipt.breakdown.mutation.confirm';
+    $confirmation['input']['idempotency_key'] = '01983d79-a780-72f0-bb34-9b4f3f0cf3b1';
+    $confirmation['interaction']['message_id'] = 'telegram-owner-receipt-create-approve';
+
+    ($this->callOpenClaw)($confirmation)
+        ->assertSuccessful()
+        ->assertJsonPath('mutation.operation', 'create_draft')
+        ->assertJsonPath('mutation.revision', 1)
+        ->assertJsonPath('mutation.status', 'draft');
+
+    $draft = $transaction->receiptBreakdowns()->sole();
+
+    expect($draft)
+        ->receipt_proposal_id->toBeNull()
+        ->revision->toBe(1)
+        ->status->toBe('draft')
+        ->and($draft->lineItems()->sum('line_total_minor'))->toBe('23100')
+        ->and($draft->lineItems()->pluck('line_item_id')->every(
+            fn (string $lineItemId): bool => Str::isUuid($lineItemId),
+        ))->toBeTrue()
+        ->and(OpenClawAuditEvent::query()->latest('id')->value('domain_action'))
+        ->toBe('receipt_breakdown.create_draft');
+
+    ($this->callOpenClaw)($confirmation)
+        ->assertSuccessful()
+        ->assertJsonPath('mutation.id', $draft->id)
+        ->assertJsonPath('mutation.operation', 'create_draft');
+
+    expect(ReceiptBreakdown::query()->count())->toBe(1)
+        ->and(OpenClawConfirmationGrant::query()->count())->toBe(1)
+        ->and(OpenClawAuditEvent::query()->where('event_kind', 'mutation')->count())->toBe(1);
+});
+
 test('OpenClaw Category assignment confirmation expires when the target Category changes', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);

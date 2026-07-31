@@ -165,6 +165,7 @@ export declare function isBoundOwnerInteraction(toolContext: TrustedToolContext,
 export declare function isBoundReminderEventInteraction(toolContext: TrustedToolContext, config: BindingConfiguration): boolean;
 export declare function admittedReminderEvent(prompt: string, context: ReminderRunContext, config: BindingConfiguration, nowSeconds: number): AdmittedReminderEvent | null;
 export declare function isBoundReminderChannelDelivery(event: SentMessage, context: SentMessageContext, config: BindingConfiguration): boolean;
+export declare function isBoundReceiptChannelDelivery(event: SentMessage, context: SentMessageContext, config: BindingConfiguration): boolean;
 export declare function shouldSuppressReminderDelivery(event: OutgoingMessage, context: SentMessageContext, config: BindingConfiguration, admissions: ReminderEventAdmissions, nowSeconds: number): boolean;
 export declare function consumeAlreadyDeliveredReminder(sessionKey: string | undefined, admissions: ReminderEventAdmissions, nowSeconds: number): boolean;
 export declare function authorizationHeaders(body: string, keyId: string, encodedPrivateKey: string, timestamp: string, nonce: string): Record<string, string>;

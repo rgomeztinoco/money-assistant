@@ -251,6 +251,66 @@ const receiptBreakdownMutationPreparationParameters = Type.Union([
   Type.Object(
     {
       idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+      operation: Type.Literal('create_draft'),
+      transaction_id: Type.Integer({ minimum: 1 }),
+      expected_transaction_revision: Type.Integer({ minimum: 1 }),
+      line_items: Type.Array(
+        Type.Object(
+          {
+            id: Type.Null(),
+            description: Type.String({
+              minLength: 1,
+              maxLength: 255,
+            }),
+            role: Type.Optional(
+              Type.Union(
+                OWNER_LINE_ITEM_ROLES.map((role) => Type.Literal(role)),
+              ),
+            ),
+            quantity: Type.Optional(
+              Type.Union([
+                Type.String({
+                  pattern: '^(?=.*[1-9])\\d+(?:\\.\\d{1,6})?$',
+                  maxLength: 64,
+                }),
+                Type.Null(),
+              ]),
+            ),
+            unit_price_minor: Type.Optional(
+              Type.Union([
+                Type.Integer({
+                  minimum: Number.MIN_SAFE_INTEGER,
+                  maximum: Number.MAX_SAFE_INTEGER,
+                }),
+                Type.Null(),
+              ]),
+            ),
+            related_line_item_id: Type.Optional(Type.Null()),
+            line_total_minor: Type.Union([
+              Type.Integer({
+                minimum: Number.MIN_SAFE_INTEGER,
+                maximum: -1,
+              }),
+              Type.Integer({
+                minimum: 1,
+                maximum: Number.MAX_SAFE_INTEGER,
+              }),
+            ]),
+            category_id: Type.Union([
+              Type.Integer({ minimum: 1 }),
+              Type.Null(),
+            ]),
+          },
+          { additionalProperties: false },
+        ),
+        { minItems: 1, maxItems: 200 },
+      ),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      idempotency_key: Type.String({ pattern: UUID_PATTERN }),
       operation: Type.Literal('update_draft'),
       receipt_breakdown_id: Type.Integer({ minimum: 1 }),
       expected_revision: Type.Integer({ minimum: 1 }),
@@ -1618,6 +1678,20 @@ export function isBoundReminderChannelDelivery(
   );
 }
 
+export function isBoundReceiptChannelDelivery(
+  event: SentMessage,
+  context: SentMessageContext,
+  config: BindingConfiguration,
+): boolean {
+  return (
+    event.success === true &&
+    context.channelId === 'telegram' &&
+    context.accountId === config.accountId &&
+    matchesTelegramPeer(context.conversationId, config.conversationId) &&
+    matchesTelegramPeer(event.to, config.conversationId)
+  );
+}
+
 export function shouldSuppressReminderDelivery(
   event: OutgoingMessage,
   context: SentMessageContext,
@@ -2297,7 +2371,28 @@ export function isReceiptBreakdownMutationInput(
 ): boolean {
   if (
     typeof input.idempotency_key !== 'string' ||
-    !new RegExp(UUID_PATTERN).test(input.idempotency_key) ||
+    !new RegExp(UUID_PATTERN).test(input.idempotency_key)
+  ) {
+    return false;
+  }
+
+  const isCreate = input.operation === 'create_draft';
+
+  if (isCreate) {
+    if (
+      !hasExactKeys(input, [
+        'idempotency_key',
+        'operation',
+        'transaction_id',
+        'expected_transaction_revision',
+        'line_items',
+      ]) ||
+      !isPositiveSafeInteger(input.transaction_id) ||
+      !isPositiveSafeInteger(input.expected_transaction_revision)
+    ) {
+      return false;
+    }
+  } else if (
     !isPositiveSafeInteger(input.receipt_breakdown_id) ||
     !isPositiveSafeInteger(input.expected_revision)
   ) {
@@ -2314,14 +2409,15 @@ export function isReceiptBreakdownMutationInput(
   }
 
   if (
-    input.operation !== 'update_draft' ||
-    !hasExactKeys(input, [
-      'idempotency_key',
-      'operation',
-      'receipt_breakdown_id',
-      'expected_revision',
-      'line_items',
-    ]) ||
+    (!isCreate &&
+      (input.operation !== 'update_draft' ||
+        !hasExactKeys(input, [
+          'idempotency_key',
+          'operation',
+          'receipt_breakdown_id',
+          'expected_revision',
+          'line_items',
+        ]))) ||
     !Array.isArray(input.line_items) ||
     input.line_items.length < 1 ||
     input.line_items.length > 200
@@ -2358,6 +2454,7 @@ export function isReceiptBreakdownMutationInput(
         ['id', 'description', 'line_total_minor', 'category_id'],
       ) ||
       (lineItem.id !== null && typeof lineItem.id !== 'string') ||
+      (isCreate && lineItem.id !== null) ||
       (typeof lineItem.id === 'string' &&
         !new RegExp(UUID_PATTERN).test(lineItem.id)) ||
       (typeof lineItem.id === 'string' && seenIds.has(lineItem.id)) ||
@@ -2377,6 +2474,7 @@ export function isReceiptBreakdownMutationInput(
         lineItem.related_line_item_id !== null &&
         (typeof lineItem.related_line_item_id !== 'string' ||
           !new RegExp(UUID_PATTERN).test(lineItem.related_line_item_id))) ||
+      (isCreate && lineItem.related_line_item_id != null) ||
       (lineItem.category_id !== null &&
         !isPositiveSafeInteger(lineItem.category_id)) ||
       (lineItem.role === 'unidentified' && lineItem.category_id !== null) ||
@@ -2397,6 +2495,10 @@ export function isReceiptBreakdownMutationInput(
 
   if (!lineItemsAreValid) {
     return false;
+  }
+
+  if (isCreate) {
+    return true;
   }
 
   const lineItems = input.line_items as Array<Record<string, unknown>>;
@@ -2500,7 +2602,7 @@ const receiptBreakdownMutationPreparationToolDefinition = {
   name: 'money_assistant_receipt_breakdown_prepare',
   label: 'Prepare Money Assistant Receipt Breakdown',
   description:
-    'Validate and summarize one revision-bound Receipt Breakdown draft edit or confirmation.',
+    'Validate and summarize one revision-bound Receipt Breakdown draft creation, edit, or confirmation. Use create_draft with a Transaction identifier and manual Line Items when no receipt photo or Receipt Proposal is available.',
   parameters: receiptBreakdownMutationPreparationParameters,
 };
 
@@ -3132,12 +3234,7 @@ plugin.register = (api): void => {
       }
     }
 
-    if (
-      event.success !== true ||
-      context.channelId !== 'telegram' ||
-      context.accountId !== config.accountId ||
-      context.conversationId !== config.conversationId
-    ) {
+    if (!isBoundReceiptChannelDelivery(event, context, config)) {
       return;
     }
 

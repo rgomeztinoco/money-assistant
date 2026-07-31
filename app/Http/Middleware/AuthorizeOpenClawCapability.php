@@ -206,9 +206,11 @@ final class AuthorizeOpenClawCapability
             $rules += [
                 'input' => ['required', 'array'],
                 'input.idempotency_key' => ['required', 'uuid'],
-                'input.operation' => ['required', 'string', Rule::in(['update_draft', 'confirm_draft'])],
-                'input.receipt_breakdown_id' => ['required', 'integer', 'min:1', 'max:'.self::MAX_SAFE_INTEGER],
-                'input.expected_revision' => ['required', 'integer', 'min:1', 'max:'.self::MAX_SAFE_INTEGER],
+                'input.operation' => ['required', 'string', Rule::in(['create_draft', 'update_draft', 'confirm_draft'])],
+                'input.receipt_breakdown_id' => ['sometimes', 'integer', 'min:1', 'max:'.self::MAX_SAFE_INTEGER],
+                'input.expected_revision' => ['sometimes', 'integer', 'min:1', 'max:'.self::MAX_SAFE_INTEGER],
+                'input.transaction_id' => ['sometimes', 'integer', 'min:1', 'max:'.self::MAX_SAFE_INTEGER],
+                'input.expected_transaction_revision' => ['sometimes', 'integer', 'min:1', 'max:'.self::MAX_SAFE_INTEGER],
             ];
         } else {
             $rules += [
@@ -477,32 +479,51 @@ final class AuthorizeOpenClawCapability
         if (! is_array($input)
             || ! is_string($input['idempotency_key'] ?? null)
             || ! Str::isUuid($input['idempotency_key'])
-            || ! is_string($input['operation'] ?? null)
-            || ! is_int($input['receipt_breakdown_id'] ?? null)
-            || $input['receipt_breakdown_id'] < 1
-            || $input['receipt_breakdown_id'] > self::MAX_SAFE_INTEGER
-            || ! is_int($input['expected_revision'] ?? null)
-            || $input['expected_revision'] < 1
-            || $input['expected_revision'] > self::MAX_SAFE_INTEGER) {
+            || ! is_string($input['operation'] ?? null)) {
             return false;
         }
 
-        $expectedKeys = $input['operation'] === 'update_draft'
-            ? ['expected_revision', 'idempotency_key', 'line_items', 'operation', 'receipt_breakdown_id']
-            : ['expected_revision', 'idempotency_key', 'operation', 'receipt_breakdown_id'];
+        $isCreate = $input['operation'] === 'create_draft';
+        $expectedKeys = match ($input['operation']) {
+            'create_draft' => [
+                'expected_transaction_revision',
+                'idempotency_key',
+                'line_items',
+                'operation',
+                'transaction_id',
+            ],
+            'update_draft' => ['expected_revision', 'idempotency_key', 'line_items', 'operation', 'receipt_breakdown_id'],
+            'confirm_draft' => ['expected_revision', 'idempotency_key', 'operation', 'receipt_breakdown_id'],
+            default => [],
+        };
         $actualKeys = array_keys($input);
         sort($actualKeys);
 
-        if ($actualKeys !== $expectedKeys) {
+        if ($expectedKeys === [] || $actualKeys !== $expectedKeys) {
             return false;
         }
 
-        if ($input['operation'] === 'confirm_draft') {
+        if ($isCreate) {
+            if (! is_int($input['transaction_id'])
+                || $input['transaction_id'] < 1
+                || $input['transaction_id'] > self::MAX_SAFE_INTEGER
+                || ! is_int($input['expected_transaction_revision'])
+                || $input['expected_transaction_revision'] < 1
+                || $input['expected_transaction_revision'] > self::MAX_SAFE_INTEGER) {
+                return false;
+            }
+        } elseif (! is_int($input['receipt_breakdown_id'])
+            || $input['receipt_breakdown_id'] < 1
+            || $input['receipt_breakdown_id'] > self::MAX_SAFE_INTEGER
+            || ! is_int($input['expected_revision'])
+            || $input['expected_revision'] < 1
+            || $input['expected_revision'] > self::MAX_SAFE_INTEGER) {
+            return false;
+        } elseif ($input['operation'] === 'confirm_draft') {
             return true;
         }
 
-        if ($input['operation'] !== 'update_draft'
-            || ! is_array($input['line_items'] ?? null)
+        if (! is_array($input['line_items'] ?? null)
             || ! array_is_list($input['line_items'])
             || count($input['line_items']) < 1
             || count($input['line_items']) > 200) {
@@ -544,6 +565,7 @@ final class AuthorizeOpenClawCapability
             if (array_diff($lineItemKeys, $allowedLineItemKeys) !== []
                 || array_diff($requiredLineItemKeys, $lineItemKeys) !== []
                 || (! is_string($lineItem['id'] ?? null) && ($lineItem['id'] ?? null) !== null)
+                || ($isCreate && $lineItem['id'] !== null)
                 || (is_string($lineItem['id']) && ! Str::isUuid($lineItem['id']))
                 || (is_string($lineItem['id']) && isset($lineItemIds[$lineItem['id']]))
                 || ! is_string($lineItem['description'] ?? null)
@@ -563,6 +585,7 @@ final class AuthorizeOpenClawCapability
                         || $unitPriceMinor < -self::MAX_SAFE_INTEGER))
                 || ($relatedLineItemId !== null
                     && (! is_string($relatedLineItemId) || ! Str::isUuid($relatedLineItemId)))
+                || ($isCreate && $relatedLineItemId !== null)
                 || ($lineItem['category_id'] !== null
                     && (! is_int($lineItem['category_id'])
                         || $lineItem['category_id'] < 1

@@ -9,6 +9,7 @@ import plugin, {
   admittedReminderEvent,
   capabilityRequestBody,
   consumeAlreadyDeliveredReminder,
+  isBoundReceiptChannelDelivery,
   isBoundReminderChannelDelivery,
   isBoundReminderEventInteraction,
   admittedReceiptPhoto,
@@ -1321,6 +1322,93 @@ test('Receipt Breakdown tools accept bounded replacement edits and exact revisio
       expected_revision: 3,
     }),
     true,
+  );
+
+  assert.equal(
+    isReceiptBreakdownMutationInput({
+      idempotency_key: '01983d79-a780-72f0-bb34-9b4f3f0cf393',
+      operation: 'create_draft',
+      transaction_id: 18,
+      expected_transaction_revision: 2,
+      line_items: [
+        {
+          id: null,
+          description: 'Cinema tickets',
+          quantity: '4',
+          unit_price_minor: 4300,
+          line_total_minor: 17200,
+          category_id: 4,
+        },
+        {
+          id: null,
+          description: 'Concessions combo',
+          line_total_minor: 5900,
+          category_id: 4,
+        },
+      ],
+    }),
+    true,
+  );
+  assert.equal(
+    isReceiptBreakdownMutationInput({
+      idempotency_key: '01983d79-a780-72f0-bb34-9b4f3f0cf393',
+      operation: 'create_draft',
+      transaction_id: 18,
+      expected_transaction_revision: 2,
+      line_items: [
+        {
+          id: lineItemId,
+          description: 'Cinema tickets',
+          line_total_minor: 23100,
+          category_id: 4,
+        },
+      ],
+    }),
+    false,
+  );
+});
+
+test('receipt cleanup delivery accepts the normalized bound Telegram peer', () => {
+  const config = {
+    agentId: 'money-assistant',
+    accountId: 'money-assistant-owner',
+    conversationId: '1837588898',
+    ownerSenderId: '1837588898',
+  };
+
+  assert.equal(
+    isBoundReceiptChannelDelivery(
+      {
+        to: 'telegram:1837588898',
+        success: true,
+        sessionKey: 'agent:money-assistant:telegram:direct:1837588898',
+      },
+      {
+        channelId: 'telegram',
+        accountId: 'money-assistant-owner',
+        conversationId: 'telegram:1837588898',
+        sessionKey: 'agent:money-assistant:telegram:direct:1837588898',
+      },
+      config,
+    ),
+    true,
+  );
+  assert.equal(
+    isBoundReceiptChannelDelivery(
+      {
+        to: 'telegram:999',
+        success: true,
+        sessionKey: 'agent:money-assistant:telegram:direct:1837588898',
+      },
+      {
+        channelId: 'telegram',
+        accountId: 'money-assistant-owner',
+        conversationId: 'telegram:999',
+        sessionKey: 'agent:money-assistant:telegram:direct:1837588898',
+      },
+      config,
+    ),
+    false,
   );
 });
 

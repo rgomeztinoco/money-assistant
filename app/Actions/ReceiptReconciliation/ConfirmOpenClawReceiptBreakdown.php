@@ -20,6 +20,7 @@ use Symfony\Component\HttpFoundation\Response;
 final class ConfirmOpenClawReceiptBreakdown
 {
     public function __construct(
+        private CreateReceiptBreakdownDraft $createDraft,
         private UpdateReceiptBreakdownDraft $updateDraft,
         private ConfirmReceiptBreakdown $confirmBreakdown,
     ) {}
@@ -153,9 +154,7 @@ final class ConfirmOpenClawReceiptBreakdown
                 'idempotency_key' => $idempotencyKey,
                 'operation_digest' => $operationDigest,
                 'confirmation_grant_id' => $confirmationGrant->grant_id,
-                'domain_action' => $mutation['operation'] === 'update_draft'
-                    ? 'receipt_breakdown.update_draft'
-                    : 'receipt_breakdown.confirm',
+                'domain_action' => $this->domainAction($mutation['operation']),
                 'resource_id' => $mutation['id'],
                 'resource_revision' => $mutation['revision'],
             ]);
@@ -174,6 +173,11 @@ final class ConfirmOpenClawReceiptBreakdown
             ->firstOrFail();
 
         if ($transaction->revision !== $payload['transaction_revision']) {
+            throw new OpenClawConfirmationRejected('stale_revision');
+        }
+
+        if (($payload['operation'] ?? null) === 'create_draft'
+            && $transaction->receiptBreakdowns()->where('status', 'draft')->exists()) {
             throw new OpenClawConfirmationRejected('stale_revision');
         }
 
@@ -197,6 +201,27 @@ final class ConfirmOpenClawReceiptBreakdown
      */
     private function applyMutation(User $owner, array $payload): array
     {
+        if ($payload['operation'] === 'create_draft') {
+            $transaction = Transaction::query()
+                ->whereBelongsTo($owner, 'owner')
+                ->whereKey($payload['transaction_id'])
+                ->firstOrFail();
+            $result = $this->createDraft->handle(
+                $owner,
+                $transaction,
+                $payload['transaction_revision'],
+                $payload['line_items'],
+            );
+
+            return [
+                'operation' => $payload['operation'],
+                'resource_type' => 'receipt_breakdown',
+                'id' => $result->id,
+                'revision' => $result->revision,
+                'status' => $result->status,
+            ];
+        }
+
         $breakdown = ReceiptBreakdown::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereKey($payload['receipt_breakdown_id'])
@@ -262,7 +287,7 @@ final class ConfirmOpenClawReceiptBreakdown
             ->firstOrFail();
         $operation = $pendingOperation->payload['operation'] ?? null;
 
-        if (! in_array($operation, ['update_draft', 'confirm_draft'], true)) {
+        if (! in_array($operation, ['create_draft', 'update_draft', 'confirm_draft'], true)) {
             throw new IdempotencyKeyConflict;
         }
 
@@ -276,6 +301,16 @@ final class ConfirmOpenClawReceiptBreakdown
             ],
             'replayed' => true,
         ];
+    }
+
+    private function domainAction(string $operation): string
+    {
+        return match ($operation) {
+            'create_draft' => 'receipt_breakdown.create_draft',
+            'update_draft' => 'receipt_breakdown.update_draft',
+            'confirm_draft' => 'receipt_breakdown.confirm',
+            default => throw new InvalidArgumentException('Receipt Breakdown operation is invalid.'),
+        };
     }
 
     /** @param array<string, mixed> $payload */
