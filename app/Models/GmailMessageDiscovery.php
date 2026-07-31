@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property CarbonImmutable|null $processed_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property-read GmailConnection $gmailConnection
  */
 #[Fillable([
     'gmail_connection_id',

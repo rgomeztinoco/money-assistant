@@ -26,6 +26,16 @@ final class GmailRequestFailed extends RuntimeException
         return new self('Gmail message identity metadata could not be read.');
     }
 
+    public static function messageSummary(): self
+    {
+        return new self('Gmail message summary metadata could not be read.');
+    }
+
+    public static function message(): self
+    {
+        return new self('The Gmail message could not be read.');
+    }
+
     public static function history(): self
     {
         return new self('Gmail history could not be synchronized.');

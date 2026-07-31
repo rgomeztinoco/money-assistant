@@ -6,8 +6,10 @@ use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailAccess;
 use App\Integrations\Gmail\GmailAuthorization;
 use App\Integrations\Gmail\GmailHistoryPage;
+use App\Integrations\Gmail\GmailMessage;
 use App\Integrations\Gmail\GmailMessageIdentity;
 use App\Integrations\Gmail\GmailMessagePage;
+use App\Integrations\Gmail\GmailMessageSummary;
 use App\Integrations\Gmail\GmailProfile;
 use RuntimeException;
 use Throwable;
@@ -55,11 +57,23 @@ final class FakeGmail implements Gmail
     /** @var array<string, GmailMessageIdentity> */
     public array $messageIdentities = [];
 
+    /** @var array<string, GmailMessage> */
+    public array $messages = [];
+
+    /** @var array<string, GmailMessageSummary> */
+    public array $messageSummaries = [];
+
     /** @var list<array{access_token: string, after_epoch_seconds: int, page_token: string|null}> */
     public array $messagesAfterCalls = [];
 
     /** @var list<array{access_token: string, message_id: string}> */
     public array $messageIdentityCalls = [];
+
+    /** @var list<array{access_token: string, message_id: string}> */
+    public array $messageCalls = [];
+
+    /** @var list<array{access_token: string, message_id: string}> */
+    public array $messageSummaryCalls = [];
 
     public function authorizationUrl(string $state, ?string $loginHint = null): string
     {
@@ -152,5 +166,33 @@ final class FakeGmail implements Gmail
 
         return $this->messageIdentities[$messageId]
             ?? throw new RuntimeException("No fake Gmail identity was configured for [{$messageId}].");
+    }
+
+    public function message(
+        string $accessToken,
+        string $messageId,
+    ): GmailMessage {
+        $this->operations[] = 'message';
+        $this->messageCalls[] = [
+            'access_token' => $accessToken,
+            'message_id' => $messageId,
+        ];
+
+        return $this->messages[$messageId]
+            ?? throw new RuntimeException("No fake Gmail message was configured for [{$messageId}].");
+    }
+
+    public function messageSummary(
+        string $accessToken,
+        string $messageId,
+    ): GmailMessageSummary {
+        $this->operations[] = 'message_summary';
+        $this->messageSummaryCalls[] = [
+            'access_token' => $accessToken,
+            'message_id' => $messageId,
+        ];
+
+        return $this->messageSummaries[$messageId]
+            ?? throw new RuntimeException("No fake Gmail message summary was configured for [{$messageId}].");
     }
 }

@@ -6,6 +6,7 @@ use App\Contracts\Gmail;
 use App\GmailSynchronizationType;
 use App\Integrations\Gmail\GmailHistoryExpired;
 use App\Integrations\Gmail\GmailRequestFailed;
+use App\Jobs\ProcessGmailMessage;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use Illuminate\Support\Facades\DB;
@@ -260,5 +261,18 @@ final class SynchronizeGmailConnection
                 'last_successful_sync_at' => $timestamp,
             ])->save();
         });
+
+        if ($messageIds === []) {
+            return;
+        }
+
+        GmailMessageDiscovery::query()
+            ->whereBelongsTo($connection, 'gmailConnection')
+            ->whereIn('message_id', $messageIds)
+            ->whereNull('processed_at')
+            ->pluck('id')
+            ->each(
+                fn (int $discoveryId) => ProcessGmailMessage::dispatch($discoveryId),
+            );
     }
 }

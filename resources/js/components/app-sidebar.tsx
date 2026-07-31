@@ -5,6 +5,7 @@ import {
     FolderGit2,
     LayoutGrid,
     ListChecks,
+    MailSearch,
     Sparkles,
     ReceiptText,
     Tags,
@@ -26,6 +27,7 @@ import { dashboard } from '@/routes';
 import { index as categoriesIndex } from '@/routes/categories';
 import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
 import { index as learnedRulesIndex } from '@/routes/learned_rules';
+import { index as parserProfilesIndex } from '@/routes/parser_profiles';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
@@ -78,6 +80,11 @@ export function AppSidebar() {
             title: 'Daily Exchange Rates',
             href: dailyExchangeRatesIndex(),
             icon: ArrowRightLeft,
+        },
+        {
+            title: 'Parser Profiles',
+            href: parserProfilesIndex(),
+            icon: MailSearch,
         },
     ];
 

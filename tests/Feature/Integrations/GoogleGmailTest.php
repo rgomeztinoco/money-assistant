@@ -312,6 +312,159 @@ test('the Google adapter lists an overlapping mailbox window and reads only mess
         ]);
 });
 
+test('the Google adapter transiently reads authenticated headers and canonical MIME parts', function () {
+    $requests = [];
+    $plainBody = "Purchase approved\nAmount: S/ 125.40";
+    $htmlBody = '<p>Purchase approved</p><p>Amount: S/ 125.40</p>';
+    $mockHandler = new MockHandler([
+        new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'id' => 'immutable-message-1',
+            'internalDate' => '1785258000000',
+            'payload' => [
+                'mimeType' => 'multipart/alternative',
+                'headers' => [
+                    ['name' => 'From', 'value' => 'Bank Alerts <alerts@bank.example>'],
+                    ['name' => 'Subject', 'value' => 'Purchase approved'],
+                    [
+                        'name' => 'Authentication-Results',
+                        'value' => 'upstream.example; dkim=pass header.d=lookalike.example; spf=pass smtp.mailfrom=alerts@lookalike.example; dmarc=pass header.from=lookalike.example',
+                    ],
+                    [
+                        'name' => 'Authentication-Results',
+                        'value' => 'mx.google.com; dkim=pass header.d=bank.example; spf=pass smtp.mailfrom=alerts@bank.example; dmarc=pass header.from=bank.example',
+                    ],
+                    [
+                        'name' => 'Authentication-Results',
+                        'value' => 'forged.example; dkim=fail header.d=lookalike.example; spf=fail smtp.mailfrom=alerts@lookalike.example; dmarc=fail header.from=lookalike.example',
+                    ],
+                ],
+                'parts' => [
+                    [
+                        'mimeType' => 'text/plain',
+                        'body' => ['data' => gmailBase64Url($plainBody)],
+                    ],
+                    [
+                        'mimeType' => 'text/html',
+                        'body' => ['data' => gmailBase64Url($htmlBody)],
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+    $handlerStack = HandlerStack::create($mockHandler);
+    $handlerStack->push(Middleware::history($requests));
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+        httpClient: new Client(['handler' => $handlerStack]),
+    );
+
+    $message = $gmail->message('access-token', 'immutable-message-1');
+
+    expect($message->messageId)->toBe('immutable-message-1')
+        ->and($message->receivedAt->toIso8601String())->toBe('2026-07-28T17:00:00+00:00')
+        ->and($message->fromAddress)->toBe('alerts@bank.example')
+        ->and($message->subject)->toBe('Purchase approved')
+        ->and($message->authentication)->toBe([
+            'spf' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dkim' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dmarc' => ['result' => 'pass', 'domain' => 'bank.example'],
+        ])
+        ->and($message->textBody)->toBe($plainBody)
+        ->and($message->htmlBody)->toBe($htmlBody);
+
+    parse_str((string) $requests[0]['request']->getUri()->getQuery(), $query);
+
+    expect($query)->toMatchArray(['format' => 'full']);
+});
+
+test('the Google adapter ignores authentication results not asserted by Gmail', function () {
+    $mockHandler = new MockHandler([
+        new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'id' => 'untrusted-authentication-results',
+            'internalDate' => '1785258000000',
+            'payload' => [
+                'mimeType' => 'text/plain',
+                'headers' => [
+                    ['name' => 'From', 'value' => 'Bank Alerts <alerts@bank.example>'],
+                    ['name' => 'Subject', 'value' => 'Purchase approved'],
+                    [
+                        'name' => 'Authentication-Results',
+                        'value' => 'mx.google.com; dmarc=fail header.from=bank.example',
+                    ],
+                    [
+                        'name' => 'Authentication-Results',
+                        'value' => 'forged.example; dmarc=pass header.from=bank.example',
+                    ],
+                ],
+                'body' => ['data' => gmailBase64Url('Purchase approved')],
+            ],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+        httpClient: new Client(['handler' => HandlerStack::create($mockHandler)]),
+    );
+
+    $message = $gmail->message(
+        'access-token',
+        'untrusted-authentication-results',
+    );
+
+    expect($message->authentication['dmarc'])->toBe([
+        'result' => 'fail',
+        'domain' => 'bank.example',
+    ]);
+});
+
+test('the Google adapter lists source messages with metadata only', function () {
+    $requests = [];
+    $mockHandler = new MockHandler([
+        new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'id' => 'immutable-message-summary',
+            'internalDate' => '1785258000000',
+            'payload' => [
+                'mimeType' => 'multipart/alternative',
+                'headers' => [
+                    ['name' => 'From', 'value' => 'Bank Alerts <alerts@bank.example>'],
+                    ['name' => 'Subject', 'value' => 'Purchase approved'],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+    $handlerStack = HandlerStack::create($mockHandler);
+    $handlerStack->push(Middleware::history($requests));
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+        httpClient: new Client(['handler' => $handlerStack]),
+    );
+
+    $summary = $gmail->messageSummary(
+        'access-token',
+        'immutable-message-summary',
+    );
+
+    expect($summary->messageId)->toBe('immutable-message-summary')
+        ->and($summary->fromAddress)->toBe('alerts@bank.example')
+        ->and($summary->subject)->toBe('Purchase approved')
+        ->and($summary->receivedAt->toIso8601String())->toBe('2026-07-28T17:00:00+00:00');
+
+    parse_str((string) $requests[0]['request']->getUri()->getQuery(), $query);
+
+    expect($query)->toMatchArray([
+        'fields' => 'id,internalDate,payload(headers)',
+        'format' => 'metadata',
+    ])
+        ->and((string) $requests[0]['request']->getUri())
+        ->toContain('metadataHeaders=From')
+        ->toContain('metadataHeaders=Subject');
+});
+
 test('the Google adapter identifies an expired history cursor without exposing mailbox data', function () {
     $mockHandler = new MockHandler([
         new Response(404, ['Content-Type' => 'application/json'], json_encode([
@@ -370,3 +523,8 @@ test('the Google adapter sanitizes message discovery failures', function () {
         'Gmail message identity metadata could not be read.',
     );
 });
+
+function gmailBase64Url(string $value): string
+{
+    return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+}

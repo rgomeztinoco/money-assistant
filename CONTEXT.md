@@ -25,7 +25,7 @@ The minimal Gmail identity and processing outcome retained for a Gmail message e
 _Avoid_: Stored notification, raw email
 
 **Parser Profile**:
-An owner-enabled, versioned definition that trusts declared authenticated senders, identifies supported Spending Notification Formats, and extracts Transaction details using validated rules.
+An owner-created, owner-enabled, versioned definition that trusts declared authenticated senders, identifies supported Spending Notification Formats, and extracts Transaction details through deterministic rules validated against a transiently observed Gmail message.
 _Avoid_: Learned parser, sender rule
 
 **Spending Notification Format**:

@@ -5,8 +5,10 @@ namespace App\Contracts;
 use App\Integrations\Gmail\GmailAccess;
 use App\Integrations\Gmail\GmailAuthorization;
 use App\Integrations\Gmail\GmailHistoryPage;
+use App\Integrations\Gmail\GmailMessage;
 use App\Integrations\Gmail\GmailMessageIdentity;
 use App\Integrations\Gmail\GmailMessagePage;
+use App\Integrations\Gmail\GmailMessageSummary;
 use App\Integrations\Gmail\GmailProfile;
 
 interface Gmail
@@ -37,4 +39,14 @@ interface Gmail
         string $accessToken,
         string $messageId,
     ): GmailMessageIdentity;
+
+    public function message(
+        string $accessToken,
+        string $messageId,
+    ): GmailMessage;
+
+    public function messageSummary(
+        string $accessToken,
+        string $messageId,
+    ): GmailMessageSummary;
 }

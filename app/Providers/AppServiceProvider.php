@@ -70,6 +70,11 @@ class AppServiceProvider extends ServiceProvider
             'ai-classifier',
             fn (): Limit => Limit::perMinute(30),
         );
+
+        RateLimiter::for(
+            'gmail-message-processing',
+            fn (): Limit => Limit::perMinute(120),
+        );
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Integrations\Gmail\GmailHistoryPage;
 use App\Integrations\Gmail\GmailMessageIdentity;
 use App\Integrations\Gmail\GmailMessagePage;
 use App\Integrations\Gmail\GmailProfile;
+use App\Jobs\ProcessGmailMessage;
 use App\Jobs\SynchronizeGmail;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
@@ -25,6 +26,7 @@ beforeEach(function () {
 
 test('the initial synchronization scans from connection time with overlap and persists only new immutable identities', function () {
     CarbonImmutable::setTestNow('2026-07-28 18:05:00 UTC');
+    Queue::fake();
     $connection = GmailConnection::factory()->create([
         'access_token' => 'current-access-token',
         'access_token_expires_at' => now()->addHour(),
@@ -91,6 +93,14 @@ test('the initial synchronization scans from connection time with overlap and pe
         ->and($connection->history_id)->toBe('100')
         ->and($connection->initial_sync_completed_at?->toIso8601String())->toBe(now()->toIso8601String())
         ->and($connection->last_successful_sync_at?->toIso8601String())->toBe(now()->toIso8601String());
+
+    Queue::assertPushed(ProcessGmailMessage::class, 2);
+    Queue::assertPushed(
+        ProcessGmailMessage::class,
+        fn (ProcessGmailMessage $job): bool => $job->discoveryId === GmailMessageDiscovery::query()
+            ->where('message_id', 'new-message-1')
+            ->value('id'),
+    );
 });
 
 test('an uninitialized connection captures its current history cursor before the initial scan', function () {

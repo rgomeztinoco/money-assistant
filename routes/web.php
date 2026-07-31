@@ -12,6 +12,9 @@ use App\Http\Controllers\LearnedRulePreviewController;
 use App\Http\Controllers\LearnedRuleRetirementController;
 use App\Http\Controllers\LearnedRuleSuggestionController;
 use App\Http\Controllers\LearnedRuleSuggestionPreviewController;
+use App\Http\Controllers\ParserProfileController;
+use App\Http\Controllers\ParserProfilePreviewController;
+use App\Http\Controllers\ParserProfileSourceMessageController;
 use App\Http\Controllers\ReceiptBreakdownConfirmationController;
 use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReceiptProposalAttachmentController;
@@ -104,6 +107,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('suspected_duplicates.resolution.destroy');
     Route::get('review-queue', ReviewQueueController::class)
         ->name('review_queue.index');
+    Route::get(
+        'parser-profile-source-messages/{gmailMessageDiscovery}',
+        [ParserProfileSourceMessageController::class, 'show'],
+    )->name('parser_profiles.source_messages.show');
+    Route::resource('parser-profiles', ParserProfileController::class)
+        ->only(['index', 'store'])
+        ->names([
+            'index' => 'parser_profiles.index',
+            'store' => 'parser_profiles.store',
+        ]);
+    Route::post('parser-profile-previews', [ParserProfilePreviewController::class, 'store'])
+        ->name('parser_profile_previews.store');
     Route::resource('review-queue.fields', TransactionFieldReviewController::class)
         ->only(['update'])
         ->parameters(['review-queue' => 'transaction'])

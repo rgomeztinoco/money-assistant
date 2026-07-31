@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $user_id
  * @property int|null $transaction_id
+ * @property int|null $spending_notification_format_id
  * @property string $gmail_account_identity
  * @property string $message_id
  * @property string $processing_outcome
@@ -25,6 +26,7 @@ use Illuminate\Support\Carbon;
     'gmail_account_identity',
     'message_id',
     'processing_outcome',
+    'spending_notification_format_id',
 ])]
 class SpendingNotificationReference extends Model
 {
@@ -45,5 +47,11 @@ class SpendingNotificationReference extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);
+    }
+
+    /** @return BelongsTo<SpendingNotificationFormat, $this> */
+    public function format(): BelongsTo
+    {
+        return $this->belongsTo(SpendingNotificationFormat::class, 'spending_notification_format_id');
     }
 }

@@ -7,12 +7,14 @@ use Carbon\CarbonImmutable;
 use Google\Client;
 use Google\Service\Exception as GoogleServiceException;
 use Google\Service\Gmail as GmailService;
+use Google\Service\Gmail\MessagePart;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
+use Illuminate\Support\Str;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Log\NullLogger;
@@ -226,6 +228,107 @@ final class GoogleGmail implements Gmail
         );
     }
 
+    public function message(
+        string $accessToken,
+        string $messageId,
+    ): GmailMessage {
+        $client = $this->client();
+        $this->setAccessToken($client, $accessToken);
+        $service = new GmailService($client);
+
+        try {
+            $message = $service->users_messages->get('me', $messageId, [
+                'format' => 'full',
+            ]);
+        } catch (Throwable) {
+            throw GmailRequestFailed::message();
+        }
+
+        $returnedMessageId = $message->getId();
+        $receivedAt = $message->getInternalDate();
+        $payload = $message->getPayload();
+
+        if (! is_string($returnedMessageId)
+            || $returnedMessageId !== $messageId
+            || ! is_string($receivedAt)
+            || ! ctype_digit($receivedAt)
+            || ! $payload instanceof MessagePart) {
+            throw GmailRequestFailed::message();
+        }
+
+        $headers = $this->messageHeaders($payload);
+
+        $fromAddress = $this->emailAddress($headers['from'][0] ?? null);
+        $subject = $headers['subject'][0] ?? null;
+
+        if ($fromAddress === null || ! is_string($subject)) {
+            throw GmailRequestFailed::message();
+        }
+
+        $mimeParts = $this->mimeParts($service, $messageId, $payload);
+
+        return new GmailMessage(
+            messageId: $returnedMessageId,
+            receivedAt: CarbonImmutable::createFromTimestampMsUTC($receivedAt),
+            fromAddress: $fromAddress,
+            subject: $subject,
+            authentication: $this->authenticationResults(
+                $headers['authentication-results'] ?? [],
+            ),
+            textBody: $mimeParts['text/plain'],
+            htmlBody: $mimeParts['text/html'],
+        );
+    }
+
+    public function messageSummary(
+        string $accessToken,
+        string $messageId,
+    ): GmailMessageSummary {
+        $client = $this->client();
+        $this->setAccessToken($client, $accessToken);
+
+        try {
+            $message = (new GmailService($client))->users_messages->get(
+                'me',
+                $messageId,
+                [
+                    'fields' => 'id,internalDate,payload(headers)',
+                    'format' => 'metadata',
+                    'metadataHeaders' => ['From', 'Subject'],
+                ],
+            );
+        } catch (Throwable) {
+            throw GmailRequestFailed::messageSummary();
+        }
+
+        $returnedMessageId = $message->getId();
+        $receivedAt = $message->getInternalDate();
+        $payload = $message->getPayload();
+
+        if (! is_string($returnedMessageId)
+            || $returnedMessageId !== $messageId
+            || ! is_string($receivedAt)
+            || ! ctype_digit($receivedAt)
+            || ! $payload instanceof MessagePart) {
+            throw GmailRequestFailed::messageSummary();
+        }
+
+        $headers = $this->messageHeaders($payload);
+        $fromAddress = $this->emailAddress($headers['from'][0] ?? null);
+        $subject = $headers['subject'][0] ?? null;
+
+        if ($fromAddress === null || ! is_string($subject)) {
+            throw GmailRequestFailed::messageSummary();
+        }
+
+        return new GmailMessageSummary(
+            messageId: $returnedMessageId,
+            receivedAt: CarbonImmutable::createFromTimestampMsUTC($receivedAt),
+            fromAddress: $fromAddress,
+            subject: $subject,
+        );
+    }
+
     private function client(): Client
     {
         $client = new Client;
@@ -275,6 +378,196 @@ final class GoogleGmail implements Gmail
             'connect_timeout' => 3,
             'timeout' => 10,
         ]);
+    }
+
+    private function emailAddress(mixed $fromHeader): ?string
+    {
+        if (! is_string($fromHeader)) {
+            return null;
+        }
+
+        $candidate = $fromHeader;
+
+        if (preg_match('/<([^<>]+)>/', $fromHeader, $matches) === 1) {
+            $candidate = $matches[1];
+        }
+
+        $candidate = mb_strtolower(trim($candidate));
+
+        return filter_var($candidate, FILTER_VALIDATE_EMAIL) !== false
+            ? $candidate
+            : null;
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function messageHeaders(MessagePart $payload): array
+    {
+        $headers = [];
+
+        foreach ($payload->getHeaders() as $header) {
+            $name = $header->getName();
+            $value = $header->getValue();
+            $headers[mb_strtolower($name)][] = $value;
+        }
+
+        return $headers;
+    }
+
+    /**
+     * @param  list<string>  $authenticationHeaders
+     * @return array{
+     *     spf: array{result: string|null, domain: string|null},
+     *     dkim: array{result: string|null, domain: string|null},
+     *     dmarc: array{result: string|null, domain: string|null}
+     * }
+     */
+    private function authenticationResults(array $authenticationHeaders): array
+    {
+        $gmailAuthenticationHeader = null;
+
+        foreach ($authenticationHeaders as $authenticationHeader) {
+            if (preg_match('/^\s*mx\.google\.com\s*;/i', $authenticationHeader) === 1) {
+                $gmailAuthenticationHeader = $authenticationHeader;
+
+                break;
+            }
+        }
+
+        $authenticationHeaders = $gmailAuthenticationHeader === null
+            ? []
+            : [$gmailAuthenticationHeader];
+
+        return [
+            'spf' => $this->authenticationResult(
+                $authenticationHeaders,
+                'spf',
+                'smtp.mailfrom',
+            ),
+            'dkim' => $this->authenticationResult(
+                $authenticationHeaders,
+                'dkim',
+                'header.d',
+            ),
+            'dmarc' => $this->authenticationResult(
+                $authenticationHeaders,
+                'dmarc',
+                'header.from',
+            ),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $authenticationHeaders
+     * @return array{result: string|null, domain: string|null}
+     */
+    private function authenticationResult(
+        array $authenticationHeaders,
+        string $mechanism,
+        string $domainAttribute,
+    ): array {
+        $result = null;
+        $domain = null;
+        $escapedMechanism = preg_quote($mechanism, '/');
+        $escapedDomainAttribute = preg_quote($domainAttribute, '/');
+
+        foreach ($authenticationHeaders as $authenticationHeader) {
+            if (preg_match(
+                "/(?:^|[\\s;]){$escapedMechanism}=([a-z]+)\\b([^;]*)/i",
+                $authenticationHeader,
+                $resultMatch,
+            ) !== 1) {
+                continue;
+            }
+
+            $result = mb_strtolower($resultMatch[1]);
+
+            if (preg_match(
+                "/\\b{$escapedDomainAttribute}=<?([^\\s;>]+)>?/i",
+                $resultMatch[2],
+                $domainMatch,
+            ) === 1) {
+                $authenticatedIdentity = mb_strtolower(
+                    trim($domainMatch[1], "\"'"),
+                );
+                $domain = Str::contains($authenticatedIdentity, '@')
+                    ? Str::afterLast($authenticatedIdentity, '@')
+                    : $authenticatedIdentity;
+            }
+        }
+
+        return [
+            'result' => $result,
+            'domain' => $domain,
+        ];
+    }
+
+    /**
+     * @return array{'text/plain': string|null, 'text/html': string|null}
+     */
+    private function mimeParts(
+        GmailService $service,
+        string $messageId,
+        MessagePart $part,
+    ): array {
+        $mimeParts = [
+            'text/plain' => null,
+            'text/html' => null,
+        ];
+        $mimeType = mb_strtolower((string) $part->getMimeType());
+
+        if (array_key_exists($mimeType, $mimeParts)) {
+            $mimeParts[$mimeType] = $this->messagePartBody(
+                $service,
+                $messageId,
+                $part,
+            );
+        }
+
+        foreach ($part->getParts() as $childPart) {
+            $childMimeParts = $this->mimeParts($service, $messageId, $childPart);
+
+            foreach ($mimeParts as $type => $content) {
+                $mimeParts[$type] ??= $childMimeParts[$type];
+            }
+        }
+
+        return $mimeParts;
+    }
+
+    private function messagePartBody(
+        GmailService $service,
+        string $messageId,
+        MessagePart $part,
+    ): ?string {
+        $body = $part->getBody();
+        $encoded = $body->getData();
+        $attachmentId = $body->getAttachmentId();
+
+        if ($encoded === '' && $attachmentId !== '') {
+            try {
+                $encoded = $service->users_messages_attachments
+                    ->get('me', $messageId, $attachmentId)
+                    ->getData();
+            } catch (Throwable) {
+                throw GmailRequestFailed::message();
+            }
+        }
+
+        if ($encoded === '') {
+            return null;
+        }
+
+        $encoded = strtr($encoded, '-_', '+/');
+        $paddingLength = (4 - mb_strlen($encoded) % 4) % 4;
+        $decoded = base64_decode($encoded.str_repeat('=', $paddingLength), true);
+
+        if (! is_string($decoded)) {
+            throw GmailRequestFailed::message();
+        }
+
+        return $decoded;
     }
 
     /**
