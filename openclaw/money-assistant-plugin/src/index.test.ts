@@ -668,6 +668,58 @@ test('receipt redelivery reuses opaque identities and replacement queues source 
   ]);
 });
 
+test('receipt cleanup releases sensitive history when delivery precedes agent end', async () => {
+  const admissions = new ReceiptPhotoAdmissions({
+    removeFile: async () => {},
+    setTimer: () => 1,
+    clearTimer: () => {},
+    createProposalId: () => 'proposal-1',
+    createInteractionId: () => 'interaction-1',
+    nowSeconds: () => 1000,
+    inspectImage: (path) => path,
+    safePath: (path) => path,
+    managedMediaRoot: () => '/var/lib/openclaw/media/inbound',
+  });
+  const sessionKey = 'owner-session';
+
+  admissions.admit(
+    {
+      messageId: 'telegram-photo-1',
+      runId: 'run-1',
+      timestamp: 1000,
+      metadata: {
+        mediaPath: '/var/lib/openclaw/media/inbound/receipt.jpg',
+        mediaType: 'image/jpeg',
+      },
+    },
+    {
+      channelId: 'telegram',
+      accountId: 'money-assistant-owner',
+      conversationId: 'telegram-owner-123',
+      senderId: 'telegram-owner-123',
+      sessionKey,
+    },
+    {
+      agentId: 'money-assistant',
+      accountId: 'money-assistant-owner',
+      conversationId: 'telegram-owner-123',
+      ownerSenderId: 'telegram-owner-123',
+      receiptMediaRoot: '/var/lib/openclaw/media/inbound',
+    },
+  );
+
+  admissions.markBoundResponseDelivered(sessionKey);
+  assert.deepEqual(admissions.takePendingSourceDeletions(sessionKey), []);
+
+  const pendingDeletions = await admissions.finishForRun(
+    'run-1',
+    sessionKey,
+  );
+
+  assert.equal(pendingDeletions[0]?.messageId, 'telegram-photo-1');
+  assert.equal(admissions.isSensitiveSession(sessionKey), false);
+});
+
 test('Receipt Proposal transport injects approved provenance without media identity', () => {
   const body = receiptProposalCapabilityRequestBody(
     {

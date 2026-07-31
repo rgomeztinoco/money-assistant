@@ -692,6 +692,7 @@ export class ReceiptPhotoAdmissions {
     rejectedSessionsWithoutRun = new Map();
     identitiesBySourceMessage = new Map();
     sensitiveSessions = new Set();
+    boundResponseDeliveredSessions = new Set();
     constructor(dependencies = defaultReceiptAdmissionDependencies) {
         this.dependencies = dependencies;
     }
@@ -834,6 +835,12 @@ export class ReceiptPhotoAdmissions {
     isSensitiveSession(sessionKey) {
         return this.sensitiveSessions.has(sessionKey ?? '');
     }
+    markBoundResponseDelivered(sessionKey) {
+        const key = sessionKey ?? '';
+        if (this.sensitiveSessions.has(key)) {
+            this.boundResponseDeliveredSessions.add(key);
+        }
+    }
     async finishForSession(sessionKey) {
         const key = sessionKey ?? '';
         const photo = this.photos.get(key);
@@ -861,12 +868,17 @@ export class ReceiptPhotoAdmissions {
         if (photo) {
             await this.finishAdmission(photo);
         }
+        const key = photo?.sessionKey ?? sessionKey ?? '';
+        return this.boundResponseDeliveredSessions.has(key)
+            ? this.takePendingSourceDeletions(key)
+            : [];
     }
     takePendingSourceDeletions(sessionKey) {
         const key = sessionKey ?? '';
         const photos = this.pendingSourceDeletions.get(key) ?? [];
         if (photos.length > 0) {
             this.pendingSourceDeletions.delete(key);
+            this.boundResponseDeliveredSessions.delete(key);
             if (!this.photos.has(key)) {
                 this.sensitiveSessions.delete(key);
             }
@@ -1292,6 +1304,16 @@ export async function warnReceiptSourceDeletionFailed(gateway, admission, config
             message: 'I could not delete the receipt photo from Telegram. Please remove it manually.',
         },
     });
+}
+async function deleteReceiptSourceMessages(gateway, admissions, config) {
+    for (const admission of admissions) {
+        try {
+            await deleteReceiptSourceMessage(gateway, admission, config);
+        }
+        catch {
+            await warnReceiptSourceDeletionFailed(gateway, admission, config);
+        }
+    }
 }
 function isPositiveSafeInteger(value) {
     return Number.isSafeInteger(value) && Number(value) > 0;
@@ -1960,8 +1982,9 @@ plugin.register = (api) => {
         }
     });
     api.on('agent_end', async (event, context) => {
-        await receiptPhotoAdmissions.finishForRun(event.runId, context.sessionKey);
+        const pendingSourceDeletions = await receiptPhotoAdmissions.finishForRun(event.runId, context.sessionKey);
         receiptPhotoAdmissions.clearRejectedRun(event.runId);
+        await deleteReceiptSourceMessages(api.runtime.gateway, pendingSourceDeletions, config);
     });
     api.on('before_agent_reply', (_event, context) => {
         if (context.agentId === config.agentId &&
@@ -2001,15 +2024,9 @@ plugin.register = (api) => {
         if (!isBoundReceiptChannelDelivery(event, context, config)) {
             return;
         }
+        receiptPhotoAdmissions.markBoundResponseDelivered(sessionKey);
         const receiptAdmissions = receiptPhotoAdmissions.takePendingSourceDeletions(sessionKey);
-        for (const receiptAdmission of receiptAdmissions) {
-            try {
-                await deleteReceiptSourceMessage(api.runtime.gateway, receiptAdmission, config);
-            }
-            catch {
-                await warnReceiptSourceDeletionFailed(api.runtime.gateway, receiptAdmission, config);
-            }
-        }
+        await deleteReceiptSourceMessages(api.runtime.gateway, receiptAdmissions, config);
     });
     registerTool(api);
 };

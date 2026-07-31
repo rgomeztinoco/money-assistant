@@ -132,6 +132,7 @@ export declare class ReceiptPhotoAdmissions {
     private readonly rejectedSessionsWithoutRun;
     private readonly identitiesBySourceMessage;
     private readonly sensitiveSessions;
+    private readonly boundResponseDeliveredSessions;
     constructor(dependencies?: ReceiptAdmissionDependencies);
     admit(event: InboundMessage, context: InboundMessageContext, config: ReceiptBindingConfiguration): boolean;
     freshForSession(sessionKey: string | undefined, nowSeconds: number): AdmittedReceiptPhoto | null;
@@ -142,9 +143,10 @@ export declare class ReceiptPhotoAdmissions {
     activeForSession(sessionKey: string | undefined): AdmittedReceiptPhoto | null;
     recordActualModel(runId: string, provider: string, model: string): boolean;
     isSensitiveSession(sessionKey: string | undefined): boolean;
+    markBoundResponseDelivered(sessionKey: string | undefined): void;
     finishForSession(sessionKey: string | undefined): Promise<void>;
     finishAdmission(photo: AdmittedReceiptPhoto): Promise<void>;
-    finishForRun(runId: string | undefined, sessionKey?: string): Promise<void>;
+    finishForRun(runId: string | undefined, sessionKey?: string): Promise<AdmittedReceiptPhoto[]>;
     takePendingSourceDeletions(sessionKey: string | undefined): AdmittedReceiptPhoto[];
     private expire;
     private removeLocalImage;

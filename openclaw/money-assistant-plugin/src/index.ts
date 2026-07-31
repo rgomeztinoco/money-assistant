@@ -1137,6 +1137,7 @@ export class ReceiptPhotoAdmissions {
     }
   >();
   private readonly sensitiveSessions = new Set<string>();
+  private readonly boundResponseDeliveredSessions = new Set<string>();
 
   constructor(
     private readonly dependencies: ReceiptAdmissionDependencies = defaultReceiptAdmissionDependencies,
@@ -1369,6 +1370,14 @@ export class ReceiptPhotoAdmissions {
     return this.sensitiveSessions.has(sessionKey ?? '');
   }
 
+  markBoundResponseDelivered(sessionKey: string | undefined): void {
+    const key = sessionKey ?? '';
+
+    if (this.sensitiveSessions.has(key)) {
+      this.boundResponseDeliveredSessions.add(key);
+    }
+  }
+
   async finishForSession(sessionKey: string | undefined): Promise<void> {
     const key = sessionKey ?? '';
     const photo = this.photos.get(key);
@@ -1397,7 +1406,7 @@ export class ReceiptPhotoAdmissions {
   async finishForRun(
     runId: string | undefined,
     sessionKey?: string,
-  ): Promise<void> {
+  ): Promise<AdmittedReceiptPhoto[]> {
     const photo = runId
       ? [...this.photos.values()].find((candidate) => candidate.runId === runId)
       : this.photos.get(sessionKey ?? '');
@@ -1405,6 +1414,12 @@ export class ReceiptPhotoAdmissions {
     if (photo) {
       await this.finishAdmission(photo);
     }
+
+    const key = photo?.sessionKey ?? sessionKey ?? '';
+
+    return this.boundResponseDeliveredSessions.has(key)
+      ? this.takePendingSourceDeletions(key)
+      : [];
   }
 
   takePendingSourceDeletions(
@@ -1415,6 +1430,7 @@ export class ReceiptPhotoAdmissions {
 
     if (photos.length > 0) {
       this.pendingSourceDeletions.delete(key);
+      this.boundResponseDeliveredSessions.delete(key);
 
       if (!this.photos.has(key)) {
         this.sensitiveSessions.delete(key);
@@ -2168,6 +2184,20 @@ export async function warnReceiptSourceDeletionFailed(
         'I could not delete the receipt photo from Telegram. Please remove it manually.',
     },
   });
+}
+
+async function deleteReceiptSourceMessages(
+  gateway: GatewayRequestRuntime,
+  admissions: AdmittedReceiptPhoto[],
+  config: CapabilityConfiguration,
+): Promise<void> {
+  for (const admission of admissions) {
+    try {
+      await deleteReceiptSourceMessage(gateway, admission, config);
+    } catch {
+      await warnReceiptSourceDeletionFailed(gateway, admission, config);
+    }
+  }
 }
 
 function isPositiveSafeInteger(value: unknown): boolean {
@@ -3168,8 +3198,17 @@ plugin.register = (api): void => {
   });
 
   api.on('agent_end', async (event, context) => {
-    await receiptPhotoAdmissions.finishForRun(event.runId, context.sessionKey);
+    const pendingSourceDeletions =
+      await receiptPhotoAdmissions.finishForRun(
+        event.runId,
+        context.sessionKey,
+      );
     receiptPhotoAdmissions.clearRejectedRun(event.runId);
+    await deleteReceiptSourceMessages(
+      api.runtime.gateway,
+      pendingSourceDeletions,
+      config,
+    );
   });
 
   api.on('before_agent_reply', (_event, context) => {
@@ -3238,24 +3277,15 @@ plugin.register = (api): void => {
       return;
     }
 
+    receiptPhotoAdmissions.markBoundResponseDelivered(sessionKey);
     const receiptAdmissions =
       receiptPhotoAdmissions.takePendingSourceDeletions(sessionKey);
 
-    for (const receiptAdmission of receiptAdmissions) {
-      try {
-        await deleteReceiptSourceMessage(
-          api.runtime.gateway,
-          receiptAdmission,
-          config,
-        );
-      } catch {
-        await warnReceiptSourceDeletionFailed(
-          api.runtime.gateway,
-          receiptAdmission,
-          config,
-        );
-      }
-    }
+    await deleteReceiptSourceMessages(
+      api.runtime.gateway,
+      receiptAdmissions,
+      config,
+    );
   });
 
   registerTool(api);
