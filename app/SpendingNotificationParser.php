@@ -25,18 +25,16 @@ final class SpendingNotificationParser
             return null;
         }
 
-        $definition = $format->definition;
-        $body = match ($format->mime_source) {
-            'text_plain' => $message->textBody,
-            'text_html' => $message->htmlBody,
-            default => null,
-        };
+        if (! $this->formatMatches($message, $format)) {
+            return null;
+        }
 
-        if (! is_string($body)
-            || ! is_string($definition['subject_marker'] ?? null)
-            || ! is_string($definition['body_marker'] ?? null)
-            || ! Str::contains($message->subject, $definition['subject_marker'])
-            || ! Str::contains($body, $definition['body_marker'])) {
+        $definition = $format->definition;
+        $body = $format->mime_source === 'text_plain'
+            ? $message->textBody
+            : $message->htmlBody;
+
+        if (! is_string($body)) {
             return null;
         }
 
@@ -75,14 +73,42 @@ final class SpendingNotificationParser
         );
     }
 
-    private function trustMatches(
+    public function senderMatches(
         GmailMessage $message,
         ParserProfileVersion $profileVersion,
     ): bool {
-        if (! hash_equals(
+        return hash_equals(
             $profileVersion->trusted_sender_address,
             Str::lower($message->fromAddress),
-        )) {
+        ) && hash_equals(
+            $profileVersion->trusted_sender_domain,
+            Str::lower(Str::afterLast($message->fromAddress, '@')),
+        );
+    }
+
+    public function formatMatches(
+        GmailMessage $message,
+        SpendingNotificationFormat $format,
+    ): bool {
+        $definition = $format->definition;
+        $body = match ($format->mime_source) {
+            'text_plain' => $message->textBody,
+            'text_html' => $message->htmlBody,
+            default => null,
+        };
+
+        return is_string($body)
+            && is_string($definition['subject_marker'] ?? null)
+            && is_string($definition['body_marker'] ?? null)
+            && Str::contains($message->subject, $definition['subject_marker'])
+            && Str::contains($body, $definition['body_marker']);
+    }
+
+    public function trustMatches(
+        GmailMessage $message,
+        ParserProfileVersion $profileVersion,
+    ): bool {
+        if (! $this->senderMatches($message, $profileVersion)) {
             return false;
         }
 
@@ -95,10 +121,6 @@ final class SpendingNotificationParser
             && hash_equals(
                 $profileVersion->authenticated_domain,
                 Str::lower($authentication['domain']),
-            )
-            && hash_equals(
-                $profileVersion->trusted_sender_domain,
-                Str::lower(Str::afterLast($message->fromAddress, '@')),
             );
     }
 

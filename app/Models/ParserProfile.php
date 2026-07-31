@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Support\Carbon;
 
 /**
@@ -17,6 +18,10 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property int $current_version
  * @property CarbonImmutable|null $enabled_at
+ * @property int|null $security_alert_reminder_id
+ * @property string|null $security_alert_resolution_idempotency_key
+ * @property int|null $drift_alert_reminder_id
+ * @property string|null $drift_alert_resolution_idempotency_key
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -25,6 +30,10 @@ use Illuminate\Support\Carbon;
     'name',
     'current_version',
     'enabled_at',
+    'security_alert_reminder_id',
+    'security_alert_resolution_idempotency_key',
+    'drift_alert_reminder_id',
+    'drift_alert_resolution_idempotency_key',
 ])]
 class ParserProfile extends Model
 {
@@ -46,6 +55,15 @@ class ParserProfile extends Model
     public function versions(): HasMany
     {
         return $this->hasMany(ParserProfileVersion::class);
+    }
+
+    /** @return HasManyThrough<SpendingNotificationReference, ParserProfileVersion, $this> */
+    public function references(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            SpendingNotificationReference::class,
+            ParserProfileVersion::class,
+        );
     }
 
     /** @return array<string, string> */

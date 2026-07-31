@@ -20,6 +20,8 @@ use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReceiptProposalAttachmentController;
 use App\Http\Controllers\ReportingCurrencyController;
 use App\Http\Controllers\ReviewQueueController;
+use App\Http\Controllers\SpendingNotificationRecoveryController;
+use App\Http\Controllers\SpendingNotificationRetryController;
 use App\Http\Controllers\SuspectedDuplicateResolutionController;
 use App\Http\Controllers\TransactionCategoryController;
 use App\Http\Controllers\TransactionController;
@@ -119,6 +121,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ]);
     Route::post('parser-profile-previews', [ParserProfilePreviewController::class, 'store'])
         ->name('parser_profile_previews.store');
+    Route::post(
+        'spending-notification-references/{spending_notification_reference}/recovery',
+        [SpendingNotificationRecoveryController::class, 'store'],
+    )->name('spending_notification_references.recovery.store');
+    Route::post(
+        'spending-notification-references/{spending_notification_reference}/retry',
+        [SpendingNotificationRetryController::class, 'store'],
+    )->name('spending_notification_references.retry.store');
     Route::resource('review-queue.fields', TransactionFieldReviewController::class)
         ->only(['update'])
         ->parameters(['review-queue' => 'transaction'])

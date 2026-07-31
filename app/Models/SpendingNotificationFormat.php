@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\SpendingNotificationFormatPurpose;
 use Database\Factories\SpendingNotificationFormatFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $mime_source
  * @property string $rule_identifier
+ * @property SpendingNotificationFormatPurpose $purpose
  * @property array<string, mixed> $definition
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -25,12 +27,18 @@ use Illuminate\Support\Carbon;
     'name',
     'mime_source',
     'rule_identifier',
+    'purpose',
     'definition',
 ])]
 class SpendingNotificationFormat extends Model
 {
     /** @use HasFactory<SpendingNotificationFormatFactory> */
     use HasFactory;
+
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'purpose' => SpendingNotificationFormatPurpose::Spending->value,
+    ];
 
     /** @return BelongsTo<ParserProfileVersion, $this> */
     public function profileVersion(): BelongsTo
@@ -49,6 +57,7 @@ class SpendingNotificationFormat extends Model
     {
         return [
             'definition' => 'array',
+            'purpose' => SpendingNotificationFormatPurpose::class,
         ];
     }
 }

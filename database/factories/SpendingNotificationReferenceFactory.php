@@ -27,7 +27,9 @@ class SpendingNotificationReferenceFactory extends Factory
                 ->user_id,
             'gmail_account_identity' => fake()->unique()->safeEmail(),
             'message_id' => (string) Str::uuid(),
-            'processing_outcome' => 'transaction_created',
+            'processing_outcome' => 'created',
+            'attempt_count' => 1,
+            'last_attempted_at' => now(),
         ];
     }
 }

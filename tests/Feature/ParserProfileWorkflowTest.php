@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\NotificationIngestion\ProcessSpendingNotification;
+use App\Actions\NotificationIngestion\SynchronizeParserProfileAlerts;
 use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailMessage;
 use App\Integrations\Gmail\GmailMessageSummary;
@@ -10,10 +11,12 @@ use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\ParserProfile;
 use App\Models\ParserProfileVersion;
+use App\Models\Reminder;
 use App\Models\SpendingNotificationFormat;
 use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
+use App\SpendingNotificationFormatPurpose;
 use Carbon\CarbonImmutable;
 use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\DB;
@@ -182,6 +185,7 @@ test('the owner can confirm a deterministic Parser Profile and process its sourc
             'source_message_discovery_id' => $discovery->id,
             'profile_name' => 'Bank card alerts',
             'format_name' => 'Card purchase',
+            'format_purpose' => 'spending',
             'authentication_mechanism' => 'dmarc',
             'mime_source' => 'text_plain',
             'subject_marker' => 'Purchase approved',
@@ -384,6 +388,544 @@ test('a queued discovery uses an enabled Parser Profile for a future message', f
         ->and($futureDiscovery->fresh()->processed_at)->not->toBeNull();
 });
 
+test('authentication failures retain only a sanitized outcome and raise one grouped security alert', function () {
+    $owner = User::factory()->create();
+    $profile = ParserProfile::factory()
+        ->for($owner, 'owner')
+        ->create(['name' => 'Bank card alerts']);
+    $version = ParserProfileVersion::factory()->for($profile, 'profile')->create();
+    SpendingNotificationFormat::factory()->for($version, 'profileVersion')->create();
+    $connection = GmailConnection::factory()
+        ->for($owner, 'owner')
+        ->create(['gmail_account_identity' => 'owner@gmail.example']);
+    $discovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create(['message_id' => 'gmail-authentication-failure']);
+    $secondDiscovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create(['message_id' => 'gmail-authentication-failure-two']);
+    $gmail = new FakeGmail;
+    $gmail->messages[$discovery->message_id] = new GmailMessage(
+        messageId: $discovery->message_id,
+        receivedAt: CarbonImmutable::parse('2026-07-31 14:15:00 UTC'),
+        fromAddress: 'alerts@bank.example',
+        subject: 'Purchase approved for your card',
+        authentication: [
+            'spf' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dkim' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dmarc' => ['result' => 'fail', 'domain' => 'bank.example'],
+        ],
+        textBody: "Purchase approved\nAmount: S/ 55.00\nDate: 31/07/2026\nMerchant: MARKET TWO\nThank you",
+        htmlBody: null,
+    );
+    $gmail->messages[$secondDiscovery->message_id] = new GmailMessage(
+        messageId: $secondDiscovery->message_id,
+        receivedAt: CarbonImmutable::parse('2026-07-31 14:20:00 UTC'),
+        fromAddress: 'alerts@bank.example',
+        subject: 'Purchase approved for your card',
+        authentication: [
+            'spf' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dkim' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dmarc' => ['result' => 'fail', 'domain' => 'bank.example'],
+        ],
+        textBody: "Purchase approved\nAmount: S/ 25.00\nDate: 31/07/2026\nMerchant: MARKET THREE\nThank you",
+        htmlBody: null,
+    );
+    app()->instance(Gmail::class, $gmail);
+
+    ProcessGmailMessage::dispatchSync($discovery->id);
+    ProcessGmailMessage::dispatchSync($secondDiscovery->id);
+
+    $reference = SpendingNotificationReference::query()
+        ->where('message_id', $discovery->message_id)
+        ->sole();
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(Reminder::query()->count())->toBe(1)
+        ->and(Reminder::query()->sole()->subject)
+        ->toBe('Review grouped security failures for Bank card alerts')
+        ->and($reference->transaction_id)->toBeNull()
+        ->and($reference->processing_outcome)->toBe('authentication_failed')
+        ->and($reference->parser_profile_version_id)->toBe($version->id)
+        ->and($reference->spending_notification_format_id)->toBeNull()
+        ->and($reference->gmail_message_discovery_id)->toBe($discovery->id)
+        ->and($discovery->fresh()->processed_at)->not->toBeNull()
+        ->and($secondDiscovery->fresh()->processed_at)->not->toBeNull()
+        ->and(array_keys($reference->getAttributes()))
+        ->not->toContain('subject', 'body', 'raw_mime', 'headers');
+
+    $this->actingAs($owner)
+        ->get(route('parser_profiles.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('profiles.0.health.state', 'degraded')
+            ->where('profiles.0.health.counts.failed', 2)
+            ->where('profiles.0.health.counts.created', 0)
+            ->where('profiles.0.health.oldest_unresolved_failure', $reference->created_at?->toIso8601String())
+            ->has('alerts', 1)
+            ->where('alerts.0.kind', 'security')
+            ->where('alerts.0.profile_id', $profile->id)
+            ->where('alerts.0.count', 2)
+            ->has('alerts.0.references', 2)
+            ->where('alerts.0.references.0.id', $reference->id)
+            ->where('alerts.0.references.0.outcome', 'authentication_failed'),
+        );
+});
+
+test('a message matching more than one sender is attributed to the oldest approved profile deterministically', function () {
+    $owner = User::factory()->create();
+    $oldestProfile = ParserProfile::factory()
+        ->for($owner, 'owner')
+        ->create(['name' => 'First approved alerts']);
+    $oldestVersion = ParserProfileVersion::factory()
+        ->for($oldestProfile, 'profile')
+        ->create();
+    $newestProfile = ParserProfile::factory()
+        ->for($owner, 'owner')
+        ->create(['name' => 'Second approved alerts']);
+    ParserProfileVersion::factory()
+        ->for($newestProfile, 'profile')
+        ->create();
+    $connection = GmailConnection::factory()
+        ->for($owner, 'owner')
+        ->create(['gmail_account_identity' => 'owner@gmail.example']);
+    $discovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create(['message_id' => 'gmail-shared-sender']);
+    $gmail = new FakeGmail;
+    $gmail->messages[$discovery->message_id] = new GmailMessage(
+        messageId: $discovery->message_id,
+        receivedAt: CarbonImmutable::parse('2026-07-31 14:15:00 UTC'),
+        fromAddress: 'alerts@bank.example',
+        subject: 'Purchase approved for your card',
+        authentication: [
+            'spf' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dkim' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dmarc' => ['result' => 'fail', 'domain' => 'bank.example'],
+        ],
+        textBody: 'Authentication failure content is not retained.',
+        htmlBody: null,
+    );
+    app()->instance(Gmail::class, $gmail);
+
+    ProcessGmailMessage::dispatchSync($discovery->id);
+
+    expect(SpendingNotificationReference::query()->sole()->parser_profile_version_id)
+        ->toBe($oldestVersion->id)
+        ->and(Reminder::query()->sole()->subject)
+        ->toBe('Review grouped security failures for First approved alerts');
+});
+
+test('an authenticated unknown format raises a grouped drift alert without creating a Transaction', function () {
+    $owner = User::factory()->create();
+    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $version = ParserProfileVersion::factory()->for($profile, 'profile')->create();
+    SpendingNotificationFormat::factory()->for($version, 'profileVersion')->create();
+    $connection = GmailConnection::factory()
+        ->for($owner, 'owner')
+        ->create(['gmail_account_identity' => 'owner@gmail.example']);
+    $discovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create(['message_id' => 'gmail-unknown-format']);
+    $gmail = new FakeGmail;
+    $gmail->messages[$discovery->message_id] = new GmailMessage(
+        messageId: $discovery->message_id,
+        receivedAt: CarbonImmutable::parse('2026-07-31 14:15:00 UTC'),
+        fromAddress: 'alerts@bank.example',
+        subject: 'Your monthly card statement is ready',
+        authentication: [
+            'spf' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dkim' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dmarc' => ['result' => 'pass', 'domain' => 'bank.example'],
+        ],
+        textBody: 'Review your monthly statement in online banking.',
+        htmlBody: null,
+    );
+    app()->instance(Gmail::class, $gmail);
+
+    ProcessGmailMessage::dispatchSync($discovery->id);
+
+    $reference = SpendingNotificationReference::query()->sole();
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and($reference->processing_outcome)->toBe('unsupported')
+        ->and($reference->parser_profile_version_id)->toBe($version->id)
+        ->and($reference->spending_notification_format_id)->toBeNull()
+        ->and($discovery->fresh()->processed_at)->not->toBeNull();
+
+    $this->actingAs($owner)
+        ->get(route('parser_profiles.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('profiles.0.health.counts.unsupported', 1)
+            ->where('profiles.0.health.state', 'degraded')
+            ->has('alerts', 1)
+            ->where('alerts.0.kind', 'drift')
+            ->where('alerts.0.count', 1)
+            ->where('alerts.0.references.0.outcome', 'unsupported'),
+        );
+});
+
+test('a gating extraction failure raises drift without creating a Transaction', function () {
+    $owner = User::factory()->create();
+    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $version = ParserProfileVersion::factory()->for($profile, 'profile')->create();
+    $format = SpendingNotificationFormat::factory()
+        ->for($version, 'profileVersion')
+        ->create();
+    $connection = GmailConnection::factory()
+        ->for($owner, 'owner')
+        ->create(['gmail_account_identity' => 'owner@gmail.example']);
+    $discovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create(['message_id' => 'gmail-extraction-failure']);
+    $gmail = new FakeGmail;
+    $gmail->messages[$discovery->message_id] = new GmailMessage(
+        messageId: $discovery->message_id,
+        receivedAt: CarbonImmutable::parse('2026-07-31 14:15:00 UTC'),
+        fromAddress: 'alerts@bank.example',
+        subject: 'Purchase approved for your card',
+        authentication: [
+            'spf' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dkim' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dmarc' => ['result' => 'pass', 'domain' => 'bank.example'],
+        ],
+        textBody: "Purchase approved\nAmount: unavailable\nDate: 31/07/2026\nMerchant: MARKET TWO\nThank you",
+        htmlBody: null,
+    );
+    app()->instance(Gmail::class, $gmail);
+
+    ProcessGmailMessage::dispatchSync($discovery->id);
+
+    $reference = SpendingNotificationReference::query()->sole();
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and($reference->processing_outcome)->toBe('failed')
+        ->and($reference->parser_profile_version_id)->toBe($version->id)
+        ->and($reference->spending_notification_format_id)->toBe($format->id)
+        ->and($discovery->fresh()->processed_at)->not->toBeNull();
+
+    $this->actingAs($owner)
+        ->get(route('parser_profiles.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('profiles.0.health.counts.failed', 1)
+            ->where('alerts.0.kind', 'drift')
+            ->where('alerts.0.references.0.outcome', 'failed'),
+        );
+});
+
+test('an explicitly approved non-spending format is ignored without review noise', function () {
+    $owner = User::factory()->create();
+    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $version = ParserProfileVersion::factory()->for($profile, 'profile')->create();
+    SpendingNotificationFormat::factory()
+        ->for($version, 'profileVersion')
+        ->create([
+            'purpose' => 'ignore',
+            'definition' => [
+                'subject_marker' => 'Statement ready',
+                'body_marker' => 'View your statement',
+            ],
+        ]);
+    $connection = GmailConnection::factory()
+        ->for($owner, 'owner')
+        ->create(['gmail_account_identity' => 'owner@gmail.example']);
+    $discovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create(['message_id' => 'gmail-known-non-spending']);
+    $gmail = new FakeGmail;
+    $gmail->messages[$discovery->message_id] = new GmailMessage(
+        messageId: $discovery->message_id,
+        receivedAt: CarbonImmutable::parse('2026-07-31 14:15:00 UTC'),
+        fromAddress: 'alerts@bank.example',
+        subject: 'Statement ready for July',
+        authentication: [
+            'spf' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dkim' => ['result' => 'pass', 'domain' => 'bank.example'],
+            'dmarc' => ['result' => 'pass', 'domain' => 'bank.example'],
+        ],
+        textBody: 'View your statement in online banking.',
+        htmlBody: null,
+    );
+    app()->instance(Gmail::class, $gmail);
+
+    ProcessGmailMessage::dispatchSync($discovery->id);
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(SpendingNotificationReference::query()->sole()->processing_outcome)
+        ->toBe('ignored')
+        ->and($discovery->fresh()->processed_at)->not->toBeNull();
+
+    $this->actingAs($owner)
+        ->get(route('parser_profiles.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('profiles.0.health.state', 'healthy')
+            ->where('profiles.0.health.counts.ignored', 1)
+            ->has('alerts', 0),
+        );
+});
+
+test('the owner approves an ignored format without changing other unsupported messages', function () {
+    $owner = User::factory()->create();
+    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $version = ParserProfileVersion::factory()->for($profile, 'profile')->create();
+    SpendingNotificationFormat::factory()->for($version, 'profileVersion')->create();
+    $connection = GmailConnection::factory()
+        ->for($owner, 'owner')
+        ->create(['gmail_account_identity' => 'owner@gmail.example']);
+    $selectedDiscovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create(['message_id' => 'gmail-statement-selected']);
+    $unchangedDiscovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create(['message_id' => 'gmail-statement-unchanged']);
+    $gmail = new FakeGmail;
+
+    foreach ([$selectedDiscovery, $unchangedDiscovery] as $discovery) {
+        $gmail->messages[$discovery->message_id] = new GmailMessage(
+            messageId: $discovery->message_id,
+            receivedAt: CarbonImmutable::parse('2026-07-31 14:15:00 UTC'),
+            fromAddress: 'alerts@bank.example',
+            subject: 'Statement ready for July',
+            authentication: [
+                'spf' => ['result' => 'pass', 'domain' => 'bank.example'],
+                'dkim' => ['result' => 'pass', 'domain' => 'bank.example'],
+                'dmarc' => ['result' => 'pass', 'domain' => 'bank.example'],
+            ],
+            textBody: 'View your statement in online banking.',
+            htmlBody: null,
+        );
+    }
+
+    app()->instance(Gmail::class, $gmail);
+    ProcessGmailMessage::dispatchSync($selectedDiscovery->id);
+    ProcessGmailMessage::dispatchSync($unchangedDiscovery->id);
+
+    $this->actingAs($owner)
+        ->post(route('parser_profiles.store'), parserProfilePayload($selectedDiscovery, [
+            'parser_profile_id' => $profile->id,
+            'profile_name' => null,
+            'format_name' => 'Monthly statement',
+            'format_purpose' => 'ignore',
+            'subject_marker' => 'Statement ready',
+            'body_marker' => 'View your statement',
+        ]))
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('parser_profiles.index'));
+
+    $profile->refresh();
+    $selectedReference = SpendingNotificationReference::query()
+        ->where('message_id', $selectedDiscovery->message_id)
+        ->sole();
+    $unchangedReference = SpendingNotificationReference::query()
+        ->where('message_id', $unchangedDiscovery->message_id)
+        ->sole();
+
+    expect($profile->current_version)->toBe(2)
+        ->and($profile->versions()->where('version', 2)->sole()->formats()->count())
+        ->toBe(2)
+        ->and($selectedReference->processing_outcome)->toBe('ignored')
+        ->and($selectedReference->attempt_count)->toBe(2)
+        ->and($selectedReference->format?->purpose)->toBe(SpendingNotificationFormatPurpose::Ignore)
+        ->and($unchangedReference->processing_outcome)->toBe('unsupported')
+        ->and($unchangedReference->attempt_count)->toBe(1)
+        ->and(Transaction::query()->count())->toBe(0);
+});
+
+test('the owner manually records an unsupported purchase linked to its original notification reference', function () {
+    $owner = User::factory()->create();
+    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $version = ParserProfileVersion::factory()->for($profile, 'profile')->create();
+    $connection = GmailConnection::factory()
+        ->for($owner, 'owner')
+        ->create(['gmail_account_identity' => 'owner@gmail.example']);
+    $discovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create([
+            'message_id' => 'gmail-manual-recovery',
+            'processed_at' => now(),
+        ]);
+    $reference = SpendingNotificationReference::factory()
+        ->for($owner, 'owner')
+        ->for($version, 'profileVersion')
+        ->for($discovery, 'discovery')
+        ->create([
+            'transaction_id' => null,
+            'gmail_account_identity' => $connection->gmail_account_identity,
+            'message_id' => $discovery->message_id,
+            'processing_outcome' => 'unsupported',
+        ]);
+    app(SynchronizeParserProfileAlerts::class)->handle($owner, $profile->id);
+    $reminder = Reminder::query()->sole();
+
+    $this->actingAs($owner)
+        ->post(route('spending_notification_references.recovery.store', $reference), [
+            'occurred_on' => '2026-07-31',
+            'amount_minor' => 4590,
+            'currency' => 'PEN',
+            'kind' => 'purchase',
+            'merchant_description' => 'Neighborhood market',
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('parser_profiles.index'));
+
+    $transaction = Transaction::query()->sole();
+    $reference->refresh();
+
+    expect($reference->transaction_id)->toBe($transaction->id)
+        ->and($reference->processing_outcome)->toBe('created')
+        ->and($reference->attempt_count)->toBe(1)
+        ->and($transaction->amount_minor)->toBe(4590)
+        ->and($transaction->merchant_description)->toBe('Neighborhood market')
+        ->and($transaction->spendingNotificationReferences()->sole()->is($reference))
+        ->toBeTrue()
+        ->and($reminder->fresh()->resolved_at)->not->toBeNull();
+
+    $this->actingAs($owner)
+        ->post(route('spending_notification_references.recovery.store', $reference), [
+            'occurred_on' => '2026-07-31',
+            'amount_minor' => 4590,
+            'currency' => 'PEN',
+            'kind' => 'purchase',
+            'merchant_description' => 'Neighborhood market',
+        ])
+        ->assertSessionHasErrors('recovery');
+
+    expect(Transaction::query()->count())->toBe(1)
+        ->and($reference->fresh()->transaction_id)->toBe($transaction->id);
+
+    $this->get(route('parser_profiles.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('profiles.0.health.state', 'healthy')
+            ->where('profiles.0.health.counts.created', 1)
+            ->where(
+                'profiles.0.health.last_success',
+                $reference->last_attempted_at?->toIso8601String(),
+            )
+            ->where('profiles.0.health.oldest_unresolved_failure', null)
+            ->has('alerts', 0),
+        );
+});
+
+test('an authentication failure cannot be converted into a manual Transaction', function () {
+    $owner = User::factory()->create();
+    $reference = SpendingNotificationReference::factory()
+        ->for($owner, 'owner')
+        ->create([
+            'transaction_id' => null,
+            'processing_outcome' => 'authentication_failed',
+        ]);
+
+    $this->actingAs($owner)
+        ->post(route('spending_notification_references.recovery.store', $reference), [
+            'occurred_on' => '2026-07-31',
+            'amount_minor' => 4590,
+            'currency' => 'PEN',
+            'kind' => 'purchase',
+            'merchant_description' => 'Untrusted message',
+        ])
+        ->assertSessionHasErrors('recovery');
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and($reference->fresh()->processing_outcome)
+        ->toBe('authentication_failed');
+});
+
+test('a gating extraction failure cannot be retried through a profile change', function () {
+    $owner = User::factory()->create();
+    $connection = GmailConnection::factory()
+        ->for($owner, 'owner')
+        ->create(['gmail_account_identity' => 'owner@gmail.example']);
+    $discovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create([
+            'message_id' => 'gmail-failed-retry',
+            'processed_at' => now(),
+        ]);
+    $reference = SpendingNotificationReference::factory()
+        ->for($owner, 'owner')
+        ->for($discovery, 'discovery')
+        ->create([
+            'transaction_id' => null,
+            'gmail_account_identity' => $connection->gmail_account_identity,
+            'message_id' => $discovery->message_id,
+            'processing_outcome' => 'failed',
+        ]);
+    $gmail = new FakeGmail;
+    $gmail->messages[$discovery->message_id] = parserProfileMessage(
+        $discovery->message_id,
+        'S/ 72.10',
+        'MARKET THREE',
+    );
+    app()->instance(Gmail::class, $gmail);
+
+    $this->actingAs($owner)
+        ->post(route('spending_notification_references.retry.store', $reference))
+        ->assertSessionHasErrors('retry');
+
+    expect($gmail->messageCalls)->toBe([])
+        ->and($reference->fresh()->processing_outcome)->toBe('failed')
+        ->and($reference->attempt_count)->toBe(1)
+        ->and(Transaction::query()->count())->toBe(0);
+});
+
+test('an owner-approved profile change affects an unsupported message only after explicit retry', function () {
+    $owner = User::factory()->create();
+    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    ParserProfileVersion::factory()
+        ->for($profile, 'profile')
+        ->create(['version' => 1]);
+    $currentVersion = ParserProfileVersion::factory()
+        ->for($profile, 'profile')
+        ->create(['version' => 2]);
+    $format = SpendingNotificationFormat::factory()
+        ->for($currentVersion, 'profileVersion')
+        ->create();
+    $profile->forceFill(['current_version' => 2])->save();
+    $connection = GmailConnection::factory()
+        ->for($owner, 'owner')
+        ->create(['gmail_account_identity' => 'owner@gmail.example']);
+    $discovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create([
+            'message_id' => 'gmail-explicit-retry',
+            'processed_at' => now(),
+        ]);
+    $reference = SpendingNotificationReference::factory()
+        ->for($owner, 'owner')
+        ->for($discovery, 'discovery')
+        ->create([
+            'transaction_id' => null,
+            'parser_profile_version_id' => $profile->versions()->where('version', 1)->value('id'),
+            'spending_notification_format_id' => null,
+            'gmail_account_identity' => $connection->gmail_account_identity,
+            'message_id' => $discovery->message_id,
+            'processing_outcome' => 'unsupported',
+        ]);
+    $gmail = new FakeGmail;
+    $gmail->messages[$discovery->message_id] = parserProfileMessage(
+        $discovery->message_id,
+        'S/ 72.10',
+        'MARKET THREE',
+    );
+    app()->instance(Gmail::class, $gmail);
+
+    expect($reference->fresh()->processing_outcome)->toBe('unsupported')
+        ->and(Transaction::query()->count())->toBe(0);
+
+    $this->actingAs($owner)
+        ->post(route('spending_notification_references.retry.store', $reference))
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('parser_profiles.index'));
+
+    $reference->refresh();
+
+    expect($reference->processing_outcome)->toBe('created')
+        ->and($reference->attempt_count)->toBe(2)
+        ->and($reference->parser_profile_version_id)->toBe($currentVersion->id)
+        ->and($reference->spending_notification_format_id)->toBe($format->id)
+        ->and($reference->transaction_id)->toBe(Transaction::query()->sole()->id)
+        ->and(Transaction::query()->sole()->amount_minor)->toBe(7210);
+});
+
 test('profile confirmation fails closed when a gating trust or extraction value is invalid', function (
     string $subject,
     string $body,
@@ -503,12 +1045,14 @@ test('profile confirmation rolls back when the source overlaps another enabled p
         ->and($secondDiscovery->fresh()->processed_at)->toBeNull();
 });
 
-test('future lookalikes create no Transaction and remain available as profile sources', function (
+test('future lookalikes fail closed with the appropriate decided outcome', function (
     string $fromAddress,
     string $subject,
     string $body,
     string $dmarcResult,
     string $dmarcDomain,
+    ?string $expectedOutcome,
+    ?string $expectedAlertKind,
 ) {
     $owner = User::factory()->create();
     $connection = GmailConnection::factory()
@@ -553,17 +1097,33 @@ test('future lookalikes create no Transaction and remain available as profile so
 
     ProcessGmailMessage::dispatchSync($lookalikeDiscovery->id);
 
-    expect(Transaction::query()->count())->toBe(1)
-        ->and(SpendingNotificationReference::query()
-            ->where('message_id', $lookalikeDiscovery->message_id)
-            ->exists())->toBeFalse()
-        ->and($lookalikeDiscovery->fresh()->processed_at)->toBeNull();
+    $reference = SpendingNotificationReference::query()
+        ->where('message_id', $lookalikeDiscovery->message_id)
+        ->first();
 
-    $this->get(route('parser_profiles.index'))
-        ->assertInertia(fn (Assert $page) => $page
-            ->has('source_messages', 1)
-            ->where('source_messages.0.id', $lookalikeDiscovery->id),
-        );
+    expect(Transaction::query()->count())->toBe(1)
+        ->and($reference?->processing_outcome)->toBe($expectedOutcome);
+
+    if ($expectedOutcome === null) {
+        expect($lookalikeDiscovery->fresh()->processed_at)->toBeNull();
+
+        $this->get(route('parser_profiles.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('source_messages', 1)
+                ->where('source_messages.0.id', $lookalikeDiscovery->id)
+                ->has('alerts', 0),
+            );
+    } else {
+        expect($lookalikeDiscovery->fresh()->processed_at)->not->toBeNull();
+
+        $this->get(route('parser_profiles.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('source_messages', 0)
+                ->has('alerts', 1)
+                ->where('alerts.0.kind', $expectedAlertKind)
+                ->where('alerts.0.references.0.outcome', $expectedOutcome),
+            );
+    }
 })->with([
     'sender is not allowlisted' => [
         'alerts@lookalike.example',
@@ -571,6 +1131,8 @@ test('future lookalikes create no Transaction and remain available as profile so
         "Purchase approved\nAmount: S/ 55.00\nDate: 30/07/2026\nMerchant: MARKET TWO\nThank you",
         'pass',
         'lookalike.example',
+        null,
+        null,
     ],
     'authentication does not pass' => [
         'alerts@bank.example',
@@ -578,6 +1140,8 @@ test('future lookalikes create no Transaction and remain available as profile so
         "Purchase approved\nAmount: S/ 55.00\nDate: 30/07/2026\nMerchant: MARKET TWO\nThank you",
         'fail',
         'bank.example',
+        'authentication_failed',
+        'security',
     ],
     'subject marker does not match' => [
         'alerts@bank.example',
@@ -585,6 +1149,8 @@ test('future lookalikes create no Transaction and remain available as profile so
         "Purchase approved\nAmount: S/ 55.00\nDate: 30/07/2026\nMerchant: MARKET TWO\nThank you",
         'pass',
         'bank.example',
+        'unsupported',
+        'drift',
     ],
     'body marker does not match' => [
         'alerts@bank.example',
@@ -592,6 +1158,8 @@ test('future lookalikes create no Transaction and remain available as profile so
         "Purchase approved\nTotal: S/ 55.00\nDate: 30/07/2026\nMerchant: MARKET TWO\nThank you",
         'pass',
         'bank.example',
+        'unsupported',
+        'drift',
     ],
 ]);
 
@@ -657,6 +1225,7 @@ test('approving a profile change creates a new version without reparsing an exis
 
     expect($profile->current_version)->toBe(2)
         ->and(ParserProfileVersion::query()->whereBelongsTo($profile, 'profile')->count())->toBe(2)
+        ->and($newFormat->profileVersion->formats()->count())->toBe(2)
         ->and($newFormat->profileVersion->version)->toBe(2)
         ->and($newTransaction->amount_minor)->toBe(2000)
         ->and($newTransaction->currency->value)->toBe('USD')
@@ -664,6 +1233,24 @@ test('approving a profile change creates a new version without reparsing an exis
         ->and($originalTransaction->fresh()->currency->value)->toBe('PEN')
         ->and($originalTransaction->spendingNotificationReferences()->sole()->spending_notification_format_id)
         ->toBe($originalFormat->id);
+
+    $futureDiscovery = GmailMessageDiscovery::factory()
+        ->for($connection, 'gmailConnection')
+        ->create(['message_id' => 'gmail-message-original-format-future']);
+    $gmail->messages[$futureDiscovery->message_id] = parserProfileMessage(
+        $futureDiscovery->message_id,
+        'S/ 33.33',
+        'MARKET THREE',
+    );
+
+    ProcessGmailMessage::dispatchSync($futureDiscovery->id);
+
+    $futureTransaction = Transaction::query()->latest('id')->firstOrFail();
+    $futureReference = $futureTransaction->spendingNotificationReferences()->sole();
+
+    expect($futureTransaction->amount_minor)->toBe(3333)
+        ->and($futureReference->format?->name)->toBe('Card purchase')
+        ->and($futureReference->format?->profileVersion->version)->toBe(2);
 });
 
 /**
@@ -678,6 +1265,7 @@ function parserProfilePayload(
         'source_message_discovery_id' => $discovery->id,
         'profile_name' => 'Bank card alerts',
         'format_name' => 'Card purchase',
+        'format_purpose' => 'spending',
         'authentication_mechanism' => 'dmarc',
         'mime_source' => 'text_plain',
         'subject_marker' => 'Purchase approved',

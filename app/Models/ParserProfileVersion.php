@@ -53,6 +53,12 @@ class ParserProfileVersion extends Model
         return $this->hasMany(SpendingNotificationFormat::class);
     }
 
+    /** @return HasMany<SpendingNotificationReference, $this> */
+    public function references(): HasMany
+    {
+        return $this->hasMany(SpendingNotificationReference::class);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

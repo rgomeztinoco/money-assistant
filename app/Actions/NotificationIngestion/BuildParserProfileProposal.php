@@ -8,6 +8,7 @@ use App\Models\ParserProfileVersion;
 use App\Models\SpendingNotificationFormat;
 use App\Models\User;
 use App\ParserProfileProposal;
+use App\SpendingNotificationFormatPurpose;
 use App\SpendingNotificationParser;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -86,15 +87,19 @@ final class BuildParserProfileProposal
         $format = new SpendingNotificationFormat([
             'name' => $attributes['format_name'],
             'mime_source' => $attributes['mime_source'],
+            'purpose' => $attributes['format_purpose'],
             'definition' => $definition,
             'rule_identifier' => $this->ruleIdentifier(
                 $attributes['mime_source'],
                 $definition,
             ),
         ]);
-        $extraction = $this->parser->extract($message, $profileVersion, $format);
+        $extraction = $format->purpose->isIgnored()
+            ? null
+            : $this->parser->extract($message, $profileVersion, $format);
 
-        if ($extraction === null) {
+        if (! $this->parser->formatMatches($message, $format)
+            || (! $format->purpose->isIgnored() && $extraction === null)) {
             throw new InvalidArgumentException(
                 'The exact sender and format markers do not match the selected message.',
             );
@@ -117,6 +122,13 @@ final class BuildParserProfileProposal
      */
     private function definition(array $attributes): array
     {
+        if ($attributes['format_purpose'] === SpendingNotificationFormatPurpose::Ignore->value) {
+            return [
+                'subject_marker' => $attributes['subject_marker'],
+                'body_marker' => $attributes['body_marker'],
+            ];
+        }
+
         $groupingSeparator = match ($attributes['grouping_separator']) {
             'none' => null,
             'space' => ' ',

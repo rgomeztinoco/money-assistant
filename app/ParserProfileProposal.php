@@ -17,6 +17,6 @@ final readonly class ParserProfileProposal
         public GmailMessage $message,
         public ParserProfileVersion $profileVersion,
         public SpendingNotificationFormat $format,
-        public SpendingNotificationExtraction $extraction,
+        public ?SpendingNotificationExtraction $extraction,
     ) {}
 }

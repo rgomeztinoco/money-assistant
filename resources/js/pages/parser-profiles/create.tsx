@@ -45,7 +45,8 @@ type ExistingProfile = {
     current_version: number;
 };
 
-type ParserProfilePreview = {
+type ParserProfileTransactionPreview = {
+    purpose: 'spending';
     occurred_on: string;
     amount_minor: string;
     currency: 'USD' | 'PEN';
@@ -53,6 +54,9 @@ type ParserProfilePreview = {
     merchant_description: string;
     provisional_fields: string[];
 };
+
+type ParserProfilePreview =
+    ParserProfileTransactionPreview | { purpose: 'ignore' };
 
 const inputClassName =
     'min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
@@ -83,18 +87,25 @@ export default function CreateParserProfile({
     const browserTimezone =
         Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Lima';
     const { flash } = usePage();
-    const [preview, setPreview] = useState(
-        flash.parser_profile_preview as ParserProfilePreview | undefined,
+    const initialPreview = flash.parser_profile_preview as
+        ParserProfilePreview | undefined;
+    const [preview, setPreview] = useState(initialPreview);
+    const [formatPurpose, setFormatPurpose] = useState<'spending' | 'ignore'>(
+        initialPreview?.purpose ?? 'spending',
     );
 
     useEffect(() => {
         return router.on('flash', (event) => {
             const nextFlash = (event as CustomEvent).detail?.flash;
 
-            setPreview(
-                nextFlash?.parser_profile_preview as
-                    ParserProfilePreview | undefined,
-            );
+            const nextPreview = nextFlash?.parser_profile_preview as
+                ParserProfilePreview | undefined;
+
+            setPreview(nextPreview);
+
+            if (nextPreview !== undefined) {
+                setFormatPurpose(nextPreview.purpose);
+            }
         });
     }, []);
 
@@ -179,7 +190,22 @@ export default function CreateParserProfile({
                         ? previewStore.form()
                         : store.form())}
                     className="grid gap-6"
-                    onChange={() => setPreview(undefined)}
+                    onChange={(event) => {
+                        setPreview(undefined);
+
+                        const target = event.nativeEvent.target;
+
+                        if (
+                            target instanceof HTMLSelectElement &&
+                            target.name === 'format_purpose'
+                        ) {
+                            setFormatPurpose(
+                                target.value === 'ignore'
+                                    ? 'ignore'
+                                    : 'spending',
+                            );
+                        }
+                    }}
                 >
                     {({ errors, processing }) => (
                         <>
@@ -238,6 +264,21 @@ export default function CreateParserProfile({
                                         error={errors.format_name}
                                     />
                                     <SelectField
+                                        label="Format outcome"
+                                        name="format_purpose"
+                                        options={[
+                                            {
+                                                value: 'spending',
+                                                label: 'Create a Transaction',
+                                            },
+                                            {
+                                                value: 'ignore',
+                                                label: 'Ignore as non-spending',
+                                            },
+                                        ]}
+                                        error={errors.format_purpose}
+                                    />
+                                    <SelectField
                                         label="Required authentication"
                                         name="authentication_mechanism"
                                         options={alignedAuthentication}
@@ -262,198 +303,209 @@ export default function CreateParserProfile({
                                 </CardContent>
                             </Card>
 
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>
-                                        Amount and Transaction kind
-                                    </CardTitle>
-                                    <CardDescription>
-                                        Boundaries may use the literal escape
-                                        sequence \n for a line ending. Exactly
-                                        one amount must be found.
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent className="grid gap-5 md:grid-cols-2">
-                                    <BoundaryField
-                                        label="Text immediately before amount"
-                                        name="amount_prefix"
-                                        error={errors.amount_prefix}
-                                    />
-                                    <BoundaryField
-                                        label="Text immediately after amount"
-                                        name="amount_suffix"
-                                        error={errors.amount_suffix}
-                                    />
-                                    <SelectField
-                                        label="Decimal separator"
-                                        name="decimal_separator"
-                                        options={[
-                                            { value: '.', label: 'Period (.)' },
-                                            { value: ',', label: 'Comma (,)' },
-                                        ]}
-                                        error={errors.decimal_separator}
-                                    />
-                                    <SelectField
-                                        label="Grouping separator"
-                                        name="grouping_separator"
-                                        options={[
-                                            {
-                                                value: 'none',
-                                                label: 'None',
-                                            },
-                                            {
-                                                value: ',',
-                                                label: 'Comma (,)',
-                                            },
-                                            {
-                                                value: '.',
-                                                label: 'Period (.)',
-                                            },
-                                            {
-                                                value: 'space',
-                                                label: 'Space',
-                                            },
-                                        ]}
-                                        error={errors.grouping_separator}
-                                    />
-                                    <SelectField
-                                        label="Currency token position"
-                                        name="currency_position"
-                                        options={[
-                                            {
-                                                value: 'before',
-                                                label: 'Before amount',
-                                            },
-                                            {
-                                                value: 'after',
-                                                label: 'After amount',
-                                            },
-                                        ]}
-                                        error={errors.currency_position}
-                                    />
-                                    <FormField
-                                        label="Exact currency token"
-                                        name="currency_token"
-                                        placeholder="S/ or $"
-                                        error={errors.currency_token}
-                                    />
-                                    <SelectField
-                                        label="Currency mapping"
-                                        name="currency"
-                                        options={[
-                                            { value: 'PEN', label: 'PEN' },
-                                            { value: 'USD', label: 'USD' },
-                                        ]}
-                                        error={errors.currency}
-                                    />
-                                    <SelectField
-                                        label="Amount semantics"
-                                        name="amount_semantics"
-                                        options={[
-                                            {
-                                                value: 'absolute',
-                                                label: 'Unsigned absolute value',
-                                            },
-                                            {
-                                                value: 'signed',
-                                                label: 'Explicit signed value',
-                                            },
-                                        ]}
-                                        error={errors.amount_semantics}
-                                    />
-                                    <SelectField
-                                        label="Transaction-kind semantics"
-                                        name="kind_semantics"
-                                        options={[
-                                            {
-                                                value: 'fixed_purchase',
-                                                label: 'Always purchase',
-                                            },
-                                            {
-                                                value: 'fixed_refund',
-                                                label: 'Always Refund',
-                                            },
-                                        ]}
-                                        error={errors.kind_semantics}
-                                    />
-                                </CardContent>
-                            </Card>
+                            {formatPurpose === 'spending' && (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle>
+                                            Amount and Transaction kind
+                                        </CardTitle>
+                                        <CardDescription>
+                                            Boundaries may use the literal
+                                            escape sequence \n for a line
+                                            ending. Exactly one amount must be
+                                            found.
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="grid gap-5 md:grid-cols-2">
+                                        <BoundaryField
+                                            label="Text immediately before amount"
+                                            name="amount_prefix"
+                                            error={errors.amount_prefix}
+                                        />
+                                        <BoundaryField
+                                            label="Text immediately after amount"
+                                            name="amount_suffix"
+                                            error={errors.amount_suffix}
+                                        />
+                                        <SelectField
+                                            label="Decimal separator"
+                                            name="decimal_separator"
+                                            options={[
+                                                {
+                                                    value: '.',
+                                                    label: 'Period (.)',
+                                                },
+                                                {
+                                                    value: ',',
+                                                    label: 'Comma (,)',
+                                                },
+                                            ]}
+                                            error={errors.decimal_separator}
+                                        />
+                                        <SelectField
+                                            label="Grouping separator"
+                                            name="grouping_separator"
+                                            options={[
+                                                {
+                                                    value: 'none',
+                                                    label: 'None',
+                                                },
+                                                {
+                                                    value: ',',
+                                                    label: 'Comma (,)',
+                                                },
+                                                {
+                                                    value: '.',
+                                                    label: 'Period (.)',
+                                                },
+                                                {
+                                                    value: 'space',
+                                                    label: 'Space',
+                                                },
+                                            ]}
+                                            error={errors.grouping_separator}
+                                        />
+                                        <SelectField
+                                            label="Currency token position"
+                                            name="currency_position"
+                                            options={[
+                                                {
+                                                    value: 'before',
+                                                    label: 'Before amount',
+                                                },
+                                                {
+                                                    value: 'after',
+                                                    label: 'After amount',
+                                                },
+                                            ]}
+                                            error={errors.currency_position}
+                                        />
+                                        <FormField
+                                            label="Exact currency token"
+                                            name="currency_token"
+                                            placeholder="S/ or $"
+                                            error={errors.currency_token}
+                                        />
+                                        <SelectField
+                                            label="Currency mapping"
+                                            name="currency"
+                                            options={[
+                                                { value: 'PEN', label: 'PEN' },
+                                                { value: 'USD', label: 'USD' },
+                                            ]}
+                                            error={errors.currency}
+                                        />
+                                        <SelectField
+                                            label="Amount semantics"
+                                            name="amount_semantics"
+                                            options={[
+                                                {
+                                                    value: 'absolute',
+                                                    label: 'Unsigned absolute value',
+                                                },
+                                                {
+                                                    value: 'signed',
+                                                    label: 'Explicit signed value',
+                                                },
+                                            ]}
+                                            error={errors.amount_semantics}
+                                        />
+                                        <SelectField
+                                            label="Transaction-kind semantics"
+                                            name="kind_semantics"
+                                            options={[
+                                                {
+                                                    value: 'fixed_purchase',
+                                                    label: 'Always purchase',
+                                                },
+                                                {
+                                                    value: 'fixed_refund',
+                                                    label: 'Always Refund',
+                                                },
+                                            ]}
+                                            error={errors.kind_semantics}
+                                        />
+                                    </CardContent>
+                                </Card>
+                            )}
 
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>
-                                        Date and merchant extraction
-                                    </CardTitle>
-                                    <CardDescription>
-                                        Missing or ambiguous values use a
-                                        provisional value and enter one grouped
-                                        Review Queue item.
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent className="grid gap-5 md:grid-cols-2">
-                                    <BoundaryField
-                                        label="Text immediately before date"
-                                        name="date_prefix"
-                                        error={errors.date_prefix}
-                                    />
-                                    <BoundaryField
-                                        label="Text immediately after date"
-                                        name="date_suffix"
-                                        error={errors.date_suffix}
-                                    />
-                                    <SelectField
-                                        label="Date grammar"
-                                        name="date_format"
-                                        options={[
-                                            {
-                                                value: 'd/m/Y',
-                                                label: 'DD/MM/YYYY',
-                                            },
-                                            {
-                                                value: 'd-m-Y',
-                                                label: 'DD-MM-YYYY',
-                                            },
-                                            {
-                                                value: 'Y-m-d',
-                                                label: 'YYYY-MM-DD',
-                                            },
-                                            {
-                                                value: 'd/m/Y H:i',
-                                                label: 'DD/MM/YYYY HH:mm',
-                                            },
-                                            {
-                                                value: 'd-m-Y H:i',
-                                                label: 'DD-MM-YYYY HH:mm',
-                                            },
-                                            {
-                                                value: 'Y-m-d H:i',
-                                                label: 'YYYY-MM-DD HH:mm',
-                                            },
-                                        ]}
-                                        error={errors.date_format}
-                                    />
-                                    <FormField
-                                        label="Institution timezone"
-                                        name="timezone"
-                                        defaultValue={browserTimezone}
-                                        error={errors.timezone}
-                                    />
-                                    <BoundaryField
-                                        label="Text immediately before merchant"
-                                        name="merchant_prefix"
-                                        required={false}
-                                        error={errors.merchant_prefix}
-                                    />
-                                    <BoundaryField
-                                        label="Text immediately after merchant"
-                                        name="merchant_suffix"
-                                        required={false}
-                                        error={errors.merchant_suffix}
-                                    />
-                                </CardContent>
-                            </Card>
+                            {formatPurpose === 'spending' && (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle>
+                                            Date and merchant extraction
+                                        </CardTitle>
+                                        <CardDescription>
+                                            Missing or ambiguous values use a
+                                            provisional value and enter one
+                                            grouped Review Queue item.
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="grid gap-5 md:grid-cols-2">
+                                        <BoundaryField
+                                            label="Text immediately before date"
+                                            name="date_prefix"
+                                            error={errors.date_prefix}
+                                        />
+                                        <BoundaryField
+                                            label="Text immediately after date"
+                                            name="date_suffix"
+                                            error={errors.date_suffix}
+                                        />
+                                        <SelectField
+                                            label="Date grammar"
+                                            name="date_format"
+                                            options={[
+                                                {
+                                                    value: 'd/m/Y',
+                                                    label: 'DD/MM/YYYY',
+                                                },
+                                                {
+                                                    value: 'd-m-Y',
+                                                    label: 'DD-MM-YYYY',
+                                                },
+                                                {
+                                                    value: 'Y-m-d',
+                                                    label: 'YYYY-MM-DD',
+                                                },
+                                                {
+                                                    value: 'd/m/Y H:i',
+                                                    label: 'DD/MM/YYYY HH:mm',
+                                                },
+                                                {
+                                                    value: 'd-m-Y H:i',
+                                                    label: 'DD-MM-YYYY HH:mm',
+                                                },
+                                                {
+                                                    value: 'Y-m-d H:i',
+                                                    label: 'YYYY-MM-DD HH:mm',
+                                                },
+                                            ]}
+                                            error={errors.date_format}
+                                        />
+                                        <FormField
+                                            label="Institution timezone"
+                                            name="timezone"
+                                            defaultValue={browserTimezone}
+                                            error={errors.timezone}
+                                        />
+                                        <BoundaryField
+                                            label="Text immediately before merchant"
+                                            name="merchant_prefix"
+                                            required={false}
+                                            error={errors.merchant_prefix}
+                                        />
+                                        <BoundaryField
+                                            label="Text immediately after merchant"
+                                            name="merchant_suffix"
+                                            required={false}
+                                            error={errors.merchant_suffix}
+                                        />
+                                    </CardContent>
+                                </Card>
+                            )}
 
-                            {preview !== undefined && (
+                            {preview?.purpose === 'spending' && (
                                 <Card data-testid="candidate-transaction">
                                     <CardHeader>
                                         <CardTitle>
@@ -502,6 +554,21 @@ export default function CreateParserProfile({
                                 </Card>
                             )}
 
+                            {preview?.purpose === 'ignore' && (
+                                <Alert>
+                                    <ShieldCheck />
+                                    <AlertTitle>
+                                        Known non-spending format
+                                    </AlertTitle>
+                                    <AlertDescription>
+                                        This exact authenticated sender and
+                                        marker combination will be ignored. It
+                                        will create neither a Transaction nor
+                                        review noise.
+                                    </AlertDescription>
+                                </Alert>
+                            )}
+
                             <div className="flex flex-wrap justify-end gap-3">
                                 {preview === undefined ? (
                                     <Button
@@ -517,14 +584,18 @@ export default function CreateParserProfile({
                                         <ScanSearch />
                                         {processing
                                             ? 'Validating rules...'
-                                            : 'Preview candidate Transaction'}
+                                            : formatPurpose === 'ignore'
+                                              ? 'Preview ignored format'
+                                              : 'Preview candidate Transaction'}
                                     </Button>
                                 ) : (
                                     <Button type="submit" disabled={processing}>
                                         <ShieldCheck />
                                         {processing
                                             ? 'Confirming profile...'
-                                            : 'Enable profile and create Transaction'}
+                                            : preview.purpose === 'ignore'
+                                              ? 'Approve ignored format'
+                                              : 'Enable profile and create Transaction'}
                                     </Button>
                                 )}
                             </div>

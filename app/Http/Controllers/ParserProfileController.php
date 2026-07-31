@@ -3,9 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Actions\NotificationIngestion\ApproveParserProfileVersion;
+use App\Actions\NotificationIngestion\ReadParserProfileHealth;
 use App\Actions\NotificationIngestion\ReadParserProfileSourceMessages;
 use App\Http\Requests\StoreParserProfileRequest;
-use App\Models\ParserProfile;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -17,22 +17,13 @@ class ParserProfileController extends Controller
 {
     public function index(
         Request $request,
+        ReadParserProfileHealth $readParserProfileHealth,
         ReadParserProfileSourceMessages $readSourceMessages,
     ): Response {
-        $profiles = ParserProfile::query()
-            ->whereBelongsTo($request->user(), 'owner')
-            ->latest()
-            ->get(['id', 'name', 'current_version', 'enabled_at'])
-            ->map(fn (ParserProfile $profile): array => [
-                'id' => $profile->id,
-                'name' => $profile->name,
-                'current_version' => $profile->current_version,
-                'enabled_at' => $profile->enabled_at?->toIso8601String(),
-            ])
-            ->all();
+        $profileHealth = $readParserProfileHealth->handle($request->user());
 
         return Inertia::render('parser-profiles/index', [
-            'profiles' => $profiles,
+            ...$profileHealth,
             'source_messages' => $readSourceMessages->handle($request->user()),
         ]);
     }
