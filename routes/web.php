@@ -5,6 +5,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryRetirementController;
 use App\Http\Controllers\CategoryTargetController;
 use App\Http\Controllers\CategoryTargetRetirementController;
+use App\Http\Controllers\CategoryTrashRestorationController;
 use App\Http\Controllers\DailyExchangeRateController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InsightsController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\ParserProfilePreviewController;
 use App\Http\Controllers\ParserProfileSourceMessageController;
 use App\Http\Controllers\ReceiptBreakdownConfirmationController;
 use App\Http\Controllers\ReceiptBreakdownController;
+use App\Http\Controllers\ReceiptBreakdownTrashRestorationController;
 use App\Http\Controllers\ReceiptProposalAttachmentController;
 use App\Http\Controllers\ReportingCurrencyController;
 use App\Http\Controllers\ReviewQueueController;
@@ -116,6 +118,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('categories/{category}', [CategoryController::class, 'destroy'])
         ->middleware(RequirePasskeyConfirmation::class)
         ->name('categories.destroy');
+    Route::post('trash/categories/{deletionId}/restoration', CategoryTrashRestorationController::class)
+        ->name('trash.categories.restoration.store');
+    Route::post('trash/receipt-breakdowns/{deletionId}/restoration', ReceiptBreakdownTrashRestorationController::class)
+        ->name('trash.receipt_breakdowns.restoration.store');
     Route::post('categories/{category}/retirement', [CategoryRetirementController::class, 'store'])
         ->name('categories.retirement.store');
     Route::delete('categories/{category}/retirement', [CategoryRetirementController::class, 'destroy'])

@@ -440,6 +440,22 @@ test('duplicate resolution moves a compatible Receipt Breakdown whole and reopen
         ->and($lineItem->refresh()->receipt_breakdown_id)->toBe($breakdown->id)
         ->and(SuspectedDuplicateReceiptBreakdownMove::query()->count())->toBe(1);
 
+    $breakdown->forceFill([
+        'status' => 'draft',
+        'confirmed_at' => null,
+    ])->save();
+
+    $this->delete(route('receipt_breakdowns.destroy', $breakdown), [
+        'expected_revision' => $breakdown->revision,
+    ])->assertSessionHasErrors('receipt_breakdown');
+
+    expect($breakdown->fresh()->deleted_at)->toBeNull();
+
+    $breakdown->forceFill([
+        'status' => 'confirmed',
+        'confirmed_at' => now(),
+    ])->save();
+
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('totals.PEN', '4000')

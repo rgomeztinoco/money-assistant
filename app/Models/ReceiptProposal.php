@@ -52,7 +52,7 @@ final class ReceiptProposal extends Model
     /** @return HasOne<ReceiptBreakdown, $this> */
     public function receiptBreakdown(): HasOne
     {
-        return $this->hasOne(ReceiptBreakdown::class);
+        return $this->hasOne(ReceiptBreakdown::class)->withTrashed();
     }
 
     /**

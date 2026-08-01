@@ -6,6 +6,7 @@ use App\Actions\Categorization\CreateCategory;
 use App\Actions\Categorization\DeleteCategory;
 use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\Categorization\UpdateCategory;
+use App\Actions\Retention\ReadFinancialTrash;
 use App\Exceptions\CategoryOperationBlocked;
 use App\Exceptions\StaleCategoryRevision;
 use App\Http\Requests\ChangeCategoryRetirementRequest;
@@ -24,12 +25,14 @@ class CategoryController extends Controller
         private CreateCategory $createCategory,
         private UpdateCategory $updateCategory,
         private DeleteCategory $deleteCategory,
+        private ReadFinancialTrash $readFinancialTrash,
     ) {}
 
     public function index(Request $request): Response
     {
         return Inertia::render('categories/index', [
             'categories' => $this->readCategoryTaxonomy->handle($request->user()),
+            'trashed_categories' => $this->readFinancialTrash->categories($request->user()),
         ]);
     }
 
@@ -87,7 +90,7 @@ class CategoryController extends Controller
             return back()->withErrors(['category' => $exception->getMessage()]);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Category permanently deleted.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Category moved to trash for 30 days.')]);
 
         return to_route('categories.index');
     }

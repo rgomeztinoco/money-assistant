@@ -175,6 +175,11 @@ export type SelectedTransaction = {
         draft: ReceiptBreakdown | null;
         confirmed: ReceiptBreakdown | null;
     };
+    trashed_receipt_breakdowns: Array<{
+        deletion_id: string;
+        revision: number;
+        purge_after: string;
+    }>;
     receipt_proposals: Array<{
         id: string;
         processed_at: string;

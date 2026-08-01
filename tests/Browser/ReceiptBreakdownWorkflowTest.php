@@ -63,9 +63,13 @@ test('the owner attaches edits and confirms a Receipt Breakdown in the Transacti
         ->assertSee('These Line Items replace the Transaction Category in reports')
         ->press('Remove from reports')
         ->assertSee('Draft revision 3')
-        ->assertSee('This permanently deletes only this draft and its Line Items.')
-        ->press('Permanently discard draft')
-        ->assertSee('Unattached Receipt Proposals')
+        ->assertSee('This draft and its Line Items remain recoverable in trash for 30 days.')
+        ->press('Move draft to trash')
+        ->assertSee('Receipt Breakdown draft moved to trash for 30 days.')
+        ->assertSee('Receipt Breakdowns in trash')
+        ->press('Restore draft revision 3')
+        ->assertSee('Receipt Breakdown restored from trash.')
+        ->assertSee('Draft revision 3')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

@@ -3,6 +3,7 @@
 namespace App\Actions\ReceiptReconciliation;
 
 use App\LineItemRole;
+use App\Models\FinancialDataTombstone;
 use App\Models\ReceiptBreakdown;
 use App\Models\ReceiptProposal;
 use App\Models\Transaction;
@@ -68,13 +69,17 @@ final class AttachReceiptProposalToTransaction
             ]);
         }
 
-        if ($transaction->receiptBreakdowns()->where('status', 'draft')->exists()) {
+        if ($transaction->receiptBreakdowns()->withTrashed()->where('status', 'draft')->exists()) {
             throw ValidationException::withMessages([
-                'receipt_proposal_id' => 'This Transaction already has a draft Receipt Breakdown.',
+                'receipt_proposal_id' => 'This Transaction already has a draft Receipt Breakdown, including recoverable trash.',
             ]);
         }
 
-        if ($proposal->receiptBreakdown()->exists()) {
+        if ($proposal->receiptBreakdown()->exists()
+            || FinancialDataTombstone::query()
+                ->where('source_reference_type', 'receipt_proposal')
+                ->where('source_reference_id', $proposal->id)
+                ->exists()) {
             throw ValidationException::withMessages([
                 'receipt_proposal_id' => 'This Receipt Proposal is already attached.',
             ]);

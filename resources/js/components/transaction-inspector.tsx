@@ -1,6 +1,7 @@
 import { Form } from '@inertiajs/react';
 import {
     Check,
+    ArchiveRestore,
     CircleAlert,
     CircleOff,
     History,
@@ -23,6 +24,7 @@ import {
     destroy as discardReceiptBreakdown,
     update as updateReceiptBreakdown,
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
+import { default as restoreReceiptBreakdown } from '@/actions/App/Http/Controllers/ReceiptBreakdownTrashRestorationController';
 import { store as attachReceiptProposal } from '@/actions/App/Http/Controllers/ReceiptProposalAttachmentController';
 import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { update as updateCategory } from '@/actions/App/Http/Controllers/TransactionCategoryController';
@@ -1184,14 +1186,18 @@ function ReceiptBreakdownSection({
                                     disabled={processing}
                                 >
                                     {processing ? <Spinner /> : <Trash2 />}
-                                    Permanently discard draft
+                                    Move draft to trash
                                 </Button>
                                 <InputError
-                                    message={errors.expected_revision}
+                                    message={
+                                        errors.receipt_breakdown ??
+                                        errors.expected_revision
+                                    }
                                 />
                                 <p className="text-xs text-muted-foreground">
-                                    This permanently deletes only this draft and
-                                    its Line Items. Reporting is unchanged.
+                                    This draft and its Line Items remain
+                                    recoverable in trash for 30 days. Reporting
+                                    is unchanged.
                                 </p>
                             </>
                         )}
@@ -1266,9 +1272,68 @@ function ReceiptBreakdownSection({
                 </div>
             )}
 
+            {!draft && transaction.trashed_receipt_breakdowns.length > 0 && (
+                <div className="grid gap-3 rounded-lg border border-dashed p-4">
+                    <div>
+                        <p className="font-medium">
+                            Receipt Breakdowns in trash
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                            Restore a draft before its 30-day recovery window
+                            expires.
+                        </p>
+                    </div>
+                    {transaction.trashed_receipt_breakdowns.map((breakdown) => (
+                        <Form
+                            key={breakdown.deletion_id}
+                            {...restoreReceiptBreakdown.form(
+                                breakdown.deletion_id,
+                            )}
+                            options={{
+                                preserveScroll: true,
+                                preserveState: true,
+                            }}
+                            className="flex flex-col justify-between gap-3 rounded-md border p-3 sm:flex-row sm:items-center"
+                        >
+                            {({ processing }) => (
+                                <>
+                                    <div>
+                                        <p className="text-sm font-medium">
+                                            Draft revision {breakdown.revision}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Purges after{' '}
+                                            {new Date(
+                                                breakdown.purge_after,
+                                            ).toLocaleString()}
+                                        </p>
+                                    </div>
+                                    <Button
+                                        type="submit"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={processing}
+                                        aria-label={`Restore draft revision ${breakdown.revision}`}
+                                    >
+                                        {processing ? (
+                                            <Spinner />
+                                        ) : (
+                                            <ArchiveRestore />
+                                        )}
+                                        Restore draft revision{' '}
+                                        {breakdown.revision}
+                                    </Button>
+                                </>
+                            )}
+                        </Form>
+                    ))}
+                </div>
+            )}
+
             {!draft &&
                 !confirmed &&
-                transaction.receipt_proposals.length === 0 && (
+                transaction.receipt_proposals.length === 0 &&
+                transaction.trashed_receipt_breakdowns.length === 0 && (
                     <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                         No Receipt Breakdown or compatible unattached proposal.
                     </p>

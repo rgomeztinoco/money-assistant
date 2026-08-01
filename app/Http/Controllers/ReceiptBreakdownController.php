@@ -64,7 +64,7 @@ final class ReceiptBreakdownController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => __('Receipt Breakdown draft permanently discarded.'),
+            'message' => __('Receipt Breakdown draft moved to trash for 30 days.'),
         ]);
 
         return $this->redirectToWorkspace('transactions.index');

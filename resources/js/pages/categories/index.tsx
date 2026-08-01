@@ -19,6 +19,7 @@ import {
     destroy as reactivateCategory,
     store as retireCategory,
 } from '@/actions/App/Http/Controllers/CategoryRetirementController';
+import { default as restoreCategory } from '@/actions/App/Http/Controllers/CategoryTrashRestorationController';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -337,8 +338,14 @@ function CategorySummary({ category }: { category: CategoryItem }) {
 
 export default function CategoriesIndex({
     categories,
+    trashed_categories: trashedCategories,
 }: {
     categories: CategoryNode[];
+    trashed_categories: Array<{
+        deletion_id: string;
+        name: string;
+        purge_after: string;
+    }>;
 }) {
     return (
         <>
@@ -404,6 +411,64 @@ export default function CategoriesIndex({
                         </Form>
                     </CardContent>
                 </Card>
+
+                {trashedCategories.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <ArchiveRestore className="size-5" /> Category
+                                trash
+                            </CardTitle>
+                            <CardDescription>
+                                Restore deleted Categories before their 30-day
+                                recovery window expires.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-3">
+                            {trashedCategories.map((category) => (
+                                <div
+                                    key={category.deletion_id}
+                                    className="flex flex-col justify-between gap-3 rounded-lg border p-3 sm:flex-row sm:items-center"
+                                >
+                                    <div>
+                                        <p className="font-medium">
+                                            {category.name}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Purges after{' '}
+                                            {new Date(
+                                                category.purge_after,
+                                            ).toLocaleString()}
+                                        </p>
+                                    </div>
+                                    <Form
+                                        {...restoreCategory.form(
+                                            category.deletion_id,
+                                        )}
+                                        options={{ preserveScroll: true }}
+                                    >
+                                        {({ processing }) => (
+                                            <Button
+                                                type="submit"
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={processing}
+                                                aria-label={`Restore ${category.name}`}
+                                            >
+                                                {processing ? (
+                                                    <Spinner />
+                                                ) : (
+                                                    <ArchiveRestore />
+                                                )}
+                                                Restore
+                                            </Button>
+                                        )}
+                                    </Form>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                )}
 
                 <div className="grid gap-4 xl:grid-cols-2">
                     {categories.map((root) => (

@@ -5,6 +5,7 @@ namespace App\Actions\Ledger;
 use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
 use App\Actions\Categorization\ReadLearnedRuleCandidateFromCorrection;
 use App\Actions\ReceiptReconciliation\ReadReceiptBreakdownState;
+use App\Actions\Retention\ReadFinancialTrash;
 use App\Models\ReceiptProposal;
 use App\Models\SpendingNotificationReference;
 use App\Models\SuspectedDuplicate;
@@ -55,6 +56,7 @@ class ReadTransactionInspector
         private ReadCategoryAssignmentProvenance $readCategoryAssignmentProvenance,
         private ReadLearnedRuleCandidateFromCorrection $readLearnedRuleCandidateFromCorrection,
         private ReadReceiptBreakdownState $readReceiptBreakdownState,
+        private ReadFinancialTrash $readFinancialTrash,
     ) {}
 
     /**
@@ -97,6 +99,7 @@ class ReadTransactionInspector
      *     }>,
      *     receipt_breakdown: ReceiptBreakdownState,
      *     receipt_proposals: list<array{id: string, processed_at: string, proposed_amount_minor: string, proposed_merchant_description: string, line_item_count: int}>,
+     *     trashed_receipt_breakdowns: list<array{deletion_id: string, revision: int, purge_after: string}>,
      *     state_change_idempotency_key: string
      * }|null
      */
@@ -306,6 +309,8 @@ class ReadTransactionInspector
                     'line_item_count' => count($proposal->proposed_line_items),
                 ])
                 ->all()),
+            'trashed_receipt_breakdowns' => $this->readFinancialTrash
+                ->receiptBreakdowns($owner, $transaction),
             'state_change_idempotency_key' => (string) Str::uuid(),
         ];
     }

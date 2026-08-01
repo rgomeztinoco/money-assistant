@@ -8,6 +8,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class DiscardReceiptBreakdownDraft
 {
@@ -38,7 +39,13 @@ final class DiscardReceiptBreakdownDraft
                 throw StaleReceiptBreakdownRevision::fromBreakdown($draft);
             }
 
-            $draft->delete();
+            if ($draft->suspectedDuplicateMoves()->exists()) {
+                throw ValidationException::withMessages([
+                    'receipt_breakdown' => 'This Receipt Breakdown belongs to reversible Suspected Duplicate history and cannot be discarded.',
+                ]);
+            }
+
+            $draft->moveToFinancialTrash();
         }, 3);
     }
 }

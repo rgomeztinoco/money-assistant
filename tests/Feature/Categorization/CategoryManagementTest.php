@@ -150,7 +150,8 @@ test('only a never-referenced Category can be deleted after fresh passkey authen
         ->delete(route('categories.destroy', $category), ['expected_revision' => 1])
         ->assertRedirect(route('categories.index'));
 
-    $this->assertModelMissing($category);
+    expect(Category::find($category->id))->toBeNull()
+        ->and(Category::onlyTrashed()->find($category->id))->not->toBeNull();
 });
 
 test('a Category remains historically referenced after a Transaction returns to Uncategorized', function () {
@@ -190,7 +191,7 @@ test('reactivation preserves identity and rejects active sibling conflicts', fun
         ->delete(route('categories.retirement.destroy', $retired), ['expected_revision' => 2])
         ->assertSessionHasErrors('category');
 
-    $active->delete();
+    $active->forceDelete();
 
     $this->delete(route('categories.retirement.destroy', $retired), ['expected_revision' => 2])
         ->assertSessionHasNoErrors();

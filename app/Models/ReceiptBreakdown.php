@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\HasFinancialTrash;
 use Carbon\CarbonImmutable;
 use Database\Factories\ReceiptBreakdownFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -19,6 +20,9 @@ use Illuminate\Support\Carbon;
  * @property string $status
  * @property int $revision
  * @property CarbonImmutable|null $confirmed_at
+ * @property string|null $deletion_id
+ * @property CarbonImmutable|null $purge_after
+ * @property CarbonImmutable|null $deleted_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -34,6 +38,8 @@ final class ReceiptBreakdown extends Model
 {
     /** @use HasFactory<ReceiptBreakdownFactory> */
     use HasFactory;
+
+    use HasFinancialTrash;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -69,6 +75,15 @@ final class ReceiptBreakdown extends Model
         return $this->hasMany(LineItem::class)->orderBy('id');
     }
 
+    /** @return HasMany<SuspectedDuplicateReceiptBreakdownMove, $this> */
+    public function suspectedDuplicateMoves(): HasMany
+    {
+        return $this->hasMany(
+            SuspectedDuplicateReceiptBreakdownMove::class,
+            'receipt_breakdown_id',
+        );
+    }
+
     /**
      * @return array<string, string>
      */
@@ -77,6 +92,8 @@ final class ReceiptBreakdown extends Model
         return [
             'revision' => 'integer',
             'confirmed_at' => 'immutable_datetime',
+            'purge_after' => 'immutable_datetime',
+            'deleted_at' => 'immutable_datetime',
         ];
     }
 }

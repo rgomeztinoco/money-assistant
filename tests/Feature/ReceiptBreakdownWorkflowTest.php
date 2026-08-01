@@ -693,7 +693,7 @@ test('removing a confirmed Receipt Breakdown never overwrites a replacement draf
         ->and($draftItem->refresh()->description)->toBe('Newer owner work');
 });
 
-test('permanent draft discard is explicit and cannot delete a newer revision', function () {
+test('draft discard is explicit and cannot trash a newer revision', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
         'amount_minor' => 2500,
@@ -717,8 +717,9 @@ test('permanent draft discard is explicit and cannot delete a newer revision', f
         'expected_revision' => 2,
     ])->assertRedirect()->assertSessionHasNoErrors();
 
-    expect($draft->fresh())->toBeNull()
-        ->and(LineItem::query()->count())->toBe(0);
+    expect(ReceiptBreakdown::find($draft->id))->toBeNull()
+        ->and(ReceiptBreakdown::onlyTrashed()->find($draft->id))->not->toBeNull()
+        ->and(LineItem::query()->count())->toBe(1);
 });
 
 test('confirmation rejects a draft whose Transaction became Voided', function () {
