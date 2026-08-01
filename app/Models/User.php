@@ -62,6 +62,14 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
+     * @return HasMany<IntegrationIncident, $this>
+     */
+    public function integrationIncidents(): HasMany
+    {
+        return $this->hasMany(IntegrationIncident::class);
+    }
+
+    /**
      * @return HasMany<DailyExchangeRate, $this>
      */
     public function dailyExchangeRates(): HasMany

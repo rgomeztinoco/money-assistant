@@ -2,6 +2,9 @@
 
 namespace App\Actions\Categorization;
 
+use App\Actions\Integrations\ClassifyIntegrationFailure;
+use App\Actions\Integrations\RecordIntegrationFailure;
+use App\Actions\Integrations\RecordIntegrationRecovery;
 use App\AiClassificationError;
 use App\AiClassificationInput;
 use App\AiClassificationOutcome;
@@ -10,6 +13,8 @@ use App\CategoryAssignmentProvenance;
 use App\Contracts\AiClassifier;
 use App\Exceptions\AiClassifierTimedOut;
 use App\Exceptions\AiClassifierUnavailable;
+use App\IntegrationService;
+use App\IntegrationWorkType;
 use App\MerchantNormalizer;
 use App\Models\AiCategoryProposal;
 use App\Models\AiClassificationRequest;
@@ -19,6 +24,7 @@ use App\Models\Transaction;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Lottery;
+use Throwable;
 
 class ClassifyTransactionWithAi
 {
@@ -28,6 +34,9 @@ class ClassifyTransactionWithAi
         private AiClassificationTaxonomyFingerprint $taxonomyFingerprint,
         private EvaluateAiClassificationTrustGate $evaluateTrustGate,
         private ResolveAiClassificationValidationContext $resolveValidationContext,
+        private ClassifyIntegrationFailure $classifyIntegrationFailure,
+        private RecordIntegrationFailure $recordIntegrationFailure,
+        private RecordIntegrationRecovery $recordIntegrationRecovery,
     ) {}
 
     public function handle(int $classificationRequestId): void
@@ -90,17 +99,19 @@ class ClassifyTransactionWithAi
                 currency: $classificationRequest->transaction->currency->value,
                 categories: $this->categoryGuidance($categories),
             ));
-        } catch (AiClassifierTimedOut) {
+        } catch (AiClassifierTimedOut $exception) {
             $this->recordClassifierFailure(
                 $classificationRequest,
                 AiClassificationOutcome::Timeout,
+                $exception,
             );
 
             return;
-        } catch (AiClassifierUnavailable) {
+        } catch (AiClassifierUnavailable $exception) {
             $this->recordClassifierFailure(
                 $classificationRequest,
                 AiClassificationOutcome::Unavailable,
+                $exception,
             );
 
             return;
@@ -280,6 +291,8 @@ class ClassifyTransactionWithAi
                 'last_error_code' => null,
             ])->save();
         }, 3);
+
+        $this->recordRecovery($classificationRequest);
     }
 
     private function hasStaleInput(
@@ -311,6 +324,8 @@ class ClassifyTransactionWithAi
             'terminal_outcome' => null,
             'last_error_code' => null,
         ])->save();
+
+        $this->recordRecovery($classificationRequest);
     }
 
     private function completeAsSuperseded(
@@ -324,6 +339,8 @@ class ClassifyTransactionWithAi
             'next_attempt_at' => null,
             'last_error_code' => AiClassificationError::AuthoritativeAssignment,
         ])->save();
+
+        $this->recordRecovery($classificationRequest);
     }
 
     private function classifierError(
@@ -339,8 +356,9 @@ class ClassifyTransactionWithAi
     private function recordClassifierFailure(
         AiClassificationRequest $classificationRequest,
         AiClassificationOutcome $outcome,
+        Throwable $exception,
     ): void {
-        DB::transaction(function () use ($classificationRequest, $outcome): void {
+        DB::transaction(function () use ($classificationRequest, $outcome, $exception): void {
             $currentRequest = AiClassificationRequest::query()
                 ->lockForUpdate()
                 ->find($classificationRequest->id);
@@ -367,12 +385,22 @@ class ClassifyTransactionWithAi
                 return;
             }
 
-            if ($currentRequest->attempt_count < 3) {
+            $failureKind = $this->classifyIntegrationFailure->handle($exception);
+            $decision = $this->recordIntegrationFailure->handle(
+                owner: $currentRequest->owner,
+                integration: IntegrationService::Ai,
+                workType: IntegrationWorkType::AiClassification,
+                workId: (string) $currentRequest->id,
+                sourceIdentity: 'ai:transaction:'.$currentRequest->transaction_id
+                    .':revision:'.$currentRequest->expected_transaction_revision,
+                failureKind: $failureKind,
+                errorCode: $this->classifierError($outcome)->value,
+            );
+
+            if ($decision->shouldRetry) {
                 $currentRequest->forceFill([
                     'claimed_at' => null,
-                    'next_attempt_at' => now()->addSeconds(
-                        $this->retryDelayInSeconds($currentRequest),
-                    ),
+                    'next_attempt_at' => $decision->nextAttemptAt,
                     'last_error_code' => $this->classifierError($outcome),
                 ])->save();
 
@@ -407,15 +435,14 @@ class ClassifyTransactionWithAi
         }, 3);
     }
 
-    private function retryDelayInSeconds(AiClassificationRequest $classificationRequest): int
+    private function recordRecovery(AiClassificationRequest $classificationRequest): void
     {
-        $baseDelay = $classificationRequest->attempt_count === 1 ? 60 : 300;
-        $jitter = hexdec(substr(hash(
-            'sha256',
-            $classificationRequest->id.':'.$classificationRequest->attempt_count,
-        ), 0, 2)) % 31;
-
-        return $baseDelay + $jitter;
+        $this->recordIntegrationRecovery->handle(
+            owner: $classificationRequest->owner,
+            integration: IntegrationService::Ai,
+            workType: IntegrationWorkType::AiClassification,
+            workId: (string) $classificationRequest->id,
+        );
     }
 
     /** @return Collection<int, Category> */

@@ -1,6 +1,8 @@
 <?php
 
+use App\Actions\Integrations\ClassifyIntegrationFailure;
 use App\Contracts\Gmail;
+use App\IntegrationFailureKind;
 use App\Integrations\Gmail\GmailHistoryExpired;
 use App\Integrations\Gmail\GmailReauthorizationRequired;
 use App\Integrations\Gmail\GmailRequestFailed;
@@ -523,6 +525,37 @@ test('the Google adapter sanitizes message discovery failures', function () {
         'Gmail message identity metadata could not be read.',
     );
 });
+
+test('the Google adapter preserves sanitized HTTP failure semantics', function (
+    int $status,
+    IntegrationFailureKind $expectedKind,
+) {
+    $mockHandler = new MockHandler([
+        new Response($status, ['Content-Type' => 'application/json'], json_encode([
+            'error' => ['message' => 'sensitive mailbox data'],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+        httpClient: new Client(['handler' => HandlerStack::create($mockHandler)]),
+    );
+
+    try {
+        $gmail->messageIdentity('sensitive-access-token', 'sensitive-message-id');
+        $this->fail('A failed Gmail request was accepted.');
+    } catch (GmailRequestFailed $exception) {
+        expect($exception->getMessage())->not->toContain('sensitive')
+            ->and($exception->getPrevious())->toBeNull()
+            ->and($exception->httpStatus())->toBe($status)
+            ->and(app(ClassifyIntegrationFailure::class)->handle($exception))->toBe($expectedKind);
+    }
+})->with([
+    'authentication' => [401, IntegrationFailureKind::Authentication],
+    'authorization' => [403, IntegrationFailureKind::Authorization],
+    'schema' => [404, IntegrationFailureKind::Schema],
+]);
 
 function gmailBase64Url(string $value): string
 {

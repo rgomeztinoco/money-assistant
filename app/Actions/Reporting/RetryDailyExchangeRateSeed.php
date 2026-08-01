@@ -2,6 +2,9 @@
 
 namespace App\Actions\Reporting;
 
+use App\Actions\Integrations\ReplayIntegrationIncident;
+use App\IntegrationService;
+use App\IntegrationWorkType;
 use App\Jobs\SeedDailyExchangeRate;
 use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\User;
@@ -9,8 +12,24 @@ use Illuminate\Support\Facades\DB;
 
 final class RetryDailyExchangeRateSeed
 {
+    public function __construct(
+        private ReplayIntegrationIncident $replayIntegrationIncident,
+    ) {}
+
     public function handle(User $owner, int $seedRequestId): DailyExchangeRateSeedRequest
     {
+        $incident = $owner->integrationIncidents()
+            ->where('integration', IntegrationService::Bcrp)
+            ->where('work_type', IntegrationWorkType::DailyExchangeRateSeed)
+            ->where('work_id', (string) $seedRequestId)
+            ->first();
+
+        if ($incident?->parked_at !== null) {
+            $this->replayIntegrationIncident->handle($owner, $incident->id);
+
+            return DailyExchangeRateSeedRequest::query()->findOrFail($seedRequestId);
+        }
+
         $shouldDispatch = false;
         $seedRequest = DB::transaction(function () use ($owner, $seedRequestId, &$shouldDispatch): DailyExchangeRateSeedRequest {
             $seedRequest = DailyExchangeRateSeedRequest::query()

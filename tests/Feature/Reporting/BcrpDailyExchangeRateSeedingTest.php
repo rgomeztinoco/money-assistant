@@ -5,6 +5,7 @@ use App\Actions\Reporting\DiscoverMissingDailyExchangeRates;
 use App\Actions\Reporting\SeedDailyExchangeRateFromBcrpData;
 use App\Contracts\BcrpData;
 use App\Currency;
+use App\IntegrationFailureKind;
 use App\Integrations\BcrpData\BcrpExchangeRateObservation;
 use App\Jobs\SeedDailyExchangeRate;
 use App\Models\DailyExchangeRate;
@@ -298,8 +299,11 @@ test('an unexpected BCRP series is rejected without trying another source', func
     $seedRequest->refresh();
 
     expect(DailyExchangeRate::query()->count())->toBe(0)
-        ->and($seedRequest->last_error_code)->toBe('bcrp_request_failed')
-        ->and($seedRequest->next_attempt_at)->not->toBeNull();
+        ->and($seedRequest->last_error_code)->toBe('bcrp_response_invalid')
+        ->and($seedRequest->next_attempt_at)->toBeNull()
+        ->and($seedRequest->retrieval_failed_at)->not->toBeNull()
+        ->and($seedRequest->owner->integrationIncidents()->sole()->failure_kind)
+        ->toBe(IntegrationFailureKind::Schema);
     Http::assertSentCount(1);
     Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/PD04638PD/'));
 });
@@ -351,7 +355,8 @@ test('transport failures do not consume the publication-gap retry allowance', fu
         ->and($rate->source_observed_on->toDateString())->toBe('2026-07-24');
 });
 
-test('transport retry exhaustion remains distinct from owner-entry work', function () {
+test('transport retry parking after one day remains distinct from owner-entry work', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-07-27 15:00:00 UTC'));
     $seedRequest = DailyExchangeRateSeedRequest::factory()->required()->create([
         'applicable_on' => '2026-07-27',
     ]);
@@ -364,17 +369,13 @@ test('transport retry exhaustion remains distinct from owner-entry work', functi
     });
     $action = app(SeedDailyExchangeRateFromBcrpData::class);
 
-    for ($attempt = 1; $attempt <= 5; $attempt++) {
-        $action->handle($seedRequest->id);
-
-        if ($attempt < 5) {
-            $this->travelTo($seedRequest->fresh()->next_attempt_at);
-        }
-    }
+    $action->handle($seedRequest->id);
+    $this->travelTo($seedRequest->owner->integrationIncidents()->sole()->retry_until);
+    $action->handle($seedRequest->id);
 
     $seedRequest->refresh();
 
-    expect($seedRequest->transport_failure_count)->toBe(5)
+    expect($seedRequest->transport_failure_count)->toBe(2)
         ->and($seedRequest->retrieval_failed_at)->not->toBeNull()
         ->and($seedRequest->owner_entry_required_at)->toBeNull()
         ->and($seedRequest->reminder_id)->toBeNull();

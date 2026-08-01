@@ -2,17 +2,26 @@
 
 namespace App\Actions\Reminders;
 
+use App\Actions\Integrations\ClassifyIntegrationFailure;
+use App\Actions\Integrations\RecordIntegrationFailure;
+use App\Actions\Integrations\RecordIntegrationRecovery;
 use App\Contracts\OpenClawHook;
+use App\IntegrationFailureKind;
+use App\IntegrationService;
+use App\IntegrationWorkType;
 use App\Models\ReminderDelivery;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
-use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 final class DeliverReminderDelivery
 {
-    public function __construct(private OpenClawHook $openClawHook) {}
+    public function __construct(
+        private OpenClawHook $openClawHook,
+        private ClassifyIntegrationFailure $classifyIntegrationFailure,
+        private RecordIntegrationFailure $recordIntegrationFailure,
+        private RecordIntegrationRecovery $recordIntegrationRecovery,
+    ) {}
 
     public function handle(string $deliveryId): void
     {
@@ -81,6 +90,13 @@ final class DeliverReminderDelivery
                 'last_error_code' => null,
                 'updated_at' => now(),
             ]);
+
+        $this->recordIntegrationRecovery->handle(
+            owner: $delivery->reminder->owner,
+            integration: IntegrationService::OpenClaw,
+            workType: IntegrationWorkType::ReminderDelivery,
+            workId: $delivery->id,
+        );
     }
 
     private function recordFailure(ReminderDelivery $delivery, Throwable $exception): void
@@ -88,10 +104,16 @@ final class DeliverReminderDelivery
         $status = $exception instanceof RequestException
             ? $exception->response->status()
             : null;
-        $isTransient = $exception instanceof ConnectionException
-            || $status === Response::HTTP_TOO_MANY_REQUESTS
-            || ($status !== null && $status >= Response::HTTP_INTERNAL_SERVER_ERROR);
-        $shouldRetry = $isTransient && $delivery->attempt_count < 3;
+        $failureKind = $this->classifyIntegrationFailure->handle($exception);
+        $decision = $this->recordIntegrationFailure->handle(
+            owner: $delivery->reminder->owner,
+            integration: IntegrationService::OpenClaw,
+            workType: IntegrationWorkType::ReminderDelivery,
+            workId: $delivery->id,
+            sourceIdentity: 'openclaw:'.$delivery->event_type.':'.$delivery->id,
+            failureKind: $failureKind,
+            errorCode: $status === null ? 'connection_failed' : "http_{$status}",
+        );
 
         ReminderDelivery::query()
             ->whereKey($delivery->id)
@@ -101,37 +123,29 @@ final class DeliverReminderDelivery
             ->update([
                 'queued_at' => null,
                 'claimed_at' => null,
-                'next_attempt_at' => $shouldRetry
-                    ? now()->addSeconds($this->retryDelayInSeconds($delivery))
-                    : null,
-                'terminal_at' => $shouldRetry ? null : now(),
-                'terminal_reason' => $shouldRetry
+                'next_attempt_at' => $decision->nextAttemptAt,
+                'terminal_at' => $decision->shouldRetry ? null : now(),
+                'terminal_reason' => $decision->shouldRetry
                     ? null
-                    : $this->terminalReason($status, $isTransient),
+                    : $this->terminalReason($failureKind),
                 'last_error_code' => $status === null ? 'connection_failed' : "http_{$status}",
                 'updated_at' => now(),
             ]);
     }
 
-    private function retryDelayInSeconds(ReminderDelivery $delivery): int
+    private function terminalReason(IntegrationFailureKind $failureKind): string
     {
-        $baseDelay = $delivery->attempt_count === 1 ? 60 : 120;
-        $jitter = hexdec(substr(hash('sha256', $delivery->id), 0, 2)) % 31;
-
-        return $baseDelay + $jitter;
-    }
-
-    private function terminalReason(?int $status, bool $isTransient): string
-    {
-        if ($isTransient) {
+        if ($failureKind->isTransient()) {
             return 'retry_exhausted';
         }
 
-        if (in_array($status, [Response::HTTP_UNAUTHORIZED, Response::HTTP_FORBIDDEN], true)) {
+        if ($failureKind === IntegrationFailureKind::Authentication
+            || $failureKind === IntegrationFailureKind::Authorization) {
             return 'authorization_rejected';
         }
 
-        if ($status !== null && $status >= 400 && $status < 500) {
+        if ($failureKind === IntegrationFailureKind::Schema
+            || $failureKind === IntegrationFailureKind::Validation) {
             return 'validation_rejected';
         }
 

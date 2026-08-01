@@ -1,10 +1,14 @@
 <?php
 
 use App\Currency;
+use App\IntegrationFailureKind;
+use App\IntegrationService;
+use App\IntegrationWorkType;
 use App\Models\Category;
 use App\Models\DailyExchangeRate;
 use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\GmailConnection;
+use App\Models\IntegrationIncident;
 use App\Models\ParserProfile;
 use App\Models\ParserProfileVersion;
 use App\Models\SpendingNotificationReference;
@@ -130,4 +134,45 @@ test('the Dashboard promotes stale Gmail synchronization instead of reporting it
             ->has('operating.exceptions', 1)
             ->where('operating.exceptions.0.type', 'gmail_connection')
             ->where('operating.exceptions.0.state', 'stale'));
+});
+
+test('the Dashboard deep-links actionable integration incidents and exposes recovery', function () {
+    ConfigureOpenClaw::asConfigured();
+    $owner = User::factory()->create();
+    GmailConnection::factory()->for($owner, 'owner')->create([
+        'last_successful_sync_at' => now(),
+    ]);
+    $incident = IntegrationIncident::factory()->for($owner, 'owner')->create([
+        'integration' => IntegrationService::OpenClaw,
+        'work_type' => IntegrationWorkType::ReminderDelivery,
+        'work_id' => 'delivery-42',
+        'source_identity' => 'openclaw:reminder.due:delivery-42',
+        'failure_kind' => IntegrationFailureKind::Transient,
+        'visible_at' => now(),
+        'parked_at' => now(),
+        'next_attempt_at' => null,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('operating.exceptions', 1)
+            ->where('operating.exceptions.0.type', 'integration_incident')
+            ->where('operating.exceptions.0.incident_id', $incident->id)
+            ->where('operating.exceptions.0.integration', 'openclaw')
+            ->where('operating.exceptions.0.state', 'parked')
+            ->where('operating.exceptions.0.replayable', true)
+            ->where(
+                'operating.exceptions.0.affected_url',
+                route('connections.edit', [
+                    'integration' => 'openclaw',
+                    'delivery' => 'delivery-42',
+                ]).'#openclaw',
+            ));
+
+    $this->post(route('integration_incidents.acknowledgement.store', $incident))
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('dashboard'));
+
+    expect($incident->fresh()->acknowledged_at)->not->toBeNull();
 });

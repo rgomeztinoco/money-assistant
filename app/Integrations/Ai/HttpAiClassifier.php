@@ -6,6 +6,7 @@ use App\AiCategoryProposalResult;
 use App\AiClassificationInput;
 use App\AiClassificationResult;
 use App\Contracts\AiClassifier;
+use App\Exceptions\AiClassifierResponseInvalid;
 use App\Exceptions\AiClassifierTimedOut;
 use App\Exceptions\AiClassifierUnavailable;
 use Illuminate\Http\Client\ConnectionException;
@@ -78,7 +79,7 @@ final class HttpAiClassifier implements AiClassifier
             || ! is_string($explanation)
             || Str::squish($explanation) === ''
             || Str::length($explanation) > 500) {
-            throw new AiClassifierUnavailable(
+            throw new AiClassifierResponseInvalid(
                 'The AI classifier returned an invalid structured result.',
             );
         }
@@ -89,7 +90,7 @@ final class HttpAiClassifier implements AiClassifier
         $categoryProposal = $this->categoryProposal($categoryProposal);
 
         if ($categoryPath !== null && $categoryProposal !== null) {
-            throw new AiClassifierUnavailable(
+            throw new AiClassifierResponseInvalid(
                 'The AI classifier returned an invalid structured result.',
             );
         }
@@ -153,7 +154,7 @@ final class HttpAiClassifier implements AiClassifier
 
     private function throwInvalidResult(): never
     {
-        throw new AiClassifierUnavailable(
+        throw new AiClassifierResponseInvalid(
             'The AI classifier returned an invalid structured result.',
         );
     }

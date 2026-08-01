@@ -3,9 +3,9 @@
 namespace App\Actions\NotificationIngestion;
 
 use App\Contracts\Gmail;
+use App\Exceptions\GmailResponseInvalid;
 use App\GmailSynchronizationType;
 use App\Integrations\Gmail\GmailHistoryExpired;
-use App\Integrations\Gmail\GmailRequestFailed;
 use App\Jobs\ProcessGmailMessage;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
@@ -64,7 +64,7 @@ final class SynchronizeGmailConnection
         $profile = $this->gmail->profile($connection->access_token);
 
         if ($profile->accountIdentity !== $connection->gmail_account_identity) {
-            throw GmailRequestFailed::profile();
+            throw GmailResponseInvalid::forOperation('profile identity');
         }
 
         return DB::transaction(function () use ($connection, $profile): GmailConnection {
@@ -158,7 +158,7 @@ final class SynchronizeGmailConnection
         $profile = $this->gmail->profile($connection->access_token);
 
         if ($profile->accountIdentity !== $connection->gmail_account_identity) {
-            throw GmailRequestFailed::profile();
+            throw GmailResponseInvalid::forOperation('profile identity');
         }
 
         $recoveryStartsAt = $connection->last_successful_sync_at

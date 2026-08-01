@@ -4,8 +4,15 @@ namespace App\Integrations\Gmail;
 
 use RuntimeException;
 
-final class GmailRequestFailed extends RuntimeException
+class GmailRequestFailed extends RuntimeException
 {
+    public function __construct(
+        string $message,
+        private readonly ?int $httpStatus = null,
+    ) {
+        parent::__construct($message);
+    }
+
     public static function authorization(): self
     {
         return new self('Gmail authorization could not be completed.');
@@ -44,5 +51,15 @@ final class GmailRequestFailed extends RuntimeException
     public static function messages(): self
     {
         return new self('Gmail messages could not be discovered.');
+    }
+
+    public function withHttpStatus(int $httpStatus): self
+    {
+        return new self($this->getMessage(), $httpStatus);
+    }
+
+    public function httpStatus(): ?int
+    {
+        return $this->httpStatus;
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Integrations\Gmail;
 
 use App\Contracts\Gmail;
+use App\Exceptions\GmailResponseInvalid;
 use Carbon\CarbonImmutable;
 use Google\Client;
 use Google\Service\Exception as GoogleServiceException;
@@ -81,7 +82,9 @@ final class GoogleGmail implements Gmail
                 throw new GmailReauthorizationRequired;
             }
 
-            throw GmailRequestFailed::refresh();
+            throw GmailRequestFailed::refresh()->withHttpStatus(
+                $exception->getResponse()->getStatusCode(),
+            );
         } catch (Throwable) {
             throw GmailRequestFailed::refresh();
         }
@@ -97,7 +100,7 @@ final class GoogleGmail implements Gmail
             || ! is_int($credentials['expires_in'] ?? null)
             || $credentials['expires_in'] <= 0
             || $grantedScopes !== [Gmail::READ_ONLY_SCOPE]) {
-            throw GmailRequestFailed::refresh();
+            throw GmailResponseInvalid::forOperation('refresh');
         }
 
         return new GmailAccess(
@@ -134,7 +137,7 @@ final class GoogleGmail implements Gmail
                 throw new GmailHistoryExpired;
             }
 
-            throw GmailRequestFailed::history();
+            throw GmailRequestFailed::history()->withHttpStatus($exception->getCode());
         } catch (Throwable) {
             throw GmailRequestFailed::history();
         }
@@ -175,8 +178,8 @@ final class GoogleGmail implements Gmail
                 'pageToken' => $pageToken,
                 'q' => "in:anywhere after:{$afterEpochSeconds}",
             ], static fn (mixed $value): bool => $value !== null));
-        } catch (Throwable) {
-            throw GmailRequestFailed::messages();
+        } catch (Throwable $exception) {
+            throw $this->requestFailure($exception, GmailRequestFailed::messages());
         }
 
         $messageIds = [];
@@ -209,8 +212,8 @@ final class GoogleGmail implements Gmail
                 'fields' => 'id,internalDate',
                 'format' => 'full',
             ]);
-        } catch (Throwable) {
-            throw GmailRequestFailed::messageIdentity();
+        } catch (Throwable $exception) {
+            throw $this->requestFailure($exception, GmailRequestFailed::messageIdentity());
         }
         $returnedMessageId = $message->getId();
         $receivedAt = $message->getInternalDate();
@@ -219,7 +222,7 @@ final class GoogleGmail implements Gmail
             || $returnedMessageId !== $messageId
             || ! is_string($receivedAt)
             || ! ctype_digit($receivedAt)) {
-            throw GmailRequestFailed::messageIdentity();
+            throw GmailResponseInvalid::forOperation('message identity');
         }
 
         return new GmailMessageIdentity(
@@ -240,8 +243,8 @@ final class GoogleGmail implements Gmail
             $message = $service->users_messages->get('me', $messageId, [
                 'format' => 'full',
             ]);
-        } catch (Throwable) {
-            throw GmailRequestFailed::message();
+        } catch (Throwable $exception) {
+            throw $this->requestFailure($exception, GmailRequestFailed::message());
         }
 
         $returnedMessageId = $message->getId();
@@ -253,7 +256,7 @@ final class GoogleGmail implements Gmail
             || ! is_string($receivedAt)
             || ! ctype_digit($receivedAt)
             || ! $payload instanceof MessagePart) {
-            throw GmailRequestFailed::message();
+            throw GmailResponseInvalid::forOperation('message');
         }
 
         $headers = $this->messageHeaders($payload);
@@ -262,7 +265,7 @@ final class GoogleGmail implements Gmail
         $subject = $headers['subject'][0] ?? null;
 
         if ($fromAddress === null || ! is_string($subject)) {
-            throw GmailRequestFailed::message();
+            throw GmailResponseInvalid::forOperation('message');
         }
 
         $mimeParts = $this->mimeParts($service, $messageId, $payload);
@@ -297,8 +300,8 @@ final class GoogleGmail implements Gmail
                     'metadataHeaders' => ['From', 'Subject'],
                 ],
             );
-        } catch (Throwable) {
-            throw GmailRequestFailed::messageSummary();
+        } catch (Throwable $exception) {
+            throw $this->requestFailure($exception, GmailRequestFailed::messageSummary());
         }
 
         $returnedMessageId = $message->getId();
@@ -310,7 +313,7 @@ final class GoogleGmail implements Gmail
             || ! is_string($receivedAt)
             || ! ctype_digit($receivedAt)
             || ! $payload instanceof MessagePart) {
-            throw GmailRequestFailed::messageSummary();
+            throw GmailResponseInvalid::forOperation('message summary');
         }
 
         $headers = $this->messageHeaders($payload);
@@ -318,7 +321,7 @@ final class GoogleGmail implements Gmail
         $subject = $headers['subject'][0] ?? null;
 
         if ($fromAddress === null || ! is_string($subject)) {
-            throw GmailRequestFailed::messageSummary();
+            throw GmailResponseInvalid::forOperation('message summary');
         }
 
         return new GmailMessageSummary(
@@ -550,8 +553,8 @@ final class GoogleGmail implements Gmail
                 $encoded = $service->users_messages_attachments
                     ->get('me', $messageId, $attachmentId)
                     ->getData();
-            } catch (Throwable) {
-                throw GmailRequestFailed::message();
+            } catch (Throwable $exception) {
+                throw $this->requestFailure($exception, GmailRequestFailed::message());
             }
         }
 
@@ -564,7 +567,7 @@ final class GoogleGmail implements Gmail
         $decoded = base64_decode($encoded.str_repeat('=', $paddingLength), true);
 
         if (! is_string($decoded)) {
-            throw GmailRequestFailed::message();
+            throw GmailResponseInvalid::forOperation('message body');
         }
 
         return $decoded;
@@ -585,7 +588,7 @@ final class GoogleGmail implements Gmail
             || ! is_int($credentials['expires_in'] ?? null)
             || $credentials['expires_in'] <= 0
             || $grantedScopes !== [Gmail::READ_ONLY_SCOPE]) {
-            throw GmailRequestFailed::authorization();
+            throw GmailResponseInvalid::forOperation('authorization');
         }
 
         return [
@@ -613,8 +616,8 @@ final class GoogleGmail implements Gmail
     {
         try {
             $profile = (new GmailService($client))->users->getProfile('me');
-        } catch (Throwable) {
-            throw $failure;
+        } catch (Throwable $exception) {
+            throw $this->requestFailure($exception, $failure);
         }
 
         $accountIdentity = $profile->getEmailAddress();
@@ -624,9 +627,18 @@ final class GoogleGmail implements Gmail
             || $accountIdentity === ''
             || ! is_string($historyId)
             || $historyId === '') {
-            throw $failure;
+            throw GmailResponseInvalid::forOperation('profile');
         }
 
         return new GmailProfile($accountIdentity, $historyId);
+    }
+
+    private function requestFailure(
+        Throwable $exception,
+        GmailRequestFailed $fallback,
+    ): GmailRequestFailed {
+        return $exception instanceof GoogleServiceException
+            ? $fallback->withHttpStatus($exception->getCode())
+            : $fallback;
     }
 }

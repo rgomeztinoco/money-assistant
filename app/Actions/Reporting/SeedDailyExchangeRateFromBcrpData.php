@@ -2,11 +2,17 @@
 
 namespace App\Actions\Reporting;
 
+use App\Actions\Integrations\ClassifyIntegrationFailure;
+use App\Actions\Integrations\RecordIntegrationFailure;
+use App\Actions\Integrations\RecordIntegrationRecovery;
 use App\Actions\Reminders\ResolveReminder;
 use App\Actions\Reminders\ScheduleReminder;
 use App\Contracts\BcrpData;
 use App\ExactInteger;
+use App\IntegrationFailureKind;
 use App\Integrations\BcrpData\BcrpExchangeRateObservation;
+use App\IntegrationService;
+use App\IntegrationWorkType;
 use App\Models\DailyExchangeRate;
 use App\Models\DailyExchangeRateSeedRequest;
 use Carbon\CarbonImmutable;
@@ -18,7 +24,9 @@ use UnexpectedValueException;
 
 final class SeedDailyExchangeRateFromBcrpData
 {
-    private const MAX_ATTEMPTS = 8;
+    private const MAX_ATTEMPTS = 32;
+
+    private const MAX_UNEXPECTED_ATTEMPTS = 8;
 
     private const MAX_MISSING_OBSERVATIONS = 3;
 
@@ -29,6 +37,9 @@ final class SeedDailyExchangeRateFromBcrpData
         private ScheduleReminder $scheduleReminder,
         private ResolveReminder $resolveReminder,
         private IsDailyExchangeRateStillRequired $isDailyExchangeRateStillRequired,
+        private ClassifyIntegrationFailure $classifyIntegrationFailure,
+        private RecordIntegrationFailure $recordIntegrationFailure,
+        private RecordIntegrationRecovery $recordIntegrationRecovery,
     ) {}
 
     public function handle(int $seedRequestId): void
@@ -89,7 +100,17 @@ final class SeedDailyExchangeRateFromBcrpData
                 return null;
             }
 
-            if ($seedRequest->attempt_count >= self::MAX_ATTEMPTS) {
+            $hasActiveTransientIncident = $seedRequest->owner->integrationIncidents()
+                ->where('integration', IntegrationService::Bcrp)
+                ->where('work_type', IntegrationWorkType::DailyExchangeRateSeed)
+                ->where('work_id', (string) $seedRequest->id)
+                ->where('failure_kind', IntegrationFailureKind::Transient)
+                ->whereNull('recovered_at')
+                ->exists();
+
+            if ($seedRequest->attempt_count >= self::MAX_ATTEMPTS
+                || ($seedRequest->attempt_count >= self::MAX_UNEXPECTED_ATTEMPTS
+                    && ! $hasActiveTransientIncident)) {
                 $seedRequest->forceFill([
                     'retrieval_failed_at' => now(),
                     'queued_at' => null,
@@ -116,6 +137,8 @@ final class SeedDailyExchangeRateFromBcrpData
         }
 
         if ($seedRequest->completed_at !== null) {
+            $this->recordRecovery($seedRequest);
+
             return;
         }
 
@@ -156,13 +179,63 @@ final class SeedDailyExchangeRateFromBcrpData
             }
 
             $this->storeObservation($seedRequest, $observation);
-        } catch (ConnectionException|InvalidArgumentException|RequestException|UnexpectedValueException) {
-            $this->recordUnavailable(
-                seedRequest: $seedRequest,
-                errorCode: 'bcrp_request_failed',
-                transportFailure: true,
-            );
+            $this->recordRecovery($seedRequest);
+        } catch (ConnectionException|InvalidArgumentException|RequestException|UnexpectedValueException $exception) {
+            $this->recordIntegrationFailure($seedRequest, $exception);
         }
+    }
+
+    private function recordIntegrationFailure(
+        DailyExchangeRateSeedRequest $seedRequest,
+        \Throwable $exception,
+    ): void {
+        $failureKind = $this->classifyIntegrationFailure->handle($exception);
+        $decision = $this->recordIntegrationFailure->handle(
+            owner: $seedRequest->owner,
+            integration: IntegrationService::Bcrp,
+            workType: IntegrationWorkType::DailyExchangeRateSeed,
+            workId: (string) $seedRequest->id,
+            sourceIdentity: 'bcrp:PD04638PD:'.$seedRequest->applicable_on->toDateString(),
+            failureKind: $failureKind,
+            errorCode: $failureKind->isTransient()
+                ? 'bcrp_request_failed'
+                : 'bcrp_response_invalid',
+        );
+
+        DB::transaction(function () use ($seedRequest, $failureKind, $decision): void {
+            $current = DailyExchangeRateSeedRequest::query()
+                ->lockForUpdate()
+                ->find($seedRequest->id);
+
+            if ($current === null
+                || $current->completed_at !== null
+                || $current->owner_entry_required_at !== null
+                || $current->retrieval_failed_at !== null
+                || ! $current->claimed_at?->equalTo($seedRequest->claimed_at)) {
+                return;
+            }
+
+            $current->forceFill([
+                'queued_at' => null,
+                'claimed_at' => null,
+                'transport_failure_count' => $failureKind->isTransient()
+                    ? min(self::MAX_TRANSPORT_FAILURES, $current->transport_failure_count + 1)
+                    : $current->transport_failure_count,
+                'next_attempt_at' => $decision->nextAttemptAt,
+                'retrieval_failed_at' => $decision->shouldRetry ? null : now(),
+                'last_error_code' => $decision->incident->last_error_code,
+            ])->save();
+        });
+    }
+
+    private function recordRecovery(DailyExchangeRateSeedRequest $seedRequest): void
+    {
+        $this->recordIntegrationRecovery->handle(
+            owner: $seedRequest->owner,
+            integration: IntegrationService::Bcrp,
+            workType: IntegrationWorkType::DailyExchangeRateSeed,
+            workId: (string) $seedRequest->id,
+        );
     }
 
     private function storeObservation(
@@ -228,21 +301,18 @@ final class SeedDailyExchangeRateFromBcrpData
         DailyExchangeRateSeedRequest $seedRequest,
         string $errorCode,
         bool $missingObservation = false,
-        bool $transportFailure = false,
         bool $retryable = true,
         bool $ownerEntryOnFailure = false,
     ): void {
         $missingObservationCount = $seedRequest->missing_observation_count + ($missingObservation ? 1 : 0);
-        $transportFailureCount = $seedRequest->transport_failure_count + ($transportFailure ? 1 : 0);
         $shouldRetry = $retryable
             && $seedRequest->attempt_count < self::MAX_ATTEMPTS
             && $missingObservationCount < self::MAX_MISSING_OBSERVATIONS
-            && $transportFailureCount < self::MAX_TRANSPORT_FAILURES;
+            && $seedRequest->transport_failure_count < self::MAX_TRANSPORT_FAILURES;
 
         DB::transaction(function () use (
             $seedRequest,
             $missingObservationCount,
-            $transportFailureCount,
             $shouldRetry,
             $ownerEntryOnFailure,
             $errorCode,
@@ -279,7 +349,6 @@ final class SeedDailyExchangeRateFromBcrpData
                 'queued_at' => null,
                 'claimed_at' => null,
                 'missing_observation_count' => $missingObservationCount,
-                'transport_failure_count' => $transportFailureCount,
                 'next_attempt_at' => $shouldRetry ? $this->nextRetryAt($seedRequest) : null,
                 'owner_entry_required_at' => ! $shouldRetry && $ownerEntryOnFailure ? now() : null,
                 'retrieval_failed_at' => ! $shouldRetry && ! $ownerEntryOnFailure ? now() : null,

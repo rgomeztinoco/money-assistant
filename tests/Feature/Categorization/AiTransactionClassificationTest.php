@@ -8,13 +8,16 @@ use App\AiClassificationOutcome;
 use App\AiClassificationResult;
 use App\CategoryAssignmentProvenance;
 use App\Contracts\AiClassifier;
+use App\Exceptions\AiClassifierResponseInvalid;
 use App\Exceptions\AiClassifierTimedOut;
 use App\Exceptions\AiClassifierUnavailable;
+use App\IntegrationFailureKind;
 use App\Models\AiClassificationRequest;
 use App\Models\Category;
 use App\Models\CategoryAssignment;
 use App\Models\Transaction;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -375,10 +378,11 @@ test('a non-category edit discards stale AI output and classifies the current Tr
         ->and(CategoryAssignment::query()->count())->toBe(1);
 });
 
-test('timeout and unavailability exhaust bounded retries as distinct Uncategorized outcomes', function (
+test('timeout and unavailability park after one day as distinct Uncategorized outcomes', function (
     string $exceptionClass,
     AiClassificationOutcome $expectedOutcome,
 ) {
+    $this->travelTo(CarbonImmutable::parse('2026-08-01 10:00:00 UTC'));
     $owner = User::factory()->create();
     Category::factory()->for($owner, 'owner')->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create();
@@ -403,18 +407,19 @@ test('timeout and unavailability exhaust bounded retries as distinct Uncategoriz
         }
     });
 
-    for ($attempt = 1; $attempt <= 3; $attempt++) {
-        app(ClassifyTransactionWithAi::class)->handle($classificationRequest->id);
-        $classificationRequest->refresh();
+    app(ClassifyTransactionWithAi::class)->handle($classificationRequest->id);
+    $classificationRequest->refresh();
+    $incident = $owner->integrationIncidents()->sole();
 
-        if ($attempt < 3) {
-            expect($classificationRequest)
-                ->attempt_count->toBe($attempt)
-                ->completed_at->toBeNull()
-                ->next_attempt_at->not->toBeNull();
-            $this->travelTo($classificationRequest->next_attempt_at);
-        }
-    }
+    expect($classificationRequest)
+        ->attempt_count->toBe(1)
+        ->completed_at->toBeNull()
+        ->next_attempt_at->not->toBeNull()
+        ->and($incident->failure_kind)->toBe(IntegrationFailureKind::Transient);
+
+    $this->travelTo($incident->retry_until);
+    app(ClassifyTransactionWithAi::class)->handle($classificationRequest->id);
+    $classificationRequest->refresh();
 
     $assignment = CategoryAssignment::query()->sole();
 
@@ -427,14 +432,47 @@ test('timeout and unavailability exhaust bounded retries as distinct Uncategoriz
         ->ai_confidence->toBeNull()
         ->ai_outcome->toBe($expectedOutcome)
         ->and($classificationRequest)
-        ->attempt_count->toBe(3)
+        ->attempt_count->toBe(2)
         ->terminal_outcome->toBe($expectedOutcome)
         ->completed_at->not->toBeNull()
-        ->next_attempt_at->toBeNull();
+        ->next_attempt_at->toBeNull()
+        ->and($incident->fresh()->parked_at?->toIso8601String())->toBe(now()->toIso8601String());
 })->with([
     'timeout' => [AiClassifierTimedOut::class, AiClassificationOutcome::Timeout],
     'unavailable' => [AiClassifierUnavailable::class, AiClassificationOutcome::Unavailable],
 ]);
+
+test('an invalid classifier schema parks without a transient retry', function () {
+    $owner = User::factory()->create();
+    Category::factory()->for($owner, 'owner')->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+    $classificationRequest = AiClassificationRequest::factory()
+        ->for($owner, 'owner')
+        ->for($transaction)
+        ->create();
+    app()->instance(AiClassifier::class, new class implements AiClassifier
+    {
+        public function version(): string
+        {
+            return 'classifier-2026-07';
+        }
+
+        public function classify(AiClassificationInput $input): never
+        {
+            throw new AiClassifierResponseInvalid('The classifier returned an invalid schema.');
+        }
+    });
+
+    app(ClassifyTransactionWithAi::class)->handle($classificationRequest->id);
+
+    expect($classificationRequest->fresh())
+        ->attempt_count->toBe(1)
+        ->terminal_outcome->toBe(AiClassificationOutcome::Unavailable)
+        ->completed_at->not->toBeNull()
+        ->next_attempt_at->toBeNull()
+        ->and($owner->integrationIncidents()->sole()->failure_kind)
+        ->toBe(IntegrationFailureKind::Schema);
+});
 
 test('a bounded retry cannot replace a Category supplied by the owner', function () {
     $owner = User::factory()->create();
@@ -483,7 +521,8 @@ test('a bounded retry cannot replace a Category supplied by the owner', function
         ->and(CategoryAssignment::query()->count())->toBe(1)
         ->and($classificationRequest->fresh())
         ->terminal_outcome->toBe(AiClassificationOutcome::Superseded)
-        ->last_error_code->toBe(AiClassificationError::AuthoritativeAssignment);
+        ->last_error_code->toBe(AiClassificationError::AuthoritativeAssignment)
+        ->and($owner->integrationIncidents()->sole()->recovered_at)->not->toBeNull();
 });
 
 function bindAiClassifierResult(AiClassificationResult $result): void

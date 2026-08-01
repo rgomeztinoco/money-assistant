@@ -4,6 +4,7 @@ use App\Actions\Reminders\DeliverReminderDelivery;
 use App\Actions\Reminders\EnqueueDueReminderDeliveries;
 use App\Actions\Reminders\ScheduleReminder;
 use App\Contracts\OpenClawHook;
+use App\IntegrationFailureKind;
 use App\Jobs\DeliverReminder;
 use App\Models\Reminder;
 use App\Models\ReminderDelivery;
@@ -84,7 +85,7 @@ test('a duplicate worker execution produces one accepted owner-visible digest', 
         ]);
 });
 
-test('transient hook failures use bounded persisted retries before terminal handling', function () {
+test('transient hook failures use the shared one-day retry window before parking', function () {
     $this->travelTo(CarbonImmutable::parse('2026-07-26 15:00:00 UTC'));
     Http::preventStrayRequests();
     Http::fake([
@@ -102,31 +103,27 @@ test('transient hook failures use bounded persisted retries before terminal hand
     expect($delivery->attempt_count)->toBe(1)
         ->and($delivery->terminal_at)->toBeNull()
         ->and($firstRetryAt)->not->toBeNull()
-        ->and($firstRetryAt?->betweenIncluded(now()->addSeconds(60), now()->addSeconds(90)))->toBeTrue();
+        ->and($firstRetryAt?->betweenIncluded(now()->addSeconds(60), now()->addSeconds(90)))->toBeTrue()
+        ->and($delivery->reminder->owner->integrationIncidents()->sole()->failure_kind)
+        ->toBe(IntegrationFailureKind::Transient);
 
     $action->handle($delivery->id);
     Http::assertSentCount(3);
 
-    $this->travelTo($firstRetryAt);
+    $incident = $delivery->reminder->owner->integrationIncidents()->sole();
+    $this->travelTo($incident->retry_until);
     $action->handle($delivery->id);
     $delivery->refresh();
-    $secondRetryAt = $delivery->next_attempt_at;
 
     expect($delivery->attempt_count)->toBe(2)
-        ->and($secondRetryAt?->betweenIncluded(now()->addSeconds(120), now()->addSeconds(150)))->toBeTrue();
-
-    $this->travelTo($secondRetryAt);
-    $action->handle($delivery->id);
-    $delivery->refresh();
-
-    expect($delivery->attempt_count)->toBe(3)
         ->and($delivery->next_attempt_at)->toBeNull()
         ->and($delivery->terminal_at?->toIso8601String())->toBe(now()->toIso8601String())
         ->and($delivery->terminal_reason)->toBe('retry_exhausted')
-        ->and($delivery->last_error_code)->toBe('http_503');
+        ->and($delivery->last_error_code)->toBe('http_503')
+        ->and($incident->fresh()->parked_at?->toIso8601String())->toBe(now()->toIso8601String());
 
     $action->handle($delivery->id);
-    Http::assertSentCount(9);
+    Http::assertSentCount(6);
     expect(collect(Http::recorded())->every(
         fn (array $exchange): bool => $exchange[0]->hasHeader('Idempotency-Key', $delivery->id),
     ))->toBeTrue();
@@ -150,7 +147,9 @@ test('a stale failed worker cannot overwrite a later accepted delivery', functio
         }
     };
 
-    (new DeliverReminderDelivery($hook))->handle($delivery->id);
+    app()->makeWith(DeliverReminderDelivery::class, [
+        'openClawHook' => $hook,
+    ])->handle($delivery->id);
     $delivery->refresh();
 
     expect($delivery->accepted_at?->toIso8601String())->toBe(now()->toIso8601String())
@@ -198,6 +197,7 @@ test('the Laravel scheduler queues each pending outbox delivery once', function 
 test('deterministic hook failures terminate without an outbox retry', function (
     int $status,
     string $terminalReason,
+    IntegrationFailureKind $failureKind,
 ) {
     $this->travelTo(CarbonImmutable::parse('2026-07-26 15:00:00 UTC'));
     Http::preventStrayRequests();
@@ -213,10 +213,13 @@ test('deterministic hook failures terminate without an outbox retry', function (
         ->and($delivery->next_attempt_at)->toBeNull()
         ->and($delivery->terminal_at?->toIso8601String())->toBe(now()->toIso8601String())
         ->and($delivery->terminal_reason)->toBe($terminalReason)
-        ->and($delivery->last_error_code)->toBe("http_{$status}");
+        ->and($delivery->last_error_code)->toBe("http_{$status}")
+        ->and($delivery->reminder->owner->integrationIncidents()->sole())
+        ->failure_kind->toBe($failureKind)
+        ->next_attempt_at->toBeNull();
     Http::assertSentCount(1);
 })->with([
-    'authentication' => [401, 'authorization_rejected'],
-    'authorization' => [403, 'authorization_rejected'],
-    'validation' => [422, 'validation_rejected'],
+    'authentication' => [401, 'authorization_rejected', IntegrationFailureKind::Authentication],
+    'authorization' => [403, 'authorization_rejected', IntegrationFailureKind::Authorization],
+    'validation' => [422, 'validation_rejected', IntegrationFailureKind::Validation],
 ]);

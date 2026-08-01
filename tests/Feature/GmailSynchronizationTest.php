@@ -4,11 +4,13 @@ use App\Actions\NotificationIngestion\DispatchGmailSynchronizations;
 use App\Actions\NotificationIngestion\SynchronizeGmailConnection;
 use App\Contracts\Gmail;
 use App\GmailSynchronizationType;
+use App\IntegrationFailureKind;
 use App\Integrations\Gmail\GmailHistoryExpired;
 use App\Integrations\Gmail\GmailHistoryPage;
 use App\Integrations\Gmail\GmailMessageIdentity;
 use App\Integrations\Gmail\GmailMessagePage;
 use App\Integrations\Gmail\GmailProfile;
+use App\Integrations\Gmail\GmailRequestFailed;
 use App\Jobs\ProcessGmailMessage;
 use App\Jobs\SynchronizeGmail;
 use App\Models\GmailConnection;
@@ -407,4 +409,37 @@ test('the scheduler queues minute polling and daily seven-day reconciliation', f
         fn (SynchronizeGmail $job): bool => $job->connectionId === $connection->id
             && $job->type === GmailSynchronizationType::Reconciliation,
     );
+});
+
+test('a transient Gmail synchronization failure follows the shared retry window', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-01 10:00:00 UTC'));
+    $connection = GmailConnection::factory()->create([
+        'access_token_expires_at' => now()->addDays(2),
+        'history_id' => 'history-42',
+        'initial_sync_completed_at' => now()->subHour(),
+    ]);
+    $gmail = new FakeGmail;
+    $gmail->historyFailure = GmailRequestFailed::history();
+    app()->instance(Gmail::class, $gmail);
+    $job = (new SynchronizeGmail(
+        $connection->id,
+        GmailSynchronizationType::Incremental,
+    ))->withFakeQueueInteractions();
+
+    expect($job->tries)->toBe(0)
+        ->and((new ProcessGmailMessage(42))->tries)->toBe(0);
+
+    app()->call([$job, 'handle']);
+
+    $incident = $connection->owner->integrationIncidents()->sole();
+    expect($incident->failure_kind)->toBe(IntegrationFailureKind::Transient)
+        ->and($incident->next_attempt_at)->not->toBeNull();
+    $job->assertReleased();
+
+    $this->travelTo($incident->retry_until);
+    $gmail->historyFailure = GmailRequestFailed::history();
+    app()->call([$job, 'handle']);
+
+    expect($incident->fresh()->parked_at?->toIso8601String())->toBe(now()->toIso8601String());
+    $job->assertFailedWith(GmailRequestFailed::class);
 });

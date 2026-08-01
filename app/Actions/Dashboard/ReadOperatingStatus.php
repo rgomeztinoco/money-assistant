@@ -2,6 +2,7 @@
 
 namespace App\Actions\Dashboard;
 
+use App\Actions\Integrations\ReadActionableIntegrationIncidents;
 use App\Actions\NotificationIngestion\ReadGmailConnectionStatus;
 use App\Actions\NotificationIngestion\ReadParserProfileHealthSummary;
 use App\Actions\OpenClaw\ReadOpenClawStatus;
@@ -15,6 +16,7 @@ final class ReadOperatingStatus
         private ReadGmailConnectionStatus $readGmailConnectionStatus,
         private ReadParserProfileHealthSummary $readParserProfileHealthSummary,
         private ReadOpenClawStatus $readOpenClawStatus,
+        private ReadActionableIntegrationIncidents $readActionableIntegrationIncidents,
     ) {}
 
     /**
@@ -25,7 +27,7 @@ final class ReadOperatingStatus
      *         parser_profiles: array{healthy_count: int, degraded_count: int},
      *         daily_exchange_rates: array{attention_count: int}
      *     },
-     *     exceptions: list<array<string, int|string|null>>
+     *     exceptions: list<array<string, bool|int|string|null>>
      * }
      */
     public function handle(User $owner): array
@@ -33,8 +35,18 @@ final class ReadOperatingStatus
         $gmail = $this->readGmailConnectionStatus->handle($owner);
         $parserProfiles = $this->readParserProfileHealthSummary->handle($owner);
         $openClaw = $this->readOpenClawStatus->handle();
+        $integrationIncidents = $this->readActionableIntegrationIncidents->handle($owner);
+        $incidentSeedRequestIds = collect($integrationIncidents)
+            ->where('work_type', 'daily_exchange_rate_seed')
+            ->pluck('work_id')
+            ->map(fn (string $workId): int => (int) $workId)
+            ->all();
         $exchangeRateRequests = DailyExchangeRateSeedRequest::query()
             ->whereBelongsTo($owner, 'owner')
+            ->when(
+                $incidentSeedRequestIds !== [],
+                fn (Builder $query) => $query->whereNotIn('id', $incidentSeedRequestIds),
+            )
             ->whereNull('completed_at')
             ->where(function (Builder $query): void {
                 $query
@@ -74,6 +86,10 @@ final class ReadOperatingStatus
             $exceptions[] = [
                 'type' => 'openclaw_unavailable',
             ];
+        }
+
+        foreach ($integrationIncidents as $integrationIncident) {
+            $exceptions[] = $integrationIncident;
         }
 
         return [

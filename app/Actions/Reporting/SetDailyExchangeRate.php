@@ -2,9 +2,12 @@
 
 namespace App\Actions\Reporting;
 
+use App\Actions\Integrations\RecordIntegrationRecovery;
 use App\Actions\Reminders\ResolveReminder;
 use App\ExactInteger;
 use App\Exceptions\StaleDailyExchangeRateRevision;
+use App\IntegrationService;
+use App\IntegrationWorkType;
 use App\Models\DailyExchangeRate;
 use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\User;
@@ -16,7 +19,10 @@ use InvalidArgumentException;
 
 final class SetDailyExchangeRate
 {
-    public function __construct(private ResolveReminder $resolveReminder) {}
+    public function __construct(
+        private ResolveReminder $resolveReminder,
+        private RecordIntegrationRecovery $recordIntegrationRecovery,
+    ) {}
 
     public function handle(
         User $owner,
@@ -72,6 +78,20 @@ final class SetDailyExchangeRate
             throw ValidationException::withMessages([
                 'applicable_on' => 'A Daily Exchange Rate already exists for this date.',
             ]);
+        }
+
+        $seedRequest = DailyExchangeRateSeedRequest::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->whereDate('applicable_on', $applicableOn)
+            ->first();
+
+        if ($seedRequest !== null) {
+            $this->recordIntegrationRecovery->handle(
+                owner: $owner,
+                integration: IntegrationService::Bcrp,
+                workType: IntegrationWorkType::DailyExchangeRateSeed,
+                workId: (string) $seedRequest->id,
+            );
         }
 
         return $rate;
