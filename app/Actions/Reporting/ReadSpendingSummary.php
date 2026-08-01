@@ -10,6 +10,8 @@ use App\Models\LineItem;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
@@ -26,8 +28,11 @@ final class ReadSpendingSummary
     /**
      * @return array{totals: array{USD: string, PEN: string}, combined_total: CombinedTotalData, category_totals: list<CategoryTotalData>}
      */
-    public function handle(User $owner): array
-    {
+    public function handle(
+        User $owner,
+        ?CarbonImmutable $dateFrom = null,
+        ?CarbonImmutable $dateTo = null,
+    ): array {
         $reportingCurrency = $owner->reporting_currency;
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
@@ -41,6 +46,7 @@ final class ReadSpendingSummary
                 ->whereBelongsTo($owner, 'owner')
                 ->whereNull('voided_at')
                 ->where('currency', '!=', $reportingCurrency)
+                ->tap(fn (Builder $query): Builder => $this->forPeriod($query, $dateFrom, $dateTo))
                 ->select('occurred_on')
                 ->distinct();
 
@@ -60,6 +66,7 @@ final class ReadSpendingSummary
         $transactions = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
+            ->tap(fn (Builder $query): Builder => $this->forPeriod($query, $dateFrom, $dateTo))
             ->select(['id', 'occurred_on', 'amount_minor', 'currency', 'kind', 'category_id'])
             ->with([
                 'receiptBreakdowns' => fn ($query) => $query
@@ -214,6 +221,28 @@ final class ReadSpendingSummary
             'combined_total' => $this->combinedTotal($overall['combined'], $reportingCurrency),
             'category_totals' => $categoryTotals,
         ];
+    }
+
+    /**
+     * @template TModel of \Illuminate\Database\Eloquent\Model
+     *
+     * @param  Builder<TModel>  $query
+     * @return Builder<TModel>
+     */
+    private function forPeriod(
+        Builder $query,
+        ?CarbonImmutable $dateFrom,
+        ?CarbonImmutable $dateTo,
+    ): Builder {
+        return $query
+            ->when(
+                $dateFrom,
+                fn (Builder $query): Builder => $query->where('occurred_on', '>=', $dateFrom->toDateString()),
+            )
+            ->when(
+                $dateTo,
+                fn (Builder $query): Builder => $query->where('occurred_on', '<=', $dateTo->toDateString()),
+            );
     }
 
     /**

@@ -1,8 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     ArrowRightLeft,
-    BookOpen,
-    FolderGit2,
+    BarChart3,
     LayoutGrid,
     ListChecks,
     MailSearch,
@@ -11,8 +10,8 @@ import {
     Tags,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
-import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
+import { NavOpenClaw } from '@/components/nav-openclaw';
 import { NavUser } from '@/components/nav-user';
 import {
     Sidebar,
@@ -26,24 +25,12 @@ import {
 import { dashboard } from '@/routes';
 import { index as categoriesIndex } from '@/routes/categories';
 import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
+import { index as insightsIndex } from '@/routes/insights';
 import { index as learnedRulesIndex } from '@/routes/learned_rules';
 import { index as parserProfilesIndex } from '@/routes/parser_profiles';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
-
-const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/react-starter-kit',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#react',
-        icon: BookOpen,
-    },
-];
 
 export function AppSidebar() {
     const { review_queue } = usePage().props;
@@ -63,6 +50,11 @@ export function AppSidebar() {
             href: reviewQueueIndex(),
             icon: ListChecks,
             badgeCount: review_queue.outstanding_count,
+        },
+        {
+            title: 'Insights',
+            href: insightsIndex(),
+            icon: BarChart3,
         },
     ];
     const manageNavItems: NavItem[] = [
@@ -108,7 +100,7 @@ export function AppSidebar() {
             </SidebarContent>
 
             <SidebarFooter>
-                <NavFooter items={footerNavItems} className="mt-auto" />
+                <NavOpenClaw />
                 <NavUser />
             </SidebarFooter>
         </Sidebar>

@@ -64,7 +64,10 @@ export default function DailyExchangeRatesIndex({
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                    <Card>
+                    <Card
+                        id="reporting-currency"
+                        className="target:ring-2 target:ring-ring"
+                    >
                         <CardHeader>
                             <CardTitle>Reporting Currency</CardTitle>
                             <CardDescription>
@@ -199,7 +202,8 @@ export default function DailyExchangeRatesIndex({
                             {seed_requests.map((seedRequest) => (
                                 <div
                                     key={seedRequest.applicable_on}
-                                    className="grid gap-2 rounded-lg border p-4"
+                                    id={`rate-request-${seedRequest.applicable_on}`}
+                                    className="grid gap-2 rounded-lg border p-4 target:ring-2 target:ring-ring"
                                 >
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <p className="font-medium tabular-nums">

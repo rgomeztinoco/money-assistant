@@ -316,6 +316,19 @@ test('settings reports disconnected and explicit reauthorization states', functi
             ->where('gmail.reauthorization_required_at', now()->toIso8601String()));
 });
 
+test('settings reports an established Gmail synchronization as stale after five minutes', function () {
+    CarbonImmutable::setTestNow('2026-07-28 19:45:00 UTC');
+    $connection = GmailConnection::factory()->create([
+        'last_successful_sync_at' => now()->subMinutes(6),
+    ]);
+
+    $this->actingAs($connection->owner)
+        ->get(route('connections.edit'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('gmail.state', 'stale')
+            ->where('gmail.last_successful_sync_at', now()->subMinutes(6)->toIso8601String()));
+});
+
 test('an explicit health check refreshes access and records a successful Gmail profile check', function () {
     CarbonImmutable::setTestNow('2026-07-28 20:00:00 UTC');
     $connection = GmailConnection::factory()->create([

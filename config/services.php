@@ -49,6 +49,7 @@ return [
     ],
 
     'openclaw' => [
+        'launcher_url' => env('OPENCLAW_LAUNCHER_URL'),
         'capability' => [
             'key_id' => env('OPENCLAW_CAPABILITY_KEY_ID'),
             'public_key' => env('OPENCLAW_CAPABILITY_PUBLIC_KEY'),

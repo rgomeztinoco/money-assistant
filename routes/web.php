@@ -4,6 +4,7 @@ use App\Http\Controllers\AiCategoryProposalConfirmationController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryRetirementController;
 use App\Http\Controllers\DailyExchangeRateController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LearnedRuleBulkActionConfirmationController;
 use App\Http\Controllers\LearnedRuleBulkActionController;
 use App\Http\Controllers\LearnedRuleController;
@@ -35,7 +36,8 @@ use Illuminate\Support\Facades\Route;
 Route::inertia('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('dashboard', 'dashboard')->name('dashboard');
+    Route::get('dashboard', DashboardController::class)->name('dashboard');
+    Route::inertia('insights', 'insights/index')->name('insights.index');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store']);
     Route::post('transactions/{transaction}/receipt-proposal-attachments', [ReceiptProposalAttachmentController::class, 'store'])

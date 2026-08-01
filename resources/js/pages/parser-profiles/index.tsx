@@ -251,7 +251,11 @@ function GroupedAlert({ alert }: { alert: ParserAlert }) {
     const isSecurity = alert.kind === 'security';
 
     return (
-        <Alert variant="destructive">
+        <Alert
+            id={`parser-alert-${alert.profile_id}-${alert.kind}`}
+            variant="destructive"
+            className="target:ring-2 target:ring-ring"
+        >
             {isSecurity ? <ShieldAlert /> : <Activity />}
             <AlertTitle>
                 {isSecurity

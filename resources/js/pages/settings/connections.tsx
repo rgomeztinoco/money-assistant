@@ -1,5 +1,12 @@
-import { Form, Head } from '@inertiajs/react';
-import { CircleCheck, Mail, RefreshCw, TriangleAlert } from 'lucide-react';
+import { Form, Head, usePage } from '@inertiajs/react';
+import {
+    Bot,
+    CircleCheck,
+    ExternalLink,
+    Mail,
+    RefreshCw,
+    TriangleAlert,
+} from 'lucide-react';
 import { create as createGmailAuthorization } from '@/actions/App/Http/Controllers/Settings/GmailAuthorizationController';
 import GmailConnectionCheckController from '@/actions/App/Http/Controllers/Settings/GmailConnectionCheckController';
 import Heading from '@/components/heading';
@@ -21,12 +28,14 @@ type GmailStatus = {
     state:
         | 'disconnected'
         | 'connected'
+        | 'stale'
         | 'check_failed'
         | 'reauthorization_required';
     account_identity: string | null;
     scope: string;
     connected_at: string | null;
     last_successful_check_at: string | null;
+    last_successful_sync_at: string | null;
     last_check_failed_at: string | null;
     reauthorization_required_at: string | null;
 };
@@ -34,6 +43,7 @@ type GmailStatus = {
 const statusLabels = {
     disconnected: 'Not connected',
     connected: 'Healthy',
+    stale: 'Synchronization stale',
     check_failed: 'Check failed',
     reauthorization_required: 'Reauthorization required',
 } as const;
@@ -50,6 +60,7 @@ function formatTimestamp(timestamp: string | null): string {
 }
 
 export default function Connections({ gmail }: { gmail: GmailStatus }) {
+    const { openclaw } = usePage().props;
     const needsAuthorization =
         gmail.state === 'disconnected' ||
         gmail.state === 'reauthorization_required';
@@ -103,7 +114,22 @@ export default function Connections({ gmail }: { gmail: GmailStatus }) {
                     </Alert>
                 )}
 
-                <Card className="overflow-hidden">
+                {gmail.state === 'stale' && (
+                    <Alert variant="destructive">
+                        <TriangleAlert />
+                        <AlertTitle>Gmail synchronization is stale</AlertTitle>
+                        <AlertDescription>
+                            The scheduled synchronization has not completed in
+                            the last five minutes. Check the scheduler and queue
+                            worker before relying on newly received messages.
+                        </AlertDescription>
+                    </Alert>
+                )}
+
+                <Card
+                    id="gmail"
+                    className="overflow-hidden target:ring-2 target:ring-ring"
+                >
                     <CardHeader className="border-b bg-muted/30">
                         <div className="flex items-start justify-between gap-4">
                             <div className="flex items-start gap-3">
@@ -121,7 +147,8 @@ export default function Connections({ gmail }: { gmail: GmailStatus }) {
                                 variant={
                                     gmail.state === 'reauthorization_required'
                                         ? 'destructive'
-                                        : gmail.state === 'check_failed'
+                                        : gmail.state === 'check_failed' ||
+                                            gmail.state === 'stale'
                                           ? 'destructive'
                                           : gmail.state === 'connected'
                                             ? 'default'
@@ -169,6 +196,7 @@ export default function Connections({ gmail }: { gmail: GmailStatus }) {
 
                     <CardFooter className="flex-wrap gap-3 border-t bg-muted/20 pt-6">
                         {(gmail.state === 'connected' ||
+                            gmail.state === 'stale' ||
                             gmail.state === 'check_failed') && (
                             <Form {...GmailConnectionCheckController.form()}>
                                 {({ processing }) => (
@@ -204,6 +232,70 @@ export default function Connections({ gmail }: { gmail: GmailStatus }) {
                                     ? 'Authorize Gmail'
                                     : 'Reauthorize Gmail'}
                             </Button>
+                        )}
+                    </CardFooter>
+                </Card>
+
+                <Card id="openclaw" className="overflow-hidden">
+                    <CardHeader className="border-b bg-muted/30">
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                                <div className="rounded-lg border bg-background p-2.5 text-muted-foreground shadow-xs">
+                                    <Bot className="size-5" />
+                                </div>
+                                <div className="grid gap-1">
+                                    <CardTitle>OpenClaw</CardTitle>
+                                    <CardDescription>
+                                        Global conversational launcher
+                                    </CardDescription>
+                                </div>
+                            </div>
+                            <Badge
+                                variant={
+                                    openclaw.state === 'configured'
+                                        ? 'default'
+                                        : 'destructive'
+                                }
+                            >
+                                {openclaw.state === 'configured' && (
+                                    <CircleCheck className="size-3" />
+                                )}
+                                {openclaw.state === 'configured'
+                                    ? 'Configured'
+                                    : 'Unavailable'}
+                            </Badge>
+                        </div>
+                    </CardHeader>
+
+                    <CardContent className="grid gap-2 pt-1 text-sm">
+                        <span className="font-medium">
+                            {openclaw.state === 'configured'
+                                ? 'OpenClaw launcher is configured'
+                                : 'OpenClaw setup required'}
+                        </span>
+                        <p className="text-muted-foreground">
+                            The launcher requires its interaction URL, bounded
+                            capability identity, and private hook configuration.
+                            Money Assistant does not embed or duplicate the
+                            conversation.
+                        </p>
+                    </CardContent>
+
+                    <CardFooter className="border-t bg-muted/20 pt-6">
+                        {openclaw.state === 'configured' &&
+                        openclaw.launcher_url !== null ? (
+                            <Button asChild>
+                                <a
+                                    href={openclaw.launcher_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    Launch OpenClaw
+                                    <ExternalLink />
+                                </a>
+                            </Button>
+                        ) : (
+                            <Button disabled>Launch unavailable</Button>
                         )}
                     </CardFooter>
                 </Card>

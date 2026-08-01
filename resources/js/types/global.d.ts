@@ -15,6 +15,10 @@ declare module '@inertiajs/core' {
             review_queue: {
                 outstanding_count: number;
             };
+            openclaw: {
+                state: 'configured' | 'unavailable';
+                launcher_url: string | null;
+            };
             sidebarOpen: boolean;
             [key: string]: unknown;
         };
