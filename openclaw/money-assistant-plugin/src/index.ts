@@ -106,6 +106,52 @@ const categoryReadParameters = Type.Object(
   { additionalProperties: false },
 );
 
+const financialExportPreparationParameters = Type.Object(
+  {
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+  },
+  { additionalProperties: false },
+);
+
+const financialDeletionPreparationParameters = Type.Object(
+  {
+    idempotency_key: Type.String({ pattern: UUID_PATTERN }),
+    resource_type: Type.Union([
+      Type.Literal('category'),
+      Type.Literal('receipt_breakdown'),
+    ]),
+    resource_id: Type.Integer({ minimum: 1 }),
+    expected_revision: Type.Integer({ minimum: 1 }),
+  },
+  { additionalProperties: false },
+);
+
+export function isFinancialExportPreparationInput(
+  input: Record<string, unknown>,
+): input is Record<string, unknown> & { idempotency_key: string } {
+  return (
+    typeof input.idempotency_key === 'string' &&
+    new RegExp(UUID_PATTERN).test(input.idempotency_key)
+  );
+}
+
+export function isFinancialDeletionPreparationInput(
+  input: Record<string, unknown>,
+): input is Record<string, unknown> & {
+  idempotency_key: string;
+  resource_type: 'category' | 'receipt_breakdown';
+  resource_id: number;
+  expected_revision: number;
+} {
+  return (
+    isFinancialExportPreparationInput(input) &&
+    (input.resource_type === 'category' ||
+      input.resource_type === 'receipt_breakdown') &&
+    isPositiveSafeInteger(input.resource_id) &&
+    isPositiveSafeInteger(input.expected_revision)
+  );
+}
+
 const categoryNameParameters = {
   name: Type.String({ minLength: 1, maxLength: 255 }),
   parent_id: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
@@ -2644,6 +2690,22 @@ const receiptBreakdownMutationConfirmationToolDefinition = {
   parameters: manualTransactionConfirmationParameters,
 };
 
+const financialExportPreparationToolDefinition = {
+  name: 'money_assistant_export_prepare',
+  label: 'Prepare Money Assistant Export',
+  description:
+    'Prepare a complete financial export for fresh passkey-authenticated web delivery. This tool never receives the export payload.',
+  parameters: financialExportPreparationParameters,
+};
+
+const financialDeletionPreparationToolDefinition = {
+  name: 'money_assistant_deletion_prepare',
+  label: 'Prepare Money Assistant Deletion',
+  description:
+    'Prepare one eligible financial deletion for fresh passkey-authenticated web approval and retention-backed purge.',
+  parameters: financialDeletionPreparationParameters,
+};
+
 const plugin = defineToolPlugin({
   id: 'money-assistant',
   name: 'Money Assistant',
@@ -2987,6 +3049,69 @@ const plugin = defineToolPlugin({
                 pending_operation_id: pendingOperationId,
                 pending_operation_revision: Number(pendingOperationRevision),
                 payload_digest: payloadDigest,
+              },
+              config,
+              toolContext,
+              signal,
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      ...financialExportPreparationToolDefinition,
+      factory({ config, toolContext }) {
+        if (!isBoundOwnerInteraction(toolContext, config)) {
+          return null;
+        }
+
+        return {
+          ...financialExportPreparationToolDefinition,
+          async execute(_toolCallId, params, signal) {
+            const input = params as Record<string, unknown>;
+
+            if (!isFinancialExportPreparationInput(input)) {
+              throw new Error(
+                'Money Assistant financial export input is invalid.',
+              );
+            }
+
+            return executeCapability(
+              'financial.export.prepare',
+              { idempotency_key: input.idempotency_key },
+              config,
+              toolContext,
+              signal,
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      ...financialDeletionPreparationToolDefinition,
+      factory({ config, toolContext }) {
+        if (!isBoundOwnerInteraction(toolContext, config)) {
+          return null;
+        }
+
+        return {
+          ...financialDeletionPreparationToolDefinition,
+          async execute(_toolCallId, params, signal) {
+            const input = params as Record<string, unknown>;
+
+            if (!isFinancialDeletionPreparationInput(input)) {
+              throw new Error(
+                'Money Assistant financial deletion input is invalid.',
+              );
+            }
+
+            return executeCapability(
+              'financial.deletion.prepare',
+              {
+                idempotency_key: input.idempotency_key,
+                resource_type: input.resource_type,
+                resource_id: Number(input.resource_id),
+                expected_revision: Number(input.expected_revision),
               },
               config,
               toolContext,

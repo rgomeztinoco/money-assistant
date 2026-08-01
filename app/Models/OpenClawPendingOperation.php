@@ -16,6 +16,8 @@ use Illuminate\Support\Carbon;
  * @phpstan-type CategoryAssignmentPayload array{operation: 'assign_transaction', transaction_id: int, expected_revision: int, category_id: int|null, category_name: string|null, category_revision: int|null}
  * @phpstan-type ReceiptBreakdownCreatePayload array{operation: 'create_draft', transaction_id: int, transaction_revision: int, line_items: list<array{id: null, description: string, role: string, quantity: string|null, unit_price_minor: int|null, line_total_minor: int, category_id: int|null, related_line_item_id: null}>, category_revisions: list<array{id: int, revision: int}>}
  * @phpstan-type ReceiptBreakdownExistingPayload array{operation: 'update_draft'|'confirm_draft', receipt_breakdown_id: int, expected_revision: int, transaction_id: int, transaction_revision: int, line_items?: list<array{id: string|null, description: string, role: string, quantity: string|null, unit_price_minor: int|null, line_total_minor: int, category_id: int|null, related_line_item_id: string|null}>, category_revisions?: list<array{id: int, revision: int}>}
+ * @phpstan-type FinancialExportPayload array{owner_state_digest: string, transaction_count: int}
+ * @phpstan-type FinancialDeletionPayload array{resource_type: 'category'|'receipt_breakdown', resource_id: int, expected_revision: int}
  *
  * @property int $id
  * @property int $user_id
@@ -26,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property string $conversation_digest
  * @property string $idempotency_key
  * @property string $payload_digest
- * @property ManualTransactionPayload|CategoryCreatePayload|CategoryUpdatePayload|CategoryLifecyclePayload|CategoryAssignmentPayload|ReceiptBreakdownCreatePayload|ReceiptBreakdownExistingPayload $payload
+ * @property ManualTransactionPayload|CategoryCreatePayload|CategoryUpdatePayload|CategoryLifecyclePayload|CategoryAssignmentPayload|ReceiptBreakdownCreatePayload|ReceiptBreakdownExistingPayload|FinancialExportPayload|FinancialDeletionPayload $payload
  * @property string $effect_summary
  * @property int $prepared_revision
  * @property int $revision

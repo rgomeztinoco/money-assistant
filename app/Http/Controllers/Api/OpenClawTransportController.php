@@ -48,6 +48,7 @@ final class OpenClawTransportController extends Controller
         private SubmitReceiptProposal $submitReceiptProposal,
         private PrepareOpenClawReceiptBreakdown $prepareReceiptBreakdown,
         private ConfirmOpenClawReceiptBreakdown $confirmReceiptBreakdown,
+        private OpenClawHighImpactPreparationResponder $highImpactPreparationResponder,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -97,6 +98,11 @@ final class OpenClawTransportController extends Controller
 
         if ($capability === 'receipt.breakdown.mutation.confirm') {
             return $this->confirmReceiptBreakdown($request, $owner);
+        }
+
+        if ($capability === 'financial.export.prepare'
+            || $capability === 'financial.deletion.prepare') {
+            return $this->highImpactPreparationResponder->handle($request, $owner, $capability);
         }
 
         $transactionId = $request->attributes->get('openclaw.transaction_id');

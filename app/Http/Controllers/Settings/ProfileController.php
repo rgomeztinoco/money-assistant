@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Actions\Security\DeleteOwnerAccount;
 use App\Actions\Security\InvalidateOtherSessions;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
@@ -14,7 +15,10 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
-    public function __construct(private InvalidateOtherSessions $invalidateOtherSessions) {}
+    public function __construct(
+        private InvalidateOtherSessions $invalidateOtherSessions,
+        private DeleteOwnerAccount $deleteOwnerAccount,
+    ) {}
 
     /**
      * Show the user's profile settings page.
@@ -59,9 +63,9 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
-        Auth::logout();
+        $this->deleteOwnerAccount->handle($user);
 
-        $user->delete();
+        Auth::logout();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();

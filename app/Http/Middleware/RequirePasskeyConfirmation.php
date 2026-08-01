@@ -17,12 +17,18 @@ class RequirePasskeyConfirmation
      *
      * @param  Closure(Request): (Response)  $next
      */
-    public function handle(Request $request, Closure $next): Response
-    {
+    public function handle(
+        Request $request,
+        Closure $next,
+        ?string $maximumAgeInSeconds = null,
+    ): Response {
         $confirmedAt = $request->session()->get(self::SESSION_KEY, 0);
         $confirmationAge = Date::now()->unix() - $confirmedAt;
+        $maximumAge = $maximumAgeInSeconds === null
+            ? Config::integer('auth.password_timeout')
+            : (int) $maximumAgeInSeconds;
 
-        if ($confirmationAge >= 0 && $confirmationAge <= Config::integer('auth.password_timeout')) {
+        if ($confirmationAge >= 0 && $confirmationAge <= $maximumAge) {
             return $next($request);
         }
 

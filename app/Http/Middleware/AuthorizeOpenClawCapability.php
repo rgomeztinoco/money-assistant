@@ -98,6 +98,8 @@ final class AuthorizeOpenClawCapability
             'reminder.read',
             'reminder.delivery.record',
             'reminder.respond',
+            'financial.export.prepare',
+            'financial.deletion.prepare',
         ], true)) {
             return $this->reject($request, 'unsupported_capability');
         }
@@ -145,6 +147,19 @@ final class AuthorizeOpenClawCapability
             $rules += [
                 'input' => ['required', 'array:transaction_id'],
                 'input.transaction_id' => ['required', 'integer', 'min:1'],
+            ];
+        } elseif ($capability === 'financial.export.prepare') {
+            $rules += [
+                'input' => ['required', 'array:idempotency_key'],
+                'input.idempotency_key' => ['required', 'uuid'],
+            ];
+        } elseif ($capability === 'financial.deletion.prepare') {
+            $rules += [
+                'input' => ['required', 'array:idempotency_key,resource_type,resource_id,expected_revision'],
+                'input.idempotency_key' => ['required', 'uuid'],
+                'input.resource_type' => ['required', 'string', Rule::in(['category', 'receipt_breakdown'])],
+                'input.resource_id' => ['required', 'integer', 'min:1'],
+                'input.expected_revision' => ['required', 'integer', 'min:1'],
             ];
         } elseif ($capability === 'category.read') {
             $rules += [

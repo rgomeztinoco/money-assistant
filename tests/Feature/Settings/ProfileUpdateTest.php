@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\FinancialDataTombstone;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -115,6 +117,41 @@ test('user can delete their account after fresh passkey authentication', functio
 
     $this->assertGuest();
     expect($user->fresh())->toBeNull();
+});
+
+test('account deletion cannot bypass financial retention and tombstone rules', function () {
+    $user = User::factory()->create();
+    $transaction = Transaction::factory()->for($user, 'owner')->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.passkey_confirmed_at' => time()])
+        ->from(route('profile.edit'))
+        ->delete(route('profile.destroy'))
+        ->assertRedirect(route('profile.edit'))
+        ->assertSessionHasErrors('account');
+
+    expect($user->fresh())->not->toBeNull()
+        ->and($transaction->fresh())->not->toBeNull();
+});
+
+test('an account can be deleted after retained payloads have become append-only tombstones', function () {
+    $user = User::factory()->create();
+    $tombstone = FinancialDataTombstone::query()->create([
+        'id' => '01983d79-a780-72f0-bb34-9b4f3f0cf399',
+        'owner_id' => $user->id,
+        'resource_type' => 'category',
+        'resource_id' => 99,
+        'deleted_at' => now()->subDays(31),
+        'purged_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->withSession(['auth.passkey_confirmed_at' => time()])
+        ->delete(route('profile.destroy'))
+        ->assertRedirect('/');
+
+    expect($user->fresh())->toBeNull()
+        ->and($tombstone->fresh())->not->toBeNull();
 });
 
 test('expired passkey authentication cannot delete account', function () {

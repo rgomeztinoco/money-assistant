@@ -182,6 +182,8 @@ test('the dedicated Money Assistant agent exposes only its bounded financial plu
                 'money_assistant_receipt_proposal_submit',
                 'money_assistant_receipt_breakdown_prepare',
                 'money_assistant_receipt_breakdown_confirm',
+                'money_assistant_export_prepare',
+                'money_assistant_deletion_prepare',
                 'money_assistant_reminder_read',
                 'money_assistant_reminder_respond',
             ],
@@ -215,6 +217,8 @@ test('the dedicated Money Assistant agent exposes only its bounded financial plu
             'money_assistant_receipt_proposal_submit',
             'money_assistant_receipt_breakdown_prepare',
             'money_assistant_receipt_breakdown_confirm',
+            'money_assistant_export_prepare',
+            'money_assistant_deletion_prepare',
             'money_assistant_reminder_read',
             'money_assistant_reminder_respond',
         ])

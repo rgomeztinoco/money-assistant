@@ -12,6 +12,8 @@ import plugin, {
   isBoundReceiptChannelDelivery,
   isBoundReminderChannelDelivery,
   isBoundReminderEventInteraction,
+  isFinancialDeletionPreparationInput,
+  isFinancialExportPreparationInput,
   admittedReceiptPhoto,
   isApprovedReceiptModel,
   inspectReceiptImage,
@@ -38,7 +40,7 @@ import {
   OwnerMessageAdmissions,
 } from './index.js';
 
-test('the plugin exposes only bounded Transaction Category Receipt Proposal and Reminder tools', () => {
+test('the plugin exposes only bounded financial tools without credential or recovery operations', () => {
   const metadata = getToolPluginMetadata(plugin);
 
   assert.deepEqual(
@@ -53,6 +55,8 @@ test('the plugin exposes only bounded Transaction Category Receipt Proposal and 
       'money_assistant_receipt_proposal_submit',
       'money_assistant_receipt_breakdown_prepare',
       'money_assistant_receipt_breakdown_confirm',
+      'money_assistant_export_prepare',
+      'money_assistant_deletion_prepare',
       'money_assistant_reminder_read',
       'money_assistant_reminder_respond',
     ],
@@ -73,6 +77,99 @@ test('the plugin exposes only bounded Transaction Category Receipt Proposal and 
       assert.equal(schema.additionalProperties, false);
     }
   }
+});
+
+test('financial export and deletion tools accept only bounded preparation inputs', () => {
+  const idempotencyKey = '01983d79-a780-72f0-bb34-9b4f3f0cf390';
+
+  assert.equal(
+    isFinancialExportPreparationInput({ idempotency_key: idempotencyKey }),
+    true,
+  );
+  assert.equal(
+    isFinancialExportPreparationInput({ idempotency_key: 'not-a-uuid' }),
+    false,
+  );
+  assert.equal(
+    isFinancialDeletionPreparationInput({
+      idempotency_key: idempotencyKey,
+      resource_type: 'category',
+      resource_id: 10,
+      expected_revision: 2,
+    }),
+    true,
+  );
+
+  for (const invalidInput of [
+    {
+      idempotency_key: idempotencyKey,
+      resource_type: 'transaction',
+      resource_id: 10,
+      expected_revision: 2,
+    },
+    {
+      idempotency_key: idempotencyKey,
+      resource_type: 'category',
+      resource_id: 0,
+      expected_revision: 2,
+    },
+    {
+      idempotency_key: idempotencyKey,
+      resource_type: 'receipt_breakdown',
+      resource_id: 10,
+      expected_revision: 0,
+    },
+  ]) {
+    assert.equal(isFinancialDeletionPreparationInput(invalidInput), false);
+  }
+});
+
+test('financial preparation tools serialize only their bounded capability payloads', () => {
+  const context = {
+    agentId: 'money-assistant',
+    agentAccountId: 'money-assistant-owner',
+    requesterSenderId: 'telegram-owner-123',
+    deliveryContext: { to: 'telegram-owner-123' },
+  };
+  const admission = {
+    sessionKey: 'owner-session',
+    messageId: 'telegram-message-prepare',
+    occurredAtSeconds: 1_784_912_400,
+  };
+  const idempotencyKey = '01983d79-a780-72f0-bb34-9b4f3f0cf390';
+
+  assert.deepEqual(
+    JSON.parse(
+      capabilityRequestBody(
+        'financial.export.prepare',
+        { idempotency_key: idempotencyKey },
+        context,
+        admission,
+      ),
+    ).input,
+    { idempotency_key: idempotencyKey },
+  );
+  assert.deepEqual(
+    JSON.parse(
+      capabilityRequestBody(
+        'financial.deletion.prepare',
+        {
+          idempotency_key: idempotencyKey,
+          resource_type: 'receipt_breakdown',
+          resource_id: 12,
+          expected_revision: 3,
+        },
+        context,
+        admission,
+      ),
+    ).input,
+    {
+      idempotency_key: idempotencyKey,
+      resource_type: 'receipt_breakdown',
+      resource_id: 12,
+      expected_revision: 3,
+    },
+  );
 });
 
 test('receipt processing fails closed until every approved privacy gate is confirmed', () => {

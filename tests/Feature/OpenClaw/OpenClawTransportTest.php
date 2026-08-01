@@ -4,6 +4,7 @@ use App\CategoryAssignmentProvenance;
 use App\Contracts\OpenClawHook;
 use App\Currency;
 use App\Models\Category;
+use App\Models\CategoryTarget;
 use App\Models\LineItem;
 use App\Models\OpenClawAuditEvent;
 use App\Models\OpenClawConfirmationGrant;
@@ -17,6 +18,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
@@ -149,6 +151,43 @@ beforeEach(function () {
         'input' => [
             'page' => 1,
             'per_page' => 1,
+        ],
+    ];
+
+    $this->validFinancialExportPreparation = fn (): array => [
+        'schema_version' => 1,
+        'capability' => 'financial.export.prepare',
+        'interaction' => [
+            'kind' => 'owner_message',
+            'agent_id' => 'money-assistant',
+            'account_id' => 'money-assistant-owner',
+            'conversation_id' => 'telegram-owner-123',
+            'owner_sender_id' => 'telegram-owner-123',
+            'message_id' => 'telegram-owner-message-export-prepare',
+            'occurred_at' => now()->toIso8601String(),
+        ],
+        'input' => [
+            'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf390',
+        ],
+    ];
+
+    $this->validFinancialDeletionPreparation = fn (Category $category): array => [
+        'schema_version' => 1,
+        'capability' => 'financial.deletion.prepare',
+        'interaction' => [
+            'kind' => 'owner_message',
+            'agent_id' => 'money-assistant',
+            'account_id' => 'money-assistant-owner',
+            'conversation_id' => 'telegram-owner-123',
+            'owner_sender_id' => 'telegram-owner-123',
+            'message_id' => 'telegram-owner-message-deletion-prepare',
+            'occurred_at' => now()->toIso8601String(),
+        ],
+        'input' => [
+            'idempotency_key' => '01983d79-a780-72f0-bb34-9b4f3f0cf391',
+            'resource_type' => 'category',
+            'resource_id' => $category->id,
+            'expected_revision' => $category->revision,
         ],
     ];
 
@@ -627,6 +666,65 @@ test('OpenClaw prepares a completely validated manual Transaction with its exact
     expect(Transaction::query()->count())->toBe(0);
 });
 
+test('OpenClaw prepares a complete financial export without returning its payload', function () {
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->create([
+        'merchant_description' => 'Private export merchant',
+    ]);
+
+    $response = ($this->callOpenClaw)(($this->validFinancialExportPreparation)())
+        ->assertSuccessful()
+        ->assertJsonPath('schema_version', 1)
+        ->assertJsonPath('pending_operation.revision', 1)
+        ->assertJsonPath(
+            'pending_operation.effect_summary',
+            'Prepare a complete financial data export containing 1 Transaction.',
+        )
+        ->assertJson(fn ($json) => $json
+            ->whereType('pending_operation.id', 'string')
+            ->whereType('pending_operation.expires_at', 'string')
+            ->whereType('pending_operation.payload_digest', 'string')
+            ->whereType('pending_operation.web_continuation', 'string')
+            ->etc());
+
+    expect($response->getContent())
+        ->not->toContain('Private export merchant')
+        ->not->toContain('transactions');
+});
+
+test('OpenClaw prepares an eligible permanent deletion as a retention-backed web continuation', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create([
+        'name' => 'Temporary Category',
+    ]);
+
+    ($this->callOpenClaw)(($this->validFinancialDeletionPreparation)($category))
+        ->assertSuccessful()
+        ->assertJsonPath(
+            'pending_operation.effect_summary',
+            'Delete Category Temporary Category into 30-day recoverable trash before payload-free purge.',
+        )
+        ->assertJson(fn ($json) => $json
+            ->whereType('pending_operation.id', 'string')
+            ->whereType('pending_operation.web_continuation', 'string')
+            ->missing('pending_operation.resource')
+            ->etc());
+
+    expect($category->fresh()->deleted_at)->toBeNull();
+});
+
+test('OpenClaw cannot prepare deletion that domain retention rules prohibit', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    CategoryTarget::factory()->for($owner, 'owner')->for($category)->create();
+
+    ($this->callOpenClaw)(($this->validFinancialDeletionPreparation)($category))
+        ->assertUnprocessable();
+
+    expect(OpenClawPendingOperation::query()->count())->toBe(0)
+        ->and($category->fresh()->deleted_at)->toBeNull();
+});
+
 test('manual Transaction preparation rejects non-canonical input types', function () {
     User::factory()->create();
     $payload = ($this->validManualTransactionPreparation)();
@@ -1047,6 +1145,7 @@ test('validly signed stale and malformed authentication claims are rejected and 
     int $timestampOffset,
     string $expectedOutcome,
 ) {
+    Date::setTestNow('2026-08-01T12:00:00Z');
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create();
     $timestamp = (string) now()->addSeconds($timestampOffset)->getTimestamp();
@@ -1104,6 +1203,18 @@ test('unsupported schemas capabilities and expanded request shapes fail closed',
     'different capability' => [
         function (array &$payload): void {
             $payload['capability'] = 'transaction.list';
+        },
+        'unsupported_capability',
+    ],
+    'credential mutation' => [
+        function (array &$payload): void {
+            $payload['capability'] = 'credential.update';
+        },
+        'unsupported_capability',
+    ],
+    'recovery code read' => [
+        function (array &$payload): void {
+            $payload['capability'] = 'recovery_codes.read';
         },
         'unsupported_capability',
     ],

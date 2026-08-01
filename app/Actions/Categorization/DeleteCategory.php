@@ -2,7 +2,6 @@
 
 namespace App\Actions\Categorization;
 
-use App\Exceptions\CategoryOperationBlocked;
 use App\Exceptions\StaleCategoryRevision;
 use App\Models\Category;
 use App\Models\User;
@@ -12,6 +11,7 @@ final class DeleteCategory
 {
     public function __construct(
         private InvalidateAiClassificationValidationContext $invalidateValidationContext,
+        private EnsureCategoryCanBeDeleted $ensureCategoryCanBeDeleted,
     ) {}
 
     public function handle(User $owner, int $categoryId, int $expectedRevision): void
@@ -27,28 +27,7 @@ final class DeleteCategory
                 throw new StaleCategoryRevision;
             }
 
-            if ($category->transactions()->exists()
-                || $category->assignments()->exists()
-                || $category->previousAssignments()->exists()
-                || $category->lineItems()->exists()) {
-                throw new CategoryOperationBlocked('This Category has historical Transaction or Line Item assignments and must be retired instead.');
-            }
-
-            if ($category->learnedRuleRevisions()->exists()
-                || $category->learnedRuleSuggestions()->exists()
-                || $category->learnedRuleBulkActionItems()->exists()) {
-                throw new CategoryOperationBlocked('This Category has historical Learned Rule activity and must be retired instead.');
-            }
-
-            if ($category->targets()->exists()
-                || $category->proposedChildren()->exists()
-                || $category->confirmedAiProposals()->exists()) {
-                throw new CategoryOperationBlocked('This Category has historical financial planning or classification activity and must be retired instead.');
-            }
-
-            if ($category->children()->withTrashed()->exists()) {
-                throw new CategoryOperationBlocked('Move or delete every child Category first.');
-            }
+            $this->ensureCategoryCanBeDeleted->handle($category);
 
             $category->moveToFinancialTrash();
             $this->invalidateValidationContext->handle($owner);

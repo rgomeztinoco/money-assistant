@@ -1,6 +1,7 @@
 import { Form } from '@inertiajs/react';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import Heading from '@/components/heading';
+import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -43,8 +44,10 @@ export default function DeleteUser() {
                         </DialogTitle>
                         <DialogDescription>
                             Once your account is deleted, all of its resources
-                            and data will also be permanently deleted. You will
-                            be asked to confirm with a passkey before deletion.
+                            and data will also be permanently deleted. Financial
+                            records must first complete their retention flow.
+                            You will be asked to confirm with a passkey before
+                            deletion.
                         </DialogDescription>
 
                         <Form
@@ -53,8 +56,12 @@ export default function DeleteUser() {
                                 preserveScroll: true,
                             }}
                         >
-                            {({ resetAndClearErrors, processing }) => (
+                            {({ errors, resetAndClearErrors, processing }) => (
                                 <>
+                                    <InputError
+                                        message={errors.account}
+                                        className="mt-4"
+                                    />
                                     <DialogFooter className="gap-2">
                                         <DialogClose asChild>
                                             <Button
