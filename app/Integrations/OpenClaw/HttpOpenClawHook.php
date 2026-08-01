@@ -48,7 +48,7 @@ final class HttpOpenClawHook implements OpenClawHook
 
         if ($uri->scheme() !== 'http'
             || $uri->host() !== '127.0.0.1'
-            || $uri->port() !== 18789
+            || $uri->port() !== 19789
             || $uri->path() !== 'hooks/money-assistant'
             || $uri->query()->value() !== ''
             || $uri->fragment() !== null

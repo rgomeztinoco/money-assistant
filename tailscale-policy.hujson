@@ -30,11 +30,11 @@
         "node:tsVersion": "1.98.0",
       },
       "accept": ["tag:money-assistant:443"],
-      "deny": ["tag:money-assistant:80", "tag:money-assistant:8443", "tag:money-assistant:18789"],
+      "deny": ["tag:money-assistant:80", "tag:money-assistant:8443", "tag:money-assistant:18789", "tag:money-assistant:19789"],
     },
     {
       "src": "autogroup:member",
-      "deny": ["tag:money-assistant:443", "tag:money-assistant:18789"],
+      "deny": ["tag:money-assistant:443", "tag:money-assistant:18789", "tag:money-assistant:19789"],
     },
   ],
 }

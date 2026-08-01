@@ -37,7 +37,7 @@ beforeEach(function () {
         'services.openclaw.capability.owner_sender_id' => 'telegram-owner-123',
         'services.openclaw.capability.rate_limit_per_minute' => 60,
         'services.openclaw.hook.token' => 'outbound-hook-token',
-        'services.openclaw.hook.url' => 'http://127.0.0.1:18789/hooks/money-assistant',
+        'services.openclaw.hook.url' => 'http://127.0.0.1:19789/hooks/money-assistant',
     ]);
     RateLimiter::for('openclaw-ingress', fn (): Limit => Limit::perMinute(120));
 
@@ -1286,7 +1286,7 @@ test('OpenClaw audit constraints reject unsupported or value-retaining outcomes'
 test('Laravel sends only a minimal event through the fixed mapped hook', function () {
     Http::preventStrayRequests();
     Http::fake([
-        'http://127.0.0.1:18789/hooks/money-assistant' => Http::response(status: 202),
+        'http://127.0.0.1:19789/hooks/money-assistant' => Http::response(status: 202),
     ]);
 
     app(OpenClawHook::class)->dispatch(
@@ -1295,7 +1295,7 @@ test('Laravel sends only a minimal event through the fixed mapped hook', functio
         occurredAt: CarbonImmutable::parse('2026-07-24T15:00:00Z'),
     );
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://127.0.0.1:18789/hooks/money-assistant'
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://127.0.0.1:19789/hooks/money-assistant'
         && $request->hasHeader('Authorization', 'Bearer outbound-hook-token')
         && $request->data() === [
             'event_id' => '01J3AGV2C8ZQJ9W7K1M4B5N6P7',
@@ -1305,10 +1305,26 @@ test('Laravel sends only a minimal event through the fixed mapped hook', functio
     );
 });
 
+test('Laravel refuses to send Money Assistant events to the main OpenClaw instance', function () {
+    Http::preventStrayRequests();
+    config()->set(
+        'services.openclaw.hook.url',
+        'http://127.0.0.1:18789/hooks/money-assistant',
+    );
+
+    expect(fn () => app(OpenClawHook::class)->dispatch(
+        eventId: '01J3AGV2C8ZQJ9W7K1M4B5N6P7',
+        eventType: 'transport.probe',
+        occurredAt: CarbonImmutable::parse('2026-07-24T15:00:00Z'),
+    ))->toThrow(RuntimeException::class, 'The OpenClaw hook URL must be the dedicated loopback hook.');
+
+    Http::assertNothingSent();
+});
+
 test('the mapped hook retries transient failures', function () {
     Http::preventStrayRequests();
     Http::fake([
-        'http://127.0.0.1:18789/hooks/money-assistant' => Http::sequence()
+        'http://127.0.0.1:19789/hooks/money-assistant' => Http::sequence()
             ->pushStatus(503)
             ->pushStatus(202),
     ]);
@@ -1325,7 +1341,7 @@ test('the mapped hook retries transient failures', function () {
 test('the mapped hook does not retry deterministic failures', function () {
     Http::preventStrayRequests();
     Http::fake([
-        'http://127.0.0.1:18789/hooks/money-assistant' => Http::response(status: 422),
+        'http://127.0.0.1:19789/hooks/money-assistant' => Http::response(status: 422),
     ]);
 
     expect(fn () => app(OpenClawHook::class)->dispatch(

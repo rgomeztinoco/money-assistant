@@ -96,7 +96,7 @@ jobs:
             echo "OPENCLAW_CAPABILITY_KEY_ID=openclaw-service-ci"
             echo "OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE=/tmp/money-assistant-production-smoke/openclaw_capability_public_key"
             echo "OPENCLAW_HOOK_TOKEN_FILE=/tmp/money-assistant-production-smoke/openclaw_hook_token"
-            echo "OPENCLAW_HOOK_URL=http://127.0.0.1:18789/hooks/money-assistant"
+            echo "OPENCLAW_HOOK_URL=http://127.0.0.1:19789/hooks/money-assistant"
             echo "APP_KEY_FILE=/tmp/money-assistant-production-smoke/application_key"
             echo "DB_PASSWORD_FILE=/tmp/money-assistant-production-smoke/database_password"
             echo "COMPOSE_PROJECT_NAME=money-assistant-production-smoke"

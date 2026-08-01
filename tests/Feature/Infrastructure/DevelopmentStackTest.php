@@ -48,7 +48,7 @@ test('development runs its queue worker and scheduler as supervised services', f
         ]);
 });
 
-test('the default development application port matches the OpenClaw capability origin', function () {
+test('development separates the Money Assistant application and dedicated OpenClaw hook ports', function () {
     $environment = file_get_contents(base_path('.env.example'));
     $plugin = file_get_contents(base_path('openclaw/money-assistant-plugin/src/index.ts'));
 
@@ -61,7 +61,7 @@ test('the default development application port matches the OpenClaw capability o
         ->toContain('OPENCLAW_CAPABILITY_ACCOUNT_ID=default')
         ->toContain('OPENCLAW_CAPABILITY_CONVERSATION_ID=')
         ->toContain('OPENCLAW_CAPABILITY_OWNER_SENDER_ID=')
-        ->toContain('OPENCLAW_HOOK_URL=http://127.0.0.1:18789/hooks/money-assistant')
+        ->toContain('OPENCLAW_HOOK_URL=http://127.0.0.1:19789/hooks/money-assistant')
         ->toContain('OPENCLAW_HOOK_TOKEN=')
         ->and($plugin)
         ->toContain("const CAPABILITY_ORIGIN = 'http://127.0.0.1:8443'");

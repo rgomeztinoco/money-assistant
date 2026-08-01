@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 beforeEach(function () {
     config([
         'services.openclaw.hook.token' => 'outbound-hook-token',
-        'services.openclaw.hook.url' => 'http://127.0.0.1:18789/hooks/money-assistant',
+        'services.openclaw.hook.url' => 'http://127.0.0.1:19789/hooks/money-assistant',
     ]);
 });
 
@@ -59,7 +59,7 @@ test('a duplicate worker execution produces one accepted owner-visible digest', 
     $this->travelTo(CarbonImmutable::parse('2026-07-26 15:05:00 UTC'));
     Http::preventStrayRequests();
     Http::fake([
-        'http://127.0.0.1:18789/hooks/money-assistant' => Http::response(status: 202),
+        'http://127.0.0.1:19789/hooks/money-assistant' => Http::response(status: 202),
     ]);
     $delivery = ReminderDelivery::factory()->create([
         'occurred_at' => CarbonImmutable::parse('2026-07-26 15:00:00 UTC'),
@@ -88,7 +88,7 @@ test('transient hook failures use bounded persisted retries before terminal hand
     $this->travelTo(CarbonImmutable::parse('2026-07-26 15:00:00 UTC'));
     Http::preventStrayRequests();
     Http::fake([
-        'http://127.0.0.1:18789/hooks/money-assistant' => Http::response(status: 503),
+        'http://127.0.0.1:19789/hooks/money-assistant' => Http::response(status: 503),
     ]);
     $delivery = ReminderDelivery::factory()->create([
         'id' => '01983d79-a780-72f0-bb34-9b4f3f0cf390',
@@ -202,7 +202,7 @@ test('deterministic hook failures terminate without an outbox retry', function (
     $this->travelTo(CarbonImmutable::parse('2026-07-26 15:00:00 UTC'));
     Http::preventStrayRequests();
     Http::fake([
-        'http://127.0.0.1:18789/hooks/money-assistant' => Http::response(status: $status),
+        'http://127.0.0.1:19789/hooks/money-assistant' => Http::response(status: $status),
     ]);
     $delivery = ReminderDelivery::factory()->create();
 

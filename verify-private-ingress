@@ -27,7 +27,7 @@ set +a
 : "${OPENCLAW_HOOK_URL:?OPENCLAW_HOOK_URL is required}"
 
 case "$OPENCLAW_HOOK_URL" in
-    'http://127.0.0.1:18789/hooks/money-assistant') ;;
+    'http://127.0.0.1:19789/hooks/money-assistant') ;;
     *) fail 'OPENCLAW_HOOK_URL must use the dedicated loopback hook' ;;
 esac
 
@@ -63,7 +63,7 @@ printf '%s' "$ufw_status" | awk '
 ufw_rules="$(ufw show added)"
 
 printf '%s' "$ufw_rules" | awk '
-    /^ufw allow/ && /(^|[[:space:]])(80|443|5432|8443|18789)(\/tcp)?([[:space:]]|$)/ && $0 !~ / on tailscale0 / { exit 1 }
+    /^ufw allow/ && /(^|[[:space:]])(80|443|5432|8443|18789|19789)(\/tcp)?([[:space:]]|$)/ && $0 !~ / on tailscale0 / { exit 1 }
 ' || fail 'UFW explicitly allows an application port outside tailscale0'
 
 compose_status="$(docker compose --env-file "$environment_file" -f "${script_directory}/compose.production.yaml" config --format json)"
@@ -102,8 +102,9 @@ printf '%s\n' "$listeners" | awk -v tailnet_ip="$tailnet_ip" '
     $4 ~ /:8080$/ { exit 1 }
     $4 ~ /:8443$/ && $4 != "127.0.0.1:8443" { exit 1 }
     $4 ~ /:443$/ && $4 != tailnet_ip ":443" { exit 1 }
-    $4 == "127.0.0.1:18789" || $4 == "[::1]:18789" { hook = 1 }
+    $4 == "127.0.0.1:19789" || $4 == "[::1]:19789" { hook = 1 }
     $4 ~ /:18789$/ && $4 != "127.0.0.1:18789" && $4 != "[::1]:18789" { exit 1 }
+    $4 ~ /:19789$/ && $4 != "127.0.0.1:19789" && $4 != "[::1]:19789" { exit 1 }
     END { exit !(database && hook) }
 ' || fail 'an application or OpenClaw listener is reachable outside its approved private interface'
 

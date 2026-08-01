@@ -115,7 +115,7 @@ test('Tailscale is the exclusive HTTPS ingress for approved owner devices', func
         ->toContain('"tag:money-assistant-approved-device"')
         ->toContain('"srcPosture": ["posture:approved-owner-device"]')
         ->toContain('"tag:money-assistant:443"')
-        ->toContain('"deny": ["tag:money-assistant:80", "tag:money-assistant:8443", "tag:money-assistant:18789"]')
+        ->toContain('"deny": ["tag:money-assistant:80", "tag:money-assistant:8443", "tag:money-assistant:18789", "tag:money-assistant:19789"]')
         ->and($service)
         ->toContain('tailscale wait')
         ->toContain('tailscale serve --bg --https=443 http://127.0.0.1:8443')
@@ -364,6 +364,8 @@ test('the production stack ships a private ingress verifier', function () {
         ->toContain('tailscale funnel status --json')
         ->toContain('ufw status verbose')
         ->toContain('ss -H -lnt')
+        ->toContain("'http://127.0.0.1:19789/hooks/money-assistant'")
+        ->not->toContain("'http://127.0.0.1:18789/hooks/money-assistant'")
         ->toContain('docker compose');
 });
 
