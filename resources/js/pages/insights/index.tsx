@@ -3,12 +3,15 @@ import {
     ArrowRight,
     BarChart3,
     CalendarDays,
-    CircleDollarSign,
-    Target,
     TrendingDown,
     TrendingUp,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import CategoryTargets from '@/components/category-targets';
+import type {
+    CategoryTarget,
+    TargetOption,
+} from '@/components/category-targets';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -92,6 +95,11 @@ type InsightsIndexProps = {
         average: SpendingSummary | null;
     };
     comparison: SpendingComparison | null;
+    target_defaults: {
+        effective_month: string;
+    };
+    target_options: TargetOption[];
+    category_targets: CategoryTarget[];
 };
 
 function formatPercentageBasisPoints(basisPoints: string): string {
@@ -211,6 +219,9 @@ export default function InsightsIndex({
     period,
     baseline,
     comparison,
+    target_defaults: targetDefaults,
+    target_options: targetOptions,
+    category_targets: categoryTargets,
 }: InsightsIndexProps) {
     const combined = period.spending.combined_total;
 
@@ -541,25 +552,12 @@ export default function InsightsIndex({
                     </section>
                 )}
 
-                <Card id="targets">
-                    <CardHeader>
-                        <div className="flex items-center gap-2">
-                            <Target className="size-5 text-muted-foreground" />
-                            <CardTitle>Category Targets</CardTitle>
-                        </div>
-                        <CardDescription>
-                            No active Category Targets yet. Targets are explicit
-                            owner-approved intentions, never forecasts or
-                            inferred reductions.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex items-start gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                        <CircleDollarSign className="mt-0.5 size-4 shrink-0" />
-                        {baseline.status === 'established'
-                            ? 'The established Spending Baseline can provide context when you create a Category Target.'
-                            : 'Three complete reviewed months are required before a Category Target can be created.'}
-                    </CardContent>
-                </Card>
+                <CategoryTargets
+                    baselineStatus={baseline.status}
+                    defaultEffectiveMonth={targetDefaults.effective_month}
+                    targetOptions={targetOptions}
+                    targets={categoryTargets}
+                />
             </div>
         </>
     );

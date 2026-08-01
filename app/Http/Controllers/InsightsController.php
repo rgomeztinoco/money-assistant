@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Reporting\ReadCategoryTargets;
 use App\Actions\Reporting\ReadSpendingInsights;
 use App\Http\Requests\IndexInsightsRequest;
 use Carbon\CarbonImmutable;
@@ -10,7 +11,10 @@ use Inertia\Response;
 
 class InsightsController extends Controller
 {
-    public function __construct(private ReadSpendingInsights $readSpendingInsights) {}
+    public function __construct(
+        private ReadSpendingInsights $readSpendingInsights,
+        private ReadCategoryTargets $readCategoryTargets,
+    ) {}
 
     public function __invoke(IndexInsightsRequest $request): Response
     {
@@ -19,9 +23,14 @@ class InsightsController extends Controller
             ? CarbonImmutable::parse($validated['date_from'], config('app.timezone'))->startOfMonth()
             : CarbonImmutable::today()->startOfMonth();
 
-        return Inertia::render('insights/index', $this->readSpendingInsights->handle(
+        $insights = $this->readSpendingInsights->handle(
             owner: $request->user(),
             selectedMonth: $selectedMonth,
-        ));
+        );
+
+        return Inertia::render('insights/index', [
+            ...$insights,
+            ...$this->readCategoryTargets->handle($request->user(), $selectedMonth, $insights),
+        ]);
     }
 }

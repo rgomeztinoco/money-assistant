@@ -32,8 +32,9 @@ final class ReadSpendingSummary
         User $owner,
         ?CarbonImmutable $dateFrom = null,
         ?CarbonImmutable $dateTo = null,
+        ?Currency $reportingCurrency = null,
     ): array {
-        $reportingCurrency = $owner->reporting_currency;
+        $reportingCurrency ??= $owner->reporting_currency;
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
             ->orderBy('name')

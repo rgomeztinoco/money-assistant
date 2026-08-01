@@ -3,6 +3,8 @@
 use App\Http\Controllers\AiCategoryProposalConfirmationController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryRetirementController;
+use App\Http\Controllers\CategoryTargetController;
+use App\Http\Controllers\CategoryTargetRetirementController;
 use App\Http\Controllers\DailyExchangeRateController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InsightsController;
@@ -49,6 +51,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         IntegrationIncidentReplayController::class,
     )->name('integration_incidents.replay.store');
     Route::get('insights', InsightsController::class)->name('insights.index');
+    Route::resource('category-targets', CategoryTargetController::class)
+        ->only(['store', 'update'])
+        ->names([
+            'store' => 'category_targets.store',
+            'update' => 'category_targets.update',
+        ]);
+    Route::post('category-targets/{category_target}/retirement', CategoryTargetRetirementController::class)
+        ->name('category_targets.retirement.store');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store']);
     Route::post('transactions/{transaction}/receipt-proposal-attachments', [ReceiptProposalAttachmentController::class, 'store'])

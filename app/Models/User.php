@@ -53,6 +53,12 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(Category::class);
     }
 
+    /** @return HasMany<CategoryTarget, $this> */
+    public function categoryTargets(): HasMany
+    {
+        return $this->hasMany(CategoryTarget::class);
+    }
+
     /**
      * @return HasMany<Reminder, $this>
      */
