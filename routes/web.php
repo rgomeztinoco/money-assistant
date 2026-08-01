@@ -5,6 +5,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryRetirementController;
 use App\Http\Controllers\DailyExchangeRateController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InsightsController;
 use App\Http\Controllers\IntegrationIncidentAcknowledgementController;
 use App\Http\Controllers\IntegrationIncidentReplayController;
 use App\Http\Controllers\LearnedRuleBulkActionConfirmationController;
@@ -47,7 +48,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         'integration-incidents/{integrationIncident}/replay',
         IntegrationIncidentReplayController::class,
     )->name('integration_incidents.replay.store');
-    Route::inertia('insights', 'insights/index')->name('insights.index');
+    Route::get('insights', InsightsController::class)->name('insights.index');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store']);
     Route::post('transactions/{transaction}/receipt-proposal-attachments', [ReceiptProposalAttachmentController::class, 'store'])

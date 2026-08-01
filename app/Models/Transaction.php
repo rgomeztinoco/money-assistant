@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 
 /**
@@ -209,6 +210,38 @@ class Transaction extends Model
                             ->whereHas('lineItems'));
                 })
                 ->orWhere(fn (Builder $query) => $query->whereHasProvisionalAiCategory());
+        });
+    }
+
+    /**
+     * @param  Builder<Transaction>  $query
+     * @return Builder<Transaction>
+     */
+    public function scopeWhereRequiresReview(Builder $query): Builder
+    {
+        $suspectedDuplicatesTable = (new SuspectedDuplicate)->getTable();
+        $transactionsTable = $query->getModel()->getTable();
+
+        return $query->where(function (Builder $query) use ($suspectedDuplicatesTable, $transactionsTable): void {
+            $query
+                ->where(fn (Builder $query) => $query->whereCategoryRequiresReview())
+                ->orWhereHas('receiptBreakdowns', fn (Builder $query) => $query
+                    ->where('status', 'confirmed')
+                    ->whereHas('lineItems', fn (Builder $query) => $query->whereNull('category_id')))
+                ->orWhereJsonLength('provisional_fields', '>', 0)
+                ->orWhereJsonLength('refund_relationship_review_reasons', '>', 0)
+                ->orWhereExists(function (QueryBuilder $query) use ($suspectedDuplicatesTable, $transactionsTable): void {
+                    $query
+                        ->selectRaw('1')
+                        ->from($suspectedDuplicatesTable)
+                        ->whereColumn($suspectedDuplicatesTable.'.user_id', $transactionsTable.'.user_id')
+                        ->where(function (QueryBuilder $query) use ($suspectedDuplicatesTable, $transactionsTable): void {
+                            $query
+                                ->whereColumn($suspectedDuplicatesTable.'.first_transaction_id', $transactionsTable.'.id')
+                                ->orWhereColumn($suspectedDuplicatesTable.'.second_transaction_id', $transactionsTable.'.id');
+                        })
+                        ->whereNull($suspectedDuplicatesTable.'.resolved_at');
+                });
         });
     }
 

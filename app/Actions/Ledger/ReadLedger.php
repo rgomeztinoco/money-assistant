@@ -428,14 +428,7 @@ class ReadLedger
         }
 
         if ($filters['review_state'] === 'outstanding') {
-            $query->where(function (Builder $query): void {
-                $query
-                    ->where(fn (Builder $query) => $this->whereHasUncategorizedContribution($query))
-                    ->orWhere(fn (Builder $query) => $query->whereHasProvisionalAiCategory())
-                    ->orWhereJsonLength('provisional_fields', '>', 0)
-                    ->orWhereJsonLength('refund_relationship_review_reasons', '>', 0)
-                    ->orWhere(fn (Builder $query) => $this->whereHasDuplicateRelationship($query, false));
-            });
+            $query->whereRequiresReview();
         } elseif ($filters['review_state'] === 'clear') {
             $query
                 ->whereJsonLength('provisional_fields', 0)
