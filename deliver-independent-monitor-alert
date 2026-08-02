@@ -1,0 +1,42 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+primary_delivery_command="${MONITOR_PRIMARY_DELIVERY_COMMAND:-}"
+direct_delivery_command="${MONITOR_DIRECT_DELIVERY_COMMAND:-${script_directory}/deliver-telegram-monitor-alert}"
+primary_delivery_timeout_seconds="${MONITOR_PRIMARY_DELIVERY_TIMEOUT_SECONDS:-5}"
+
+[ "$#" -eq 1 ] || {
+    printf '%s\n' 'usage: deliver-independent-monitor-alert MESSAGE' >&2
+    exit 2
+}
+case "$primary_delivery_timeout_seconds" in
+    ''|*[!0-9]*) printf '%s\n' 'MONITOR_PRIMARY_DELIVERY_TIMEOUT_SECONDS must be an integer.' >&2; exit 2 ;;
+esac
+
+if [ -n "$primary_delivery_command" ]; then
+    if [ -x "$primary_delivery_command" ] \
+        && timeout "$primary_delivery_timeout_seconds" "$primary_delivery_command" "$1"; then
+        exit 0
+    fi
+else
+    if [ -n "${APPLICATION_MONITOR_HOST:-}" ] \
+        && [ -n "${APPLICATION_MONITOR_KNOWN_HOSTS_FILE:-}" ] \
+        && [ -n "${APPLICATION_MONITOR_SSH_KEY_FILE:-}" ]; then
+        if printf '%s\n' "$1" | timeout "$primary_delivery_timeout_seconds" ssh \
+            -o BatchMode=yes \
+            -o ClearAllForwardings=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o "UserKnownHostsFile=${APPLICATION_MONITOR_KNOWN_HOSTS_FILE}" \
+            -i "$APPLICATION_MONITOR_SSH_KEY_FILE" \
+            -T "$APPLICATION_MONITOR_HOST" alert; then
+            exit 0
+        fi
+    fi
+fi
+
+exec "$direct_delivery_command" "$1"

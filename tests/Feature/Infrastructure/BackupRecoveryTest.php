@@ -55,6 +55,7 @@ test('the application host exports a consistent independently encrypted recovery
     mkdir($hostRoot.'/home/openclaw/.openclaw', 0700, true);
     mkdir($hostRoot.'/opt/money-assistant', 0700, true);
     mkdir($hostRoot.'/var/lib/money-assistant/deployments', 0700, true);
+    mkdir($hostRoot.'/var/lib/money-assistant/monitor', 0700, true);
     mkdir($extracted, 0700, true);
     file_put_contents($hostRoot.'/etc/money-assistant/production.env', implode("\n", [
         'APP_IMAGE_REPOSITORY=registry.example/money-assistant',
@@ -162,7 +163,9 @@ SH);
             ->toContain('age --encrypt --recipient-file')
             ->not->toContain('sensitive-application-key', 'sensitive-database-password')
             ->and($process->getErrorOutput())
-            ->not->toContain('sensitive-application-key', 'sensitive-database-password');
+            ->not->toContain('sensitive-application-key', 'sensitive-database-password')
+            ->and(file_get_contents($hostRoot.'/var/lib/money-assistant/monitor/backup-status'))
+            ->toStartWith('success ');
 
         expect(file_get_contents($extracted.'/version-inventory.txt'))
             ->toContain('OpenClaw 2026.7.1')
@@ -194,7 +197,9 @@ SH);
             ->and(file_get_contents($commandLog))
             ->toContain('start web worker scheduler')
             ->toContain('artisan up')
-            ->toContain('systemctl --user start openclaw-gateway.service');
+            ->toContain('systemctl --user start openclaw-gateway.service')
+            ->and(file_get_contents($hostRoot.'/var/lib/money-assistant/monitor/backup-status'))
+            ->toStartWith('failed ');
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
     }
@@ -216,6 +221,9 @@ printf '%s' 'independently-encrypted-backup'
 SH);
     installFakeBackupBinary($fakeBinaryDirectory, 'restic', <<<'SH'
 printf 'restic %s\n' "$*" >> "$BACKUP_TEST_COMMAND_LOG"
+if [ "${BACKUP_TEST_RESTIC_FAILURE:-false}" = true ] && [ "$1" = check ]; then
+    exit 1
+fi
 case "$1" in
     backup) /bin/cat > "$BACKUP_TEST_CAPTURED_BACKUP" ;;
 esac
@@ -227,6 +235,7 @@ SH);
             'APPLICATION_BACKUP_KNOWN_HOSTS_FILE' => $temporaryDirectory.'/known-hosts',
             'APPLICATION_BACKUP_SSH_KEY_FILE' => $temporaryDirectory.'/pull-key',
             'BACKUP_LOCK_FILE' => $temporaryDirectory.'/backup.lock',
+            'BACKUP_STATUS_FILE' => $temporaryDirectory.'/backup-status',
             'BACKUP_TEST_CAPTURED_BACKUP' => $capturedBackup,
             'BACKUP_TEST_COMMAND_LOG' => $commandLog,
             'PATH' => $fakeBinaryDirectory.':'.getenv('PATH'),
@@ -243,7 +252,27 @@ SH);
             ->toContain('restic backup --stdin --stdin-filename money-assistant-backup.tar.age')
             ->toContain('restic forget --tag money-assistant --keep-daily 7 --keep-weekly 5 --keep-monthly 12 --prune')
             ->toContain('restic check')
-            ->not->toContain('repository-secret');
+            ->not->toContain('repository-secret')
+            ->and(file_get_contents($temporaryDirectory.'/backup-status'))
+            ->toStartWith('success ');
+
+        $failedProcess = runBackupRecoveryScript('pull-production-backup', [
+            'APPLICATION_BACKUP_HOST' => 'money-assistant-backup@100.64.0.10',
+            'APPLICATION_BACKUP_KNOWN_HOSTS_FILE' => $temporaryDirectory.'/known-hosts',
+            'APPLICATION_BACKUP_SSH_KEY_FILE' => $temporaryDirectory.'/pull-key',
+            'BACKUP_LOCK_FILE' => $temporaryDirectory.'/backup.lock',
+            'BACKUP_STATUS_FILE' => $temporaryDirectory.'/backup-status',
+            'BACKUP_TEST_CAPTURED_BACKUP' => $capturedBackup,
+            'BACKUP_TEST_COMMAND_LOG' => $commandLog,
+            'BACKUP_TEST_RESTIC_FAILURE' => 'true',
+            'PATH' => $fakeBinaryDirectory.':'.getenv('PATH'),
+            'RESTIC_PASSWORD_FILE' => $temporaryDirectory.'/repository-password',
+            'RESTIC_REPOSITORY' => $temporaryDirectory.'/repository',
+        ]);
+
+        expect($failedProcess->getExitCode())->toBe(1)
+            ->and(file_get_contents($temporaryDirectory.'/backup-status'))
+            ->toStartWith('failed ');
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
     }
@@ -336,6 +365,7 @@ SH);
             'RECOVERY_WORK_ROOT' => $temporaryDirectory,
             'RESTIC_PASSWORD_FILE' => $temporaryDirectory.'/repository-password',
             'RESTIC_REPOSITORY' => $temporaryDirectory.'/repository',
+            'RESTORE_STATUS_FILE' => $temporaryDirectory.'/restore-status',
         ]);
         $commands = file_get_contents($commandLog);
 
@@ -351,7 +381,9 @@ SH);
             ->toContain('frankenphp run --config /etc/frankenphp/Caddyfile')
             ->toContain('http://127.0.0.1:8080/up')
             ->toContain('app:recovery:verify /recovery/application-inventory.json')
-            ->not->toContain('queue:work', 'schedule:work', '--publish', 'rm --force', 'restored-database-password', 'correct horse battery staple');
+            ->not->toContain('queue:work', 'schedule:work', '--publish', 'rm --force', 'restored-database-password', 'correct horse battery staple')
+            ->and(file_get_contents($temporaryDirectory.'/restore-status'))
+            ->toStartWith('success ');
 
         file_put_contents($commandLog, '');
         $refusedProcess = runBackupRecoveryScript('restore-production-backup', [
@@ -364,11 +396,14 @@ SH);
             'RECOVERY_WORK_ROOT' => $temporaryDirectory,
             'RESTIC_PASSWORD_FILE' => $temporaryDirectory.'/repository-password',
             'RESTIC_REPOSITORY' => $temporaryDirectory.'/repository',
+            'RESTORE_STATUS_FILE' => $temporaryDirectory.'/restore-status',
         ]);
 
         expect($refusedProcess->getExitCode())->toBe(1)
             ->and($refusedProcess->getErrorOutput())->toContain('must not target the live production project')
-            ->and(file_get_contents($commandLog))->toBe('');
+            ->and(file_get_contents($commandLog))->toBe('')
+            ->and(file_get_contents($temporaryDirectory.'/restore-status'))
+            ->toStartWith('failed ');
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
     }

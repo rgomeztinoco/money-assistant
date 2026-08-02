@@ -1,0 +1,16 @@
+[Unit]
+Description=Evaluate Money Assistant host and application incidents
+After=money-assistant-production.service
+Wants=money-assistant-production.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/money-assistant/monitor.env
+ExecStart=/usr/local/sbin/monitor-production
+TimeoutStartSec=45s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/var/lib/money-assistant/monitor
+UMask=0077

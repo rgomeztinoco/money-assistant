@@ -1,0 +1,117 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+: "${MONITOR_DELIVERY_COMMAND:?Set MONITOR_DELIVERY_COMMAND}"
+: "${MONITOR_STATE_DIRECTORY:?Set MONITOR_STATE_DIRECTORY}"
+
+now_epoch="${MONITOR_NOW_EPOCH:-$(date +%s)}"
+reminder_seconds=86400
+tab="$(printf '\t')"
+failed_deliveries=0
+healthy_count=0
+unresolved_count=0
+
+case "$now_epoch" in
+    ''|*[!0-9]*) printf '%s\n' 'MONITOR_NOW_EPOCH must be an integer.' >&2; exit 2 ;;
+esac
+
+[ -x "$MONITOR_DELIVERY_COMMAND" ] || {
+    printf 'Monitoring delivery command is not executable: %s\n' "$MONITOR_DELIVERY_COMMAND" >&2
+    exit 2
+}
+[ -d "$MONITOR_STATE_DIRECTORY" ] || {
+    printf 'Monitoring state directory is unavailable: %s\n' "$MONITOR_STATE_DIRECTORY" >&2
+    exit 2
+}
+command -v flock >/dev/null 2>&1 || {
+    printf '%s\n' 'flock is required for monitoring incident deduplication.' >&2
+    exit 2
+}
+exec 9>"${MONITOR_STATE_DIRECTORY}/monitor.lock"
+flock --nonblock 9 || exit 0
+
+deliver()
+{
+    if ! "$MONITOR_DELIVERY_COMMAND" "$1"; then
+        failed_deliveries=$((failed_deliveries + 1))
+        return 1
+    fi
+}
+
+while IFS="$tab" read -r check_key severity state grace_seconds message; do
+    [ -n "$check_key" ] || continue
+    case "$check_key" in
+        *[!a-z0-9_-]*) printf 'Invalid monitoring check key: %s\n' "$check_key" >&2; exit 2 ;;
+    esac
+    case "$severity" in
+        warning|critical) ;;
+        *) printf 'Invalid monitoring severity for %s.\n' "$check_key" >&2; exit 2 ;;
+    esac
+    case "$state" in
+        healthy|failed) ;;
+        *) printf 'Invalid monitoring state for %s.\n' "$check_key" >&2; exit 2 ;;
+    esac
+    case "$grace_seconds" in
+        ''|*[!0-9]*) printf 'Invalid monitoring grace period for %s.\n' "$check_key" >&2; exit 2 ;;
+    esac
+    [ -n "$message" ] || {
+        printf 'Monitoring message is required for %s.\n' "$check_key" >&2
+        exit 2
+    }
+
+    state_file="${MONITOR_STATE_DIRECTORY}/${check_key}.state"
+    first_failed_at=0
+    alerted_at=0
+    last_sent_at=0
+    previous_severity=none
+    if [ -r "$state_file" ]; then
+        IFS=' ' read -r first_failed_at alerted_at last_sent_at previous_severity < "$state_file"
+    fi
+
+    if [ "$state" = healthy ]; then
+        healthy_count=$((healthy_count + 1))
+        if [ "$alerted_at" -gt 0 ]; then
+            if deliver "[Money Assistant][recovered] ${message}"; then
+                rm -f -- "$state_file"
+            fi
+        else
+            rm -f -- "$state_file"
+        fi
+        continue
+    fi
+
+    unresolved_count=$((unresolved_count + 1))
+    if [ "$first_failed_at" -eq 0 ]; then
+        first_failed_at="$now_epoch"
+    fi
+
+    due_at=$((first_failed_at + grace_seconds))
+    notification=''
+    if [ "$now_epoch" -ge "$due_at" ]; then
+        if [ "$alerted_at" -eq 0 ]; then
+            notification="[Money Assistant][${severity}] ${message}"
+        elif [ "$previous_severity" = warning ] && [ "$severity" = critical ]; then
+            notification="[Money Assistant][${severity}] ${message}"
+        elif [ $((now_epoch - last_sent_at)) -ge "$reminder_seconds" ]; then
+            notification="[Money Assistant][reminder][${severity}] ${message}"
+        fi
+    fi
+
+    if [ -n "$notification" ] && deliver "$notification"; then
+        [ "$alerted_at" -gt 0 ] || alerted_at="$now_epoch"
+        last_sent_at="$now_epoch"
+        previous_severity="$severity"
+    fi
+
+    temporary_state="${state_file}.tmp.$$"
+    printf '%s %s %s %s\n' \
+        "$first_failed_at" "$alerted_at" "$last_sent_at" "$previous_severity" \
+        > "$temporary_state"
+    mv -f -- "$temporary_state" "$state_file"
+done
+
+printf 'Monitoring summary: %s healthy, %s unresolved.\n' "$healthy_count" "$unresolved_count"
+[ "$failed_deliveries" -eq 0 ]

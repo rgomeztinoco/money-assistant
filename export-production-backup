@@ -16,6 +16,8 @@ workspace=''
 application_was_stopped=false
 maintenance_was_enabled=false
 openclaw_was_active=false
+backup_status_file="${BACKUP_EXPORT_STATUS_FILE:-${host_root}/var/lib/money-assistant/monitor/backup-status}"
+backup_completed=false
 
 fail()
 {
@@ -84,11 +86,22 @@ restore_application()
 
 cleanup()
 {
+    exit_status="$?"
     restore_application false
 
     if [ -n "$workspace" ] && [ -d "$workspace" ]; then
         rm -rf -- "$workspace"
     fi
+
+    install -d -m 0700 "$(dirname -- "$backup_status_file")"
+    temporary_status="${backup_status_file}.tmp.$$"
+    if [ "$backup_completed" = true ]; then
+        printf 'success %s\n' "$(date +%s)" > "$temporary_status"
+    else
+        printf 'failed %s\n' "$(date +%s)" > "$temporary_status"
+    fi
+    mv -f -- "$temporary_status" "$backup_status_file"
+    exit "$exit_status"
 }
 
 trap cleanup EXIT
@@ -177,10 +190,14 @@ for optional_path in \
     etc/ssh/sshd_config \
     etc/ssh/sshd_config.d \
     etc/sudoers.d/money-assistant-backup \
+    etc/sudoers.d/money-assistant-monitor \
     etc/systemd/system/money-assistant-production.service \
+    etc/systemd/system/money-assistant-monitor.service \
+    etc/systemd/system/money-assistant-monitor.timer \
     etc/systemd/system/money-assistant-tailnet.service \
     etc/ufw \
     home/money-assistant-backup/.ssh/authorized_keys \
+    home/money-assistant-monitor/.ssh/authorized_keys \
     var/lib/money-assistant/deployments \
     var/lib/tailscale/tailscaled.state; do
     if [ -e "${host_root}/${optional_path}" ]; then
@@ -246,3 +263,4 @@ maintenance_was_enabled=false
 openclaw_was_active=false
 
 age --encrypt --recipient-file "$age_recipient_file" "${workspace}/money-assistant-backup.tar"
+backup_completed=true

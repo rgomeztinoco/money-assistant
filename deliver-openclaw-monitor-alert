@@ -1,0 +1,21 @@
+#!/bin/sh
+
+set -eu
+
+: "${MONITOR_OPENCLAW_USER:?Set MONITOR_OPENCLAW_USER}"
+: "${MONITOR_OPENCLAW_ACCOUNT_ID:?Set MONITOR_OPENCLAW_ACCOUNT_ID}"
+: "${MONITOR_OPENCLAW_OWNER_SENDER_ID:?Set MONITOR_OPENCLAW_OWNER_SENDER_ID}"
+[ "$#" -eq 1 ] || {
+    printf '%s\n' 'usage: deliver-openclaw-monitor-alert MESSAGE' >&2
+    exit 2
+}
+
+openclaw_uid="$(id -u "$MONITOR_OPENCLAW_USER")"
+runuser --user "$MONITOR_OPENCLAW_USER" -- \
+    env "XDG_RUNTIME_DIR=/run/user/${openclaw_uid}" \
+    openclaw message send \
+        --channel telegram \
+        --account "$MONITOR_OPENCLAW_ACCOUNT_ID" \
+        --target "$MONITOR_OPENCLAW_OWNER_SENDER_ID" \
+        --message "$1" \
+        --json >/dev/null

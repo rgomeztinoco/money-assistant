@@ -1,0 +1,33 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+: "${MONITOR_TELEGRAM_BOT_TOKEN_FILE:?Set MONITOR_TELEGRAM_BOT_TOKEN_FILE}"
+: "${MONITOR_TELEGRAM_CHAT_ID:?Set MONITOR_TELEGRAM_CHAT_ID}"
+[ "$#" -eq 1 ] || {
+    printf '%s\n' 'usage: deliver-telegram-monitor-alert MESSAGE' >&2
+    exit 2
+}
+[ -s "$MONITOR_TELEGRAM_BOT_TOKEN_FILE" ] || {
+    printf '%s\n' 'The Telegram bot token file is empty or unreadable.' >&2
+    exit 2
+}
+
+telegram_token="$(tr -d '\r\n' < "$MONITOR_TELEGRAM_BOT_TOKEN_FILE")"
+case "$telegram_token" in
+    *[!A-Za-z0-9:_-]*|'') printf '%s\n' 'The Telegram bot token has an invalid format.' >&2; exit 2 ;;
+esac
+case "$MONITOR_TELEGRAM_CHAT_ID" in
+    *[!A-Za-z0-9_+-]*|'') printf '%s\n' 'The Telegram chat identifier has an invalid format.' >&2; exit 2 ;;
+esac
+
+escaped_message="$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+curl --connect-timeout 3 --fail --max-time 5 --silent --show-error --config - <<EOF
+url = "https://api.telegram.org/bot${telegram_token}/sendMessage"
+request = "POST"
+data-urlencode = "chat_id=${MONITOR_TELEGRAM_CHAT_ID}"
+data-urlencode = "text=${escaped_message}"
+output = "/dev/null"
+EOF

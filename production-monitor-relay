@@ -1,0 +1,37 @@
+#!/bin/sh
+
+set -eu
+
+environment_file="${MONITOR_ENVIRONMENT_FILE:-/etc/money-assistant/monitor.env}"
+delivery_command="${MONITOR_DELIVERY_COMMAND:-/usr/local/sbin/deliver-openclaw-monitor-alert}"
+
+fail()
+{
+    printf 'Production monitor relay rejected the request: %s\n' "$1" >&2
+    exit 2
+}
+
+[ -r "$environment_file" ] || fail 'monitor environment is unreadable'
+set -a
+. "$environment_file"
+set +a
+delivery_command="${MONITOR_DELIVERY_COMMAND:-$delivery_command}"
+
+if [ "$#" -eq 1 ]; then
+    message="$1"
+elif [ "$#" -eq 0 ]; then
+    IFS= read -r message || fail 'message is required'
+    if IFS= read -r _extra_line; then
+        fail 'message must contain exactly one line'
+    fi
+else
+    fail 'expected one message'
+fi
+[ -n "$message" ] || fail 'message is required'
+[ "${#message}" -le 1000 ] || fail 'message exceeds 1000 characters'
+if printf '%s' "$message" | LC_ALL=C grep -q '[^ -~]'; then
+    fail 'message contains unsupported characters'
+fi
+[ -x "$delivery_command" ] || fail 'delivery command is not executable'
+
+exec "$delivery_command" "$message"

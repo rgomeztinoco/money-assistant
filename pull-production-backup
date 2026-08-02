@@ -12,6 +12,29 @@ umask 077
 
 backup_lock_file="${BACKUP_LOCK_FILE:-/run/lock/money-assistant-backup-pull.lock}"
 restic_host="${RESTIC_HOST:-money-assistant-application-host}"
+backup_status_file="${BACKUP_STATUS_FILE:-/var/lib/money-assistant/monitor/backup-status}"
+backup_completed=false
+
+record_backup_status()
+{
+    install -d -m 0700 "$(dirname -- "$backup_status_file")"
+    temporary_status="${backup_status_file}.tmp.$$"
+    printf '%s %s\n' "$1" "$(date +%s)" > "$temporary_status"
+    mv -f -- "$temporary_status" "$backup_status_file"
+}
+
+finish()
+{
+    exit_status="$?"
+    if [ "$backup_completed" = true ]; then
+        record_backup_status success
+    else
+        record_backup_status failed
+    fi
+    exit "$exit_status"
+}
+
+trap finish EXIT
 
 command -v flock >/dev/null 2>&1
 command -v restic >/dev/null 2>&1
@@ -46,4 +69,5 @@ restic forget \
 
 restic check
 
+backup_completed=true
 printf '%s\n' 'Encrypted Money Assistant backup pull and retention completed.'

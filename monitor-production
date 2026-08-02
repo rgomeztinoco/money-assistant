@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+probe="${MONITOR_PROBE_COMMAND:-${script_directory}/production-monitor-probe}"
+evaluator="${MONITOR_EVALUATOR_COMMAND:-${script_directory}/evaluate-monitoring-incidents}"
+
+"$probe" | "$evaluator"

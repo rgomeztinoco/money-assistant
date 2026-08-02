@@ -20,7 +20,7 @@ for required_command in age-keygen restic ssh; do
     command -v "$required_command" >/dev/null 2>&1 || fail "$required_command is required"
 done
 
-install -d -m 0700 /etc/money-assistant
+install -d -m 0700 /etc/money-assistant /var/lib/money-assistant/monitor
 if [ ! -e "$environment_file" ]; then
     install -m 0600 "${script_directory}/backup-pull.env.example" "$environment_file"
     fail "configure ${environment_file} and run the installer again"

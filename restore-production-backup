@@ -23,6 +23,8 @@ web_container_created=false
 recovery_network_created=false
 recovery_volume_created=false
 started_at="$(date +%s)"
+restore_status_file="${RESTORE_STATUS_FILE:-/var/lib/money-assistant/monitor/restore-status}"
+restore_completed=false
 
 fail()
 {
@@ -46,30 +48,36 @@ manifest_value()
 
 cleanup()
 {
+    exit_status="$?"
     if [ "$keep_recovery" = true ]; then
         printf 'Retained isolated recovery environment %s at %s\n' "$recovery_name" "$workspace" >&2
-        return
+    else
+        if [ "$web_container_created" = true ]; then
+            docker rm --force "$web_container" >/dev/null 2>&1 || true
+        fi
+        if [ "$database_container_created" = true ]; then
+            docker rm --force "$database_container" >/dev/null 2>&1 || true
+        fi
+        if [ "$recovery_volume_created" = true ]; then
+            docker volume rm "$recovery_volume" >/dev/null 2>&1 || true
+        fi
+        if [ "$recovery_network_created" = true ]; then
+            docker network rm "$recovery_network" >/dev/null 2>&1 || true
+        fi
+        if [ -n "$workspace" ] && [ -d "$workspace" ]; then
+            rm -rf -- "$workspace"
+        fi
     fi
 
-    if [ "$web_container_created" = true ]; then
-        docker rm --force "$web_container" >/dev/null 2>&1 || true
+    install -d -m 0700 "$(dirname -- "$restore_status_file")"
+    temporary_status="${restore_status_file}.tmp.$$"
+    if [ "$restore_completed" = true ]; then
+        printf 'success %s\n' "$(date +%s)" > "$temporary_status"
+    else
+        printf 'failed %s\n' "$(date +%s)" > "$temporary_status"
     fi
-
-    if [ "$database_container_created" = true ]; then
-        docker rm --force "$database_container" >/dev/null 2>&1 || true
-    fi
-
-    if [ "$recovery_volume_created" = true ]; then
-        docker volume rm "$recovery_volume" >/dev/null 2>&1 || true
-    fi
-
-    if [ "$recovery_network_created" = true ]; then
-        docker network rm "$recovery_network" >/dev/null 2>&1 || true
-    fi
-
-    if [ -n "$workspace" ] && [ -d "$workspace" ]; then
-        rm -rf -- "$workspace"
-    fi
+    mv -f -- "$temporary_status" "$restore_status_file"
+    exit "$exit_status"
 }
 
 trap cleanup EXIT
@@ -276,4 +284,5 @@ docker exec "$web_container" /usr/local/bin/with-production-secrets \
 
 elapsed_seconds="$(( $(date +%s) - started_at ))"
 [ "$elapsed_seconds" -lt 86400 ] || fail 'isolated recovery exceeded the 24-hour recovery objective'
+restore_completed=true
 printf 'Isolated recovery verification completed in %s seconds.\n' "$elapsed_seconds"
