@@ -71,3 +71,4 @@ restic check
 
 backup_completed=true
 printf '%s\n' 'Encrypted Money Assistant backup pull and retention completed.'
+printf '%s\n' 'PRODUCTION_TRUST_EVIDENCE gate=backup-retention outcome=passed'

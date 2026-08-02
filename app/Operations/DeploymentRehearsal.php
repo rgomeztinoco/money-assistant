@@ -4,12 +4,15 @@ namespace App\Operations;
 
 use App\DeploymentRehearsalProbeKind;
 use App\Jobs\CompleteDeploymentRehearsalProbe;
+use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use LogicException;
 
 final class DeploymentRehearsal
 {
-    public function prepare(string $rehearsalId): void
+    public function prepare(string $rehearsalId, bool $holdForCrash = false): string
     {
         $queuedProbeId = (string) Str::uuid();
 
@@ -21,6 +24,7 @@ final class DeploymentRehearsal
                 'due_at' => now(),
                 'completed_at' => null,
                 'completion_count' => 0,
+                'requires_financial_effect' => $holdForCrash,
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -31,12 +35,22 @@ final class DeploymentRehearsal
                 'due_at' => now(),
                 'completed_at' => null,
                 'completion_count' => 0,
+                'requires_financial_effect' => false,
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
         ]);
 
+        if ($holdForCrash) {
+            Storage::disk('local')->put(
+                $this->crashHoldMarker($queuedProbeId),
+                $rehearsalId,
+            );
+        }
+
         CompleteDeploymentRehearsalProbe::dispatch($queuedProbeId);
+
+        return $queuedProbeId;
     }
 
     public function dispatchDueScheduledProbes(): void
@@ -63,13 +77,38 @@ final class DeploymentRehearsal
             ]);
     }
 
+    public function crashHoldMarker(string $probeId): string
+    {
+        return "deployment-crash-rehearsals/{$probeId}.hold";
+    }
+
+    public function crashStartedMarker(string $probeId): string
+    {
+        return "deployment-crash-rehearsals/{$probeId}.started";
+    }
+
+    public function financialEffectRehearsalIdForProbe(string $probeId): ?string
+    {
+        $probe = DB::table('deployment_rehearsal_probes')
+            ->where('id', $probeId)
+            ->first(['rehearsal_id', 'requires_financial_effect']);
+
+        if ($probe === null) {
+            throw new LogicException('The deployment rehearsal probe does not exist.');
+        }
+
+        return $probe->requires_financial_effect
+            ? (string) $probe->rehearsal_id
+            : null;
+    }
+
     public function isComplete(string $rehearsalId): bool
     {
         $probes = DB::table('deployment_rehearsal_probes')
             ->where('rehearsal_id', $rehearsalId)
-            ->get(['kind', 'completed_at', 'completion_count']);
+            ->get(['kind', 'completed_at', 'completion_count', 'requires_financial_effect']);
 
-        return $probes->count() === 2
+        $probesAreComplete = $probes->count() === 2
             && $probes->pluck('kind')->sort()->values()->all() === [
                 DeploymentRehearsalProbeKind::Queued->value,
                 DeploymentRehearsalProbeKind::Scheduled->value,
@@ -78,5 +117,22 @@ final class DeploymentRehearsal
                 fn (object $probe): bool => $probe->completed_at !== null
                     && $probe->completion_count === 1,
             );
+
+        if (! $probesAreComplete) {
+            return false;
+        }
+
+        if (! $probes->contains(fn (object $probe): bool => $probe->requires_financial_effect)) {
+            return true;
+        }
+
+        $transaction = Transaction::query()
+            ->where('deployment_rehearsal_id', $rehearsalId)
+            ->withCount('stateChanges')
+            ->first();
+
+        return $transaction !== null
+            && $transaction->voided_at !== null
+            && $transaction->state_changes_count === 1;
     }
 }

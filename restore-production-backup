@@ -137,6 +137,17 @@ printf '%s\n' "$application_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' || fail
 printf '%s\n' "$postgres_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' || fail 'backup PostgreSQL image is not pinned'
 printf '%s\n' "$openclaw_home" | grep -Eq '^/home/[A-Za-z0-9._-]+$' || fail 'backup OPENCLAW_HOME is invalid'
 
+if [ -n "${RECOVERY_APPLICATION_IMAGE_OVERRIDE:-}" ]; then
+    printf '%s\n' "$RECOVERY_APPLICATION_IMAGE_OVERRIDE" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
+        fail 'RECOVERY_APPLICATION_IMAGE_OVERRIDE must be pinned by sha256 digest'
+    application_image="$RECOVERY_APPLICATION_IMAGE_OVERRIDE"
+fi
+if [ -n "${RECOVERY_POSTGRES_IMAGE_OVERRIDE:-}" ]; then
+    printf '%s\n' "$RECOVERY_POSTGRES_IMAGE_OVERRIDE" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
+        fail 'RECOVERY_POSTGRES_IMAGE_OVERRIDE must be pinned by sha256 digest'
+    postgres_image="$RECOVERY_POSTGRES_IMAGE_OVERRIDE"
+fi
+
 mkdir -m 0700 "${workspace}/host" "${workspace}/application-storage"
 tar -xf "${workspace}/bundle/host-configuration.tar" -C "${workspace}/host"
 tar -xf "${workspace}/bundle/application-storage.tar" -C "${workspace}/application-storage"
@@ -266,6 +277,9 @@ docker run \
     frankenphp run --config /etc/frankenphp/Caddyfile >/dev/null
 web_container_created=true
 
+docker exec "$web_container" /usr/local/bin/with-production-secrets \
+    php artisan migrate --force --no-interaction
+
 web_ready=false
 for _attempt in $(seq 1 60); do
     if docker exec "$web_container" curl --fail --silent --show-error http://127.0.0.1:8080/up >/dev/null; then
@@ -286,3 +300,4 @@ elapsed_seconds="$(( $(date +%s) - started_at ))"
 [ "$elapsed_seconds" -lt 86400 ] || fail 'isolated recovery exceeded the 24-hour recovery objective'
 restore_completed=true
 printf 'Isolated recovery verification completed in %s seconds.\n' "$elapsed_seconds"
+printf '%s\n' 'PRODUCTION_TRUST_EVIDENCE gate=clean-restore outcome=passed'

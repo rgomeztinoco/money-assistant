@@ -1,0 +1,49 @@
+#!/bin/sh
+
+set -eu
+
+policy_file="${PRODUCTION_SECURITY_POLICY_FILE:-/etc/money-assistant/security-policy.env}"
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+
+fail()
+{
+    printf 'Production security update verification failed: %s\n' "$1" >&2
+    exit 1
+}
+
+[ -r /etc/os-release ] || fail '/etc/os-release is missing'
+. /etc/os-release
+[ "${ID:-}" = ubuntu ] || fail 'the production host must run Ubuntu'
+[ -r "$policy_file" ] || fail "security policy is not readable: $policy_file"
+. "$policy_file"
+
+[ "${AUTOMATIC_SECURITY_UPDATE_INTERVAL_DAYS:-}" = 1 ] || fail 'security updates must run daily'
+[ "${REBOOT_DEADLINE_DAYS:-}" = 7 ] || fail 'required reboots must complete within seven days'
+[ "${CRITICAL_REMOTE_FIX_DEADLINE_HOURS:-}" = 72 ] || fail 'critical remotely exploitable fixes must complete within 72 hours'
+[ "${PINNED_UPGRADE_REVIEW_INTERVAL_DAYS:-}" = 31 ] || fail 'pinned dependencies must be reviewed monthly'
+
+dpkg-query --show --showformat='${Status}\n' unattended-upgrades |
+    grep -Fxq 'install ok installed' || fail 'unattended-upgrades is not installed'
+
+apt_configuration="$(apt-config dump)"
+for required_setting in \
+    'APT::Periodic::Update-Package-Lists "1";' \
+    'APT::Periodic::Unattended-Upgrade "1";' \
+    'Unattended-Upgrade::Automatic-Reboot "true";' \
+    'Unattended-Upgrade::Automatic-Reboot-WithUsers "true";' \
+    'Unattended-Upgrade::Automatic-Reboot-Time "03:30";'; do
+    printf '%s\n' "$apt_configuration" | grep -Fq "$required_setting" ||
+        fail "APT setting is missing: $required_setting"
+done
+
+systemctl is-enabled --quiet apt-daily.timer apt-daily-upgrade.timer ||
+    fail 'APT security update timers are not enabled'
+systemctl is-active --quiet apt-daily.timer apt-daily-upgrade.timer ||
+    fail 'APT security update timers are not active'
+unattended-upgrade --dry-run --debug >/dev/null ||
+    fail 'the unattended security update dry run failed'
+CRITICAL_REMOTE_FIX_DEADLINE_HOURS="$CRITICAL_REMOTE_FIX_DEADLINE_HOURS" \
+    "${script_directory}/track-critical-security-fixes" verify
+
+printf '%s\n' 'Ubuntu security update policy verification passed.'
+printf '%s\n' 'PRODUCTION_TRUST_EVIDENCE gate=ubuntu-security-updates outcome=passed'

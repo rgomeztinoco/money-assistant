@@ -1,0 +1,156 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+ledger="${CRITICAL_REMOTE_FIX_LEDGER:-/var/lib/money-assistant/security/critical-remote-fixes.tsv}"
+now_epoch="${CRITICAL_REMOTE_FIX_NOW_EPOCH:-$(date +%s)}"
+deadline_hours="${CRITICAL_REMOTE_FIX_DEADLINE_HOURS:-72}"
+
+usage()
+{
+    printf '%s\n' 'Usage: track-critical-security-fixes detected NOTICE_ID [DETECTED_EPOCH]'
+    printf '%s\n' '       track-critical-security-fixes resolved NOTICE_ID [RESOLVED_EPOCH]'
+    printf '%s\n' '       track-critical-security-fixes verify'
+}
+
+fail()
+{
+    printf 'Critical security fix tracking failed: %s\n' "$1" >&2
+    exit 1
+}
+
+validate_epoch()
+{
+    case "$1" in
+        '' | *[!0-9]*) fail "$2 must be an integer epoch" ;;
+    esac
+}
+
+validate_notice_id()
+{
+    printf '%s\n' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' ||
+        fail 'NOTICE_ID contains unsupported characters'
+}
+
+ensure_ledger()
+{
+    install -d -m 0700 "$(dirname -- "$ledger")"
+    if [ ! -e "$ledger" ]; then
+        : > "$ledger"
+        chmod 0600 "$ledger"
+    fi
+    [ -f "$ledger" ] && [ ! -L "$ledger" ] && [ -r "$ledger" ] && [ -w "$ledger" ] ||
+        fail "ledger is not a writable regular file: $ledger"
+}
+
+write_ledger()
+{
+    source_file="$1"
+    temporary_ledger="$(mktemp "$(dirname -- "$ledger")/critical-fixes.XXXXXX")"
+    install -m 0600 "$source_file" "$temporary_ledger"
+    mv -f -- "$temporary_ledger" "$ledger"
+}
+
+record_detection()
+{
+    notice_id="$1"
+    detected_epoch="$2"
+    validate_notice_id "$notice_id"
+    validate_epoch "$detected_epoch" DETECTED_EPOCH
+    [ "$detected_epoch" -le "$now_epoch" ] || fail 'DETECTED_EPOCH cannot be in the future'
+    ! awk -F '\t' -v id="$notice_id" '$1 == id { found = 1 } END { exit !found }' "$ledger" ||
+        fail "notice is already tracked: $notice_id"
+    printf '%s\t%s\t-\n' "$notice_id" "$detected_epoch" >> "$ledger"
+    printf 'Tracking critical remote fix %s from epoch %s.\n' "$notice_id" "$detected_epoch"
+}
+
+record_resolution()
+{
+    notice_id="$1"
+    resolved_epoch="$2"
+    validate_notice_id "$notice_id"
+    validate_epoch "$resolved_epoch" RESOLVED_EPOCH
+    [ "$resolved_epoch" -le "$now_epoch" ] || fail 'RESOLVED_EPOCH cannot be in the future'
+
+    temporary_source="$(mktemp "$(dirname -- "$ledger")/critical-fixes-source.XXXXXX")"
+    found=false
+    while IFS="$(printf '\t')" read -r tracked_id detected_epoch tracked_resolution; do
+        [ -n "$tracked_id" ] || continue
+        if [ "$tracked_id" = "$notice_id" ]; then
+            found=true
+            [ "$tracked_resolution" = '-' ] || fail "notice is already resolved: $notice_id"
+            [ "$resolved_epoch" -ge "$detected_epoch" ] || fail 'RESOLVED_EPOCH cannot precede detection'
+            printf '%s\t%s\t%s\n' "$tracked_id" "$detected_epoch" "$resolved_epoch" >> "$temporary_source"
+        else
+            printf '%s\t%s\t%s\n' "$tracked_id" "$detected_epoch" "$tracked_resolution" >> "$temporary_source"
+        fi
+    done < "$ledger"
+    [ "$found" = true ] || fail "notice is not tracked: $notice_id"
+    write_ledger "$temporary_source"
+    rm -f -- "$temporary_source"
+    printf 'Resolved critical remote fix %s at epoch %s.\n' "$notice_id" "$resolved_epoch"
+}
+
+verify_ledger()
+{
+    deadline_seconds=$((deadline_hours * 3600))
+    while IFS="$(printf '\t')" read -r notice_id detected_epoch resolved_epoch; do
+        [ -n "$notice_id" ] || continue
+        validate_notice_id "$notice_id"
+        validate_epoch "$detected_epoch" DETECTED_EPOCH
+        completion_epoch="$now_epoch"
+        if [ "$resolved_epoch" != '-' ]; then
+            validate_epoch "$resolved_epoch" RESOLVED_EPOCH
+            completion_epoch="$resolved_epoch"
+        fi
+        [ "$completion_epoch" -ge "$detected_epoch" ] || fail "timeline is invalid for $notice_id"
+        [ $((completion_epoch - detected_epoch)) -le "$deadline_seconds" ] ||
+            fail "$notice_id exceeded the ${deadline_hours}-hour deadline"
+    done < "$ledger"
+    printf '%s\n' 'Critical remotely exploitable fix timelines are within policy.'
+}
+
+validate_epoch "$now_epoch" CRITICAL_REMOTE_FIX_NOW_EPOCH
+validate_epoch "$deadline_hours" CRITICAL_REMOTE_FIX_DEADLINE_HOURS
+[ "$deadline_hours" -gt 0 ] || fail 'CRITICAL_REMOTE_FIX_DEADLINE_HOURS must be positive'
+ensure_ledger
+command -v flock >/dev/null 2>&1 || fail 'flock is required'
+exec 9>"${ledger}.lock"
+flock -x 9
+
+[ "$#" -ge 1 ] || {
+    usage >&2
+    exit 2
+}
+
+action="$1"
+shift
+case "$action" in
+    detected)
+        [ "$#" -ge 1 ] && [ "$#" -le 2 ] || {
+            usage >&2
+            exit 2
+        }
+        record_detection "$1" "${2:-$now_epoch}"
+        ;;
+    resolved)
+        [ "$#" -ge 1 ] && [ "$#" -le 2 ] || {
+            usage >&2
+            exit 2
+        }
+        record_resolution "$1" "${2:-$now_epoch}"
+        ;;
+    verify)
+        [ "$#" -eq 0 ] || {
+            usage >&2
+            exit 2
+        }
+        verify_ledger
+        ;;
+    *)
+        usage >&2
+        fail "unknown action: $action"
+        ;;
+esac

@@ -1,0 +1,33 @@
+#!/bin/sh
+
+set -eu
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+apt_configuration_directory="${APT_CONFIGURATION_DIRECTORY:-/etc/apt/apt.conf.d}"
+policy_directory="${MONEY_ASSISTANT_CONFIGURATION_DIRECTORY:-/etc/money-assistant}"
+
+fail()
+{
+    printf 'Production security update installation failed: %s\n' "$1" >&2
+    exit 1
+}
+
+[ "$(id -u)" -eq 0 ] || fail 'run this installer as root'
+[ -r /etc/os-release ] || fail '/etc/os-release is missing'
+. /etc/os-release
+[ "${ID:-}" = ubuntu ] || fail 'the production host must run Ubuntu'
+
+apt-get update
+apt-get install --yes unattended-upgrades update-notifier-common
+install -d -m 0755 "$apt_configuration_directory"
+install -d -m 0755 "$policy_directory"
+install -m 0644 \
+    "${script_directory}/money-assistant-unattended-upgrades.conf" \
+    "${apt_configuration_directory}/60money-assistant-unattended-upgrades"
+install -m 0644 \
+    "${script_directory}/production-security-policy.env" \
+    "${policy_directory}/security-policy.env"
+systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+"${script_directory}/verify-production-security-updates"
+
+printf '%s\n' 'Daily Ubuntu security updates and bounded reboot policy are installed.'

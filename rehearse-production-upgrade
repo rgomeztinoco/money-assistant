@@ -1,0 +1,171 @@
+#!/bin/sh
+
+set -eu
+
+backup_status_file="${BACKUP_STATUS_FILE:-/var/lib/money-assistant/monitor/backup-status}"
+state_directory="${DEPLOYMENT_STATE_DIRECTORY:-/var/lib/money-assistant/deployments}"
+deployment_record="${state_directory}/current.json"
+now_epoch="${PRODUCTION_UPGRADE_NOW_EPOCH:-$(date +%s)}"
+restore_production_backup="${RESTORE_PRODUCTION_BACKUP:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/restore-production-backup}"
+rehearse_openclaw_upgrade="${REHEARSE_OPENCLAW_UPGRADE:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/rehearse-openclaw-upgrade}"
+dependency_review=''
+acceptance_matrix=''
+rollback_plan=''
+candidate_database_image=''
+candidate_openclaw_version=''
+rollback_application_image=''
+rollback_database_image=''
+rollback_openclaw_version=''
+
+usage()
+{
+    printf '%s\n' 'Usage: rehearse-production-upgrade REPOSITORY@sha256:DIGEST --database-image REPOSITORY@sha256:DIGEST --openclaw-version VERSION --rollback-app-image REPOSITORY@sha256:DIGEST --rollback-database-image REPOSITORY@sha256:DIGEST --openclaw-rollback-version VERSION --dependency-review FILE --acceptance-matrix FILE --rollback-plan FILE'
+}
+
+fail()
+{
+    printf 'Production upgrade rehearsal failed: %s\n' "$1" >&2
+    exit 1
+}
+
+json_value()
+{
+    requested_key="$1"
+    sed -n "s/.*\"${requested_key}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$deployment_record" |
+        head -n 1
+}
+
+[ "$#" -ge 1 ] || {
+    usage >&2
+    exit 2
+}
+candidate_image="$1"
+shift
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --database-image)
+            [ "$#" -ge 2 ] || fail '--database-image requires a value'
+            candidate_database_image="$2"
+            shift 2
+            ;;
+        --openclaw-version)
+            [ "$#" -ge 2 ] || fail '--openclaw-version requires a value'
+            candidate_openclaw_version="$2"
+            shift 2
+            ;;
+        --rollback-app-image)
+            [ "$#" -ge 2 ] || fail '--rollback-app-image requires a value'
+            rollback_application_image="$2"
+            shift 2
+            ;;
+        --rollback-database-image)
+            [ "$#" -ge 2 ] || fail '--rollback-database-image requires a value'
+            rollback_database_image="$2"
+            shift 2
+            ;;
+        --openclaw-rollback-version)
+            [ "$#" -ge 2 ] || fail '--openclaw-rollback-version requires a value'
+            rollback_openclaw_version="$2"
+            shift 2
+            ;;
+        --dependency-review)
+            [ "$#" -ge 2 ] || fail '--dependency-review requires a file'
+            dependency_review="$2"
+            shift 2
+            ;;
+        --acceptance-matrix)
+            [ "$#" -ge 2 ] || fail '--acceptance-matrix requires a file'
+            acceptance_matrix="$2"
+            shift 2
+            ;;
+        --rollback-plan)
+            [ "$#" -ge 2 ] || fail '--rollback-plan requires a file'
+            rollback_plan="$2"
+            shift 2
+            ;;
+        *)
+            usage >&2
+            fail "unknown argument: $1"
+            ;;
+    esac
+done
+
+printf '%s\n' "$candidate_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
+    fail 'the candidate image must include a repository and sha256 digest'
+printf '%s\n' "$candidate_database_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
+    fail 'the candidate database image must include a repository and sha256 digest'
+printf '%s\n' "$candidate_openclaw_version" | grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$' ||
+    fail 'the candidate OpenClaw version must be a pinned calendar version'
+printf '%s\n' "$rollback_application_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
+    fail 'the rollback application image must include a repository and sha256 digest'
+printf '%s\n' "$rollback_database_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
+    fail 'the rollback database image must include a repository and sha256 digest'
+printf '%s\n' "$rollback_openclaw_version" | grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$' ||
+    fail 'the rollback OpenClaw version must be a pinned calendar version'
+[ "$candidate_image" != "$rollback_application_image" ] ||
+    fail 'candidate and rollback application images must differ'
+[ "$candidate_database_image" != "$rollback_database_image" ] ||
+    fail 'candidate and rollback database images must differ'
+[ "$candidate_openclaw_version" != "$rollback_openclaw_version" ] ||
+    fail 'candidate and rollback OpenClaw versions must differ'
+[ -r "$deployment_record" ] || fail "deployment record is not readable: $deployment_record"
+[ "$(json_value application_image)" = "$candidate_image" ] ||
+    fail 'the candidate application image is not active on the target deployment'
+[ "$(json_value database_image)" = "$candidate_database_image" ] ||
+    fail 'the candidate database image is not active on the target deployment'
+[ "$(json_value openclaw_version)" = "$candidate_openclaw_version" ] ||
+    fail 'the candidate OpenClaw version is not active on the target deployment'
+case "$now_epoch" in
+    '' | *[!0-9]*) fail 'PRODUCTION_UPGRADE_NOW_EPOCH must be an integer' ;;
+esac
+
+for evidence_file in "$dependency_review" "$acceptance_matrix" "$rollback_plan"; do
+    [ -f "$evidence_file" ] && [ ! -L "$evidence_file" ] && [ -s "$evidence_file" ] ||
+        fail 'dependency review, acceptance matrix, and rollback plan must be non-empty regular files'
+done
+
+grep -Fxq "DEPENDENCY_REVIEW outcome=passed application_image=${candidate_image} database_image=${candidate_database_image} openclaw_version=${candidate_openclaw_version} rollback_application_image=${rollback_application_image} rollback_database_image=${rollback_database_image} rollback_openclaw_version=${rollback_openclaw_version}" "$dependency_review" ||
+    fail 'dependency review evidence does not match every pinned candidate'
+grep -Fxq "ACCEPTANCE_MATRIX outcome=passed application_image=${candidate_image}" "$acceptance_matrix" ||
+    fail 'acceptance matrix evidence does not match the pinned application candidate'
+grep -Fxq "ROLLBACK_PLAN application_image=${rollback_application_image} database_image=${rollback_database_image} openclaw_version=${rollback_openclaw_version}" "$rollback_plan" ||
+    fail 'documented rollback plan does not match every rollback pin'
+
+[ -r "$backup_status_file" ] || fail 'a fresh encrypted backup status is required'
+backup_result=''
+backup_epoch=''
+read -r backup_result backup_epoch < "$backup_status_file" || true
+case "$backup_epoch" in
+    '' | *[!0-9]*) fail 'a fresh encrypted backup status is required' ;;
+esac
+if [ "$backup_result" != success ] ||
+    [ "$backup_epoch" -gt "$now_epoch" ] ||
+    [ $((now_epoch - backup_epoch)) -ge 129600 ]; then
+    fail 'a fresh encrypted backup from the last 36 hours is required'
+fi
+
+[ -x "$restore_production_backup" ] || fail 'the isolated restore command is not executable'
+[ -x "$rehearse_openclaw_upgrade" ] || fail 'the OpenClaw upgrade rehearsal command is not executable'
+RECOVERY_APPLICATION_IMAGE_OVERRIDE="$candidate_image" \
+RECOVERY_POSTGRES_IMAGE_OVERRIDE="$candidate_database_image" \
+    "$restore_production_backup" latest
+RECOVERY_APPLICATION_IMAGE_OVERRIDE="$rollback_application_image" \
+RECOVERY_POSTGRES_IMAGE_OVERRIDE="$rollback_database_image" \
+    "$restore_production_backup" latest
+
+openclaw_proof="$($rehearse_openclaw_upgrade "$candidate_openclaw_version" "$rollback_openclaw_version")"
+printf '%s\n' "$openclaw_proof"
+printf '%s\n' "$openclaw_proof" |
+    awk -v candidate="$candidate_openclaw_version" -v rollback="$rollback_openclaw_version" '
+        $1 == "OPENCLAW_UPGRADE_REHEARSAL" &&
+        $2 == "outcome=passed" &&
+        $3 == "candidate_version=" candidate &&
+        $4 == "rollback_version=" rollback &&
+        $5 == "running_version=" candidate { passed = 1 }
+        END { exit !passed }
+    ' ||
+    fail 'OpenClaw candidate upgrade, health check, rollback, and reapply did not pass'
+
+printf 'Pinned upgrade rehearsal passed for %s.\n' "$candidate_image"
+printf '%s\n' 'PRODUCTION_TRUST_EVIDENCE gate=pinned-upgrade outcome=passed'

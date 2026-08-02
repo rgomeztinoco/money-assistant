@@ -1,0 +1,25 @@
+#!/bin/sh
+
+set -eu
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+environment_file="${ENVIRONMENT_FILE:-/etc/money-assistant/production.env}"
+project_name="${COMPOSE_PROJECT_NAME:-money-assistant-production}"
+gate="${1:-}"
+
+case "$gate" in
+    purge) trust_gate='retention-purge' ;;
+    tombstone) trust_gate='audit-tombstone' ;;
+    *)
+        printf '%s\n' 'Usage: rehearse-production-retention purge|tombstone' >&2
+        exit 2
+        ;;
+esac
+
+docker compose \
+    --project-name "$project_name" \
+    --env-file "$environment_file" \
+    --file "${script_directory}/compose.production.yaml" \
+    exec --no-TTY web \
+    /usr/local/bin/with-production-secrets \
+    php artisan app:rehearse-production-retention "$trust_gate" --no-interaction

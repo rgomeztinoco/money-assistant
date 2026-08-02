@@ -1,0 +1,72 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+environment_file="${INDEPENDENT_MONITOR_ENVIRONMENT_FILE:-/etc/money-assistant/monitor-independent.env}"
+work_root="${INDEPENDENT_ALERT_REHEARSAL_WORK_ROOT:-/run}"
+workspace=''
+
+fail()
+{
+    printf 'Independent alert rehearsal failed: %s\n' "$1" >&2
+    exit 1
+}
+
+cleanup()
+{
+    if [ -n "$workspace" ] && [ -d "$workspace" ]; then
+        rm -rf -- "$workspace"
+    fi
+}
+
+trap cleanup EXIT
+
+[ -r "$environment_file" ] || fail "environment file is not readable: $environment_file"
+[ -d "$work_root" ] || fail "work root does not exist: $work_root"
+set -a
+. "$environment_file"
+set +a
+: "${MONITOR_DIRECT_DELIVERY_COMMAND:?MONITOR_DIRECT_DELIVERY_COMMAND must use the independent delivery path}"
+[ "$MONITOR_DIRECT_DELIVERY_COMMAND" != "${MONITOR_PRIMARY_DELIVERY_COMMAND:-}" ] ||
+    fail 'the independent alert cannot use the primary delivery command'
+[ "$MONITOR_DIRECT_DELIVERY_COMMAND" != "${MONITOR_DELIVERY_COMMAND:-}" ] ||
+    fail 'the independent alert cannot use the application primary delivery path'
+
+workspace="$(mktemp -d "${work_root}/money-assistant-alert-rehearsal.XXXXXX")"
+probe_command="${workspace}/probe"
+probe_state="${workspace}/probe-state"
+cat > "$probe_command" <<'SH'
+#!/bin/sh
+if [ "$(cat "$INDEPENDENT_ALERT_PROBE_STATE")" = failed ]; then
+    printf '%s\n' 'host=failed application=failed openclaw=failed'
+else
+    printf '%s\n' 'host=healthy application=healthy openclaw=healthy'
+fi
+SH
+chmod 0700 "$probe_command"
+printf '%s\n' failed > "$probe_state"
+
+now_epoch="$(date +%s)"
+HEARTBEAT_PROBE_COMMAND="$probe_command" \
+INDEPENDENT_ALERT_PROBE_STATE="$probe_state" \
+MONITOR_NOW_EPOCH="$now_epoch" \
+MONITOR_STATE_DIRECTORY="${workspace}/state" \
+    "${script_directory}/monitor-independent-heartbeat"
+HEARTBEAT_PROBE_COMMAND="$probe_command" \
+INDEPENDENT_ALERT_PROBE_STATE="$probe_state" \
+MONITOR_NOW_EPOCH="$((now_epoch + 300))" \
+MONITOR_STATE_DIRECTORY="${workspace}/state" \
+    "${script_directory}/monitor-independent-heartbeat"
+
+printf '%s\n' healthy > "$probe_state"
+HEARTBEAT_PROBE_COMMAND="$probe_command" \
+INDEPENDENT_ALERT_PROBE_STATE="$probe_state" \
+MONITOR_NOW_EPOCH="$((now_epoch + 301))" \
+MONITOR_STATE_DIRECTORY="${workspace}/state" \
+    "${script_directory}/monitor-independent-heartbeat"
+
+printf '%s\n' 'Independent failure and recovery alerts were accepted by the independent delivery path.'
+printf '%s\n' 'PRODUCTION_TRUST_EVIDENCE gate=independent-alert outcome=passed'

@@ -385,7 +385,9 @@ test('deployments record pinned application and database versions without secret
         ->toContain('database_image')
         ->toContain('application_revision')
         ->toContain('database_version')
+        ->toContain('openclaw_version')
         ->toContain('previous_application_image')
+        ->toContain('production-trust-gate')
         ->not->toContain('docker compose config')
         ->not->toContain('set -x');
 });

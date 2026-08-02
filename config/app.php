@@ -123,4 +123,6 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'deployment_rehearsal_crash_hold_seconds' => (int) env('DEPLOYMENT_REHEARSAL_CRASH_HOLD_SECONDS', 20),
+
 ];
