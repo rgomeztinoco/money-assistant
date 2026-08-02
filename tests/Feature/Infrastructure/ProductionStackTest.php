@@ -107,6 +107,17 @@ test('only PostgreSQL and the pinned reverse proxy expose loopback ports', funct
     }
 });
 
+test('the host-networked worker can reach PostgreSQL without opening the application network', function (): void {
+    $services = $this->productionCompose['services'];
+    $networks = $this->productionCompose['networks'];
+
+    expect($services['postgres']['networks'])
+        ->toContain('application', 'database-host')
+        ->and($networks['application']['internal'])->toBeTrue()
+        ->and($networks['database-host'])
+        ->not->toHaveKey('internal');
+});
+
 test('Tailscale is the exclusive HTTPS ingress for approved owner devices', function () {
     $policy = file_get_contents(base_path('tailscale-policy.hujson'));
     $service = file_get_contents(base_path('money-assistant-tailnet.service'));

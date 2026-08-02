@@ -72,6 +72,7 @@ services:
               target: /var/lib/postgresql
         networks:
             - application
+            - database-host
         ports:
             - target: 5432
               published: 5432
@@ -285,6 +286,8 @@ services:
 networks:
     application:
         internal: true
+    database-host:
+        driver: bridge
     edge:
         driver: bridge
 

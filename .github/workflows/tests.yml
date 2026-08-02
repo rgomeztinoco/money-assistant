@@ -39,6 +39,9 @@ jobs:
       - name: Setup Application
         run: vendor/bin/sail composer setup
 
+      - name: Install Playwright browser
+        run: vendor/bin/sail npx playwright install --with-deps chromium
+
       - name: Run CI Checks
         run: vendor/bin/sail composer ci:check
 
@@ -93,7 +96,12 @@ jobs:
             echo "POSTGRES_IMAGE=postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e"
             echo "POSTGRES_IMAGE_PULL_POLICY=never"
             echo "PRIVATE_HOSTNAME=money-assistant.test"
+            echo "GOOGLE_GMAIL_CLIENT_SECRET_FILE=/tmp/money-assistant-production-smoke/google_gmail_client_secret"
             echo "OPENCLAW_CAPABILITY_KEY_ID=openclaw-service-ci"
+            echo "OPENCLAW_CAPABILITY_AGENT_ID=money-assistant-ci"
+            echo "OPENCLAW_CAPABILITY_ACCOUNT_ID=money-assistant-owner-ci"
+            echo "OPENCLAW_CAPABILITY_CONVERSATION_ID=ci-owner-conversation"
+            echo "OPENCLAW_CAPABILITY_OWNER_SENDER_ID=ci-owner"
             echo "OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE=/tmp/money-assistant-production-smoke/openclaw_capability_public_key"
             echo "OPENCLAW_HOOK_TOKEN_FILE=/tmp/money-assistant-production-smoke/openclaw_hook_token"
             echo "OPENCLAW_HOOK_URL=http://127.0.0.1:19789/hooks/money-assistant"
@@ -118,14 +126,34 @@ jobs:
           openssl rand -base64 32 |
             tee /tmp/money-assistant-production-smoke/database_password >/dev/null
           openssl rand -base64 32 |
+            tee /tmp/money-assistant-production-smoke/google_gmail_client_secret >/dev/null
+          openssl rand -base64 32 |
             tee /tmp/money-assistant-production-smoke/openclaw_capability_public_key >/dev/null
           openssl rand -base64 32 |
             tee /tmp/money-assistant-production-smoke/openclaw_hook_token >/dev/null
           chmod 0600 /tmp/money-assistant-production-smoke/application_key
           chmod 0600 /tmp/money-assistant-production-smoke/application_previous_keys
           chmod 0600 /tmp/money-assistant-production-smoke/database_password
+          chmod 0600 /tmp/money-assistant-production-smoke/google_gmail_client_secret
           chmod 0600 /tmp/money-assistant-production-smoke/openclaw_capability_public_key
           chmod 0600 /tmp/money-assistant-production-smoke/openclaw_hook_token
+
+          for secret_file in \
+            "$APP_KEY_FILE" \
+            "$DB_PASSWORD_FILE" \
+            "$GOOGLE_GMAIL_CLIENT_SECRET_FILE" \
+            "$OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE" \
+            "$OPENCLAW_HOOK_TOKEN_FILE"; do
+            printf '::add-mask::%s\n' "$(tr -d '\r\n' < "$secret_file")"
+          done
+
+          sudo chown root:root \
+            "$APP_KEY_FILE" \
+            "$APP_PREVIOUS_KEYS_FILE" \
+            "$DB_PASSWORD_FILE" \
+            "$GOOGLE_GMAIL_CLIENT_SECRET_FILE" \
+            "$OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE" \
+            "$OPENCLAW_HOOK_TOKEN_FILE"
 
           {
             echo "APP_IMAGE_REPOSITORY=$APP_IMAGE_REPOSITORY"
@@ -134,7 +162,13 @@ jobs:
             echo "POSTGRES_IMAGE=$POSTGRES_IMAGE"
             echo "POSTGRES_IMAGE_PULL_POLICY=never"
             echo "PRIVATE_HOSTNAME=$PRIVATE_HOSTNAME"
+            echo "GOOGLE_GMAIL_CLIENT_ID=ci-rehearsal-client"
+            echo "GOOGLE_GMAIL_CLIENT_SECRET_FILE=$GOOGLE_GMAIL_CLIENT_SECRET_FILE"
             echo "OPENCLAW_CAPABILITY_KEY_ID=$OPENCLAW_CAPABILITY_KEY_ID"
+            echo "OPENCLAW_CAPABILITY_AGENT_ID=$OPENCLAW_CAPABILITY_AGENT_ID"
+            echo "OPENCLAW_CAPABILITY_ACCOUNT_ID=$OPENCLAW_CAPABILITY_ACCOUNT_ID"
+            echo "OPENCLAW_CAPABILITY_CONVERSATION_ID=$OPENCLAW_CAPABILITY_CONVERSATION_ID"
+            echo "OPENCLAW_CAPABILITY_OWNER_SENDER_ID=$OPENCLAW_CAPABILITY_OWNER_SENDER_ID"
             echo "OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE=$OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE"
             echo "OPENCLAW_HOOK_TOKEN_FILE=$OPENCLAW_HOOK_TOKEN_FILE"
             echo "OPENCLAW_HOOK_URL=$OPENCLAW_HOOK_URL"
@@ -251,15 +285,34 @@ jobs:
             "$APP_KEY_FILE" \
             "$APP_PREVIOUS_KEYS_FILE" \
             "$DB_PASSWORD_FILE" \
+            "$GOOGLE_GMAIL_CLIENT_SECRET_FILE" \
             "$OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE" \
             "$OPENCLAW_HOOK_TOKEN_FILE"; do
-            if grep --quiet --fixed-strings --file "$secret_file" "$REHEARSAL_OUTPUT"; then
+            if sudo grep --quiet --fixed-strings --file "$secret_file" "$REHEARSAL_OUTPUT"; then
               printf 'A rehearsal credential was exposed from %s.\n' "$secret_file" >&3
               exit 1
             fi
           done
 
           printf '%s\n' 'Failed deployment rollback, durable work, health, and credential isolation passed.' >&3
+
+      - name: Report production rehearsal failure
+        if: failure()
+        run: |
+          if [ -f "${REHEARSAL_OUTPUT:-}" ]; then
+            cat "$REHEARSAL_OUTPUT"
+          fi
+
+          if [ -f "${PRODUCTION_ENV_FILE:-}" ]; then
+            docker compose \
+              --env-file "$PRODUCTION_ENV_FILE" \
+              --file compose.production.yaml \
+              ps --all || true
+            docker compose \
+              --env-file "$PRODUCTION_ENV_FILE" \
+              --file compose.production.yaml \
+              logs --no-color postgres migrate web worker scheduler proxy || true
+          fi
 
       - name: Stop production stack
         if: always()
