@@ -1,0 +1,62 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+systemd_directory="${SYSTEMD_DIRECTORY:-/etc/systemd/system}"
+environment_file="${BACKUP_PULL_ENVIRONMENT_FILE:-/etc/money-assistant/backup-pull.env}"
+
+fail()
+{
+    printf 'Backup pull service installation failed: %s\n' "$1" >&2
+    exit 1
+}
+
+[ "$(id -u)" -eq 0 ] || fail 'run this installer as root on the second device'
+
+for required_command in age-keygen restic ssh; do
+    command -v "$required_command" >/dev/null 2>&1 || fail "$required_command is required"
+done
+
+install -d -m 0700 /etc/money-assistant
+if [ ! -e "$environment_file" ]; then
+    install -m 0600 "${script_directory}/backup-pull.env.example" "$environment_file"
+    fail "configure ${environment_file} and run the installer again"
+fi
+chmod 0600 "$environment_file"
+
+set -a
+. "$environment_file"
+set +a
+
+: "${APPLICATION_BACKUP_KNOWN_HOSTS_FILE:?Set APPLICATION_BACKUP_KNOWN_HOSTS_FILE}"
+: "${APPLICATION_BACKUP_SSH_KEY_FILE:?Set APPLICATION_BACKUP_SSH_KEY_FILE}"
+: "${BACKUP_AGE_IDENTITY_FILE:?Set BACKUP_AGE_IDENTITY_FILE}"
+: "${RESTIC_PASSWORD_FILE:?Set RESTIC_PASSWORD_FILE}"
+: "${RESTIC_REPOSITORY:?Set RESTIC_REPOSITORY}"
+
+for private_file in \
+    "$APPLICATION_BACKUP_SSH_KEY_FILE" \
+    "$BACKUP_AGE_IDENTITY_FILE" \
+    "$RESTIC_PASSWORD_FILE"; do
+    [ -s "$private_file" ] || fail "required private file is empty or unreadable: $private_file"
+    chmod 0600 "$private_file"
+done
+[ -s "$APPLICATION_BACKUP_KNOWN_HOSTS_FILE" ] || fail 'the pinned application-host key file is empty or unreadable'
+age-keygen -y "$BACKUP_AGE_IDENTITY_FILE" >/dev/null
+
+install -m 0755 "${script_directory}/pull-production-backup" /usr/local/sbin/pull-production-backup
+install -m 0755 "${script_directory}/restore-production-backup" /usr/local/sbin/restore-production-backup
+install -m 0644 "${script_directory}/money-assistant-backup-pull.service" "${systemd_directory}/money-assistant-backup-pull.service"
+install -m 0644 "${script_directory}/money-assistant-backup-pull.timer" "${systemd_directory}/money-assistant-backup-pull.timer"
+
+if ! restic snapshots >/dev/null 2>&1; then
+    restic init
+fi
+
+systemctl daemon-reload
+systemctl enable --now money-assistant-backup-pull.timer
+
+printf '%s\n' 'Installed the independent daily backup pull on the second device.'

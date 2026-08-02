@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+umask 077
+
+: "${APPLICATION_BACKUP_HOST:?Set APPLICATION_BACKUP_HOST}"
+: "${APPLICATION_BACKUP_KNOWN_HOSTS_FILE:?Set APPLICATION_BACKUP_KNOWN_HOSTS_FILE}"
+: "${APPLICATION_BACKUP_SSH_KEY_FILE:?Set APPLICATION_BACKUP_SSH_KEY_FILE}"
+: "${RESTIC_PASSWORD_FILE:?Set RESTIC_PASSWORD_FILE}"
+: "${RESTIC_REPOSITORY:?Set RESTIC_REPOSITORY}"
+
+backup_lock_file="${BACKUP_LOCK_FILE:-/run/lock/money-assistant-backup-pull.lock}"
+restic_host="${RESTIC_HOST:-money-assistant-application-host}"
+
+command -v flock >/dev/null 2>&1
+command -v restic >/dev/null 2>&1
+command -v ssh >/dev/null 2>&1
+
+exec 9>"$backup_lock_file"
+flock --nonblock 9 || {
+    printf '%s\n' 'A Money Assistant backup pull is already running.' >&2
+    exit 1
+}
+
+ssh \
+    -o BatchMode=yes \
+    -o ClearAllForwardings=yes \
+    -o IdentitiesOnly=yes \
+    -o StrictHostKeyChecking=yes \
+    -o "UserKnownHostsFile=${APPLICATION_BACKUP_KNOWN_HOSTS_FILE}" \
+    -i "$APPLICATION_BACKUP_SSH_KEY_FILE" \
+    -T "$APPLICATION_BACKUP_HOST" export \
+    | restic backup \
+        --stdin \
+        --stdin-filename money-assistant-backup.tar.age \
+        --host "$restic_host" \
+        --tag money-assistant
+
+restic forget \
+    --tag money-assistant \
+    --keep-daily 7 \
+    --keep-weekly 5 \
+    --keep-monthly 12 \
+    --prune
+
+restic check
+
+printf '%s\n' 'Encrypted Money Assistant backup pull and retention completed.'

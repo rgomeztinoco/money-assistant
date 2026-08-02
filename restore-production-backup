@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+umask 077
+
+: "${BACKUP_AGE_IDENTITY_FILE:?Set BACKUP_AGE_IDENTITY_FILE}"
+: "${OWNER_PASSWORD_FILE:?Set OWNER_PASSWORD_FILE}"
+: "${RESTIC_PASSWORD_FILE:?Set RESTIC_PASSWORD_FILE}"
+: "${RESTIC_REPOSITORY:?Set RESTIC_REPOSITORY}"
+
+snapshot="${1:-latest}"
+recovery_name="${RECOVERY_NAME:-money-assistant-recovery-$(date -u '+%Y%m%d%H%M%S')}"
+keep_recovery="${KEEP_RECOVERY:-false}"
+work_root="${RECOVERY_WORK_ROOT:-/run}"
+workspace=''
+database_container="${recovery_name}-postgres"
+web_container="${recovery_name}-web"
+recovery_network="${recovery_name}-network"
+recovery_volume="${recovery_name}-postgres-data"
+database_container_created=false
+web_container_created=false
+recovery_network_created=false
+recovery_volume_created=false
+started_at="$(date +%s)"
+
+fail()
+{
+    printf 'Production backup restore failed: %s\n' "$1" >&2
+    exit 1
+}
+
+manifest_value()
+{
+    requested_key="$1"
+
+    while IFS='=' read -r key value; do
+        if [ "$key" = "$requested_key" ]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done < "${workspace}/bundle/manifest.env"
+
+    return 1
+}
+
+cleanup()
+{
+    if [ "$keep_recovery" = true ]; then
+        printf 'Retained isolated recovery environment %s at %s\n' "$recovery_name" "$workspace" >&2
+        return
+    fi
+
+    if [ "$web_container_created" = true ]; then
+        docker rm --force "$web_container" >/dev/null 2>&1 || true
+    fi
+
+    if [ "$database_container_created" = true ]; then
+        docker rm --force "$database_container" >/dev/null 2>&1 || true
+    fi
+
+    if [ "$recovery_volume_created" = true ]; then
+        docker volume rm "$recovery_volume" >/dev/null 2>&1 || true
+    fi
+
+    if [ "$recovery_network_created" = true ]; then
+        docker network rm "$recovery_network" >/dev/null 2>&1 || true
+    fi
+
+    if [ -n "$workspace" ] && [ -d "$workspace" ]; then
+        rm -rf -- "$workspace"
+    fi
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+printf '%s\n' "$recovery_name" | grep -Eq '^[a-zA-Z0-9][a-zA-Z0-9_.-]+$' ||
+    fail 'RECOVERY_NAME contains unsupported characters'
+case "$recovery_name" in
+    money-assistant-production|*production*) fail 'RECOVERY_NAME must not target the live production project' ;;
+esac
+
+for required_command in age docker restic sha256sum tar; do
+    command -v "$required_command" >/dev/null 2>&1 || fail "$required_command is required"
+done
+
+for required_file in \
+    "$BACKUP_AGE_IDENTITY_FILE" \
+    "$OWNER_PASSWORD_FILE" \
+    "$RESTIC_PASSWORD_FILE"; do
+    [ -r "$required_file" ] || fail "required recovery file is not readable: $required_file"
+done
+[ -d "$work_root" ] || fail "recovery work root does not exist: $work_root"
+
+workspace="$(mktemp -d "${work_root}/money-assistant-recovery.XXXXXX")"
+mkdir -m 0700 "${workspace}/bundle"
+
+restic dump "$snapshot" money-assistant-backup.tar.age \
+    | age --decrypt --identity "$BACKUP_AGE_IDENTITY_FILE" \
+    | tar -xf - -C "${workspace}/bundle"
+
+for required_bundle_file in \
+    SHA256SUMS \
+    application-inventory.json \
+    application-storage.tar \
+    database.dump \
+    host-configuration.tar \
+    manifest.env \
+    version-inventory.txt; do
+    [ -r "${workspace}/bundle/${required_bundle_file}" ] ||
+        fail "recovery bundle is missing ${required_bundle_file}"
+done
+
+(
+    cd "${workspace}/bundle"
+    sha256sum --check SHA256SUMS
+)
+
+[ "$(manifest_value BACKUP_FORMAT_VERSION)" = 1 ] || fail 'unsupported backup format'
+application_image="$(manifest_value APP_IMAGE)" || fail 'backup is missing APP_IMAGE'
+postgres_image="$(manifest_value POSTGRES_IMAGE)" || fail 'backup is missing POSTGRES_IMAGE'
+database_name="$(manifest_value DB_DATABASE || printf '%s' money_assistant)"
+database_user="$(manifest_value DB_USERNAME || printf '%s' money_assistant)"
+openclaw_home="$(manifest_value OPENCLAW_HOME)" || fail 'backup is missing OPENCLAW_HOME'
+printf '%s\n' "$application_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' || fail 'backup application image is not pinned'
+printf '%s\n' "$postgres_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' || fail 'backup PostgreSQL image is not pinned'
+printf '%s\n' "$openclaw_home" | grep -Eq '^/home/[A-Za-z0-9._-]+$' || fail 'backup OPENCLAW_HOME is invalid'
+
+mkdir -m 0700 "${workspace}/host" "${workspace}/application-storage"
+tar -xf "${workspace}/bundle/host-configuration.tar" -C "${workspace}/host"
+tar -xf "${workspace}/bundle/application-storage.tar" -C "${workspace}/application-storage"
+
+secret_directory="${workspace}/host/etc/money-assistant/secrets"
+recovered_environment="${workspace}/host/etc/money-assistant/production.env"
+recovered_deployment="${workspace}/host/opt/money-assistant"
+recovered_openclaw_home="${workspace}/host${openclaw_home}"
+for required_secret in \
+    application_key \
+    database_password \
+    google_gmail_client_secret \
+    openclaw_capability_private_key \
+    openclaw_capability_public_key \
+    openclaw_hook_token; do
+    [ -s "${secret_directory}/${required_secret}" ] || fail "backup is missing required secret material: ${required_secret}"
+done
+[ -r "${secret_directory}/application_previous_keys" ] || fail 'backup is missing required secret material: application_previous_keys'
+[ -s "${workspace}/host/etc/money-assistant/openclaw.env" ] || fail 'backup is missing the OpenClaw host environment'
+[ -s "${recovered_deployment}/compose.production.yaml" ] || fail 'backup is missing the production Compose definition'
+[ -d "${recovered_openclaw_home}/.openclaw" ] || fail 'backup is missing the dedicated OpenClaw runtime state'
+find "${recovered_openclaw_home}/.openclaw" -mindepth 1 -print -quit | grep -q . ||
+    fail 'the recovered OpenClaw runtime state is empty'
+
+recovered_services="${workspace}/recovered-services.txt"
+docker compose \
+    --project-name "${recovery_name}-staged" \
+    --project-directory "$recovered_deployment" \
+    --env-file "$recovered_environment" \
+    --file "${recovered_deployment}/compose.production.yaml" \
+    config --services \
+    > "$recovered_services"
+for required_service in postgres migrate web worker scheduler proxy; do
+    grep -Fxq "$required_service" "$recovered_services" ||
+        fail "recovered deployment configuration is missing service: ${required_service}"
+done
+
+docker pull "$application_image" >/dev/null
+docker pull "$postgres_image" >/dev/null
+if docker container inspect "$database_container" >/dev/null 2>&1; then
+    fail "recovery container already exists: ${database_container}"
+fi
+if docker container inspect "$web_container" >/dev/null 2>&1; then
+    fail "recovery container already exists: ${web_container}"
+fi
+if docker network inspect "$recovery_network" >/dev/null 2>&1; then
+    fail "recovery network already exists: ${recovery_network}"
+fi
+if docker volume inspect "$recovery_volume" >/dev/null 2>&1; then
+    fail "recovery volume already exists: ${recovery_volume}"
+fi
+docker network create --internal "$recovery_network" >/dev/null
+recovery_network_created=true
+docker volume create "$recovery_volume" >/dev/null
+recovery_volume_created=true
+docker run \
+    --detach \
+    --name "$database_container" \
+    --network "$recovery_network" \
+    --network-alias postgres \
+    --mount "type=volume,source=${recovery_volume},destination=/var/lib/postgresql" \
+    --mount "type=bind,source=${secret_directory}/database_password,destination=/run/secrets/database_password,readonly" \
+    --env "POSTGRES_DB=${database_name}" \
+    --env "POSTGRES_USER=${database_user}" \
+    --env POSTGRES_PASSWORD_FILE=/run/secrets/database_password \
+    "$postgres_image" >/dev/null
+database_container_created=true
+
+database_ready=false
+for _attempt in $(seq 1 60); do
+    if docker exec "$database_container" pg_isready \
+        --quiet \
+        --dbname "$database_name" \
+        --username "$database_user"; then
+        database_ready=true
+        break
+    fi
+
+    sleep 1
+done
+[ "$database_ready" = true ] || fail 'isolated PostgreSQL did not become ready'
+
+docker exec -i "$database_container" pg_restore \
+    --username "$database_user" \
+    --dbname "$database_name" \
+    --exit-on-error \
+    --no-owner \
+    --no-privileges \
+    < "${workspace}/bundle/database.dump"
+
+rm -f -- "${workspace}/application-storage/framework/down"
+docker run \
+    --detach \
+    --name "$web_container" \
+    --network "$recovery_network" \
+    --read-only \
+    --tmpfs /app/bootstrap/cache:uid=33,gid=33,mode=0770 \
+    --tmpfs /tmp:uid=33,gid=33,mode=1770 \
+    --mount "type=bind,source=${workspace}/application-storage,destination=/app/storage" \
+    --mount "type=bind,source=${workspace}/bundle/application-inventory.json,destination=/recovery/application-inventory.json,readonly" \
+    --mount "type=bind,source=${OWNER_PASSWORD_FILE},destination=/run/secrets/owner_password,readonly" \
+    --mount "type=bind,source=${secret_directory}/application_key,destination=/run/secrets/application_key,readonly" \
+    --mount "type=bind,source=${secret_directory}/application_previous_keys,destination=/run/secrets/application_previous_keys,readonly" \
+    --mount "type=bind,source=${secret_directory}/database_password,destination=/run/secrets/database_password,readonly" \
+    --mount "type=bind,source=${secret_directory}/google_gmail_client_secret,destination=/run/secrets/google_gmail_client_secret,readonly" \
+    --mount "type=bind,source=${secret_directory}/openclaw_capability_public_key,destination=/run/secrets/openclaw_capability_public_key,readonly" \
+    --mount "type=bind,source=${secret_directory}/openclaw_hook_token,destination=/run/secrets/openclaw_hook_token,readonly" \
+    --env-file "$recovered_environment" \
+    --env APP_ENV=recovery \
+    --env APP_DEBUG=false \
+    --env APP_KEY_FILE=/run/secrets/application_key \
+    --env APP_PREVIOUS_KEYS_FILE=/run/secrets/application_previous_keys \
+    --env CACHE_STORE=array \
+    --env DB_CONNECTION=pgsql \
+    --env "DB_DATABASE=${database_name}" \
+    --env DB_HOST=postgres \
+    --env DB_PASSWORD_FILE=/run/secrets/database_password \
+    --env DB_PORT=5432 \
+    --env "DB_USERNAME=${database_user}" \
+    --env GOOGLE_GMAIL_CLIENT_SECRET_FILE=/run/secrets/google_gmail_client_secret \
+    --env LOG_CHANNEL=stderr \
+    --env OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE=/run/secrets/openclaw_capability_public_key \
+    --env OPENCLAW_HOOK_TOKEN_FILE=/run/secrets/openclaw_hook_token \
+    --env QUEUE_CONNECTION=database \
+    --env SESSION_DRIVER=array \
+    "$application_image" \
+    frankenphp run --config /etc/frankenphp/Caddyfile >/dev/null
+web_container_created=true
+
+web_ready=false
+for _attempt in $(seq 1 60); do
+    if docker exec "$web_container" curl --fail --silent --show-error http://127.0.0.1:8080/up >/dev/null; then
+        web_ready=true
+        break
+    fi
+
+    sleep 1
+done
+[ "$web_ready" = true ] || fail 'isolated Money Assistant web service did not become healthy'
+
+docker exec "$web_container" /usr/local/bin/with-production-secrets \
+    php artisan app:recovery:verify /recovery/application-inventory.json \
+    --owner-password-file=/run/secrets/owner_password \
+    --no-interaction
+
+elapsed_seconds="$(( $(date +%s) - started_at ))"
+[ "$elapsed_seconds" -lt 86400 ] || fail 'isolated recovery exceeded the 24-hour recovery objective'
+printf 'Isolated recovery verification completed in %s seconds.\n' "$elapsed_seconds"

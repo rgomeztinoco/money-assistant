@@ -1,0 +1,11 @@
+[Unit]
+Description=Pull the daily Money Assistant recovery point
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=money-assistant-backup-pull.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,248 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+host_root="${HOST_ROOT:-/}"
+host_root="${host_root%/}"
+[ -n "$host_root" ] || host_root=/
+compose_file="${COMPOSE_FILE:-${host_root}/opt/money-assistant/compose.production.yaml}"
+environment_file="${ENVIRONMENT_FILE:-${host_root}/etc/money-assistant/production.env}"
+age_recipient_file="${BACKUP_AGE_RECIPIENT_FILE:-${host_root}/etc/money-assistant/backup-recipient.txt}"
+project_name="${COMPOSE_PROJECT_NAME:-money-assistant-production}"
+work_root="${BACKUP_WORK_ROOT:-/run}"
+workspace=''
+application_was_stopped=false
+maintenance_was_enabled=false
+openclaw_was_active=false
+
+fail()
+{
+    printf 'Production backup export failed: %s\n' "$1" >&2
+    exit 1
+}
+
+environment_value()
+{
+    requested_key="$1"
+
+    while IFS='=' read -r key value; do
+        if [ "$key" = "$requested_key" ]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done < "$environment_file"
+
+    return 1
+}
+
+compose()
+{
+    docker compose \
+        --project-name "$project_name" \
+        --env-file "$environment_file" \
+        --file "$compose_file" \
+        "$@"
+}
+
+openclaw_command()
+{
+    runuser --user "$openclaw_user" -- \
+        env "XDG_RUNTIME_DIR=/run/user/${openclaw_uid}" \
+        "$@"
+}
+
+restore_application()
+{
+    strict="${1:-false}"
+
+    if [ "$application_was_stopped" = true ]; then
+        if [ "$strict" = true ]; then
+            compose start web worker scheduler >&2
+        else
+            compose start web worker scheduler >&2 || true
+        fi
+    fi
+
+    if [ "$maintenance_was_enabled" = true ]; then
+        if [ "$strict" = true ]; then
+            compose exec -T web php artisan up --no-interaction >&2
+        else
+            compose exec -T web php artisan up --no-interaction >&2 || true
+        fi
+    fi
+
+    if [ "$openclaw_was_active" = true ]; then
+        if [ "$strict" = true ]; then
+            openclaw_command systemctl --user start openclaw-gateway.service >&2
+        else
+            openclaw_command systemctl --user start openclaw-gateway.service >&2 || true
+        fi
+    fi
+}
+
+cleanup()
+{
+    restore_application false
+
+    if [ -n "$workspace" ] && [ -d "$workspace" ]; then
+        rm -rf -- "$workspace"
+    fi
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+command -v age >/dev/null 2>&1 || fail 'age is required'
+command -v docker >/dev/null 2>&1 || fail 'Docker is required'
+command -v runuser >/dev/null 2>&1 || fail 'runuser is required'
+command -v sha256sum >/dev/null 2>&1 || fail 'sha256sum is required'
+command -v tailscale >/dev/null 2>&1 || fail 'Tailscale is required'
+command -v tar >/dev/null 2>&1 || fail 'tar is required'
+[ "$(id -u)" -eq 0 ] || fail 'run this export through the installed root-only forced command'
+[ -r "$environment_file" ] || fail "production environment is not readable: $environment_file"
+[ -r "$age_recipient_file" ] || fail "age recipient is not readable: $age_recipient_file"
+[ -d "$work_root" ] || fail "backup work root does not exist: $work_root"
+
+application_repository="$(environment_value APP_IMAGE_REPOSITORY)" || fail 'APP_IMAGE_REPOSITORY is required'
+application_digest="$(environment_value APP_IMAGE_DIGEST)" || fail 'APP_IMAGE_DIGEST is required'
+postgres_image="$(environment_value POSTGRES_IMAGE)" || fail 'POSTGRES_IMAGE is required'
+database_name="$(environment_value DB_DATABASE || printf '%s' money_assistant)"
+database_user="$(environment_value DB_USERNAME || printf '%s' money_assistant)"
+openclaw_home="$(environment_value OPENCLAW_HOME)" || fail 'OPENCLAW_HOME is required'
+application_image="${application_repository}@${application_digest}"
+
+printf '%s\n' "$application_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
+    fail 'the application image must be pinned by sha256 digest'
+printf '%s\n' "$postgres_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
+    fail 'the PostgreSQL image must be pinned by sha256 digest'
+printf '%s\n' "$openclaw_home" | grep -Eq '^/home/[A-Za-z0-9._-]+$' ||
+    fail 'OPENCLAW_HOME must be an absolute dedicated home under /home'
+openclaw_home_relative="${openclaw_home#/}"
+openclaw_user="${openclaw_home##*/}"
+openclaw_uid="$(id -u "$openclaw_user")" || fail 'the dedicated OpenClaw service account does not exist'
+
+for required_path in \
+    etc/money-assistant/production.env \
+    etc/money-assistant/secrets \
+    "$openclaw_home_relative" \
+    opt/money-assistant/compose.production.yaml; do
+    [ -e "${host_root}/${required_path}" ] || fail "required recovery path is missing: /${required_path}"
+done
+
+workspace="$(mktemp -d "${work_root}/money-assistant-backup.XXXXXX")"
+bundle_directory="${workspace}/bundle"
+mkdir -m 0700 "$bundle_directory"
+
+if openclaw_command systemctl --user is-active --quiet openclaw-gateway.service; then
+    openclaw_was_active=true
+    openclaw_command systemctl --user stop openclaw-gateway.service >&2
+fi
+compose exec -T web php artisan down --retry=60 --no-interaction >&2
+maintenance_was_enabled=true
+application_was_stopped=true
+compose stop worker scheduler >&2
+compose exec -T web php artisan app:recovery:inventory --no-interaction \
+    > "${bundle_directory}/application-inventory.json"
+compose stop web >&2
+
+compose exec -T postgres pg_dump \
+    --username "$database_user" \
+    --dbname "$database_name" \
+    --format=custom \
+    --no-owner \
+    --no-privileges \
+    > "${bundle_directory}/database.dump"
+
+docker run \
+    --rm \
+    --network none \
+    --read-only \
+    --mount "type=volume,source=${project_name}_application-storage,destination=/source,readonly" \
+    --entrypoint /bin/tar \
+    "$application_image" \
+    -C /source --exclude=./framework/down -cf - . \
+    > "${bundle_directory}/application-storage.tar"
+
+set -- \
+    etc/money-assistant \
+    "$openclaw_home_relative" \
+    opt/money-assistant
+
+for optional_path in \
+    etc/docker/daemon.json \
+    etc/ssh/sshd_config \
+    etc/ssh/sshd_config.d \
+    etc/sudoers.d/money-assistant-backup \
+    etc/systemd/system/money-assistant-production.service \
+    etc/systemd/system/money-assistant-tailnet.service \
+    etc/ufw \
+    home/money-assistant-backup/.ssh/authorized_keys \
+    var/lib/money-assistant/deployments \
+    var/lib/tailscale/tailscaled.state; do
+    if [ -e "${host_root}/${optional_path}" ]; then
+        set -- "$@" "$optional_path"
+    fi
+done
+
+tar --numeric-owner -C "$host_root" -cf "${bundle_directory}/host-configuration.tar" "$@"
+
+created_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+source_hostname="$(hostname | tr -cd 'A-Za-z0-9._-')"
+cat > "${bundle_directory}/manifest.env" <<EOF
+BACKUP_FORMAT_VERSION=1
+CREATED_AT=${created_at}
+SOURCE_HOSTNAME=${source_hostname}
+APP_IMAGE=${application_image}
+POSTGRES_IMAGE=${postgres_image}
+DB_DATABASE=${database_name}
+DB_USERNAME=${database_user}
+OPENCLAW_HOME=${openclaw_home}
+EOF
+
+{
+    printf 'created_at=%s\n' "$created_at"
+    printf 'source_hostname=%s\n' "$source_hostname"
+    printf 'application_image=%s\n' "$application_image"
+    printf 'postgres_image=%s\n' "$postgres_image"
+    uname -a
+    cat "${host_root}/etc/os-release"
+    age --version
+    docker version
+    docker compose version
+    compose images
+    openclaw_command openclaw --version
+    ssh -V
+    tailscale version
+} > "${bundle_directory}/version-inventory.txt" 2>&1
+
+(
+    cd "$bundle_directory"
+    sha256sum \
+        application-inventory.json \
+        application-storage.tar \
+        database.dump \
+        host-configuration.tar \
+        manifest.env \
+        version-inventory.txt \
+        > SHA256SUMS
+)
+
+tar -C "$bundle_directory" -cf "${workspace}/money-assistant-backup.tar" \
+    application-inventory.json \
+    application-storage.tar \
+    database.dump \
+    host-configuration.tar \
+    manifest.env \
+    version-inventory.txt \
+    SHA256SUMS
+
+restore_application true
+application_was_stopped=false
+maintenance_was_enabled=false
+openclaw_was_active=false
+
+age --encrypt --recipient-file "$age_recipient_file" "${workspace}/money-assistant-backup.tar"

@@ -2,6 +2,7 @@
   "tagOwners": {
     "tag:money-assistant": ["autogroup:owner"],
     "tag:money-assistant-approved-device": ["autogroup:owner"],
+    "tag:money-assistant-backup-device": ["autogroup:owner"],
   },
 
   "postures": {
@@ -19,6 +20,12 @@
       "srcPosture": ["posture:approved-owner-device"],
       "dst": ["tag:money-assistant:443"],
     },
+    {
+      "action": "accept",
+      "src": ["tag:money-assistant-backup-device"],
+      "srcPosture": ["posture:approved-owner-device"],
+      "dst": ["tag:money-assistant:22"],
+    },
   ],
 
   "tests": [
@@ -35,6 +42,16 @@
     {
       "src": "autogroup:member",
       "deny": ["tag:money-assistant:443", "tag:money-assistant:18789", "tag:money-assistant:19789"],
+    },
+    {
+      "src": "tag:money-assistant-backup-device",
+      "srcPostureAttrs": {
+        "node:tsStateEncrypted": true,
+        "node:tsReleaseTrack": "stable",
+        "node:tsVersion": "1.98.0",
+      },
+      "accept": ["tag:money-assistant:22"],
+      "deny": ["tag:money-assistant:443", "tag:money-assistant:5432", "tag:money-assistant:8443", "tag:money-assistant:18789", "tag:money-assistant:19789"],
     },
   ],
 }
