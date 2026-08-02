@@ -3,6 +3,7 @@
 use App\Integrations\OpenClaw\HttpOpenClawHook;
 use App\Models\GmailConnection;
 use App\Models\OpenClawAuditEvent;
+use App\Models\Reminder;
 use App\Models\Transaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -15,6 +16,120 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+
+/**
+ * @return array<string, string>
+ */
+function credentialRotationRehearsalFixture(): array
+{
+    $temporaryDirectory = sys_get_temp_dir().'/money-assistant-rotation-'.Str::uuid();
+    $fakeBinaryDirectory = $temporaryDirectory.'/bin';
+    $oldKeyPair = sodium_crypto_sign_keypair();
+    $candidateKeyPair = sodium_crypto_sign_keypair();
+    $paths = [
+        'temporaryDirectory' => $temporaryDirectory,
+        'fakeBinaryDirectory' => $fakeBinaryDirectory,
+        'commandLog' => $temporaryDirectory.'/commands.log',
+        'environmentFile' => $temporaryDirectory.'/production.env',
+        'openClawEnvironmentFile' => $temporaryDirectory.'/openclaw.env',
+        'activePrivateKeyFile' => $temporaryDirectory.'/active-private-key',
+        'activePublicKeyFile' => $temporaryDirectory.'/active-public-key',
+        'activeHookTokenFile' => $temporaryDirectory.'/active-hook-token',
+        'activeApplicationKeyFile' => $temporaryDirectory.'/active-application-key',
+        'activePreviousKeysFile' => $temporaryDirectory.'/active-previous-keys',
+        'candidatePrivateKeyFile' => $temporaryDirectory.'/candidate-private-key',
+        'candidatePublicKeyFile' => $temporaryDirectory.'/candidate-public-key',
+        'candidateHookTokenFile' => $temporaryDirectory.'/candidate-hook-token',
+        'candidateApplicationKeyFile' => $temporaryDirectory.'/candidate-application-key',
+        'candidatePreviousKeysFile' => $temporaryDirectory.'/candidate-previous-keys',
+        'candidateKeyId' => 'openclaw-service-rotated',
+        'candidateHookToken' => 'rotated-hook-token-value-that-is-long-enough',
+        'candidateApplicationKey' => 'base64:rotated-application-key',
+        'candidatePreviousKeys' => 'base64:previous-application-key',
+    ];
+
+    mkdir($fakeBinaryDirectory, 0700, true);
+
+    file_put_contents($paths['activePrivateKeyFile'], base64_encode(sodium_crypto_sign_secretkey($oldKeyPair))."\n");
+    file_put_contents($paths['activePublicKeyFile'], base64_encode(sodium_crypto_sign_publickey($oldKeyPair))."\n");
+    file_put_contents($paths['activeHookTokenFile'], "active-hook-token-value-that-is-long-enough\n");
+    file_put_contents($paths['activeApplicationKeyFile'], "base64:active-application-key\n");
+    file_put_contents($paths['activePreviousKeysFile'], "base64:older-application-key\n");
+    file_put_contents($paths['candidatePrivateKeyFile'], base64_encode(sodium_crypto_sign_secretkey($candidateKeyPair))."\n");
+    file_put_contents($paths['candidatePublicKeyFile'], base64_encode(sodium_crypto_sign_publickey($candidateKeyPair))."\n");
+    file_put_contents($paths['candidateHookTokenFile'], $paths['candidateHookToken']."\n");
+    file_put_contents($paths['candidateApplicationKeyFile'], $paths['candidateApplicationKey']."\n");
+    file_put_contents($paths['candidatePreviousKeysFile'], $paths['candidatePreviousKeys']."\n");
+    file_put_contents($paths['environmentFile'], implode("\n", [
+        "APP_KEY_FILE={$paths['activeApplicationKeyFile']}",
+        "APP_PREVIOUS_KEYS_FILE={$paths['activePreviousKeysFile']}",
+        "OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE={$paths['activePublicKeyFile']}",
+        'OPENCLAW_CAPABILITY_KEY_ID=openclaw-service-active',
+        "OPENCLAW_HOOK_TOKEN_FILE={$paths['activeHookTokenFile']}",
+        'OPENCLAW_HOOK_URL=http://127.0.0.1:19789/hooks/money-assistant',
+        '',
+    ]));
+    file_put_contents($paths['openClawEnvironmentFile'], implode("\n", [
+        'OPENCLAW_MONEY_ASSISTANT_KEY_ID=openclaw-service-active',
+        'OPENCLAW_MONEY_ASSISTANT_HOOK_TOKEN=active-hook-token-value-that-is-long-enough',
+        '',
+    ]));
+    file_put_contents($fakeBinaryDirectory.'/docker', <<<'SH'
+#!/bin/sh
+printf 'docker %s\n' "$*" >> "$ROTATION_COMMAND_LOG"
+case "$*" in
+    *app:financial-state:fingerprint*) printf '%s\n' 'unchanged-financial-state' ;;
+    *force-recreate*web*worker*scheduler*) [ "${APPLICATION_ROTATION_FAILURE:-false}" = false ] ;;
+esac
+SH);
+    file_put_contents($fakeBinaryDirectory.'/systemctl', <<<'SH'
+#!/bin/sh
+printf 'systemctl %s\n' "$*" >> "$ROTATION_COMMAND_LOG"
+SH);
+    file_put_contents($fakeBinaryDirectory.'/openclaw', <<<'SH'
+#!/bin/sh
+printf 'openclaw %s\n' "$*" >> "$ROTATION_COMMAND_LOG"
+SH);
+    file_put_contents($fakeBinaryDirectory.'/curl', <<<'SH'
+#!/bin/sh
+printf 'curl %s\n' "$*" >> "$ROTATION_COMMAND_LOG"
+case "$*" in
+    *inbound-probe-curl*) printf '%s' "${INBOUND_PROBE_STATUS:-422}" ;;
+    *outbound-probe-curl*) [ "${OUTBOUND_PROBE_FAILURE:-false}" = false ] ;;
+esac
+SH);
+
+    foreach (['docker', 'systemctl', 'openclaw', 'curl'] as $binary) {
+        chmod($fakeBinaryDirectory.'/'.$binary, 0700);
+    }
+
+    return $paths;
+}
+
+/**
+ * @param  array<string, string>  $fixture
+ * @param  list<string>  $arguments
+ * @param  array<string, string>  $environment
+ */
+function runCredentialRotationRehearsal(array $fixture, array $arguments, array $environment = []): Process
+{
+    $process = new Process(
+        [base_path('rehearse-credential-rotation'), ...$arguments],
+        base_path(),
+        array_merge([
+            'COMPOSE_FILE' => base_path('compose.production.yaml'),
+            'ENVIRONMENT_FILE' => $fixture['environmentFile'],
+            'OPENCLAW_ENVIRONMENT_FILE' => $fixture['openClawEnvironmentFile'],
+            'OPENCLAW_PRIVATE_KEY_FILE' => $fixture['activePrivateKeyFile'],
+            'OPENCLAW_SERVICE' => 'openclaw-gateway.service',
+            'ROTATION_COMMAND_LOG' => $fixture['commandLog'],
+            'PATH' => $fixture['fakeBinaryDirectory'].':'.getenv('PATH'),
+        ], $environment),
+    );
+    $process->run();
+
+    return $process;
+}
 
 test('retained Gmail credentials are encrypted hidden and rewrapped after an application key rotation', function () {
     $connection = GmailConnection::factory()->create([
@@ -151,25 +266,175 @@ test('production and OpenClaw credentials resolve only through host-managed secr
         ]);
 });
 
-test('the credential rotation rehearsal replaces each OpenClaw direction independently without printing secrets', function () {
-    $rehearsal = file_get_contents(base_path('rehearse-credential-rotation'));
+test('the credential rotation rehearsal verifies every direction without printing secrets', function () {
+    $fixture = credentialRotationRehearsalFixture();
 
-    expect($rehearsal)
-        ->toContain('inbound')
-        ->toContain('outbound')
-        ->toContain('app:credentials:rewrap')
-        ->toContain('openclaw secrets audit --check')
-        ->toContain('financial_state_before')
-        ->toContain('financial_state_after')
-        ->toContain('restore_active_credentials')
-        ->not->toContain('set -x');
+    try {
+        $inbound = runCredentialRotationRehearsal($fixture, [
+            'inbound',
+            $fixture['candidatePrivateKeyFile'],
+            $fixture['candidatePublicKeyFile'],
+            $fixture['candidateKeyId'],
+        ]);
+        $outbound = runCredentialRotationRehearsal($fixture, [
+            'outbound',
+            $fixture['candidateHookTokenFile'],
+        ]);
+        $application = runCredentialRotationRehearsal($fixture, [
+            'application',
+            $fixture['candidateApplicationKeyFile'],
+            $fixture['candidatePreviousKeysFile'],
+        ]);
+        $processOutput = implode("\n", [
+            $inbound->getOutput(),
+            $inbound->getErrorOutput(),
+            $outbound->getOutput(),
+            $outbound->getErrorOutput(),
+            $application->getOutput(),
+            $application->getErrorOutput(),
+        ]);
+        $commandLog = file_get_contents($fixture['commandLog']);
 
-    $owner = User::factory()->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create();
-    $financialStateBefore = Transaction::query()->findOrFail($transaction->id)->getAttributes();
+        expect($inbound->getExitCode())->toBe(0)
+            ->and($outbound->getExitCode())->toBe(0)
+            ->and($application->getExitCode())->toBe(0)
+            ->and(file_get_contents($fixture['activePrivateKeyFile']))
+            ->toBe(file_get_contents($fixture['candidatePrivateKeyFile']))
+            ->and(file_get_contents($fixture['activePublicKeyFile']))
+            ->toBe(file_get_contents($fixture['candidatePublicKeyFile']))
+            ->and(file_get_contents($fixture['activeHookTokenFile']))
+            ->toBe(file_get_contents($fixture['candidateHookTokenFile']))
+            ->and(file_get_contents($fixture['activeApplicationKeyFile']))
+            ->toBe(file_get_contents($fixture['candidateApplicationKeyFile']))
+            ->and(file_get_contents($fixture['activePreviousKeysFile']))
+            ->toBe(file_get_contents($fixture['candidatePreviousKeysFile']))
+            ->and(file_get_contents($fixture['environmentFile']))
+            ->toContain("OPENCLAW_CAPABILITY_KEY_ID={$fixture['candidateKeyId']}")
+            ->and(file_get_contents($fixture['openClawEnvironmentFile']))
+            ->toContain("OPENCLAW_MONEY_ASSISTANT_KEY_ID={$fixture['candidateKeyId']}")
+            ->toContain("OPENCLAW_MONEY_ASSISTANT_HOOK_TOKEN={$fixture['candidateHookToken']}")
+            ->and($commandLog)
+            ->toContain('openclaw secrets audit --check')
+            ->toContain('force-recreate web')
+            ->toContain('force-recreate worker')
+            ->toContain('app:credentials:rewrap')
+            ->toContain('inbound-probe-curl')
+            ->toContain('outbound-probe-curl')
+            ->and($processOutput)
+            ->not->toContain(
+                file_get_contents($fixture['candidatePrivateKeyFile']),
+                $fixture['candidateHookToken'],
+                $fixture['candidateApplicationKey'],
+            );
+    } finally {
+        (new Filesystem)->deleteDirectory($fixture['temporaryDirectory']);
+    }
+});
 
-    expect(Transaction::query()->findOrFail($transaction->id)->getAttributes())
-        ->toBe($financialStateBefore);
+test('the credential rotation rehearsal restores inbound credentials after a failed live probe', function () {
+    $fixture = credentialRotationRehearsalFixture();
+    $activePrivateKey = file_get_contents($fixture['activePrivateKeyFile']);
+    $activePublicKey = file_get_contents($fixture['activePublicKeyFile']);
+    $activeEnvironment = file_get_contents($fixture['environmentFile']);
+    $activeOpenClawEnvironment = file_get_contents($fixture['openClawEnvironmentFile']);
+
+    try {
+        $process = runCredentialRotationRehearsal($fixture, [
+            'inbound',
+            $fixture['candidatePrivateKeyFile'],
+            $fixture['candidatePublicKeyFile'],
+            $fixture['candidateKeyId'],
+        ], ['INBOUND_PROBE_STATUS' => '401']);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('rotated inbound credential was not authenticated')
+            ->and($process->getOutput().$process->getErrorOutput())
+            ->not->toContain(file_get_contents($fixture['candidatePrivateKeyFile']))
+            ->and(file_get_contents($fixture['activePrivateKeyFile']))->toBe($activePrivateKey)
+            ->and(file_get_contents($fixture['activePublicKeyFile']))->toBe($activePublicKey)
+            ->and(file_get_contents($fixture['environmentFile']))->toBe($activeEnvironment)
+            ->and(file_get_contents($fixture['openClawEnvironmentFile']))->toBe($activeOpenClawEnvironment)
+            ->and(file_get_contents($fixture['commandLog']))
+            ->toContain('inbound-probe-curl')
+            ->toContain('systemctl --user restart openclaw-gateway.service');
+    } finally {
+        (new Filesystem)->deleteDirectory($fixture['temporaryDirectory']);
+    }
+});
+
+test('the credential rotation rehearsal restores the outbound credential after a failed live probe', function () {
+    $fixture = credentialRotationRehearsalFixture();
+    $activeHookToken = file_get_contents($fixture['activeHookTokenFile']);
+    $activeOpenClawEnvironment = file_get_contents($fixture['openClawEnvironmentFile']);
+
+    try {
+        $process = runCredentialRotationRehearsal($fixture, [
+            'outbound',
+            $fixture['candidateHookTokenFile'],
+        ], ['OUTBOUND_PROBE_FAILURE' => 'true']);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('rotated outbound credential was rejected')
+            ->and($process->getOutput().$process->getErrorOutput())
+            ->not->toContain($fixture['candidateHookToken'])
+            ->and(file_get_contents($fixture['activeHookTokenFile']))->toBe($activeHookToken)
+            ->and(file_get_contents($fixture['openClawEnvironmentFile']))->toBe($activeOpenClawEnvironment)
+            ->and(file_get_contents($fixture['commandLog']))
+            ->toContain('outbound-probe-curl')
+            ->toContain('force-recreate worker');
+    } finally {
+        (new Filesystem)->deleteDirectory($fixture['temporaryDirectory']);
+    }
+});
+
+test('the credential rotation rehearsal restores application keys after a failed service restart', function () {
+    $fixture = credentialRotationRehearsalFixture();
+    $activeApplicationKey = file_get_contents($fixture['activeApplicationKeyFile']);
+    $activePreviousKeys = file_get_contents($fixture['activePreviousKeysFile']);
+
+    try {
+        $process = runCredentialRotationRehearsal($fixture, [
+            'application',
+            $fixture['candidateApplicationKeyFile'],
+            $fixture['candidatePreviousKeysFile'],
+        ], ['APPLICATION_ROTATION_FAILURE' => 'true']);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getOutput().$process->getErrorOutput())
+            ->not->toContain(
+                $fixture['candidateApplicationKey'],
+                $fixture['candidatePreviousKeys'],
+            )
+            ->and(file_get_contents($fixture['activeApplicationKeyFile']))->toBe($activeApplicationKey)
+            ->and(file_get_contents($fixture['activePreviousKeysFile']))->toBe($activePreviousKeys)
+            ->and(file_get_contents($fixture['commandLog']))
+            ->toContain('force-recreate web worker scheduler')
+            ->not->toContain('app:credentials:rewrap');
+    } finally {
+        (new Filesystem)->deleteDirectory($fixture['temporaryDirectory']);
+    }
+});
+
+test('the credential rotation rehearsal rejects an unchanged candidate without printing it', function () {
+    $fixture = credentialRotationRehearsalFixture();
+    $activeHookToken = file_get_contents($fixture['activeHookTokenFile']);
+    file_put_contents($fixture['candidateHookTokenFile'], $activeHookToken);
+
+    try {
+        $process = runCredentialRotationRehearsal($fixture, [
+            'outbound',
+            $fixture['candidateHookTokenFile'],
+        ]);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getErrorOutput())->toContain('candidate and active secret values must differ')
+            ->and($process->getOutput().$process->getErrorOutput())->not->toContain(trim($activeHookToken))
+            ->and(file_get_contents($fixture['activeHookTokenFile']))->toBe($activeHookToken);
+    } finally {
+        (new Filesystem)->deleteDirectory($fixture['temporaryDirectory']);
+    }
 });
 
 test('the credential rotation rehearsal rejects an outbound token file containing extra lines', function () {
@@ -318,7 +583,7 @@ test('rotating the OpenClaw outbound hook token changes only the bearer credenti
         ->toEqual($financialStateBefore);
 });
 
-test('the rotation fingerprint ignores credentials and changes with financial state', function () {
+test('the rotation fingerprint ignores credentials and covers the complete financial export', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create(['amount_minor' => 12_345]);
     $connection = GmailConnection::factory()->for($owner, 'owner')->create();
@@ -326,6 +591,7 @@ test('the rotation fingerprint ignores credentials and changes with financial st
     Artisan::call('app:financial-state:fingerprint');
     $beforeCredentialRotation = trim(Artisan::output());
 
+    $connection->timestamps = false;
     $connection->update([
         'access_token' => 'rotated-access-token',
         'refresh_token' => 'rotated-refresh-token',
@@ -334,7 +600,9 @@ test('the rotation fingerprint ignores credentials and changes with financial st
     Artisan::call('app:financial-state:fingerprint');
     $afterCredentialRotation = trim(Artisan::output());
 
-    $transaction->update(['amount_minor' => 54_321]);
+    Reminder::factory()->for($owner, 'owner')->create([
+        'subject' => 'Review the monthly financial plan',
+    ]);
 
     Artisan::call('app:financial-state:fingerprint');
     $afterFinancialChange = trim(Artisan::output());
