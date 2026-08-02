@@ -42,10 +42,27 @@ const OWNER_LINE_ITEM_ROLES = [
 export const RECEIPT_PRIVACY_DISCLOSURE =
   'Receipt processing uses the existing OpenAI OAuth account and only openai/gpt-5.6-sol. OpenAI OAuth has no published fixed retention ceiling. Before enabling receipts, disable account-wide model improvement and Codex full-environment training. Receipt interactions are never submitted as feedback. OpenClaw deletes local images after proposal submission or terminal failure, enforces a one-hour crash-cleanup ceiling, then attempts to delete the Telegram source and warns if manual removal is needed. Money Assistant retains only the opaque proposal identifier, receipt_photo source kind, processing time, actual provider/model, contract version, and structured financial proposal.';
 
+const secretRefSchema = Type.Object(
+  {
+    source: Type.Union([
+      Type.Literal('env'),
+      Type.Literal('file'),
+      Type.Literal('exec'),
+    ]),
+    provider: Type.String(),
+    id: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
+const resolvedSecretInputStringSchema = Type.Unsafe<string>({
+  anyOf: [Type.String({ minLength: 1 }), secretRefSchema],
+});
+
 const pluginConfigSchema = Type.Object(
   {
     keyId: Type.String({ minLength: 1, maxLength: 128 }),
-    privateKey: Type.String({ minLength: 1 }),
+    privateKey: resolvedSecretInputStringSchema,
     agentId: Type.String({ minLength: 1, maxLength: 128 }),
     accountId: Type.String({ minLength: 1, maxLength: 128 }),
     conversationId: Type.String({ minLength: 1, maxLength: 128 }),

@@ -1,4 +1,13 @@
 {
+  "secrets": {
+    "providers": {
+      "money_assistant_private_key": {
+        "source": "file",
+        "path": "/etc/money-assistant/secrets/openclaw_capability_private_key",
+        "mode": "singleValue"
+      }
+    }
+  },
   "plugins": {
     "enabled": true,
     "allow": [
@@ -18,7 +27,11 @@
         },
         "config": {
           "keyId": "${OPENCLAW_MONEY_ASSISTANT_KEY_ID}",
-          "privateKey": "${OPENCLAW_MONEY_ASSISTANT_PRIVATE_KEY}",
+          "privateKey": {
+            "source": "file",
+            "provider": "money_assistant_private_key",
+            "id": "value"
+          },
           "agentId": "money-assistant",
           "accountId": "${OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID}",
           "conversationId": "${OPENCLAW_MONEY_ASSISTANT_OWNER_SENDER_ID}",

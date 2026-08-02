@@ -22,9 +22,27 @@ read_secret()
     export "$variable_name=$secret_value"
 }
 
+read_optional_secret()
+{
+    variable_name="$1"
+    secret_file="$2"
+
+    if [ ! -r "$secret_file" ]; then
+        echo "Optional secret file is not readable: $secret_file" >&2
+        exit 1
+    fi
+
+    secret_value="$(cat "$secret_file")"
+
+    if [ -n "$secret_value" ]; then
+        export "$variable_name=$secret_value"
+    fi
+}
+
 umask 0027
 
 read_secret APP_KEY "${APP_KEY_FILE:?APP_KEY_FILE is required}"
+read_optional_secret APP_PREVIOUS_KEYS "${APP_PREVIOUS_KEYS_FILE:?APP_PREVIOUS_KEYS_FILE is required}"
 read_secret DB_PASSWORD "${DB_PASSWORD_FILE:?DB_PASSWORD_FILE is required}"
 
 if [ -n "${OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE:-}" ]; then

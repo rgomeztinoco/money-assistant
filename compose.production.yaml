@@ -11,6 +11,7 @@ x-application: &application
         APP_DEBUG: 'false'
         APP_URL: 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}'
         APP_KEY_FILE: /run/secrets/application_key
+        APP_PREVIOUS_KEYS_FILE: /run/secrets/application_previous_keys
         CACHE_STORE: database
         DB_CACHE_CONNECTION: pgsql
         DB_CONNECTION: pgsql
@@ -35,6 +36,7 @@ x-application: &application
         SESSION_SECURE_COOKIE: 'true'
     secrets:
         - application_key
+        - application_previous_keys
         - database_password
     volumes:
         - type: volume
@@ -121,6 +123,7 @@ services:
             GOOGLE_GMAIL_CLIENT_SECRET_FILE: /run/secrets/google_gmail_client_secret
         secrets:
             - application_key
+            - application_previous_keys
             - database_password
             - google_gmail_client_secret
             - openclaw_capability_public_key
@@ -158,6 +161,7 @@ services:
             OPENCLAW_HOOK_URL: '${OPENCLAW_HOOK_URL:?Set OPENCLAW_HOOK_URL to the private mapped hook}'
         secrets:
             - application_key
+            - application_previous_keys
             - database_password
             - openclaw_hook_token
         networks: []
@@ -297,6 +301,8 @@ configs:
 secrets:
     application_key:
         file: '${APP_KEY_FILE:?Set APP_KEY_FILE}'
+    application_previous_keys:
+        file: '${APP_PREVIOUS_KEYS_FILE:?Set APP_PREVIOUS_KEYS_FILE}'
     database_password:
         file: '${DB_PASSWORD_FILE:?Set DB_PASSWORD_FILE}'
     google_gmail_client_secret:

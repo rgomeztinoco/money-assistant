@@ -1,0 +1,39 @@
+#!/bin/sh
+
+set -eu
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+
+fail()
+{
+    printf 'OpenClaw security installation failed: %s\n' "$1" >&2
+    exit 1
+}
+
+if [ "$(id -u)" -eq 0 ]; then
+    fail 'run this installer as the dedicated OpenClaw service account'
+fi
+
+openclaw_home="$(getent passwd "$(id -u)" | cut -d: -f6)"
+[ -n "$openclaw_home" ] || fail 'the OpenClaw service account home could not be resolved'
+
+systemd_user_directory="${SYSTEMD_USER_DIRECTORY:-${openclaw_home}/.config/systemd/user}"
+drop_in_directory="${systemd_user_directory}/openclaw-gateway.service.d"
+
+for secret_file in \
+    /etc/money-assistant/openclaw.env \
+    /etc/money-assistant/secrets/openclaw_capability_private_key; do
+    [ -r "$secret_file" ] || fail "a required host secret is not readable: $secret_file"
+done
+
+install -d -m 0700 "$drop_in_directory"
+install -m 0600 \
+    "${script_directory}/money-assistant-openclaw.service.conf" \
+    "${drop_in_directory}/money-assistant.conf"
+
+systemctl --user daemon-reload
+systemctl --user restart openclaw-gateway.service
+systemctl --user is-active --quiet openclaw-gateway.service
+openclaw secrets audit --check >/dev/null
+
+printf '%s\n' 'OpenClaw host-managed integration secrets are active and audit-clean.'

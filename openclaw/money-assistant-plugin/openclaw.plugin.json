@@ -35,8 +35,45 @@
         "maxLength": 128
       },
       "privateKey": {
-        "type": "string",
-        "minLength": 1
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "object",
+            "required": [
+              "source",
+              "provider",
+              "id"
+            ],
+            "properties": {
+              "source": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "env"
+                  },
+                  {
+                    "type": "string",
+                    "const": "file"
+                  },
+                  {
+                    "type": "string",
+                    "const": "exec"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "agentId": {
         "type": "string",
@@ -105,6 +142,16 @@
     "privateKey": {
       "label": "Ed25519 private key",
       "sensitive": true
+    }
+  },
+  "configContracts": {
+    "secretInputs": {
+      "paths": [
+        {
+          "path": "privateKey",
+          "expected": "string"
+        }
+      ]
     }
   },
   "contracts": {

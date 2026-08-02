@@ -98,6 +98,7 @@ jobs:
             echo "OPENCLAW_HOOK_TOKEN_FILE=/tmp/money-assistant-production-smoke/openclaw_hook_token"
             echo "OPENCLAW_HOOK_URL=http://127.0.0.1:19789/hooks/money-assistant"
             echo "APP_KEY_FILE=/tmp/money-assistant-production-smoke/application_key"
+            echo "APP_PREVIOUS_KEYS_FILE=/tmp/money-assistant-production-smoke/application_previous_keys"
             echo "DB_PASSWORD_FILE=/tmp/money-assistant-production-smoke/database_password"
             echo "COMPOSE_PROJECT_NAME=money-assistant-production-smoke"
             echo "DEPLOYMENT_STATE_DIRECTORY=/tmp/money-assistant-production-smoke/deployments"
@@ -112,6 +113,7 @@ jobs:
           install -d -m 0700 /tmp/money-assistant-production-smoke
           printf 'base64:%s\n' "$(openssl rand -base64 32)" |
             tee /tmp/money-assistant-production-smoke/application_key >/dev/null
+          : > /tmp/money-assistant-production-smoke/application_previous_keys
           openssl rand -base64 32 |
             tee /tmp/money-assistant-production-smoke/database_password >/dev/null
           openssl rand -base64 32 |
@@ -119,6 +121,7 @@ jobs:
           openssl rand -base64 32 |
             tee /tmp/money-assistant-production-smoke/openclaw_hook_token >/dev/null
           chmod 0600 /tmp/money-assistant-production-smoke/application_key
+          chmod 0600 /tmp/money-assistant-production-smoke/application_previous_keys
           chmod 0600 /tmp/money-assistant-production-smoke/database_password
           chmod 0600 /tmp/money-assistant-production-smoke/openclaw_capability_public_key
           chmod 0600 /tmp/money-assistant-production-smoke/openclaw_hook_token
@@ -135,6 +138,7 @@ jobs:
             echo "OPENCLAW_HOOK_TOKEN_FILE=$OPENCLAW_HOOK_TOKEN_FILE"
             echo "OPENCLAW_HOOK_URL=$OPENCLAW_HOOK_URL"
             echo "APP_KEY_FILE=$APP_KEY_FILE"
+            echo "APP_PREVIOUS_KEYS_FILE=$APP_PREVIOUS_KEYS_FILE"
             echo "DB_PASSWORD_FILE=$DB_PASSWORD_FILE"
           } > "$PRODUCTION_ENV_FILE"
           chmod 0600 "$PRODUCTION_ENV_FILE"
@@ -243,6 +247,7 @@ jobs:
 
           for secret_file in \
             "$APP_KEY_FILE" \
+            "$APP_PREVIOUS_KEYS_FILE" \
             "$DB_PASSWORD_FILE" \
             "$OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE" \
             "$OPENCLAW_HOOK_TOKEN_FILE"; do
