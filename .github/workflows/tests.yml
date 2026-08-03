@@ -39,8 +39,11 @@ jobs:
       - name: Setup Application
         run: vendor/bin/sail composer setup
 
+      - name: Install Playwright system dependencies
+        run: vendor/bin/sail root-shell -c 'npx playwright install-deps chromium'
+
       - name: Install Playwright browser
-        run: vendor/bin/sail npx playwright install --with-deps chromium
+        run: vendor/bin/sail npx playwright install chromium
 
       - name: Run CI Checks
         run: vendor/bin/sail composer ci:check
@@ -78,9 +81,6 @@ jobs:
           docker push localhost:5000/money-assistant:healthy
 
           healthy_image="$(docker image inspect localhost:5000/money-assistant:healthy --format '{{index .RepoDigests 0}}')"
-          healthy_repository="${healthy_image%@*}"
-          healthy_digest="${healthy_image##*@}"
-
           printf '%s\n' \
             "FROM ${healthy_image}" \
             "RUN printf ':8080 { respond 503 }\\n' > /etc/frankenphp/Caddyfile" |
@@ -90,8 +90,6 @@ jobs:
           unhealthy_image="$(docker image inspect localhost:5000/money-assistant:unhealthy --format '{{index .RepoDigests 0}}')"
 
           {
-            echo "APP_IMAGE_REPOSITORY=$healthy_repository"
-            echo "APP_IMAGE_DIGEST=$healthy_digest"
             echo "APP_IMAGE_PULL_POLICY=never"
             echo "POSTGRES_IMAGE=postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e"
             echo "POSTGRES_IMAGE_PULL_POLICY=never"
@@ -155,9 +153,12 @@ jobs:
             "$OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE" \
             "$OPENCLAW_HOOK_TOKEN_FILE"
 
+          healthy_repository="${GOOD_APP_IMAGE%@*}"
+          healthy_digest="${GOOD_APP_IMAGE##*@}"
+
           {
-            echo "APP_IMAGE_REPOSITORY=$APP_IMAGE_REPOSITORY"
-            echo "APP_IMAGE_DIGEST=$APP_IMAGE_DIGEST"
+            echo "APP_IMAGE_REPOSITORY=$healthy_repository"
+            echo "APP_IMAGE_DIGEST=$healthy_digest"
             echo "APP_IMAGE_PULL_POLICY=never"
             echo "POSTGRES_IMAGE=$POSTGRES_IMAGE"
             echo "POSTGRES_IMAGE_PULL_POLICY=never"

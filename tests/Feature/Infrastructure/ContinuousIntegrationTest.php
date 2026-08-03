@@ -4,28 +4,48 @@ use Symfony\Component\Yaml\Yaml;
 
 beforeEach(function (): void {
     $this->workflow = Yaml::parseFile(base_path('.github/workflows/tests.yml'));
+    $this->productionSteps = collect($this->workflow['jobs']['production-stack']['steps']);
+    $this->productionScripts = $this->productionSteps->pluck('run', 'name');
 });
 
 test('CI installs the locked browser runtime before running the complete application checks', function (): void {
     $steps = collect($this->workflow['jobs']['ci']['steps']);
 
+    $browserDependencyInstallation = $steps->search(
+        fn (array $step): bool => ($step['run'] ?? null)
+            === "vendor/bin/sail root-shell -c 'npx playwright install-deps chromium'",
+    );
     $browserInstallation = $steps->search(
         fn (array $step): bool => ($step['run'] ?? null)
-            === 'vendor/bin/sail npx playwright install --with-deps chromium',
+            === 'vendor/bin/sail npx playwright install chromium',
     );
     $ciChecks = $steps->search(
         fn (array $step): bool => ($step['run'] ?? null) === 'vendor/bin/sail composer ci:check',
     );
 
-    expect($browserInstallation)
+    expect($browserDependencyInstallation)
+        ->toBeInt()
+        ->toBeLessThan($browserInstallation)
+        ->and($browserInstallation)
         ->toBeInt()
         ->toBeLessThan($ciChecks);
 });
 
+test('the rollback rehearsal lets each candidate environment select its application image', function (): void {
+    $imageConfiguration = $this->productionScripts->get('Build rehearsal application images');
+    $rehearsalConfiguration = $this->productionScripts->get('Create isolated rehearsal configuration');
+
+    expect($imageConfiguration)
+        ->not->toContain('echo "APP_IMAGE_REPOSITORY=')
+        ->not->toContain('echo "APP_IMAGE_DIGEST=')
+        ->and($rehearsalConfiguration)
+        ->toContain('healthy_repository="${GOOD_APP_IMAGE%@*}"')
+        ->toContain('healthy_digest="${GOOD_APP_IMAGE##*@}"');
+});
+
 test('the production rehearsal supplies isolated values for every required integration boundary', function (): void {
-    $steps = collect($this->workflow['jobs']['production-stack']['steps']);
-    $imageConfiguration = $steps->firstWhere('name', 'Build rehearsal application images')['run'];
-    $rehearsalConfiguration = $steps->firstWhere('name', 'Create isolated rehearsal configuration')['run'];
+    $imageConfiguration = $this->productionScripts->get('Build rehearsal application images');
+    $rehearsalConfiguration = $this->productionScripts->get('Create isolated rehearsal configuration');
 
     expect($imageConfiguration)
         ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE=')
@@ -43,10 +63,9 @@ test('the production rehearsal supplies isolated values for every required integ
 });
 
 test('production rehearsal failures report masked diagnostics', function (): void {
-    $steps = collect($this->workflow['jobs']['production-stack']['steps']);
-    $rehearsalConfiguration = $steps->firstWhere('name', 'Create isolated rehearsal configuration')['run'];
-    $rollbackRehearsal = $steps->firstWhere('name', 'Rehearse failed deployment rollback')['run'];
-    $diagnostics = $steps->firstWhere('name', 'Report production rehearsal failure');
+    $rehearsalConfiguration = $this->productionScripts->get('Create isolated rehearsal configuration');
+    $rollbackRehearsal = $this->productionScripts->get('Rehearse failed deployment rollback');
+    $diagnostics = $this->productionSteps->firstWhere('name', 'Report production rehearsal failure');
 
     expect($rehearsalConfiguration)
         ->toContain('::add-mask::')
