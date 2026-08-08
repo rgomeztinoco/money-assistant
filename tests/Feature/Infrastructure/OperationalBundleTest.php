@@ -52,6 +52,7 @@ test('an allowlisted operational bundle is immutable and accepted by the host la
         expect($validated->getExitCode())->toBe(0, $validated->getErrorOutput())
             ->and($validated->getOutput())->toContain("Operational bundle validated: {$checksum}")
             ->and(is_dir($stagingDirectory.'/'.$checksum))->toBeTrue()
+            ->and(is_file($stagingDirectory.'/'.$checksum.'/Caddyfile.production'))->toBeTrue()
             ->and(file_get_contents($stagingDirectory.'/'.$checksum.'/SOURCE_REVISION'))->toBe($revision."\n");
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
