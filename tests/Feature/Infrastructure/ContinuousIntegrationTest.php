@@ -86,6 +86,7 @@ test('production rehearsal failures report masked diagnostics', function (): voi
         ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE')
         ->toContain('OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE')
         ->toContain('OPENCLAW_HOOK_TOKEN_FILE')
+        ->toContain('sudo cat "$secret_file"')
         ->not->toContain('cat "$REHEARSAL_OUTPUT"')
         ->toContain('ps --all')
         ->toContain('logs --no-color');

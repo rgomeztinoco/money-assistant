@@ -685,7 +685,7 @@ jobs:
             "${OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE:-}" \
             "${OPENCLAW_HOOK_TOKEN_FILE:-}"; do
             if [ -f "$secret_file" ]; then
-              secret_value="$(tr -d '\r\n' < "$secret_file")"
+              secret_value="$(sudo cat "$secret_file" | tr -d '\r\n')"
               if [ -n "$secret_value" ]; then
                 escaped_secret="$(printf '%s' "$secret_value" | sed 's/[\\&|]/\\&/g')"
                 sed --in-place "s|${escaped_secret}|***|g" "$sanitized_diagnostics"
