@@ -618,6 +618,7 @@ restore_transaction()
         "$candidate_application_image" \
         "$current_application_image" \
         "$maintenance_seconds" || return 1
+    record_deployment_phase rolled_back
     rm -f -- "$rollback_snapshot"
     rollback_snapshot=''
     snapshot_verified=false
