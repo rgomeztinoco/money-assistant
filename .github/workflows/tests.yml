@@ -94,13 +94,43 @@ jobs:
           docker push localhost:5000/money-assistant:healthy
 
           healthy_image="$(docker image inspect localhost:5000/money-assistant:healthy --format '{{index .RepoDigests 0}}')"
-          printf '%s\n' \
-            "FROM ${healthy_image}" \
-            "RUN printf ':8080 { respond 503 }\\n' > /etc/frankenphp/Caddyfile" |
-            docker build --tag localhost:5000/money-assistant:unhealthy -
-          docker push localhost:5000/money-assistant:unhealthy
+          build_rehearsal_candidate()
+          {
+            candidate_tag="$1"
+            migration_file="$2"
+            candidate_health="$3"
 
-          unhealthy_image="$(docker image inspect localhost:5000/money-assistant:unhealthy --format '{{index .RepoDigests 0}}')"
+            {
+              printf 'FROM %s\n' "$healthy_image"
+              printf 'COPY --chown=www-data:www-data database/deployment-rehearsal/%s /app/database/migrations/%s\n' \
+                "$migration_file" "$migration_file"
+              if [ "$candidate_health" = unhealthy ]; then
+                printf "RUN printf ':8080 { respond 503 }\\\\n' > /etc/frankenphp/Caddyfile\n"
+              fi
+            } | docker build --file - --tag "localhost:5000/money-assistant:${candidate_tag}" . >&2
+
+            docker push "localhost:5000/money-assistant:${candidate_tag}" >/dev/null
+            docker image inspect \
+              "localhost:5000/money-assistant:${candidate_tag}" \
+              --format '{{index .RepoDigests 0}}'
+          }
+
+          successful_image="$(build_rehearsal_candidate \
+            successful \
+            2026_08_08_141735_rehearse_successful_transactional_deployment.php \
+            healthy)"
+          failed_migration_image="$(build_rehearsal_candidate \
+            failed-migration \
+            2026_08_08_141736_rehearse_failed_transactional_migration.php \
+            healthy)"
+          failed_health_image="$(build_rehearsal_candidate \
+            failed-health \
+            2026_08_08_141737_rehearse_unhealthy_transactional_deployment.php \
+            unhealthy)"
+          concurrent_image="$(build_rehearsal_candidate \
+            concurrent \
+            2026_08_08_141738_rehearse_concurrent_transactional_deployment.php \
+            healthy)"
 
           {
             echo "APP_IMAGE_PULL_POLICY=never"
@@ -122,9 +152,14 @@ jobs:
             echo "DB_PASSWORD_FILE=/tmp/money-assistant-production-smoke/database_password"
             echo "COMPOSE_PROJECT_NAME=money-assistant-production-smoke"
             echo "DEPLOYMENT_STATE_DIRECTORY=/tmp/money-assistant-production-smoke/deployments"
+            echo "DEPLOYMENT_ALERT_COMMAND=/tmp/money-assistant-production-smoke/capture-deployment-alert"
+            echo "DEPLOYMENT_ALERT_LOG=/tmp/money-assistant-production-smoke/deployment-alerts.log"
             echo "PRODUCTION_ENV_FILE=/tmp/money-assistant-production-smoke/production.env"
             echo "GOOD_APP_IMAGE=$healthy_image"
-            echo "BAD_APP_IMAGE=$unhealthy_image"
+            echo "SUCCESSFUL_APP_IMAGE=$successful_image"
+            echo "FAILED_MIGRATION_APP_IMAGE=$failed_migration_image"
+            echo "FAILED_HEALTH_APP_IMAGE=$failed_health_image"
+            echo "CONCURRENT_APP_IMAGE=$concurrent_image"
             echo "REHEARSAL_OUTPUT=/tmp/money-assistant-production-smoke/rehearsal-output.log"
           } >> "$GITHUB_ENV"
 
@@ -148,6 +183,13 @@ jobs:
           chmod 0600 /tmp/money-assistant-production-smoke/google_gmail_client_secret
           chmod 0600 /tmp/money-assistant-production-smoke/openclaw_capability_public_key
           chmod 0600 /tmp/money-assistant-production-smoke/openclaw_hook_token
+          : > "$DEPLOYMENT_ALERT_LOG"
+          chmod 0600 "$DEPLOYMENT_ALERT_LOG"
+          install -m 0700 /dev/stdin "$DEPLOYMENT_ALERT_COMMAND" <<'SH'
+          #!/bin/sh
+          set -eu
+          printf '%s\n' "$1" >> "${DEPLOYMENT_ALERT_LOG:?Set DEPLOYMENT_ALERT_LOG}"
+          SH
 
           for secret_file in \
             "$APP_KEY_FILE" \
@@ -304,39 +346,218 @@ jobs:
 
           exit 1
 
-      - name: Rehearse failed deployment rollback
+      - name: Rehearse successful transactional deployment
         run: |
           exec 3>&1
           exec >> "$REHEARSAL_OUTPUT" 2>&1
 
-          if ./deploy-production deploy \
+          docker compose \
             --env-file "$PRODUCTION_ENV_FILE" \
-            --app-image "$BAD_APP_IMAGE"; then
-            echo 'The deliberately unhealthy deployment unexpectedly succeeded.' >&2
-            exit 1
-          fi
+            --file compose.production.yaml \
+            stop worker scheduler
 
-          jq -e \
-            --arg application_image "$GOOD_APP_IMAGE" \
-            --arg attempted_application_image "$BAD_APP_IMAGE" \
-            '.outcome == "rolled_back" and .application_image == $application_image and .attempted_application_image == $attempted_application_image' \
-            "$DEPLOYMENT_STATE_DIRECTORY/current.json"
-
-          ./deploy-production verify --env-file "$PRODUCTION_ENV_FILE"
-
-          expected_image="$(docker image inspect "$GOOD_APP_IMAGE" --format '{{.Id}}')"
-
-          for service in web worker scheduler; do
-            container_id="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml ps --quiet "$service")"
-            test "$(docker inspect "$container_id" --format '{{.Image}}')" = "$expected_image"
-          done
-
+          successful_rehearsal_id="$(< /proc/sys/kernel/random/uuid)"
           docker compose \
             --env-file "$PRODUCTION_ENV_FILE" \
             --file compose.production.yaml \
             exec --no-TTY web \
             /usr/local/bin/with-production-secrets \
-            php artisan app:deployment-rehearsal:verify "$REHEARSAL_ID" --no-interaction
+            php artisan app:deployment-rehearsal:prepare "$successful_rehearsal_id" --no-interaction
+
+          : > "$DEPLOYMENT_ALERT_LOG"
+          deployment_started_at="$(date +%s)"
+          ./deploy-production deploy \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --app-image "$SUCCESSFUL_APP_IMAGE"
+          maintenance_seconds=$(($(date +%s) - deployment_started_at))
+          test "$maintenance_seconds" -lt 300
+          test ! -s "$DEPLOYMENT_ALERT_LOG"
+
+          jq -e \
+            --arg application_image "$SUCCESSFUL_APP_IMAGE" \
+            '.outcome == "deployed" and .application_image == $application_image and .maintenance_seconds < 300' \
+            "$DEPLOYMENT_STATE_DIRECTORY/current.json"
+
+          migration_name=2026_08_08_141735_rehearse_successful_transactional_deployment
+          migration_count="$(docker compose \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --file compose.production.yaml \
+            exec --no-TTY postgres \
+            psql --username money_assistant --dbname money_assistant --tuples-only --no-align \
+            --command "SELECT count(*) FROM migrations WHERE migration = '${migration_name}'")"
+          test "$migration_count" = 1
+
+          web_container_id="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml ps --quiet web)"
+          web_healthy_at="$(docker inspect "$web_container_id" --format '{{range .State.Health.Log}}{{if eq .ExitCode 0}}{{.End}}{{"\\n"}}{{end}}{{end}}' | head -n 1)"
+          test -n "$web_healthy_at"
+          for service in worker scheduler; do
+            container_id="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml ps --quiet "$service")"
+            started_at="$(docker inspect "$container_id" --format '{{.State.StartedAt}}')"
+            test "$started_at" \> "$web_healthy_at"
+          done
+
+          for attempt in $(seq 1 30); do
+            if docker compose \
+              --env-file "$PRODUCTION_ENV_FILE" \
+              --file compose.production.yaml \
+              exec --no-TTY web \
+              /usr/local/bin/with-production-secrets \
+              php artisan app:deployment-rehearsal:verify "$successful_rehearsal_id" --no-interaction; then
+              printf '%s\n' 'Successful transaction, activation order, timing, and durable work passed.' >&3
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          exit 1
+
+      - name: Rehearse failed migration restoration
+        run: |
+          exec 3>&1
+          exec >> "$REHEARSAL_OUTPUT" 2>&1
+
+          docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml stop worker scheduler
+          rehearsal_id="$(< /proc/sys/kernel/random/uuid)"
+          docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml exec --no-TTY web \
+            /usr/local/bin/with-production-secrets \
+            php artisan app:deployment-rehearsal:prepare "$rehearsal_id" --no-interaction
+          financial_state_before="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml exec --no-TTY web \
+            /usr/local/bin/with-production-secrets php artisan app:financial-state:fingerprint --no-interaction)"
+          : > "$DEPLOYMENT_ALERT_LOG"
+
+          if ./deploy-production deploy \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --app-image "$FAILED_MIGRATION_APP_IMAGE"; then
+            echo 'The deliberately failing migration unexpectedly succeeded.' >&2
+            exit 1
+          fi
+
+          jq -e \
+            --arg application_image "$SUCCESSFUL_APP_IMAGE" \
+            --arg attempted_application_image "$FAILED_MIGRATION_APP_IMAGE" \
+            '.outcome == "rolled_back" and .application_image == $application_image and .attempted_application_image == $attempted_application_image' \
+            "$DEPLOYMENT_STATE_DIRECTORY/current.json"
+          expected_image_id="$(docker image inspect "$SUCCESSFUL_APP_IMAGE" --format '{{.Id}}')"
+          for service in web worker scheduler; do
+            container_id="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml ps --quiet "$service")"
+            test "$(docker inspect "$container_id" --format '{{.Image}}')" = "$expected_image_id"
+          done
+          financial_state_after="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml exec --no-TTY web \
+            /usr/local/bin/with-production-secrets php artisan app:financial-state:fingerprint --no-interaction)"
+          test "$financial_state_after" = "$financial_state_before"
+          test "$(grep -c 'Production deployment failed' "$DEPLOYMENT_ALERT_LOG")" = 1
+          test "$(grep -c 'Production deployment recovered' "$DEPLOYMENT_ALERT_LOG")" = 1
+          test "$(wc -l < "$DEPLOYMENT_ALERT_LOG")" = 2
+          durable_work_restored=false
+          for attempt in $(seq 1 30); do
+            if docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml exec --no-TTY web \
+              /usr/local/bin/with-production-secrets \
+              php artisan app:deployment-rehearsal:verify "$rehearsal_id" --no-interaction; then
+              durable_work_restored=true
+              break
+            fi
+            sleep 2
+          done
+          test "$durable_work_restored" = true
+
+          printf '%s\n' 'Failed migration restored financial state, image, alerts, and durable work.' >&3
+
+      - name: Rehearse failed health restoration
+        run: |
+          exec 3>&1
+          exec >> "$REHEARSAL_OUTPUT" 2>&1
+
+          docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml stop worker scheduler
+          rehearsal_id="$(< /proc/sys/kernel/random/uuid)"
+          docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml exec --no-TTY web \
+            /usr/local/bin/with-production-secrets \
+            php artisan app:deployment-rehearsal:prepare "$rehearsal_id" --no-interaction
+          financial_state_before="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml exec --no-TTY web \
+            /usr/local/bin/with-production-secrets php artisan app:financial-state:fingerprint --no-interaction)"
+          : > "$DEPLOYMENT_ALERT_LOG"
+
+          if ./deploy-production deploy \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --app-image "$FAILED_HEALTH_APP_IMAGE"; then
+            echo 'The deliberately unhealthy candidate unexpectedly succeeded.' >&2
+            exit 1
+          fi
+
+          jq -e \
+            --arg application_image "$SUCCESSFUL_APP_IMAGE" \
+            --arg attempted_application_image "$FAILED_HEALTH_APP_IMAGE" \
+            '.outcome == "rolled_back" and .application_image == $application_image and .attempted_application_image == $attempted_application_image' \
+            "$DEPLOYMENT_STATE_DIRECTORY/current.json"
+          expected_image_id="$(docker image inspect "$SUCCESSFUL_APP_IMAGE" --format '{{.Id}}')"
+          for service in web worker scheduler; do
+            container_id="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml ps --quiet "$service")"
+            test "$(docker inspect "$container_id" --format '{{.Image}}')" = "$expected_image_id"
+          done
+          financial_state_after="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml exec --no-TTY web \
+            /usr/local/bin/with-production-secrets php artisan app:financial-state:fingerprint --no-interaction)"
+          test "$financial_state_after" = "$financial_state_before"
+          test "$(grep -c 'Production deployment failed' "$DEPLOYMENT_ALERT_LOG")" = 1
+          test "$(grep -c 'Production deployment recovered' "$DEPLOYMENT_ALERT_LOG")" = 1
+          test "$(wc -l < "$DEPLOYMENT_ALERT_LOG")" = 2
+          durable_work_restored=false
+          for attempt in $(seq 1 30); do
+            if docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml exec --no-TTY web \
+              /usr/local/bin/with-production-secrets \
+              php artisan app:deployment-rehearsal:verify "$rehearsal_id" --no-interaction; then
+              durable_work_restored=true
+              break
+            fi
+            sleep 2
+          done
+          test "$durable_work_restored" = true
+
+          printf '%s\n' 'Failed health restored financial state, image, alerts, and durable work.' >&3
+
+      - name: Rehearse concurrent deployment exclusion
+        run: |
+          exec 3>&1
+          exec >> "$REHEARSAL_OUTPUT" 2>&1
+
+          : > "$DEPLOYMENT_ALERT_LOG"
+          ./deploy-production deploy \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --app-image "$CONCURRENT_APP_IMAGE" &
+          first_deployment_pid=$!
+
+          for attempt in $(seq 1 50); do
+            if ! flock --nonblock "$DEPLOYMENT_STATE_DIRECTORY/deployment.lock" true; then
+              break
+            fi
+            sleep 0.2
+          done
+
+          if ./deploy-production deploy \
+            --env-file "$PRODUCTION_ENV_FILE" \
+            --app-image "$CONCURRENT_APP_IMAGE"; then
+            echo 'A concurrent deployment unexpectedly acquired the release lock.' >&2
+            exit 1
+          fi
+          wait "$first_deployment_pid"
+          test ! -s "$DEPLOYMENT_ALERT_LOG"
+
+          migration_name=2026_08_08_141738_rehearse_concurrent_transactional_deployment
+          migration_count="$(docker compose --env-file "$PRODUCTION_ENV_FILE" --file compose.production.yaml exec --no-TTY postgres \
+            psql --username money_assistant --dbname money_assistant --tuples-only --no-align \
+            --command "SELECT count(*) FROM migrations WHERE migration = '${migration_name}'")"
+          test "$migration_count" = 1
+          jq -e --arg application_image "$CONCURRENT_APP_IMAGE" \
+            '.outcome == "deployed" and .application_image == $application_image' \
+            "$DEPLOYMENT_STATE_DIRECTORY/current.json"
+
+          printf '%s\n' 'Concurrent migration and activation were excluded by the deployment lock.' >&3
+
+      - name: Verify production rehearsal secret isolation
+        run: |
+          exec 3>&1
+          exec >> "$REHEARSAL_OUTPUT" 2>&1
+
+          ./deploy-production verify --env-file "$PRODUCTION_ENV_FILE"
 
           docker compose \
             --env-file "$PRODUCTION_ENV_FILE" \
@@ -356,7 +577,7 @@ jobs:
             fi
           done
 
-          printf '%s\n' 'Failed deployment rollback, durable work, health, and credential isolation passed.' >&3
+          printf '%s\n' 'Complete deployment, migration, rollback, and container logs contain no rehearsal secrets.' >&3
 
       - name: Report production rehearsal failure
         if: failure()

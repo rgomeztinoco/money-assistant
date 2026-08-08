@@ -123,6 +123,10 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'deployment_requests_enabled' => (bool) env('DEPLOYMENT_REQUESTS_ENABLED', true),
+
+    'deployment_activation_marker' => storage_path('framework/deployment-activated'),
+
     'deployment_rehearsal_crash_hold_seconds' => (int) env('DEPLOYMENT_REHEARSAL_CRASH_HOLD_SECONDS', 20),
 
 ];

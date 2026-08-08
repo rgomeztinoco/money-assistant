@@ -9,8 +9,24 @@ compose_file="${COMPOSE_FILE:-${script_directory}/compose.production.yaml}"
 environment_file="${ENVIRONMENT_FILE:-${script_directory}/.env.production}"
 state_directory="${DEPLOYMENT_STATE_DIRECTORY:-/var/lib/money-assistant/deployments}"
 project_name="${COMPOSE_PROJECT_NAME:-money-assistant-production}"
+monitor_environment_file="${MONITOR_ENVIRONMENT_FILE:-/etc/money-assistant/monitor.env}"
 requested_application_image=''
 temporary_files=''
+previous_environment=''
+candidate_environment=''
+active_candidate_environment=''
+rollback_snapshot=''
+snapshot_verified=false
+database_may_have_changed=false
+current_application_image=''
+candidate_application_image=''
+maintenance_started_epoch=0
+maintenance_active=false
+rollback_attempted=false
+had_previous_release=false
+deployment_started=false
+deployment_alert_command="${DEPLOYMENT_ALERT_COMMAND:-}"
+deployment_activation_marker='/app/storage/framework/deployment-activated'
 
 usage()
 {
@@ -31,11 +47,6 @@ cleanup()
         rm -f -- "$temporary_file"
     done
 }
-
-trap cleanup EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
 new_temporary_file()
 {
@@ -58,6 +69,33 @@ environment_value()
     return 1
 }
 
+load_monitoring_environment()
+{
+    if [ -z "$deployment_alert_command" ] && [ -r "$monitor_environment_file" ]; then
+        set -a
+        # The host-managed monitoring file supplies the existing Telegram delivery path.
+        . "$monitor_environment_file"
+        set +a
+        deployment_alert_command="${MONITOR_DELIVERY_COMMAND:-}"
+    fi
+
+    if [ -z "$deployment_alert_command" ]; then
+        deployment_alert_command='/usr/local/sbin/deliver-openclaw-monitor-alert'
+    fi
+}
+
+send_deployment_alert()
+{
+    alert_message="$1"
+
+    if [ ! -x "$deployment_alert_command" ]; then
+        printf 'Deployment alert command is unavailable: %s\n' "$deployment_alert_command" >&2
+        return 1
+    fi
+
+    "$deployment_alert_command" "$alert_message"
+}
+
 validate_digest()
 {
     printf '%s\n' "$1" | grep -Eq '^sha256:[a-f0-9]{64}$' ||
@@ -68,6 +106,12 @@ validate_image_reference()
 {
     printf '%s\n' "$1" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
         fail "$2 must include a repository and sha256 digest"
+}
+
+validate_database_identifier()
+{
+    printf '%s\n' "$1" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$' ||
+        fail "$2 must be a PostgreSQL identifier"
 }
 
 application_image_from()
@@ -86,6 +130,20 @@ database_image_from()
         fail 'POSTGRES_IMAGE is required'
     validate_image_reference "$database_image" POSTGRES_IMAGE
     printf '%s\n' "$database_image"
+}
+
+database_name_from()
+{
+    database_name="$(environment_value DB_DATABASE "$1" 2>/dev/null || printf '%s' money_assistant)"
+    validate_database_identifier "$database_name" DB_DATABASE
+    printf '%s\n' "$database_name"
+}
+
+database_user_from()
+{
+    database_user="$(environment_value DB_USERNAME "$1" 2>/dev/null || printf '%s' money_assistant)"
+    validate_database_identifier "$database_user" DB_USERNAME
+    printf '%s\n' "$database_user"
 }
 
 openclaw_version_from()
@@ -118,6 +176,7 @@ write_candidate_environment()
     found_repository=false
     found_digest=false
     found_pull_policy=false
+    found_deployment_requests=false
 
     while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in
@@ -132,6 +191,10 @@ write_candidate_environment()
             APP_IMAGE_PULL_POLICY=*)
                 printf '%s\n' 'APP_IMAGE_PULL_POLICY=never' >> "$target_file"
                 found_pull_policy=true
+                ;;
+            DEPLOYMENT_REQUESTS_ENABLED=*)
+                printf '%s\n' 'DEPLOYMENT_REQUESTS_ENABLED=false' >> "$target_file"
+                found_deployment_requests=true
                 ;;
             *) printf '%s\n' "$line" >> "$target_file" ;;
         esac
@@ -148,38 +211,55 @@ write_candidate_environment()
     if [ "$found_pull_policy" = false ]; then
         printf '%s\n' 'APP_IMAGE_PULL_POLICY=never' >> "$target_file"
     fi
+
+    if [ "$found_deployment_requests" = false ]; then
+        printf '%s\n' 'DEPLOYMENT_REQUESTS_ENABLED=false' >> "$target_file"
+    fi
 }
 
-verify_stack()
+write_active_candidate_environment()
+{
+    source_file="$1"
+    target_file="$2"
+    found_deployment_requests=false
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            DEPLOYMENT_REQUESTS_ENABLED=*)
+                printf '%s\n' 'DEPLOYMENT_REQUESTS_ENABLED=true' >> "$target_file"
+                found_deployment_requests=true
+                ;;
+            *) printf '%s\n' "$line" >> "$target_file" ;;
+        esac
+    done < "$source_file"
+
+    if [ "$found_deployment_requests" = false ]; then
+        printf '%s\n' 'DEPLOYMENT_REQUESTS_ENABLED=true' >> "$target_file"
+    fi
+}
+
+service_is_healthy()
+{
+    checked_environment="$1"
+    checked_service="$2"
+    container_id="$(compose "$checked_environment" ps --quiet "$checked_service")"
+
+    [ -n "$container_id" ] || return 1
+    [ "$(docker inspect --format '{{.State.Status}}' "$container_id")" = running ] || return 1
+    [ "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" = healthy ]
+}
+
+verify_release()
 {
     verified_environment="$1"
+    shift
 
-    for service in postgres web worker scheduler proxy; do
-        container_id="$(compose "$verified_environment" ps --quiet "$service")"
-
-        if [ -z "$container_id" ]; then
-            printf 'Required service is missing: %s\n' "$service" >&2
-            return 1
-        fi
-
-        if [ "$(docker inspect --format '{{.State.Status}}' "$container_id")" != running ]; then
-            printf 'Required service is not running: %s\n' "$service" >&2
-            return 1
-        fi
-
-        if [ "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" != healthy ]; then
-            printf 'Required service is not healthy: %s\n' "$service" >&2
+    for service in "$@"; do
+        if ! service_is_healthy "$verified_environment" "$service"; then
+            printf 'Required service is unhealthy: %s\n' "$service" >&2
             return 1
         fi
     done
-
-    migration_container_id="$(compose "$verified_environment" ps --all --quiet migrate)"
-
-    if [ -z "$migration_container_id" ] ||
-        [ "$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$migration_container_id")" != 'exited:0' ]; then
-        printf '%s\n' 'The migration service did not complete successfully.' >&2
-        return 1
-    fi
 
     curl \
         --fail \
@@ -188,6 +268,16 @@ verify_stack()
         --show-error \
         http://127.0.0.1:8443/up \
         >/dev/null
+}
+
+verify_web_release()
+{
+    verify_release "$1" postgres web proxy
+}
+
+verify_stack()
+{
+    verify_release "$1" postgres web worker scheduler proxy
 }
 
 json_escape()
@@ -201,6 +291,7 @@ record_release()
     active_environment="$2"
     attempted_application_image="$3"
     previous_application_image="$4"
+    maintenance_seconds="${5:-0}"
     active_application_image="$(application_image_from "$active_environment")"
     active_database_image="$(database_image_from "$active_environment")"
     active_openclaw_version="$(openclaw_version_from "$active_environment")"
@@ -225,6 +316,7 @@ record_release()
         printf '  "database_image_id": "%s",\n' "$(json_escape "$database_image_id")"
         printf '  "database_version": "%s",\n' "$(json_escape "$database_version")"
         printf '  "openclaw_version": "%s",\n' "$(json_escape "$active_openclaw_version")"
+        printf '  "maintenance_seconds": %s,\n' "$maintenance_seconds"
         printf '  "attempted_application_image": "%s",\n' "$(json_escape "$attempted_application_image")"
         printf '  "previous_application_image": "%s"\n' "$(json_escape "$previous_application_image")"
         printf '}\n'
@@ -248,23 +340,221 @@ install_environment()
     mv -f -- "$staged_environment" "$target_file"
 }
 
-restore_environment()
+verify_candidate_storage()
 {
-    rollback_environment="$1"
-    attempted_application_image="$2"
-    previous_application_image="$(application_image_from "$rollback_environment")"
+    storage_probe="${deployment_activation_marker}.preflight.$$"
 
-    printf '%s\n' 'Candidate deployment failed; restoring the previous release.' >&2
+    compose "$candidate_environment" run --rm --no-deps \
+        migrate \
+        /bin/sh \
+        -c 'touch "$1" && rm -f "$1"' \
+        deployment-storage-probe \
+        "$storage_probe"
+}
 
-    compose "$rollback_environment" up --detach --wait --pull never ||
-        fail 'the candidate and previous release both failed to become healthy'
-    verify_stack "$rollback_environment" ||
-        fail 'the previous release was restored but did not pass verification'
+preflight_release()
+{
+    candidate_database_image="$(database_image_from "$candidate_environment")"
+
+    [ -x "$deployment_alert_command" ] ||
+        fail "the deployment alert command is not executable: $deployment_alert_command"
+    compose "$candidate_environment" config --quiet ||
+        fail 'the candidate Compose configuration is invalid'
+    compose "$active_candidate_environment" config --quiet ||
+        fail 'the active candidate Compose configuration is invalid'
+    docker pull "$candidate_application_image" ||
+        fail 'the candidate application image could not be pulled'
+    docker pull "$candidate_database_image" ||
+        fail 'the PostgreSQL image could not be pulled'
+    compose "$candidate_environment" pull proxy ||
+        fail 'the proxy image could not be pulled'
+    docker image inspect "$candidate_application_image" >/dev/null ||
+        fail 'the candidate application image is unreadable'
+    verify_candidate_storage ||
+        fail 'the shared application storage is not writable'
+
+    previous_postgres_id="$(compose "$previous_environment" ps --quiet postgres)"
+    previous_web_id="$(compose "$previous_environment" ps --quiet web)"
+    if [ -n "$previous_web_id" ]; then
+        had_previous_release=true
+        verify_web_release "$previous_environment" ||
+            fail 'the active web release is unhealthy before maintenance'
+    elif [ -n "$previous_postgres_id" ]; then
+        fail 'an incomplete production stack already exists'
+    else
+        compose "$candidate_environment" up --detach --wait --no-deps postgres ||
+            fail 'PostgreSQL could not be initialized'
+    fi
+
+    compose "$candidate_environment" exec --no-TTY postgres pg_dump --version >/dev/null ||
+        fail 'pg_dump is unavailable'
+    compose "$candidate_environment" exec --no-TTY postgres pg_restore --version >/dev/null ||
+        fail 'pg_restore is unavailable'
+
+    database_size_bytes="$(compose "$candidate_environment" exec --no-TTY postgres \
+        psql \
+        --username "$(database_user_from "$candidate_environment")" \
+        --dbname "$(database_name_from "$candidate_environment")" \
+        --tuples-only \
+        --no-align \
+        --command 'SELECT pg_database_size(current_database())')" ||
+        fail 'the database size could not be measured'
+    case "$database_size_bytes" in
+        ''|*[!0-9]*) fail 'the database size is invalid' ;;
+    esac
+
+    available_kilobytes="$(df -Pk "$state_directory" | awk 'NR == 2 { print $4 }')"
+    minimum_free_kilobytes="${DEPLOYMENT_MIN_FREE_KILOBYTES:-1048576}"
+    case "$available_kilobytes:$minimum_free_kilobytes" in
+        *[!0-9:]*) fail 'deployment disk availability is invalid' ;;
+    esac
+    snapshot_kilobytes=$((database_size_bytes / 1024 + 1))
+    required_kilobytes=$((minimum_free_kilobytes + snapshot_kilobytes * 2))
+    [ "$available_kilobytes" -ge "$required_kilobytes" ] ||
+        fail 'insufficient disk space for a verified rollback snapshot'
+}
+
+freeze_production_writers()
+{
+    maintenance_started_epoch="$(date +%s)"
+    maintenance_active=true
+
+    compose "$previous_environment" stop worker scheduler web proxy ||
+        fail 'production writers could not be stopped'
+
+    if [ -n "$(compose "$previous_environment" ps --quiet worker scheduler web proxy)" ]; then
+        fail 'a production writer remained active at the snapshot boundary'
+    fi
+
+}
+
+create_rollback_snapshot()
+{
+    rollback_snapshot="${state_directory}/rollback-$(date -u '+%Y%m%dT%H%M%SZ')-$$.dump"
+    install -m 0600 /dev/null "$rollback_snapshot"
+
+    compose "$previous_environment" exec --no-TTY postgres \
+        pg_dump \
+        --username "$(database_user_from "$previous_environment")" \
+        --dbname "$(database_name_from "$previous_environment")" \
+        --format=custom \
+        --create \
+        > "$rollback_snapshot" ||
+        fail 'the rollback snapshot could not be created'
+
+    [ "$(stat -c '%a' "$rollback_snapshot")" = 600 ] ||
+        fail 'the rollback snapshot permissions are not restrictive'
+    compose "$previous_environment" exec --no-TTY postgres \
+        pg_restore --list < "$rollback_snapshot" >/dev/null ||
+        fail 'the rollback snapshot is unreadable'
+    snapshot_verified=true
+}
+
+remove_candidate_activation_marker()
+{
+    compose "$candidate_environment" run --rm --no-deps \
+        migrate \
+        /bin/rm \
+        -f "$deployment_activation_marker"
+}
+
+create_candidate_activation_marker()
+{
+    compose "$candidate_environment" exec --user 33:33 --no-TTY web \
+        touch "$deployment_activation_marker"
+}
+
+restore_database_snapshot()
+{
+    restored_database_name="$(database_name_from "$previous_environment")"
+    restored_database_user="$(database_user_from "$previous_environment")"
+
+    compose "$previous_environment" exec --no-TTY postgres \
+        dropdb \
+        --force \
+        --if-exists \
+        --username "$restored_database_user" \
+        "$restored_database_name" || return 1
+    compose "$previous_environment" exec --no-TTY postgres \
+        pg_restore \
+        --exit-on-error \
+        --create \
+        --username "$restored_database_user" \
+        --dbname postgres \
+        < "$rollback_snapshot" || return 1
+}
+
+activate_web_release()
+{
+    activated_environment="$1"
+
+    compose "$activated_environment" up --detach --wait --no-deps web proxy || return 1
+    verify_web_release "$activated_environment"
+}
+
+activate_background_services()
+{
+    activated_environment="$1"
+
+    compose "$activated_environment" up --detach --wait --no-deps worker scheduler || return 1
+    verify_stack "$activated_environment"
+}
+
+restore_transaction()
+{
+    [ "$rollback_attempted" = false ] || return 1
+    rollback_attempted=true
+
+    send_deployment_alert \
+        "Production deployment failed for ${candidate_application_image}; automatic recovery started." || true
+    printf '%s\n' 'Candidate deployment failed; restoring the PostgreSQL snapshot and previous image.' >&2
+
+    compose "$candidate_environment" stop worker scheduler web proxy >/dev/null 2>&1 || true
+    if [ "$database_may_have_changed" = true ]; then
+        [ "$snapshot_verified" = true ] || return 1
+        [ -r "$rollback_snapshot" ] || return 1
+        restore_database_snapshot || return 1
+    fi
+    [ "$had_previous_release" = true ] || return 1
+    install_environment "$previous_environment" "$environment_file" || return 1
+    activate_web_release "$previous_environment" || return 1
+    activate_background_services "$previous_environment" || return 1
+
+    maintenance_seconds=$(($(date +%s) - maintenance_started_epoch))
     record_release \
         rolled_back \
-        "$rollback_environment" \
-        "$attempted_application_image" \
-        "$previous_application_image"
+        "$previous_environment" \
+        "$candidate_application_image" \
+        "$current_application_image" \
+        "$maintenance_seconds" || return 1
+    rm -f -- "$rollback_snapshot"
+    rollback_snapshot=''
+    snapshot_verified=false
+    maintenance_active=false
+    send_deployment_alert \
+        "Production deployment recovered on ${current_application_image}; PostgreSQL and writers were restored." || true
+
+    return 0
+}
+
+finish()
+{
+    status=$?
+    trap - EXIT HUP INT TERM
+
+    if [ "$status" -ne 0 ] && [ "$maintenance_active" = true ]; then
+        if ! restore_transaction; then
+            printf '%s\n' 'Automatic recovery failed; the rollback snapshot was retained and writers remain stopped.' >&2
+            send_deployment_alert \
+                "Production deployment recovery failed for ${candidate_application_image}; writers remain stopped." || true
+        fi
+    elif [ "$status" -ne 0 ] && [ "$deployment_started" = true ]; then
+        send_deployment_alert \
+            "Production deployment failed for ${candidate_application_image:-unknown}; the database commit point was preserved without automatic rollback." || true
+    fi
+
+    cleanup
+    exit "$status"
 }
 
 deploy_release()
@@ -273,6 +563,8 @@ deploy_release()
     previous_environment="$temporary_file"
     new_temporary_file
     candidate_environment="$temporary_file"
+    new_temporary_file
+    active_candidate_environment="$temporary_file"
     cp -- "$environment_file" "$previous_environment"
     current_application_image="$(application_image_from "$previous_environment")"
 
@@ -290,50 +582,55 @@ deploy_release()
         "$candidate_environment" \
         "$candidate_repository" \
         "$candidate_digest"
-
     candidate_application_image="$(application_image_from "$candidate_environment")"
-    database_image_from "$candidate_environment" >/dev/null
+    write_active_candidate_environment "$candidate_environment" "$active_candidate_environment"
 
-    candidate_database_image="$(database_image_from "$candidate_environment")"
+    preflight_release
+    freeze_production_writers
+    remove_candidate_activation_marker ||
+        fail 'the candidate request gate could not be closed'
+    create_rollback_snapshot
 
-    if ! docker pull "$candidate_application_image" ||
-        ! docker pull "$candidate_database_image" ||
-        ! compose "$candidate_environment" pull proxy; then
-        verify_stack "$previous_environment" ||
-            fail 'the candidate image could not be pulled and the previous release is unhealthy'
-        record_release \
-            rolled_back \
-            "$previous_environment" \
-            "$candidate_application_image" \
-            "$current_application_image"
-        return 1
-    fi
+    database_may_have_changed=true
+    compose "$candidate_environment" run --rm --no-deps migrate ||
+        fail 'the candidate migration failed'
+    activate_web_release "$candidate_environment" ||
+        fail 'the candidate web release failed health verification'
 
-    if ! compose "$candidate_environment" up --detach --wait; then
-        restore_environment "$previous_environment" "$candidate_application_image"
-        return 1
-    fi
-
-    if ! verify_stack "$candidate_environment"; then
-        restore_environment "$previous_environment" "$candidate_application_image"
-        return 1
-    fi
-
+    maintenance_seconds=$(($(date +%s) - maintenance_started_epoch))
     install -m 0600 "$previous_environment" "${state_directory}/previous.env"
-    install_environment "$candidate_environment" "$environment_file"
+    install_environment "$active_candidate_environment" "$environment_file"
+    record_release \
+        activating \
+        "$environment_file" \
+        "$candidate_application_image" \
+        "$current_application_image" \
+        "$maintenance_seconds"
+    rm -f -- "$rollback_snapshot"
+    rollback_snapshot=''
+    snapshot_verified=false
+    maintenance_active=false
+
+    create_candidate_activation_marker ||
+        fail 'the candidate request gate could not be opened'
+    activate_background_services "$active_candidate_environment" ||
+        fail 'the candidate background services failed health verification'
+
     record_release \
         deployed \
         "$environment_file" \
         "$candidate_application_image" \
-        "$current_application_image"
-    printf 'Production deployment is healthy: %s\n' "$candidate_application_image"
+        "$current_application_image" \
+        "$maintenance_seconds"
+    printf 'Production deployment is healthy after %s seconds of maintenance: %s\n' \
+        "$maintenance_seconds" "$candidate_application_image"
 }
 
 rollback_release()
 {
-    previous_environment="${state_directory}/previous.env"
+    previous_release_environment="${state_directory}/previous.env"
 
-    if [ ! -r "$previous_environment" ]; then
+    if [ ! -r "$previous_release_environment" ]; then
         fail 'no previous release is available'
     fi
 
@@ -342,9 +639,9 @@ rollback_release()
     new_temporary_file
     rollback_environment="$temporary_file"
     cp -- "$environment_file" "$current_environment"
-    cp -- "$previous_environment" "$rollback_environment"
-    current_application_image="$(application_image_from "$current_environment")"
-    rollback_application_image="$(application_image_from "$rollback_environment")"
+    cp -- "$previous_release_environment" "$rollback_environment"
+    current_image="$(application_image_from "$current_environment")"
+    rollback_image="$(application_image_from "$rollback_environment")"
 
     if ! compose "$rollback_environment" up --detach --wait --pull never ||
         ! verify_stack "$rollback_environment"; then
@@ -361,10 +658,15 @@ rollback_release()
     record_release \
         rolled_back \
         "$environment_file" \
-        "$rollback_application_image" \
-        "$current_application_image"
-    printf 'Production rollback is healthy: %s\n' "$rollback_application_image"
+        "$rollback_image" \
+        "$current_image"
+    printf 'Production rollback is healthy: %s\n' "$rollback_image"
 }
+
+trap finish EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [ "$#" -lt 1 ]; then
     usage >&2
@@ -409,18 +711,23 @@ command -v docker >/dev/null 2>&1 || fail 'docker is required'
 command -v flock >/dev/null 2>&1 || fail 'flock is required'
 command -v curl >/dev/null 2>&1 || fail 'curl is required'
 command -v sed >/dev/null 2>&1 || fail 'sed is required'
+command -v awk >/dev/null 2>&1 || fail 'awk is required'
 
 install -d -m 0700 "$state_directory"
 exec 9>"${state_directory}/deployment.lock"
 flock -n 9 || fail 'another deployment operation is in progress'
+load_monitoring_environment
 
 case "$action" in
-    deploy) deploy_release ;;
+    deploy)
+        deployment_started=true
+        deploy_release
+        ;;
     rollback) rollback_release ;;
     verify)
         application_image_from "$environment_file" >/dev/null
-    database_image_from "$environment_file" >/dev/null
-    openclaw_version_from "$environment_file" >/dev/null
+        database_image_from "$environment_file" >/dev/null
+        openclaw_version_from "$environment_file" >/dev/null
         verify_stack "$environment_file" || fail 'the production stack is unhealthy'
         record_release \
             verified \

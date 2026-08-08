@@ -442,6 +442,88 @@ test('failed deployments restore and verify the previous healthy release', funct
     expect($deployment)
         ->toContain('rollback')
         ->toContain('previous.env')
+        ->toContain('install_environment "$previous_environment" "$environment_file"')
         ->toContain('up --detach --wait --pull never')
         ->toContain('verify_stack');
+});
+
+test('production releases isolate migration and admit background writers only after web health', function (): void {
+    $services = $this->productionCompose['services'];
+    $migrationStorage = collect($services['migrate']['volumes'])->firstWhere('target', '/app/storage');
+
+    expect($services['migrate']['command'])
+        ->toContain('--force', '--isolated', '--no-interaction')
+        ->and($services['migrate']['environment']['CACHE_STORE'])->toBe('file')
+        ->and($migrationStorage['source'])->toBe('application-storage')
+        ->and($services['worker']['depends_on']['web']['condition'])
+        ->toBe('service_healthy')
+        ->and($services['scheduler']['depends_on']['web']['condition'])
+        ->toBe('service_healthy');
+});
+
+test('deployments freeze writers around a verified PostgreSQL rollback snapshot', function (): void {
+    $deployment = file_get_contents(base_path('deploy-production'));
+
+    expect($deployment)
+        ->toContain('config --quiet')
+        ->toContain('verify_candidate_storage')
+        ->toContain('touch "$1" && rm -f "$1"')
+        ->toContain('exec --user 33:33 --no-TTY web')
+        ->toContain('stop worker scheduler web proxy')
+        ->toContain('pg_dump')
+        ->toContain('--format=custom')
+        ->toContain('pg_restore --list')
+        ->toContain('install -m 0600')
+        ->toContain('run --rm --no-deps migrate')
+        ->toContain('DEPLOYMENT_REQUESTS_ENABLED=false')
+        ->toContain('DEPLOYMENT_REQUESTS_ENABLED=true')
+        ->toContain('remove_candidate_activation_marker')
+        ->toContain('create_candidate_activation_marker')
+        ->toContain('up --detach --wait --no-deps web proxy')
+        ->toContain('up --detach --wait --no-deps worker scheduler')
+        ->toContain('pg_restore')
+        ->toContain('--exit-on-error')
+        ->toContain('--create')
+        ->not->toContain('--entrypoint')
+        ->not->toContain('migrate:rollback');
+});
+
+test('deployment storage writeability is verified before maintenance starts', function (): void {
+    $deployment = file_get_contents(base_path('deploy-production'));
+    $storageProbe = strpos($deployment, 'verify_candidate_storage ||');
+    $maintenanceStart = strpos($deployment, 'maintenance_started_epoch=', $storageProbe);
+
+    expect($storageProbe)->not->toBeFalse()
+        ->and($maintenanceStart)->not->toBeFalse()
+        ->and($storageProbe)->toBeLessThan($maintenanceStart);
+});
+
+test('failed deployment recovery is attempted once and reported through monitoring', function (): void {
+    $deployment = file_get_contents(base_path('deploy-production'));
+
+    expect($deployment)
+        ->toContain('rollback_attempted')
+        ->toContain('DEPLOYMENT_ALERT_COMMAND')
+        ->toContain('[ -x "$deployment_alert_command" ]')
+        ->toContain('Production deployment failed')
+        ->toContain('Production deployment recovered')
+        ->toContain('database commit point was preserved without automatic rollback')
+        ->not->toContain('while restore');
+});
+
+test('the final candidate is health checked while fenced before rollback is disarmed', function (): void {
+    $deployment = file_get_contents(base_path('deploy-production'));
+    $candidateHealth = strpos($deployment, 'activate_web_release "$candidate_environment"');
+    $rollbackDisarmed = strpos($deployment, 'maintenance_active=false', $candidateHealth);
+    $requestAdmission = strpos($deployment, 'create_candidate_activation_marker', $rollbackDisarmed);
+    $backgroundAdmission = strpos($deployment, 'activate_background_services', $requestAdmission);
+
+    expect($candidateHealth)->not->toBeFalse()
+        ->and($rollbackDisarmed)->not->toBeFalse()
+        ->and($requestAdmission)->not->toBeFalse()
+        ->and($backgroundAdmission)->not->toBeFalse()
+        ->and($candidateHealth)->toBeLessThan($rollbackDisarmed)
+        ->and($rollbackDisarmed)->toBeLessThan($requestAdmission)
+        ->and($requestAdmission)->toBeLessThan($backgroundAdmission)
+        ->and($deployment)->not->toContain('activate_web_release "$active_candidate_environment"');
 });

@@ -64,7 +64,8 @@ test('the production rehearsal supplies isolated values for every required integ
 
 test('production rehearsal failures report masked diagnostics', function (): void {
     $rehearsalConfiguration = $this->productionScripts->get('Create isolated rehearsal configuration');
-    $rollbackRehearsal = $this->productionScripts->get('Rehearse failed deployment rollback');
+    $rollbackRehearsal = $this->productionScripts->get('Rehearse failed migration restoration');
+    $secretIsolation = $this->productionScripts->get('Verify production rehearsal secret isolation');
     $diagnostics = $this->productionSteps->firstWhere('name', 'Report production rehearsal failure');
 
     expect($rehearsalConfiguration)
@@ -72,6 +73,8 @@ test('production rehearsal failures report masked diagnostics', function (): voi
         ->toContain('sudo chown root:root')
         ->toContain('$GOOGLE_GMAIL_CLIENT_SECRET_FILE')
         ->and($rollbackRehearsal)
+        ->toContain('app:financial-state:fingerprint')
+        ->and($secretIsolation)
         ->toContain('$GOOGLE_GMAIL_CLIENT_SECRET_FILE')
         ->and($diagnostics['if'])
         ->toBe('failure()')
@@ -79,4 +82,53 @@ test('production rehearsal failures report masked diagnostics', function (): voi
         ->toContain('cat "$REHEARSAL_OUTPUT"')
         ->toContain('ps --all')
         ->toContain('logs --no-color');
+});
+
+test('production CI rehearses the transactional release outcomes as black boxes', function (): void {
+    $transactionalRehearsalSteps = [
+        'Rehearse successful transactional deployment',
+        'Rehearse failed migration restoration',
+        'Rehearse failed health restoration',
+        'Rehearse concurrent deployment exclusion',
+    ];
+
+    expect($this->productionScripts->keys()->all())
+        ->toContain(...$transactionalRehearsalSteps);
+
+    foreach ($transactionalRehearsalSteps as $stepName) {
+        expect((string) $this->productionScripts->get($stepName))
+            ->toContain('./deploy-production deploy');
+    }
+});
+
+test('rollback rehearsals compare domain fingerprints and durable work after restoration', function (): void {
+    foreach ([
+        'Rehearse failed migration restoration',
+        'Rehearse failed health restoration',
+    ] as $stepName) {
+        expect((string) $this->productionScripts->get($stepName))
+            ->toContain('app:financial-state:fingerprint')
+            ->toContain('app:deployment-rehearsal:verify')
+            ->toContain('rolled_back');
+    }
+});
+
+test('production rehearsal proves maintenance timing alerts and secret isolation', function (): void {
+    $successfulDeployment = (string) $this->productionScripts->get('Rehearse successful transactional deployment');
+    $failedMigration = (string) $this->productionScripts->get('Rehearse failed migration restoration');
+    $failedHealth = (string) $this->productionScripts->get('Rehearse failed health restoration');
+
+    expect($successfulDeployment)
+        ->toContain('maintenance_seconds')
+        ->toContain('-lt 300')
+        ->and($failedMigration)
+        ->toContain('Production deployment failed')
+        ->toContain('Production deployment recovered')
+        ->and($failedHealth)
+        ->toContain('Production deployment failed')
+        ->toContain('Production deployment recovered');
+
+    foreach ($this->productionScripts as $script) {
+        expect((string) $script)->not->toContain('set -x');
+    }
 });

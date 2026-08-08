@@ -21,6 +21,7 @@ x-application: &application
         DB_PORT: 5432
         DB_QUEUE_CONNECTION: pgsql
         DB_USERNAME: '${DB_USERNAME:-money_assistant}'
+        DEPLOYMENT_REQUESTS_ENABLED: '${DEPLOYMENT_REQUESTS_ENABLED:-true}'
         GOOGLE_GMAIL_CLIENT_ID: '${GOOGLE_GMAIL_CLIENT_ID:?Set GOOGLE_GMAIL_CLIENT_ID}'
         GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS: production
         GOOGLE_GMAIL_REDIRECT_URI: 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:8443/settings/connections/gmail/callback'
@@ -100,11 +101,15 @@ services:
     migrate:
         <<: *application
         restart: 'no'
+        environment:
+            <<: *application-environment
+            CACHE_STORE: file
         command:
             - php
             - artisan
             - migrate
             - --force
+            - --isolated
             - --no-interaction
         depends_on:
             postgres:
@@ -183,6 +188,8 @@ services:
                 condition: service_healthy
             migrate:
                 condition: service_completed_successfully
+            web:
+                condition: service_healthy
         healthcheck:
             test:
                 - CMD
@@ -211,6 +218,8 @@ services:
                 condition: service_healthy
             migrate:
                 condition: service_completed_successfully
+            web:
+                condition: service_healthy
         healthcheck:
             test:
                 - CMD
