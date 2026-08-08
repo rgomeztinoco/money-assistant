@@ -602,13 +602,15 @@ jobs:
               --env-file "$PRODUCTION_ENV_FILE" \
               --app-image "$CONCURRENT_APP_IMAGE" &
             interrupted_pid=$!
-            for attempt in $(seq 1 200); do
+            phase_observed=false
+            phase_deadline=$((SECONDS + 60))
+            while kill -0 "$interrupted_pid" 2>/dev/null && ((SECONDS < phase_deadline)); do
               if grep -Fxq "phase=$phase" "$DEPLOYMENT_STATE_DIRECTORY/transaction.state" 2>/dev/null; then
+                phase_observed=true
                 break
               fi
-              sleep 0.05
             done
-            grep -Fxq "phase=$phase" "$DEPLOYMENT_STATE_DIRECTORY/transaction.state"
+            test "$phase_observed" = true
             kill -KILL -- "-$interrupted_pid"
             wait "$interrupted_pid" || true
 
