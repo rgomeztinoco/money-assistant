@@ -511,6 +511,23 @@ test('failed deployment recovery is attempted once and reported through monitori
         ->not->toContain('while restore');
 });
 
+test('a restored deployment records a terminal transaction phase', function (): void {
+    $deployment = file_get_contents(base_path('deploy-production'));
+    $restoreTransactionStart = strpos($deployment, 'restore_transaction()');
+    $interruptedRecoveryStart = strpos($deployment, 'recover_interrupted_transaction()');
+    $restoreTransaction = substr(
+        $deployment,
+        $restoreTransactionStart,
+        $interruptedRecoveryStart - $restoreTransactionStart,
+    );
+    $terminalPhase = strpos($restoreTransaction, 'record_deployment_phase rolled_back');
+    $snapshotRemoval = strpos($restoreTransaction, 'rm -f -- "$rollback_snapshot"');
+
+    expect($terminalPhase)->not->toBeFalse()
+        ->and($snapshotRemoval)->not->toBeFalse()
+        ->and($terminalPhase)->toBeLessThan($snapshotRemoval);
+});
+
 test('the final candidate is health checked while fenced before rollback is disarmed', function (): void {
     $deployment = file_get_contents(base_path('deploy-production'));
     $candidateHealth = strpos($deployment, 'activate_web_release "$candidate_environment"');

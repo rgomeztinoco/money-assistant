@@ -1,4 +1,5 @@
 compose.production.yaml 0644
+Caddyfile.production 0644
 Caddyfile.application 0644
 deploy-production 0755
 production-trust-gate 0755

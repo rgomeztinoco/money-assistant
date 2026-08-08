@@ -52,9 +52,34 @@ test('an allowlisted operational bundle is immutable and accepted by the host la
         expect($validated->getExitCode())->toBe(0, $validated->getErrorOutput())
             ->and($validated->getOutput())->toContain("Operational bundle validated: {$checksum}")
             ->and(is_dir($stagingDirectory.'/'.$checksum))->toBeTrue()
+            ->and(is_file($stagingDirectory.'/'.$checksum.'/Caddyfile.production'))->toBeTrue()
             ->and(file_get_contents($stagingDirectory.'/'.$checksum.'/SOURCE_REVISION'))->toBe($revision."\n");
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
+    }
+});
+
+test('deployment signals reach the staged deployment process', function (): void {
+    $launcher = file_get_contents(base_path('activate-production-release'));
+
+    expect($launcher)->toContain('exec "${candidate_directory}/deploy-production" deploy');
+});
+
+test('an operational bundle can be written into an existing shared directory', function (): void {
+    $temporaryDirectory = sys_get_temp_dir();
+    $bundle = $temporaryDirectory.'/money-assistant-operational-bundle-'.str()->uuid().'.tar';
+    $directoryPermissions = fileperms($temporaryDirectory) & 07777;
+
+    try {
+        $built = runOperationalCommand('build-operational-bundle', [str_repeat('f', 40), $bundle]);
+
+        expect($built->getExitCode())->toBe(0, $built->getErrorOutput())
+            ->and(is_file($bundle))->toBeTrue()
+            ->and(fileperms($temporaryDirectory) & 07777)->toBe($directoryPermissions);
+    } finally {
+        if (is_file($bundle)) {
+            unlink($bundle);
+        }
     }
 });
 

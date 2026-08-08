@@ -79,7 +79,15 @@ test('production rehearsal failures report masked diagnostics', function (): voi
         ->and($diagnostics['if'])
         ->toBe('failure()')
         ->and($diagnostics['run'])
-        ->toContain('cat "$REHEARSAL_OUTPUT"')
+        ->toContain('sanitized_diagnostics')
+        ->toContain('sed --in-place')
+        ->toContain('APP_KEY_FILE')
+        ->toContain('DB_PASSWORD_FILE')
+        ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE')
+        ->toContain('OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE')
+        ->toContain('OPENCLAW_HOOK_TOKEN_FILE')
+        ->toContain('sudo cat "$secret_file"')
+        ->not->toContain('cat "$REHEARSAL_OUTPUT"')
         ->toContain('ps --all')
         ->toContain('logs --no-color');
 });
@@ -107,7 +115,11 @@ test('production CI rehearses the transactional release outcomes as black boxes'
         ->toContain('activate-production-release validate')
         ->toContain('mismatched operational bundle checksum')
         ->and((string) $this->productionScripts->get('Rehearse interrupted bundle activation convergence'))
-        ->toContain('kill -KILL')
+        ->toContain('setsid ./activate-production-release deploy')
+        ->toContain('phase_deadline=$((SECONDS + 60))')
+        ->toContain('phase_observed=true')
+        ->toContain('kill -KILL -- "-$interrupted_pid"')
+        ->not->toContain('sleep 0.05')
         ->toContain('transaction.state');
 });
 
