@@ -58,6 +58,24 @@ test('an allowlisted operational bundle is immutable and accepted by the host la
     }
 });
 
+test('an operational bundle can be written into an existing shared directory', function (): void {
+    $temporaryDirectory = sys_get_temp_dir();
+    $bundle = $temporaryDirectory.'/money-assistant-operational-bundle-'.str()->uuid().'.tar';
+    $directoryPermissions = fileperms($temporaryDirectory) & 07777;
+
+    try {
+        $built = runOperationalCommand('build-operational-bundle', [str_repeat('f', 40), $bundle]);
+
+        expect($built->getExitCode())->toBe(0, $built->getErrorOutput())
+            ->and(is_file($bundle))->toBeTrue()
+            ->and(fileperms($temporaryDirectory) & 07777)->toBe($directoryPermissions);
+    } finally {
+        if (is_file($bundle)) {
+            unlink($bundle);
+        }
+    }
+});
+
 test('the host launcher rejects unexpected bundle contents and mismatched release inputs', function (): void {
     $temporaryDirectory = operationalBundleDirectory();
     $bundle = $temporaryDirectory.'/operations.tar';
