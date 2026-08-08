@@ -41,6 +41,7 @@ test('production trust stays withheld until every current deployment drill has f
         'application_revision' => 'revision-under-test',
         'database_image' => 'postgres:18@sha256:'.str_repeat('d', 64),
         'openclaw_version' => '2026.7.1',
+        'operational_bundle_checksum' => str_repeat('e', 64),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     $environment = [
         'DEPLOYMENT_STATE_DIRECTORY' => $deploymentStateDirectory,
@@ -126,6 +127,7 @@ SH);
             ->application_revision->toBe('revision-under-test')
             ->database_image->toBe('postgres:18@sha256:'.str_repeat('d', 64))
             ->openclaw_version->toBe('2026.7.1')
+            ->operational_bundle_checksum->toBe(str_repeat('e', 64))
             ->recorded_at_epoch->toBe($now)
             ->producer->toBe('verify-production-acceptance-matrix')
             ->proof_sha256->toBe(hash_file('sha256', $evidenceDirectory.'/acceptance-matrix.proof'));
@@ -154,11 +156,29 @@ SH);
         expect($selfAttested->getExitCode())->toBe(1)
             ->and($selfAttested->getErrorOutput())->toContain('unknown action: record');
 
+        $activeDeployment = json_decode(
+            file_get_contents($deploymentStateDirectory.'/current.json'),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $activeDeployment['operational_bundle_checksum'] = str_repeat('f', 64);
+        file_put_contents(
+            $deploymentStateDirectory.'/current.json',
+            json_encode($activeDeployment, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+        );
+        $changedBundle = runProductionTrustScript('production-trust-gate', ['verify'], $environment);
+
+        expect($changedBundle->getExitCode())->toBe(1)
+            ->and($changedBundle->getOutput())
+            ->toContain('Production trust: WITHHELD')
+            ->toContain('does not match the active deployment');
+
         file_put_contents($deploymentStateDirectory.'/current.json', json_encode([
             'application_image' => 'ghcr.io/rgomeztinoco/money-assistant@sha256:'.str_repeat('b', 64),
             'application_revision' => 'new-revision',
             'database_image' => 'postgres:18@sha256:'.str_repeat('d', 64),
             'openclaw_version' => '2026.7.1',
+            'operational_bundle_checksum' => str_repeat('f', 64),
         ], JSON_THROW_ON_ERROR));
 
         $changedDeployment = runProductionTrustScript('production-trust-gate', ['verify'], $environment);

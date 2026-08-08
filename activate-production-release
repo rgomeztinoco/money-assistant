@@ -1,0 +1,116 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+bundle_root="${OPERATIONAL_BUNDLE_ROOT:-/var/lib/money-assistant/operational-bundles}"
+allowlist="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/operational-bundle.allowlist"
+source_revision=''
+application_image=''
+bundle_checksum=''
+bundle_input=''
+environment_file=''
+
+fail()
+{
+    printf 'Production release launcher failed: %s\n' "$1" >&2
+    exit 1
+}
+
+usage()
+{
+    printf '%s\n' 'Usage: activate-production-release validate|deploy --source-revision REVISION --app-image REPOSITORY@sha256:DIGEST --bundle-checksum CHECKSUM --bundle FILE [--env-file FILE]'
+}
+
+[ "$#" -ge 1 ] || { usage >&2; exit 2; }
+action="$1"
+shift
+case "$action" in validate|deploy) ;; *) fail 'unsupported action' ;; esac
+
+while [ "$#" -gt 0 ]; do
+    [ "$#" -ge 2 ] || fail "missing value for $1"
+    case "$1" in
+        --source-revision) source_revision="$2" ;;
+        --app-image) application_image="$2" ;;
+        --bundle-checksum) bundle_checksum="$2" ;;
+        --bundle) bundle_input="$2" ;;
+        --env-file) environment_file="$2" ;;
+        *) fail "unexpected argument: $1" ;;
+    esac
+    shift 2
+done
+
+printf '%s\n' "$source_revision" | grep -Eq '^[a-f0-9]{40}$' || fail 'invalid source revision'
+printf '%s\n' "$application_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' || fail 'invalid application digest'
+printf '%s\n' "$bundle_checksum" | grep -Eq '^[a-f0-9]{64}$' || fail 'invalid bundle checksum'
+[ -f "$bundle_input" ] && [ ! -L "$bundle_input" ] || fail 'bundle input must be a regular file'
+[ -f "$allowlist" ] && [ ! -L "$allowlist" ] || fail 'host operational allowlist is invalid'
+[ "$(sha256sum "$bundle_input" | awk '{ print $1 }')" = "$bundle_checksum" ] || fail 'bundle checksum does not match'
+
+entry_list="$(mktemp)"
+archive_manifest="$(mktemp)"
+trap 'rm -f -- "$entry_list" "$archive_manifest"' EXIT HUP INT TERM
+tar -tf "$bundle_input" > "$entry_list" || fail 'bundle archive is unreadable'
+tar -tvf "$bundle_input" | awk 'substr($1, 1, 1) == "l" || substr($1, 1, 1) == "h" { found = 1 } END { exit found ? 0 : 1 }' &&
+    fail 'bundle links are forbidden'
+tar -xOf "$bundle_input" ./MANIFEST.sha256 > "$archive_manifest" 2>/dev/null ||
+    tar -xOf "$bundle_input" MANIFEST.sha256 > "$archive_manifest" 2>/dev/null ||
+    fail 'bundle manifest is missing'
+awk '$3 == "SOURCE_REVISION" && $1 == "0644" && length($2) == 64 && $2 !~ /[^a-f0-9]/ { found++ } END { exit found == 1 ? 0 : 1 }' "$archive_manifest" ||
+    fail 'bundle source revision manifest entry is invalid'
+awk 'NF != 3 || seen[$3]++ { invalid = 1 } END { exit invalid ? 0 : 1 }' "$archive_manifest" &&
+    fail 'bundle manifest contains invalid or duplicate entries'
+while IFS= read -r entry; do
+    normalized_entry="${entry#./}"
+    case "$normalized_entry" in
+        ''|MANIFEST.sha256|SOURCE_REVISION) ;;
+        /*|..|../*|*/../*|*/..) fail "unsafe bundle entry: $entry" ;;
+        *)
+            awk -v path="$normalized_entry" '$1 == path && ($2 == "0644" || $2 == "0755") { found = 1 } END { exit found ? 0 : 1 }' "$allowlist" ||
+                fail "unexpected bundle entry: $normalized_entry"
+            awk -v path="$normalized_entry" '$3 == path && $1 ~ /^0[0-9][0-9][0-9]$/ && length($2) == 64 && $2 !~ /[^a-f0-9]/ { found = 1 } END { exit found ? 0 : 1 }' "$archive_manifest" ||
+                fail "unexpected bundle entry: $normalized_entry"
+            ;;
+    esac
+done < "$entry_list"
+
+while IFS=' ' read -r expected_path expected_mode extra; do
+    [ -z "${extra:-}" ] || fail 'host operational allowlist is invalid'
+    awk -v path="$expected_path" -v mode="$expected_mode" '$1 == mode && $3 == path && length($2) == 64 && $2 !~ /[^a-f0-9]/ { found = 1 } END { exit found ? 0 : 1 }' "$archive_manifest" ||
+        fail "allowlisted bundle entry is missing: $expected_path"
+done < "$allowlist"
+
+install -d -m 0700 "$bundle_root"
+candidate_directory="${bundle_root}/${bundle_checksum}"
+if [ ! -d "$candidate_directory" ]; then
+    temporary_directory="$(mktemp -d "${bundle_root}/candidate.XXXXXX")"
+    umask 000
+    tar -xf "$bundle_input" -C "$temporary_directory"
+    umask 077
+    find "$temporary_directory" -type l -print -quit | grep -q . && fail 'bundle symlinks are forbidden'
+    mv -- "$temporary_directory" "$candidate_directory"
+fi
+
+manifest="${candidate_directory}/MANIFEST.sha256"
+[ -f "$manifest" ] && [ ! -L "$manifest" ] || fail 'bundle manifest is missing'
+[ "$(stat -c '%a' "$manifest")" = 644 ] || fail 'bundle manifest permissions do not match'
+[ "$(cat "${candidate_directory}/SOURCE_REVISION")" = "$source_revision" ] || fail 'bundle source revision does not match'
+while IFS=' ' read -r mode checksum path extra; do
+    [ -z "${extra:-}" ] || fail 'invalid bundle manifest'
+    asset="${candidate_directory}/${path}"
+    [ -f "$asset" ] && [ ! -L "$asset" ] || fail "bundle asset is missing: $path"
+    [ "$(stat -c '%a' "$asset")" = "${mode#0}" ] || fail "bundle asset permissions do not match: $path"
+    [ "$(sha256sum "$asset" | awk '{ print $1 }')" = "$checksum" ] || fail "bundle asset checksum does not match: $path"
+done < "$manifest"
+
+printf 'Operational bundle validated: %s\n' "$bundle_checksum"
+[ "$action" = validate ] && exit 0
+[ -n "$environment_file" ] || fail '--env-file is required for deployment'
+
+OPERATIONAL_BUNDLE_CHECKSUM="$bundle_checksum" \
+OPERATIONAL_BUNDLE_REVISION="$source_revision" \
+OPERATIONAL_BUNDLE_DIRECTORY="$candidate_directory" \
+OPERATIONAL_BUNDLE_ACTIVE_LINK="${bundle_root}/active" \
+COMPOSE_FILE="${candidate_directory}/compose.production.yaml" \
+"${candidate_directory}/deploy-production" deploy --env-file "$environment_file" --app-image "$application_image"

@@ -131,6 +131,8 @@ jobs:
             concurrent \
             2026_08_08_141738_rehearse_concurrent_transactional_deployment.php \
             healthy)"
+          operational_bundle=/tmp/money-assistant-operational-bundle.tar
+          operational_bundle_checksum="$(./build-operational-bundle "$GITHUB_SHA" "$operational_bundle")"
 
           {
             echo "APP_IMAGE_PULL_POLICY=never"
@@ -161,6 +163,9 @@ jobs:
             echo "FAILED_HEALTH_APP_IMAGE=$failed_health_image"
             echo "CONCURRENT_APP_IMAGE=$concurrent_image"
             echo "REHEARSAL_OUTPUT=/tmp/money-assistant-production-smoke/rehearsal-output.log"
+            echo "OPERATIONAL_BUNDLE=$operational_bundle"
+            echo "OPERATIONAL_BUNDLE_CHECKSUM=$operational_bundle_checksum"
+            echo "OPERATIONAL_BUNDLE_ROOT=/tmp/money-assistant-production-smoke/operational-bundles"
           } >> "$GITHUB_ENV"
 
       - name: Create isolated rehearsal configuration
@@ -240,14 +245,28 @@ jobs:
           exec 3>&1
           exec > "$REHEARSAL_OUTPUT" 2>&1
 
-          ./deploy-production deploy \
+          if ./activate-production-release validate \
+            --source-revision "$GITHUB_SHA" \
+            --bundle-checksum "$(printf '%064d' 0)" \
+            --bundle "$OPERATIONAL_BUNDLE" \
+            --app-image "$GOOD_APP_IMAGE"; then
+            echo 'A mismatched operational bundle checksum was unexpectedly accepted.' >&2
+            exit 1
+          fi
+          test ! -e "$DEPLOYMENT_STATE_DIRECTORY/current.json"
+
+          ./activate-production-release deploy \
+            --source-revision "$GITHUB_SHA" \
+            --bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+            --bundle "$OPERATIONAL_BUNDLE" \
             --env-file "$PRODUCTION_ENV_FILE" \
             --app-image "$GOOD_APP_IMAGE"
 
           jq -e \
             --arg application_image "$GOOD_APP_IMAGE" \
             --arg database_image "$POSTGRES_IMAGE" \
-            '.outcome == "deployed" and .application_image == $application_image and .database_image == $database_image' \
+            --arg operational_bundle_checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+            '.outcome == "deployed" and .application_image == $application_image and .database_image == $database_image and .operational_bundle_checksum == $operational_bundle_checksum' \
             "$DEPLOYMENT_STATE_DIRECTORY/current.json"
           test "$(stat --format '%a' "$DEPLOYMENT_STATE_DIRECTORY/current.json")" = 600
           printf '%s\n' 'Healthy digest deployment and metadata verification passed.' >&3
@@ -366,7 +385,10 @@ jobs:
 
           : > "$DEPLOYMENT_ALERT_LOG"
           deployment_started_at="$(date +%s)"
-          ./deploy-production deploy \
+          ./activate-production-release deploy \
+            --source-revision "$GITHUB_SHA" \
+            --bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+            --bundle "$OPERATIONAL_BUNDLE" \
             --env-file "$PRODUCTION_ENV_FILE" \
             --app-image "$SUCCESSFUL_APP_IMAGE"
           maintenance_seconds=$(($(date +%s) - deployment_started_at))
@@ -426,7 +448,10 @@ jobs:
             /usr/local/bin/with-production-secrets php artisan app:financial-state:fingerprint --no-interaction)"
           : > "$DEPLOYMENT_ALERT_LOG"
 
-          if ./deploy-production deploy \
+          if ./activate-production-release deploy \
+            --source-revision "$GITHUB_SHA" \
+            --bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+            --bundle "$OPERATIONAL_BUNDLE" \
             --env-file "$PRODUCTION_ENV_FILE" \
             --app-image "$FAILED_MIGRATION_APP_IMAGE"; then
             echo 'The deliberately failing migration unexpectedly succeeded.' >&2
@@ -477,7 +502,10 @@ jobs:
             /usr/local/bin/with-production-secrets php artisan app:financial-state:fingerprint --no-interaction)"
           : > "$DEPLOYMENT_ALERT_LOG"
 
-          if ./deploy-production deploy \
+          if ./activate-production-release deploy \
+            --source-revision "$GITHUB_SHA" \
+            --bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+            --bundle "$OPERATIONAL_BUNDLE" \
             --env-file "$PRODUCTION_ENV_FILE" \
             --app-image "$FAILED_HEALTH_APP_IMAGE"; then
             echo 'The deliberately unhealthy candidate unexpectedly succeeded.' >&2
@@ -520,7 +548,10 @@ jobs:
           exec >> "$REHEARSAL_OUTPUT" 2>&1
 
           : > "$DEPLOYMENT_ALERT_LOG"
-          ./deploy-production deploy \
+          ./activate-production-release deploy \
+            --source-revision "$GITHUB_SHA" \
+            --bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+            --bundle "$OPERATIONAL_BUNDLE" \
             --env-file "$PRODUCTION_ENV_FILE" \
             --app-image "$CONCURRENT_APP_IMAGE" &
           first_deployment_pid=$!
@@ -532,7 +563,10 @@ jobs:
             sleep 0.2
           done
 
-          if ./deploy-production deploy \
+          if ./activate-production-release deploy \
+            --source-revision "$GITHUB_SHA" \
+            --bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+            --bundle "$OPERATIONAL_BUNDLE" \
             --env-file "$PRODUCTION_ENV_FILE" \
             --app-image "$CONCURRENT_APP_IMAGE"; then
             echo 'A concurrent deployment unexpectedly acquired the release lock.' >&2
@@ -551,6 +585,44 @@ jobs:
             "$DEPLOYMENT_STATE_DIRECTORY/current.json"
 
           printf '%s\n' 'Concurrent migration and activation were excluded by the deployment lock.' >&3
+
+      - name: Rehearse interrupted bundle activation convergence
+        run: |
+          exec 3>&1
+          exec >> "$REHEARSAL_OUTPUT" 2>&1
+
+          for phase in staged candidate_verified bundle_activation_pending bundle_activated committed; do
+            ./activate-production-release deploy \
+              --source-revision "$GITHUB_SHA" \
+              --bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+              --bundle "$OPERATIONAL_BUNDLE" \
+              --env-file "$PRODUCTION_ENV_FILE" \
+              --app-image "$CONCURRENT_APP_IMAGE" &
+            interrupted_pid=$!
+            for attempt in $(seq 1 200); do
+              if grep -Fxq "phase=$phase" "$DEPLOYMENT_STATE_DIRECTORY/transaction.state" 2>/dev/null; then
+                break
+              fi
+              sleep 0.05
+            done
+            grep -Fxq "phase=$phase" "$DEPLOYMENT_STATE_DIRECTORY/transaction.state"
+            kill -KILL "$interrupted_pid"
+            wait "$interrupted_pid" || true
+
+            ./activate-production-release deploy \
+              --source-revision "$GITHUB_SHA" \
+              --bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+              --bundle "$OPERATIONAL_BUNDLE" \
+              --env-file "$PRODUCTION_ENV_FILE" \
+              --app-image "$CONCURRENT_APP_IMAGE"
+            jq -e \
+              --arg application_image "$CONCURRENT_APP_IMAGE" \
+              --arg operational_bundle_checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
+              '.outcome == "deployed" and .application_image == $application_image and .operational_bundle_checksum == $operational_bundle_checksum' \
+              "$DEPLOYMENT_STATE_DIRECTORY/current.json"
+          done
+
+          printf '%s\n' 'Interrupted activation converged on a verified release or paired restoration.' >&3
 
       - name: Verify production rehearsal secret isolation
         run: |

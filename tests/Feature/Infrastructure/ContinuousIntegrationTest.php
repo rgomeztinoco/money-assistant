@@ -90,6 +90,7 @@ test('production CI rehearses the transactional release outcomes as black boxes'
         'Rehearse failed migration restoration',
         'Rehearse failed health restoration',
         'Rehearse concurrent deployment exclusion',
+        'Rehearse interrupted bundle activation convergence',
     ];
 
     expect($this->productionScripts->keys()->all())
@@ -97,8 +98,17 @@ test('production CI rehearses the transactional release outcomes as black boxes'
 
     foreach ($transactionalRehearsalSteps as $stepName) {
         expect((string) $this->productionScripts->get($stepName))
-            ->toContain('./deploy-production deploy');
+            ->toContain('./activate-production-release deploy')
+            ->toContain('--source-revision "$GITHUB_SHA"')
+            ->toContain('--bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM"');
     }
+
+    expect((string) $this->productionScripts->get('Deploy healthy production stack'))
+        ->toContain('activate-production-release validate')
+        ->toContain('mismatched operational bundle checksum')
+        ->and((string) $this->productionScripts->get('Rehearse interrupted bundle activation convergence'))
+        ->toContain('kill -KILL')
+        ->toContain('transaction.state');
 });
 
 test('rollback rehearsals compare domain fingerprints and durable work after restoration', function (): void {

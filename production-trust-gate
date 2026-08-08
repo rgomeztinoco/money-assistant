@@ -102,6 +102,7 @@ read_active_deployment()
     active_application_revision="$(json_value application_revision "$deployment_record")"
     active_database_image="$(json_value database_image "$deployment_record")"
     active_openclaw_version="$(json_value openclaw_version "$deployment_record")"
+    active_operational_bundle_checksum="$(json_value operational_bundle_checksum "$deployment_record")"
 
     printf '%s\n' "$active_application_image" |
         grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
@@ -115,6 +116,9 @@ read_active_deployment()
     printf '%s\n' "$active_openclaw_version" |
         grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$' ||
         fail 'the active OpenClaw version is missing or invalid'
+    printf '%s\n' "$active_operational_bundle_checksum" |
+        grep -Eq '^[a-f0-9]{64}$' ||
+        fail 'the active operational bundle checksum is missing or invalid'
 
     openclaw_version_command="${command_directory}/read-running-openclaw-version"
     validate_approved_command "$openclaw_version_command"
@@ -149,6 +153,7 @@ record_gate()
         printf '  "application_revision": "%s",\n' "$active_application_revision"
         printf '  "database_image": "%s",\n' "$active_database_image"
         printf '  "openclaw_version": "%s",\n' "$active_openclaw_version"
+        printf '  "operational_bundle_checksum": "%s",\n' "$active_operational_bundle_checksum"
         printf '  "recorded_at_epoch": %s,\n' "$now_epoch"
         printf '  "producer": "%s",\n' "$producer"
         printf '  "proof_sha256": "%s"\n' "$proof_sha256"
@@ -214,6 +219,7 @@ verify_gate()
     recorded_revision="$(json_value application_revision "$evidence_file")"
     recorded_database_image="$(json_value database_image "$evidence_file")"
     recorded_openclaw_version="$(json_value openclaw_version "$evidence_file")"
+    recorded_operational_bundle_checksum="$(json_value operational_bundle_checksum "$evidence_file")"
     recorded_at_epoch="$(json_integer recorded_at_epoch "$evidence_file")"
     recorded_producer="$(json_value producer "$evidence_file")"
     proof_sha256="$(json_value proof_sha256 "$evidence_file")"
@@ -223,6 +229,7 @@ verify_gate()
         [ "$recorded_revision" != "$active_application_revision" ] ||
         [ "$recorded_database_image" != "$active_database_image" ] ||
         [ "$recorded_openclaw_version" != "$active_openclaw_version" ] ||
+        [ "$recorded_operational_bundle_checksum" != "$active_operational_bundle_checksum" ] ||
         [ "$recorded_producer" != "$(producer_for_gate "$gate")" ]; then
         printf 'STALE %s: proof does not match the active deployment.\n' "$gate"
         return 1
