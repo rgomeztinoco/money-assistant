@@ -115,7 +115,8 @@ test('production CI rehearses the transactional release outcomes as black boxes'
         ->toContain('activate-production-release validate')
         ->toContain('mismatched operational bundle checksum')
         ->and((string) $this->productionScripts->get('Rehearse interrupted bundle activation convergence'))
-        ->toContain('kill -KILL')
+        ->toContain('setsid ./activate-production-release deploy')
+        ->toContain('kill -KILL -- "-$interrupted_pid"')
         ->toContain('transaction.state');
 });
 

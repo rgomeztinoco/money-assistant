@@ -595,7 +595,7 @@ jobs:
           exec >> "$REHEARSAL_OUTPUT" 2>&1
 
           for phase in staged candidate_verified bundle_activation_pending bundle_activated committed; do
-            ./activate-production-release deploy \
+            setsid ./activate-production-release deploy \
               --source-revision "$GITHUB_SHA" \
               --bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM" \
               --bundle "$OPERATIONAL_BUNDLE" \
@@ -609,7 +609,7 @@ jobs:
               sleep 0.05
             done
             grep -Fxq "phase=$phase" "$DEPLOYMENT_STATE_DIRECTORY/transaction.state"
-            kill -KILL "$interrupted_pid"
+            kill -KILL -- "-$interrupted_pid"
             wait "$interrupted_pid" || true
 
             ./activate-production-release deploy \
