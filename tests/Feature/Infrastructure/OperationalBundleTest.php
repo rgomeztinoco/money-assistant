@@ -123,3 +123,90 @@ test('the host launcher rejects unexpected bundle contents and mismatched releas
         (new Filesystem)->deleteDirectory($temporaryDirectory);
     }
 });
+
+test('the stable launcher enforces its host-installed operational allowlist', function (): void {
+    $temporaryDirectory = operationalBundleDirectory();
+    $bundle = $temporaryDirectory.'/operations.tar';
+    $hostAllowlist = $temporaryDirectory.'/host-operational-bundle.allowlist';
+    $revision = str_repeat('f', 40);
+
+    try {
+        $built = runOperationalCommand('build-operational-bundle', [$revision, $bundle]);
+        $checksum = trim($built->getOutput());
+        $allowlist = file_get_contents(base_path('operational-bundle.allowlist'));
+        file_put_contents(
+            $hostAllowlist,
+            str_replace("money-assistant-tailnet.service 0644\n", '', $allowlist),
+        );
+
+        $validated = runOperationalCommand('activate-production-release', [
+            'validate',
+            '--source-revision', $revision,
+            '--app-image', 'ghcr.io/rgomeztinoco/money-assistant@sha256:'.str_repeat('a', 64),
+            '--bundle-checksum', $checksum,
+            '--bundle', $bundle,
+        ], [
+            'OPERATIONAL_BUNDLE_ALLOWLIST' => $hostAllowlist,
+            'OPERATIONAL_BUNDLE_ROOT' => $temporaryDirectory.'/staging',
+        ]);
+
+        expect($validated->getExitCode())->toBe(1)
+            ->and($validated->getErrorOutput())
+            ->toContain('unexpected bundle entry: money-assistant-tailnet.service');
+    } finally {
+        (new Filesystem)->deleteDirectory($temporaryDirectory);
+    }
+});
+
+test('active release verification preserves immutable bundle provenance', function (): void {
+    $temporaryDirectory = operationalBundleDirectory();
+    $checksum = str_repeat('b', 64);
+    $revision = str_repeat('c', 40);
+    $bundleDirectory = $temporaryDirectory.'/'.$checksum;
+    $activeBundle = $temporaryDirectory.'/active';
+    $environmentFile = $temporaryDirectory.'/production.env';
+    $verificationLog = $temporaryDirectory.'/verification.log';
+
+    try {
+        mkdir($bundleDirectory, 0700);
+        copy(base_path('verify-active-production-release'), $bundleDirectory.'/verify-active-production-release');
+        chmod($bundleDirectory.'/verify-active-production-release', 0755);
+        file_put_contents($bundleDirectory.'/SOURCE_REVISION', $revision."\n");
+        file_put_contents($bundleDirectory.'/compose.production.yaml', "services: {}\n");
+        file_put_contents($environmentFile, "host-managed=true\n");
+        file_put_contents($bundleDirectory.'/deploy-production', <<<'SH'
+#!/bin/sh
+printf 'args=%s\n' "$*" > "$ACTIVE_VERIFICATION_LOG"
+printf 'checksum=%s\n' "$OPERATIONAL_BUNDLE_CHECKSUM" >> "$ACTIVE_VERIFICATION_LOG"
+printf 'revision=%s\n' "$OPERATIONAL_BUNDLE_REVISION" >> "$ACTIVE_VERIFICATION_LOG"
+printf 'directory=%s\n' "$OPERATIONAL_BUNDLE_DIRECTORY" >> "$ACTIVE_VERIFICATION_LOG"
+printf 'active=%s\n' "$OPERATIONAL_BUNDLE_ACTIVE_LINK" >> "$ACTIVE_VERIFICATION_LOG"
+printf 'compose=%s\n' "$COMPOSE_FILE" >> "$ACTIVE_VERIFICATION_LOG"
+SH);
+        chmod($bundleDirectory.'/deploy-production', 0755);
+        symlink($bundleDirectory, $activeBundle);
+
+        $verified = new Process(
+            [$activeBundle.'/verify-active-production-release'],
+            base_path(),
+            [
+                'ACTIVE_VERIFICATION_LOG' => $verificationLog,
+                'OPERATIONAL_BUNDLE_ACTIVE_LINK' => $activeBundle,
+                'PRODUCTION_ENV_FILE' => $environmentFile,
+                'PATH' => getenv('PATH'),
+            ],
+        );
+        $verified->run();
+
+        expect($verified->getExitCode())->toBe(0, $verified->getErrorOutput())
+            ->and(file_get_contents($verificationLog))
+            ->toContain('args=verify --env-file '.$environmentFile)
+            ->toContain("checksum={$checksum}")
+            ->toContain("revision={$revision}")
+            ->toContain("directory={$bundleDirectory}")
+            ->toContain("active={$activeBundle}")
+            ->toContain("compose={$bundleDirectory}/compose.production.yaml");
+    } finally {
+        (new Filesystem)->deleteDirectory($temporaryDirectory);
+    }
+});

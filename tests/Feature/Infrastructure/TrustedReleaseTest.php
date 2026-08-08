@@ -14,6 +14,26 @@ beforeEach(function (): void {
     );
 });
 
+test('publishing a release does not grant GitHub access to production', function (): void {
+    $releasePublication = collect($this->releaseRecord['steps'])->firstWhere('name', 'Publish immutable GitHub release');
+    $workflow = Yaml::dump($this->workflow);
+
+    expect($this->workflow['jobs'])->not->toHaveKey('deploy-production')
+        ->and($releasePublication['run'])
+        ->toContain('release-metadata-${GITHUB_SHA}.env')
+        ->toContain("printf 'SOURCE_REVISION=%s\\n'")
+        ->toContain("printf 'APPLICATION_IMAGE=%s\\n'")
+        ->toContain("printf 'BUNDLE_CHECKSUM=%s\\n'")
+        ->and($workflow)
+        ->not->toContain(
+            'TAILSCALE_OIDC_CLIENT_ID',
+            'TAILSCALE_OIDC_AUDIENCE',
+            'DEPLOYMENT_SSH_PRIVATE_KEY',
+            'PRODUCTION_SSH_KNOWN_HOSTS',
+            'tailscale/github-action',
+        );
+});
+
 test('pull requests and main pushes run every release gate before publication', function (): void {
     expect($this->workflow['on'])->toHaveKey('pull_request')
         ->and($this->workflow['on']['push']['branches'])->toBe(['main'])
@@ -59,6 +79,11 @@ test('a successful main run publishes a revisioned image and operational bundle 
 });
 
 test('release authority is isolated to the gated publication job', function (): void {
+    $publicationJobsYaml = Yaml::dump([
+        'publish-release' => $this->release,
+        'record-release' => $this->releaseRecord,
+    ]);
+
     expect($this->workflow['permissions'])->toBe([])
         ->and($this->workflow['jobs']['ci']['permissions'])->toBe(['contents' => 'read'])
         ->and($this->workflow['jobs']['production-stack']['permissions'])->toBe(['contents' => 'read'])
@@ -69,7 +94,7 @@ test('release authority is isolated to the gated publication job', function (): 
             'attestations' => 'write',
         ])
         ->and($this->releaseRecord['permissions'])->toBe(['contents' => 'write'])
-        ->and(Yaml::dump($this->workflow))->not->toContain('tailscale')
+        ->and($publicationJobsYaml)->not->toContain('tailscale')
         ->not->toContain('deploy-production deploy');
 });
 

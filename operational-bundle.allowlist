@@ -5,6 +5,7 @@ deploy-production 0755
 production-trust-gate 0755
 read-running-openclaw-version 0755
 rehearse-production-crash 0755
+rehearse-production-reboot 0755
 rehearse-production-retention 0755
 rehearse-all-credential-rotations 0755
 rehearse-independent-alert 0755
@@ -19,6 +20,7 @@ deliver-telegram-monitor-alert 0755
 export-production-backup 0755
 restore-production-backup 0755
 verify-private-ingress 0755
+verify-active-production-release 0755
 verify-production-acceptance-matrix 0755
 verify-production-security-updates 0755
 track-critical-security-fixes 0755

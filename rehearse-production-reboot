@@ -130,7 +130,7 @@ case "$action" in
             money-assistant-production.service \
             money-assistant-tailnet.service
         verify_service_health
-        "${script_directory}/verify-private-ingress" "$environment_file"
+        /usr/local/sbin/verify-production-deployment
         compose exec --no-TTY web \
             /usr/local/bin/with-production-secrets \
             php artisan app:deployment-rehearsal:verify "$rehearsal_id" --no-interaction

@@ -1,0 +1,47 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+github_repository="${1:-}"
+
+fail()
+{
+    printf 'Production deployment installation failed: %s\n' "$1" >&2
+    exit 1
+}
+
+[ "$(id -u)" -eq 0 ] || fail 'run this installer as root'
+[ "$#" -eq 1 ] || fail 'usage: install-production-deployment GITHUB_REPOSITORY'
+printf '%s\n' "$github_repository" | grep -Eq '^[a-z0-9_.-]+/[a-z0-9_.-]+$' ||
+    fail 'GitHub repository must use owner/name format'
+
+image_repository="ghcr.io/${github_repository}"
+
+install -d -m 0700 /etc/money-assistant
+install -d -m 0700 /var/lib/money-assistant/deployments /var/lib/money-assistant/operational-bundles
+install -d -m 0755 /usr/local/sbin
+install -m 0755 "${script_directory}/activate-production-release" /usr/local/sbin/activate-production-release
+install -m 0755 "${script_directory}/deploy-production-release" /usr/local/sbin/deploy-production-release
+install -m 0755 "${script_directory}/verify-production-deployment" /usr/local/sbin/verify-production-deployment
+install -m 0644 "${script_directory}/operational-bundle.allowlist" /etc/money-assistant/operational-bundle.allowlist
+
+{
+    printf 'DEPLOYMENT_GITHUB_REPOSITORY=%s\n' "$github_repository"
+    printf 'DEPLOYMENT_IMAGE_REPOSITORY=%s\n' "$image_repository"
+    printf '%s\n' 'PRODUCTION_ENV_FILE=/etc/money-assistant/production.env'
+} | install -m 0600 /dev/stdin /etc/money-assistant/deployment.env
+
+install -m 0644 \
+    "${script_directory}/money-assistant-production.service" \
+    /etc/systemd/system/money-assistant-production.service
+install -m 0644 \
+    "${script_directory}/money-assistant-tailnet.service" \
+    /etc/systemd/system/money-assistant-tailnet.service
+
+systemctl daemon-reload
+
+printf '%s\n' 'Manual production deployment installed; no SSH, firewall, or tailnet policy was changed.'
+printf '%s\n' 'After preparing /etc/money-assistant/production.env, deploy with: sudo deploy-production-release REVISION'

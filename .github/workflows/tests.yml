@@ -821,8 +821,15 @@ jobs:
           BUNDLE_CHECKSUM: ${{ needs.publish-release.outputs.bundle-checksum }}
         run: |
           bundle="operational-bundle-${GITHUB_SHA}.tar"
+          metadata="release-metadata-${GITHUB_SHA}.env"
           sha256sum --check "${bundle}.sha256"
           test "$(cut -d ' ' -f 1 "${bundle}.sha256")" = "$BUNDLE_CHECKSUM"
+
+          {
+            printf 'SOURCE_REVISION=%s\n' "$GITHUB_SHA"
+            printf 'APPLICATION_IMAGE=%s\n' "$APPLICATION_IMAGE"
+            printf 'BUNDLE_CHECKSUM=%s\n' "$BUNDLE_CHECKSUM"
+          } > "$metadata"
 
           release_notes="$(printf 'Source revision: `%s`\n\nApplication image: `%s`\n\nOperational bundle SHA-256: `%s`\n' \
             "$GITHUB_SHA" "$APPLICATION_IMAGE" "$BUNDLE_CHECKSUM")"
@@ -835,5 +842,6 @@ jobs:
           gh release upload \
             "release-${GITHUB_SHA}" \
             "$bundle" \
-            "${bundle}.sha256"
+            "${bundle}.sha256" \
+            "$metadata"
           gh release edit --draft=false --latest=false "release-${GITHUB_SHA}"

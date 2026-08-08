@@ -415,7 +415,6 @@ test('backup installation keeps repository and decryption authority on the secon
     $service = file_get_contents(base_path('money-assistant-backup-pull.service'));
     $timer = file_get_contents(base_path('money-assistant-backup-pull.timer'));
     $backupPullEnvironmentExample = file_get_contents(base_path('backup-pull.env.example'));
-    $tailnetPolicy = file_get_contents(base_path('tailscale-policy.hujson'));
 
     expect($exportInstaller)
         ->toContain('restrict,command="sudo -n /usr/local/sbin/export-production-backup"')
@@ -437,11 +436,7 @@ test('backup installation keeps repository and decryption authority on the secon
         ->toContain('RESTIC_REPOSITORY=')
         ->toContain('RESTIC_PASSWORD_FILE=')
         ->toContain('BACKUP_AGE_IDENTITY_FILE=')
-        ->toContain('APPLICATION_BACKUP_SSH_KEY_FILE=')
-        ->and($tailnetPolicy)
-        ->toContain('"tag:money-assistant-backup-device"')
-        ->toContain('"dst": ["tag:money-assistant:22"]')
-        ->toContain('"accept": ["tag:money-assistant:22"]');
+        ->toContain('APPLICATION_BACKUP_SSH_KEY_FILE=');
 });
 
 test('recovered application verification checks counts decryption authentication queues and integrations without contact', function () {

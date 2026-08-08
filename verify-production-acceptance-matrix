@@ -36,6 +36,7 @@ image_identity="$(docker image inspect \
 [ "$image_identity" = "${active_image_id}|${active_revision}" ] ||
     fail 'the tested revision does not match the active image identity and revision label'
 
+/usr/local/sbin/verify-production-deployment
 vendor/bin/sail composer ci:check
 vendor/bin/sail npm run build
 

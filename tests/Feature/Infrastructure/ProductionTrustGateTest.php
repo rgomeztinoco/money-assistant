@@ -432,6 +432,7 @@ test('approved target drills execute retention, independent delivery, and the co
         ->toContain('git rev-parse HEAD')
         ->toContain('docker image inspect')
         ->toContain('application_image_id')
+        ->toContain('/usr/local/sbin/verify-production-deployment')
         ->toContain('vendor/bin/sail composer ci:check')
         ->toContain('vendor/bin/sail npm run build')
         ->toContain('PRODUCTION_TRUST_EVIDENCE gate=acceptance-matrix outcome=passed');
