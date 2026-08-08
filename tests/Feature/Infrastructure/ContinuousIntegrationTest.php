@@ -79,7 +79,14 @@ test('production rehearsal failures report masked diagnostics', function (): voi
         ->and($diagnostics['if'])
         ->toBe('failure()')
         ->and($diagnostics['run'])
-        ->toContain('cat "$REHEARSAL_OUTPUT"')
+        ->toContain('sanitized_diagnostics')
+        ->toContain('sed --in-place')
+        ->toContain('APP_KEY_FILE')
+        ->toContain('DB_PASSWORD_FILE')
+        ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE')
+        ->toContain('OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE')
+        ->toContain('OPENCLAW_HOOK_TOKEN_FILE')
+        ->not->toContain('cat "$REHEARSAL_OUTPUT"')
         ->toContain('ps --all')
         ->toContain('logs --no-color');
 });
