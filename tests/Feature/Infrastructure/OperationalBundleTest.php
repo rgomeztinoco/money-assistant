@@ -59,6 +59,12 @@ test('an allowlisted operational bundle is immutable and accepted by the host la
     }
 });
 
+test('deployment signals reach the staged deployment process', function (): void {
+    $launcher = file_get_contents(base_path('activate-production-release'));
+
+    expect($launcher)->toContain('exec "${candidate_directory}/deploy-production" deploy');
+});
+
 test('an operational bundle can be written into an existing shared directory', function (): void {
     $temporaryDirectory = sys_get_temp_dir();
     $bundle = $temporaryDirectory.'/money-assistant-operational-bundle-'.str()->uuid().'.tar';

@@ -108,9 +108,11 @@ printf 'Operational bundle validated: %s\n' "$bundle_checksum"
 [ "$action" = validate ] && exit 0
 [ -n "$environment_file" ] || fail '--env-file is required for deployment'
 
-OPERATIONAL_BUNDLE_CHECKSUM="$bundle_checksum" \
-OPERATIONAL_BUNDLE_REVISION="$source_revision" \
-OPERATIONAL_BUNDLE_DIRECTORY="$candidate_directory" \
-OPERATIONAL_BUNDLE_ACTIVE_LINK="${bundle_root}/active" \
-COMPOSE_FILE="${candidate_directory}/compose.production.yaml" \
-"${candidate_directory}/deploy-production" deploy --env-file "$environment_file" --app-image "$application_image"
+rm -f -- "$entry_list" "$archive_manifest"
+trap - EXIT HUP INT TERM
+export OPERATIONAL_BUNDLE_CHECKSUM="$bundle_checksum"
+export OPERATIONAL_BUNDLE_REVISION="$source_revision"
+export OPERATIONAL_BUNDLE_DIRECTORY="$candidate_directory"
+export OPERATIONAL_BUNDLE_ACTIVE_LINK="${bundle_root}/active"
+export COMPOSE_FILE="${candidate_directory}/compose.production.yaml"
+exec "${candidate_directory}/deploy-production" deploy --env-file "$environment_file" --app-image "$application_image"
