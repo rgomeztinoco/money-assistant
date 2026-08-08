@@ -3,7 +3,7 @@
     "providers": {
       "money_assistant_private_key": {
         "source": "file",
-        "path": "/etc/money-assistant/secrets/openclaw_capability_private_key",
+        "path": "${OPENCLAW_MONEY_ASSISTANT_PRIVATE_KEY_FILE}",
         "mode": "singleValue"
       }
     }
@@ -16,7 +16,7 @@
     ],
     "load": {
       "paths": [
-        "/opt/money-assistant/openclaw/money-assistant-plugin"
+        "${OPENCLAW_MONEY_ASSISTANT_PLUGIN_PATH}"
       ]
     },
     "entries": {
@@ -27,6 +27,7 @@
         },
         "config": {
           "keyId": "${OPENCLAW_MONEY_ASSISTANT_KEY_ID}",
+          "capabilityOrigin": "${OPENCLAW_MONEY_ASSISTANT_CAPABILITY_ORIGIN}",
           "privateKey": {
             "source": "file",
             "provider": "money_assistant_private_key",
@@ -86,7 +87,7 @@
       {
         "id": "money-assistant",
         "name": "Money Assistant",
-        "workspace": "~/.openclaw/workspace-money-assistant",
+        "workspace": "${OPENCLAW_MONEY_ASSISTANT_WORKSPACE}",
         "model": {
           "primary": "openai/gpt-5.6-sol",
           "fallbacks": []

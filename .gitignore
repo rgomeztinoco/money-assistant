@@ -16,6 +16,8 @@
 .env
 .env.backup
 .env.production
+/openclaw/development.env
+/openclaw/production.env
 .phpactor.json
 .phpunit.result.cache
 Homestead.json

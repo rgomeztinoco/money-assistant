@@ -7,7 +7,6 @@ import { getMediaDir } from 'openclaw/plugin-sdk/media-runtime';
 import { getSessionEntry } from 'openclaw/plugin-sdk/session-store-runtime';
 import { defineToolPlugin } from 'openclaw/plugin-sdk/tool-plugin';
 import { Type } from 'typebox';
-const CAPABILITY_ORIGIN = 'http://127.0.0.1:8443';
 const CAPABILITY_PATH = '/api/openclaw/v1/transport';
 const REMINDER_HOOK_SESSION_KEY = 'hook:money-assistant:reminders';
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
@@ -47,6 +46,9 @@ const resolvedSecretInputStringSchema = Type.Unsafe({
 });
 const pluginConfigSchema = Type.Object({
     keyId: Type.String({ minLength: 1, maxLength: 128 }),
+    capabilityOrigin: Type.String({
+        pattern: '^http://127\\.0\\.0\\.1:[0-9]{1,5}$',
+    }),
     privateKey: resolvedSecretInputStringSchema,
     agentId: Type.String({ minLength: 1, maxLength: 128 }),
     accountId: Type.String({ minLength: 1, maxLength: 128 }),
@@ -1198,7 +1200,7 @@ export function reminderEventCapabilityRequestBody(capability, input, config, ev
 }
 async function requestCapability(capability, body, config, signal) {
     signal?.throwIfAborted();
-    const response = await fetch(`${CAPABILITY_ORIGIN}${CAPABILITY_PATH}`, {
+    const response = await fetch(`${config.capabilityOrigin}${CAPABILITY_PATH}`, {
         method: 'POST',
         headers: authorizationHeaders(body, config.keyId, config.privateKey, Math.floor(Date.now() / 1000).toString(), randomUUID()),
         body,

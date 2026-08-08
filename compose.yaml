@@ -1,3 +1,5 @@
+name: money-assistant-development
+
 x-application-environment: &application-environment
     WWWUSER: '${WWWUSER}'
     LARAVEL_SAIL: 1
@@ -26,44 +28,15 @@ services:
             args:
                 WWWGROUP: '${WWWGROUP}'
         ports:
-            - '127.0.0.1:${APP_PORT:-8443}:80'
+            - '127.0.0.1:${APP_PORT:-8080}:80'
             - '127.0.0.1:${VITE_PORT:-5173}:${VITE_PORT:-5173}'
-        networks:
-            - sail
-
-    queue:
-        <<: *application
-        restart: unless-stopped
-        network_mode: host
-        environment:
-            <<: *application-environment
-            DB_HOST: 127.0.0.1
-            DB_PORT: '${FORWARD_DB_PORT:-5432}'
-        command:
-            - php
-            - artisan
-            - queue:work
-            - database
-            - --sleep=3
-            - --tries=3
-            - --timeout=60
-            - --no-interaction
-
-    scheduler:
-        <<: *application
-        restart: unless-stopped
-        command:
-            - php
-            - artisan
-            - schedule:work
-            - --no-interaction
         networks:
             - sail
 
     pgsql:
         image: 'postgres:18-alpine'
         ports:
-            - '127.0.0.1:${FORWARD_DB_PORT:-5432}:5432'
+            - '127.0.0.1:${FORWARD_DB_PORT:-5433}:5432'
         environment:
             PGPASSWORD: '${DB_PASSWORD:-secret}'
             POSTGRES_DB: '${DB_DATABASE}'

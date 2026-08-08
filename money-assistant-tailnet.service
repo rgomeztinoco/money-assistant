@@ -11,8 +11,8 @@ Restart=on-failure
 RestartSec=10s
 ExecStartPre=/usr/bin/tailscale wait --timeout=30s
 ExecStartPre=/usr/bin/curl --fail --silent --show-error http://127.0.0.1:8443/up
-ExecStart=/usr/bin/tailscale serve --bg --https=443 http://127.0.0.1:8443
-ExecStop=/usr/bin/tailscale serve --https=443 off
+ExecStart=/usr/bin/tailscale serve --bg --https=8443 http://127.0.0.1:8443
+ExecStop=/usr/bin/tailscale serve --https=8443 off
 
 [Install]
 WantedBy=multi-user.target

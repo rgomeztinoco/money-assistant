@@ -16,6 +16,7 @@ type BindingConfiguration = {
 };
 type CapabilityConfiguration = BindingConfiguration & {
     keyId: string;
+    capabilityOrigin: string;
     privateKey: string;
 };
 type PluginConfiguration = CapabilityConfiguration & {

@@ -9,7 +9,7 @@ x-application: &application
         APP_NAME: 'Money Assistant'
         APP_ENV: production
         APP_DEBUG: 'false'
-        APP_URL: 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}'
+        APP_URL: 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:8443'
         APP_KEY_FILE: /run/secrets/application_key
         APP_PREVIOUS_KEYS_FILE: /run/secrets/application_previous_keys
         CACHE_STORE: database
@@ -23,7 +23,7 @@ x-application: &application
         DB_USERNAME: '${DB_USERNAME:-money_assistant}'
         GOOGLE_GMAIL_CLIENT_ID: '${GOOGLE_GMAIL_CLIENT_ID:?Set GOOGLE_GMAIL_CLIENT_ID}'
         GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS: production
-        GOOGLE_GMAIL_REDIRECT_URI: 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}/settings/connections/gmail/callback'
+        GOOGLE_GMAIL_REDIRECT_URI: 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:8443/settings/connections/gmail/callback'
         LOG_CHANNEL: stderr
         LOG_LEVEL: '${LOG_LEVEL:-info}'
         QUEUE_CONNECTION: database

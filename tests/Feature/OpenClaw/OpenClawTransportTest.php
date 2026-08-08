@@ -901,6 +901,7 @@ test('confirmation requires a new admitted owner message', function () {
 });
 
 test('a different owner message from before preparation cannot approve it', function () {
+    $this->freezeSecond();
     User::factory()->create();
     $operation = ($this->callOpenClaw)(($this->validManualTransactionPreparation)())
         ->assertSuccessful()

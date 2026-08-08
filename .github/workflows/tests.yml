@@ -57,6 +57,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress --no-scripts --prefer-dist
+
+      - name: Configure development rehearsal
+        run: cp .env.example .env
+
       - name: Build rehearsal application images
         run: |
           docker run \
@@ -197,6 +210,54 @@ jobs:
           test "$(stat --format '%a' "$DEPLOYMENT_STATE_DIRECTORY/current.json")" = 600
           printf '%s\n' 'Healthy digest deployment and metadata verification passed.' >&3
 
+      - name: Rehearse development and production coexistence
+        run: |
+          production_container_ids()
+          {
+            docker compose \
+              --project-name "$COMPOSE_PROJECT_NAME" \
+              --env-file "$PRODUCTION_ENV_FILE" \
+              --file compose.production.yaml \
+              ps --quiet postgres web worker scheduler proxy | sort
+          }
+
+          production_migration_fingerprint()
+          {
+            docker compose \
+              --project-name "$COMPOSE_PROJECT_NAME" \
+              --env-file "$PRODUCTION_ENV_FILE" \
+              --file compose.production.yaml \
+              exec --no-TTY web \
+              /usr/local/bin/with-production-secrets \
+              php artisan migrate:status --no-ansi --no-interaction | sha256sum
+          }
+
+          production_container_ids_before="$(production_container_ids)"
+          production_migrations_before="$(production_migration_fingerprint)"
+
+          assert_production_unchanged()
+          {
+            production_container_ids_after="$(production_container_ids)"
+            production_migrations_after="$(production_migration_fingerprint)"
+
+            test "$production_container_ids_after" = "$production_container_ids_before"
+            test "$production_migrations_after" = "$production_migrations_before"
+            docker network inspect "${COMPOSE_PROJECT_NAME}_application" >/dev/null
+            docker volume inspect "${COMPOSE_PROJECT_NAME}_postgres-data" >/dev/null
+          }
+
+          COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail up -d --wait
+          test "$(COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail ps --services --status running | sort)" = "$(printf '%s\n' laravel.test mailpit pgsql | sort)"
+          COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail artisan migrate --force
+          assert_production_unchanged
+
+          COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail stop
+          assert_production_unchanged
+
+          COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail up -d --wait
+          COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail down --volumes --remove-orphans
+          assert_production_unchanged
+
       - name: Rehearse restart recovery
         run: |
           exec 3>&1
@@ -318,6 +379,7 @@ jobs:
       - name: Stop production stack
         if: always()
         run: |
+          COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail down --volumes --remove-orphans || true
           if [ -f /tmp/money-assistant-production-smoke/production.env ]; then
             docker compose \
               --env-file /tmp/money-assistant-production-smoke/production.env \

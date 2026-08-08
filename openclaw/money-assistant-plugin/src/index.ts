@@ -13,7 +13,6 @@ import { getSessionEntry } from 'openclaw/plugin-sdk/session-store-runtime';
 import { defineToolPlugin } from 'openclaw/plugin-sdk/tool-plugin';
 import { Type } from 'typebox';
 
-const CAPABILITY_ORIGIN = 'http://127.0.0.1:8443';
 const CAPABILITY_PATH = '/api/openclaw/v1/transport';
 const REMINDER_HOOK_SESSION_KEY = 'hook:money-assistant:reminders';
 const UUID_PATTERN =
@@ -62,6 +61,9 @@ const resolvedSecretInputStringSchema = Type.Unsafe<string>({
 const pluginConfigSchema = Type.Object(
   {
     keyId: Type.String({ minLength: 1, maxLength: 128 }),
+    capabilityOrigin: Type.String({
+      pattern: '^http://127\\.0\\.0\\.1:[0-9]{1,5}$',
+    }),
     privateKey: resolvedSecretInputStringSchema,
     agentId: Type.String({ minLength: 1, maxLength: 128 }),
     accountId: Type.String({ minLength: 1, maxLength: 128 }),
@@ -456,6 +458,7 @@ type BindingConfiguration = {
 
 type CapabilityConfiguration = BindingConfiguration & {
   keyId: string;
+  capabilityOrigin: string;
   privateKey: string;
 };
 
@@ -1973,7 +1976,7 @@ async function requestCapability(
   signal?: AbortSignal,
 ): Promise<unknown> {
   signal?.throwIfAborted();
-  const response = await fetch(`${CAPABILITY_ORIGIN}${CAPABILITY_PATH}`, {
+  const response = await fetch(`${config.capabilityOrigin}${CAPABILITY_PATH}`, {
     method: 'POST',
     headers: authorizationHeaders(
       body,

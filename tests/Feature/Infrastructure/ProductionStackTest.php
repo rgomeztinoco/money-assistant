@@ -2,11 +2,11 @@
 
 use Symfony\Component\Yaml\Yaml;
 
-beforeEach(function () {
+beforeEach(function (): void {
     $this->productionCompose = Yaml::parseFile(base_path('compose.production.yaml'));
 });
 
-test('a clean host can run only immutable production services', function () {
+test('a clean host can run only immutable production services', function (): void {
     $services = $this->productionCompose['services'];
 
     expect($services)->toHaveKeys([
@@ -27,7 +27,7 @@ test('a clean host can run only immutable production services', function () {
     }
 });
 
-test('web worker scheduler PostgreSQL and the private proxy publish health checks', function () {
+test('web worker scheduler PostgreSQL and the private proxy publish health checks', function (): void {
     $services = $this->productionCompose['services'];
 
     foreach (['web', 'worker', 'scheduler', 'postgres', 'proxy'] as $service) {
@@ -44,7 +44,7 @@ test('web worker scheduler PostgreSQL and the private proxy publish health check
         ->toBe('service_healthy');
 });
 
-test('application roles share one pinned image and restart independently', function () {
+test('application roles share one pinned image and restart independently', function (): void {
     $services = $this->productionCompose['services'];
     $applicationImage = '${APP_IMAGE_REPOSITORY:?Set APP_IMAGE_REPOSITORY}@${APP_IMAGE_DIGEST:?Set APP_IMAGE_DIGEST}';
 
@@ -60,14 +60,16 @@ test('application roles share one pinned image and restart independently', funct
     }
 });
 
-test('production permits the state-bound Gmail callback and mounts its OAuth secret only in the web role', function () {
+test('production permits the state-bound Gmail callback and mounts its OAuth secret only in the web role', function (): void {
     $services = $this->productionCompose['services'];
     $entrypoint = file_get_contents(base_path('docker-entrypoint.production'));
 
-    expect($services['web']['environment']['SESSION_SAME_SITE'])->toBe('lax')
+    expect($services['web']['environment']['APP_URL'])
+        ->toBe('https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:8443')
+        ->and($services['web']['environment']['SESSION_SAME_SITE'])->toBe('lax')
         ->and($services['web']['environment']['GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS'])->toBe('production')
         ->and($services['web']['environment']['GOOGLE_GMAIL_REDIRECT_URI'])
-        ->toBe('https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}/settings/connections/gmail/callback')
+        ->toBe('https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:8443/settings/connections/gmail/callback')
         ->and($services['web']['environment']['GOOGLE_GMAIL_CLIENT_SECRET_FILE'])
         ->toBe('/run/secrets/google_gmail_client_secret')
         ->and($services['web']['secrets'])->toContain('google_gmail_client_secret')
@@ -126,10 +128,14 @@ test('Tailscale is the exclusive HTTPS ingress for approved owner devices', func
         ->toContain('"tag:money-assistant-approved-device"')
         ->toContain('"srcPosture": ["posture:approved-owner-device"]')
         ->toContain('"tag:money-assistant:443"')
-        ->toContain('"deny": ["tag:money-assistant:80", "tag:money-assistant:8443", "tag:money-assistant:18789", "tag:money-assistant:19789"]')
+        ->toContain('"tag:money-assistant:8443"')
+        ->toContain('"deny": ["tag:money-assistant:80", "tag:money-assistant:18789", "tag:money-assistant:19789"]')
         ->and($service)
         ->toContain('tailscale wait')
-        ->toContain('tailscale serve --bg --https=443 http://127.0.0.1:8443')
+        ->toContain('tailscale serve --bg --https=8443 http://127.0.0.1:8443')
+        ->toContain('tailscale serve --https=8443 off')
+        ->not->toContain('tailscale serve --bg --https=443')
+        ->not->toContain('tailscale serve --https=443 off')
         ->not->toContain('--set-path=/hooks/money-assistant')
         ->not->toContain('tailscale funnel');
 });
@@ -376,6 +382,9 @@ test('the production stack ships a private ingress verifier', function () {
 
     expect($verifier)
         ->toContain('tailscale serve status --json')
+        ->toContain('${PRIVATE_HOSTNAME}:8443')
+        ->toContain('.TCP["8443"].HTTPS == true')
+        ->toContain('"https://${PRIVATE_HOSTNAME}:8443/up"')
         ->toContain('tailscale funnel status --json')
         ->toContain('ufw status verbose')
         ->toContain('ss -H -lnt')

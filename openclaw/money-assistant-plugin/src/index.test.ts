@@ -930,6 +930,7 @@ test('receipt completion deletes the Telegram source or warns the owner', async 
   const config = {
     keyId: 'openclaw-service-2026-07',
     privateKey: 'unused',
+    capabilityOrigin: 'http://127.0.0.1:8443',
     agentId: 'money-assistant',
     accountId: 'money-assistant-owner',
     conversationId: 'telegram-owner-123',
@@ -1209,10 +1210,12 @@ test('the channel callback records delivery for the exact admitted event', async
   const privateKeyDer = privateKey.export({ format: 'der', type: 'pkcs8' });
   const originalFetch = globalThis.fetch;
   let requestBody: Record<string, unknown> | null = null;
+  let requestUrl = '';
   let requestCount = 0;
 
-  globalThis.fetch = async (_input, init) => {
+  globalThis.fetch = async (input, init) => {
     requestCount += 1;
+    requestUrl = String(input);
     requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
 
     if (requestCount === 1) {
@@ -1234,6 +1237,7 @@ test('the channel callback records delivery for the exact admitted event', async
       {
         keyId: 'openclaw-service-2026-07',
         privateKey: privateKeyDer.subarray(-32).toString('base64'),
+        capabilityOrigin: 'http://127.0.0.1:8080',
         agentId: 'money-assistant',
         accountId: 'money-assistant-owner',
         conversationId: 'telegram-owner-123',
@@ -1258,6 +1262,10 @@ test('the channel callback records delivery for the exact admitted event', async
     },
     input: { event_id: '01983d79-a780-72f0-bb34-9b4f3f0cf390' },
   });
+  assert.equal(
+    requestUrl,
+    'http://127.0.0.1:8080/api/openclaw/v1/transport',
+  );
   assert.equal(requestCount, 2);
 });
 
@@ -1283,6 +1291,7 @@ test('the channel callback does not retry deterministic rejection', async () => 
         {
           keyId: 'openclaw-service-2026-07',
           privateKey: privateKeyDer.subarray(-32).toString('base64'),
+          capabilityOrigin: 'http://127.0.0.1:8443',
           agentId: 'money-assistant',
           accountId: 'money-assistant-owner',
           conversationId: 'telegram-owner-123',

@@ -221,7 +221,7 @@ test('production and OpenClaw credentials resolve only through host-managed secr
         ->toContain('read_optional_secret APP_PREVIOUS_KEYS')
         ->and($policy['secrets']['providers']['money_assistant_private_key'])->toBe([
             'source' => 'file',
-            'path' => '/etc/money-assistant/secrets/openclaw_capability_private_key',
+            'path' => '${OPENCLAW_MONEY_ASSISTANT_PRIVATE_KEY_FILE}',
             'mode' => 'singleValue',
         ])
         ->and($policy['plugins']['entries']['money-assistant']['config']['privateKey'])->toBe([
