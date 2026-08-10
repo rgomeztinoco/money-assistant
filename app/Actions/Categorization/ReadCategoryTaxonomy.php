@@ -12,12 +12,10 @@ final class ReadCategoryTaxonomy
      *     id: int,
      *     name: string,
      *     parent_id: int|null,
-     *     description: string|null,
-     *     examples: list<string>,
      *     revision: int,
      *     retired_at: string|null,
      *     transaction_count: int,
-     *     children: list<array{id: int, parent_id: int|null, name: string, description: string|null, examples: list<string>, revision: int, retired_at: string|null, transaction_count: int}>
+     *     children: list<array{id: int, parent_id: int|null, name: string, revision: int, retired_at: string|null, transaction_count: int}>
      * }>
      */
     public function handle(User $owner): array
@@ -29,8 +27,6 @@ final class ReadCategoryTaxonomy
                 'user_id',
                 'parent_id',
                 'name',
-                'description',
-                'examples',
                 'revision',
                 'retired_at',
             ])
@@ -79,7 +75,7 @@ final class ReadCategoryTaxonomy
     }
 
     /**
-     * @return array{id: int, parent_id: int|null, name: string, description: string|null, examples: list<string>, revision: int, retired_at: string|null, transaction_count: int}
+     * @return array{id: int, parent_id: int|null, name: string, revision: int, retired_at: string|null, transaction_count: int}
      */
     private function categoryData(Category $category): array
     {
@@ -87,8 +83,6 @@ final class ReadCategoryTaxonomy
             'id' => $category->id,
             'parent_id' => $category->parent_id,
             'name' => $category->name,
-            'description' => $category->description,
-            'examples' => $category->examples,
             'revision' => $category->revision,
             'retired_at' => $category->retired_at?->toIso8601String(),
             'transaction_count' => $category->transactions_count,

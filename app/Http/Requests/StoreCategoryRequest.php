@@ -33,9 +33,6 @@ class StoreCategoryRequest extends FormRequest
                     ->whereNull('parent_id')
                     ->whereNull('retired_at'),
             ],
-            'description' => ['nullable', 'string', 'max:2000'],
-            'examples' => ['present', 'array', 'max:20'],
-            'examples.*' => ['string', 'max:100'],
         ];
     }
 }

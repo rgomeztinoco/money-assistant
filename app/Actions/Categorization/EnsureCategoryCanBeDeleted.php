@@ -22,10 +22,8 @@ final class EnsureCategoryCanBeDeleted
             throw new CategoryOperationBlocked('This Category has historical Learned Rule activity and must be retired instead.');
         }
 
-        if ($category->targets()->exists()
-            || $category->proposedChildren()->exists()
-            || $category->confirmedAiProposals()->exists()) {
-            throw new CategoryOperationBlocked('This Category has historical financial planning or classification activity and must be retired instead.');
+        if ($category->targets()->exists()) {
+            throw new CategoryOperationBlocked('This Category has historical financial planning activity and must be retired instead.');
         }
 
         if ($category->children()->withTrashed()->exists()) {

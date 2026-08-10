@@ -68,16 +68,6 @@ final class AssignCategoryToTransaction
             }
 
             $previousCategoryId = $transaction->category_id;
-            $currentCategoryAssignment = CategoryAssignment::query()
-                ->whereBelongsTo($transaction)
-                ->latest('transaction_revision')
-                ->lockForUpdate()
-                ->first();
-            $reviewedAiAssignment = $currentCategoryAssignment?->source === CategoryAssignmentProvenance::Ai
-                && $currentCategoryAssignment->ai_requires_review === true
-                && $currentCategoryAssignment->ai_reviewed_at === null
-                    ? $currentCategoryAssignment
-                    : null;
             $isCategoryCorrection = $previousCategoryId !== $category?->id;
             $transaction->category_id = $category?->id;
             $transaction->category_assignment_provenance = $category === null
@@ -95,13 +85,6 @@ final class AssignCategoryToTransaction
                 'is_correction' => $isCategoryCorrection,
                 'transaction_revision' => $transaction->revision,
             ]);
-
-            if ($reviewedAiAssignment !== null) {
-                $reviewedAiAssignment->forceFill([
-                    'ai_reviewed_at' => now(),
-                    'ai_approved_unchanged' => $reviewedAiAssignment->category_id === $category?->id,
-                ])->save();
-            }
 
             if ($isCategoryCorrection) {
                 $this->collectLearnedRuleSuggestionEvidence->handle(

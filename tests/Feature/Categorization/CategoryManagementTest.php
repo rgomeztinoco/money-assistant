@@ -26,29 +26,22 @@ test('the owner can read create and edit the two-level taxonomy', function () {
     $this->post(route('categories.store'), [
         'name' => '  Local   Transport ',
         'parent_id' => $transport->id,
-        'description' => 'Trips taken after arrival.',
-        'examples' => ['Bus', ' Taxi ', '0'],
     ])->assertRedirect(route('categories.index'));
 
     $category = Category::query()->where('name', 'Local Transport')->sole();
 
-    expect($category->parent_id)->toBe($transport->id)
-        ->and($category->description)->toBe('Trips taken after arrival.')
-        ->and($category->examples)->toBe(['Bus', 'Taxi', '0']);
+    expect($category->parent_id)->toBe($transport->id);
 
     $this->patch(route('categories.update', $category), [
         'expected_revision' => 1,
         'name' => 'Local Transit',
         'parent_id' => $food->id,
-        'description' => '',
-        'examples' => [],
     ])->assertRedirect(route('categories.index'));
 
     expect($category->fresh())
         ->id->toBe($category->id)
         ->name->toBe('Local Transit')
         ->parent_id->toBe($food->id)
-        ->description->toBeNull()
         ->revision->toBe(2);
 });
 
@@ -62,14 +55,12 @@ test('active Category names are unique among siblings but reusable under another
         ->post(route('categories.store'), [
             'name' => ' dining ',
             'parent_id' => $food->id,
-            'examples' => [],
         ])
         ->assertSessionHasErrors('name');
 
     $this->post(route('categories.store'), [
         'name' => 'Dining',
         'parent_id' => $pets->id,
-        'examples' => [],
     ])->assertSessionHasNoErrors();
 
     expect(Category::query()->where('name', 'Dining')->count())->toBe(2);
@@ -91,8 +82,6 @@ test('renaming and moving a Category preserves its identity and updates historic
         'expected_revision' => 1,
         'name' => 'Coffee Shops',
         'parent_id' => $travel->id,
-        'description' => null,
-        'examples' => [],
     ])->assertSessionHasNoErrors();
 
     expect($transaction->fresh()->category_id)->toBe($category->id);
@@ -211,8 +200,6 @@ test('stale Category changes fail closed', function () {
             'expected_revision' => 1,
             'name' => 'Changed',
             'parent_id' => null,
-            'description' => null,
-            'examples' => [],
         ])
         ->assertSessionHasErrors('expected_revision');
 

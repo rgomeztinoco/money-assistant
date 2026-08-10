@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\DB;
 final class DeleteCategory
 {
     public function __construct(
-        private InvalidateAiClassificationValidationContext $invalidateValidationContext,
         private EnsureCategoryCanBeDeleted $ensureCategoryCanBeDeleted,
     ) {}
 
@@ -30,7 +29,6 @@ final class DeleteCategory
             $this->ensureCategoryCanBeDeleted->handle($category);
 
             $category->moveToFinancialTrash();
-            $this->invalidateValidationContext->handle($owner);
         }, 3);
     }
 }

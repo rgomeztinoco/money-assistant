@@ -12,27 +12,16 @@ use Illuminate\Validation\ValidationException;
 
 final class CreateCategory
 {
-    public function __construct(
-        private InvalidateAiClassificationValidationContext $invalidateValidationContext,
-    ) {}
-
-    /**
-     * @param  list<string>  $examples
-     */
     public function handle(
         User $owner,
         string $name,
         ?int $parentId,
-        ?string $description,
-        array $examples,
         ?int $expectedParentRevision = null,
     ): Category {
         $name = Str::squish($name);
-        $description = $this->normalizeDescription($description);
-        $examples = $this->normalizeExamples($examples);
 
         try {
-            return DB::transaction(function () use ($owner, $name, $parentId, $description, $examples, $expectedParentRevision): Category {
+            return DB::transaction(function () use ($owner, $name, $parentId, $expectedParentRevision): Category {
                 $parent = $this->activeParent($owner, $parentId);
 
                 if ($parent !== null
@@ -47,11 +36,7 @@ final class CreateCategory
                     'user_id' => $owner->getKey(),
                     'parent_id' => $parent?->id,
                     'name' => $name,
-                    'description' => $description,
-                    'examples' => $examples,
                 ]);
-
-                $this->invalidateValidationContext->handle($owner);
 
                 return $category;
             }, 3);
@@ -107,25 +92,5 @@ final class CreateCategory
                 'name' => 'An active sibling Category already uses this name.',
             ]);
         }
-    }
-
-    private function normalizeDescription(?string $description): ?string
-    {
-        $description = Str::squish((string) $description);
-
-        return $description === '' ? null : $description;
-    }
-
-    /** @param list<string> $examples
-     * @return list<string>
-     */
-    private function normalizeExamples(array $examples): array
-    {
-        return array_values(collect($examples)
-            ->map(fn (string $example): string => Str::squish($example))
-            ->filter(fn (string $example): bool => $example !== '')
-            ->unique(fn (string $example): string => Str::lower($example))
-            ->values()
-            ->all());
     }
 }

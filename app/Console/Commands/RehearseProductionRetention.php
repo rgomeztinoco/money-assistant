@@ -68,9 +68,7 @@ class RehearseProductionRetention extends Command
     ): bool {
         $category = Category::query()->create([
             'user_id' => $owner->id,
-            'name' => 'Production trust retention '.Str::uuid(),
-            'description' => 'production-trust-retention-payload',
-            'examples' => ['production-trust-retention-payload'],
+            'name' => 'production-trust-retention-payload '.Str::uuid(),
         ]);
         $category->moveToFinancialTrash();
         $category->forceFill(['purge_after' => now()->subSecond()])->save();

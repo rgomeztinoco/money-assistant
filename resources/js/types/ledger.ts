@@ -16,7 +16,7 @@ export type ReviewField = {
 };
 
 export type CategoryAssignmentProvenance = {
-    source: 'owner' | 'linked_refund' | 'learned_rule' | 'ai';
+    source: 'owner' | 'linked_refund' | 'learned_rule';
     owner: {
         id: number;
         name: string;
@@ -31,12 +31,6 @@ export type CategoryAssignmentProvenance = {
     } | null;
     bulk_action: {
         id: number;
-    } | null;
-    ai: {
-        classifier_version: string;
-        confidence: number;
-        outcome: string;
-        explanation: string;
     } | null;
 };
 
@@ -148,14 +142,6 @@ export type SelectedTransaction = {
         transaction_revision: number;
         created_at: string | null;
     }>;
-    ai_category_proposal: {
-        id: number;
-        revision: number;
-        name: string;
-        parent_path: string | null;
-        description: string | null;
-        examples: string[];
-    } | null;
     learned_rule_candidate: LearnedRuleCandidate | null;
     state_changes: Array<{
         id: number;

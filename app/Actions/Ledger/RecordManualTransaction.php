@@ -2,7 +2,7 @@
 
 namespace App\Actions\Ledger;
 
-use App\Actions\Categorization\ApplyAutomaticCategorization;
+use App\Actions\Categorization\ApplyLearnedRuleToTransaction;
 use App\Actions\Reporting\DiscoverMissingDailyExchangeRates;
 use App\Currency;
 use App\Models\Transaction;
@@ -17,7 +17,7 @@ use InvalidArgumentException;
 class RecordManualTransaction
 {
     public function __construct(
-        private ApplyAutomaticCategorization $applyAutomaticCategorization,
+        private ApplyLearnedRuleToTransaction $applyLearnedRuleToTransaction,
         private DiscoverMissingDailyExchangeRates $discoverMissingDailyExchangeRates,
     ) {}
 
@@ -63,7 +63,7 @@ class RecordManualTransaction
                     ->all(),
             ]);
 
-            return $this->applyAutomaticCategorization->handle($transaction);
+            return $this->applyLearnedRuleToTransaction->handle($transaction);
         });
 
         $this->discoverMissingDailyExchangeRates->handle();

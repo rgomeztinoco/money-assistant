@@ -34,7 +34,6 @@ final class InstallStartingTaxonomy
             $parent = Category::query()->create([
                 'user_id' => $owner->getKey(),
                 'name' => $parentName,
-                'examples' => [],
             ]);
 
             foreach ($childNames as $childName) {
@@ -42,7 +41,6 @@ final class InstallStartingTaxonomy
                     'user_id' => $owner->getKey(),
                     'parent_id' => $parent->getKey(),
                     'name' => $childName,
-                    'examples' => [],
                 ]);
             }
         }

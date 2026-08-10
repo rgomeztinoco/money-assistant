@@ -75,7 +75,7 @@ test('development and production lifecycle commands target isolated Compose reso
         ->toContain('--env-file "$environment_file"');
 });
 
-test('development and production integrations retain only Gmail and AI configuration', function (): void {
+test('development and production integrations retain Gmail configuration', function (): void {
     $developmentEnvironment = file_get_contents(base_path('.env.example'));
     $productionEnvironment = file_get_contents(base_path('.env.production.example'));
     $developmentCompose = file_get_contents(base_path('compose.yaml'));

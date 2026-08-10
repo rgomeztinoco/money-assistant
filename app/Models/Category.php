@@ -17,8 +17,6 @@ use Illuminate\Support\Carbon;
  * @property int $user_id
  * @property int|null $parent_id
  * @property string $name
- * @property string|null $description
- * @property list<string> $examples
  * @property int $revision
  * @property CarbonImmutable|null $retired_at
  * @property string|null $deletion_id
@@ -31,8 +29,6 @@ use Illuminate\Support\Carbon;
     'user_id',
     'parent_id',
     'name',
-    'description',
-    'examples',
     'revision',
     'retired_at',
 ])]
@@ -45,7 +41,6 @@ class Category extends Model
 
     /** @var array<string, mixed> */
     protected $attributes = [
-        'examples' => '[]',
         'revision' => 1,
     ];
 
@@ -107,18 +102,6 @@ class Category extends Model
         return $this->hasMany(LearnedRuleBulkActionItem::class, 'previous_category_id');
     }
 
-    /** @return HasMany<AiCategoryProposal, $this> */
-    public function proposedChildren(): HasMany
-    {
-        return $this->hasMany(AiCategoryProposal::class, 'parent_id');
-    }
-
-    /** @return HasMany<AiCategoryProposal, $this> */
-    public function confirmedAiProposals(): HasMany
-    {
-        return $this->hasMany(AiCategoryProposal::class, 'confirmed_category_id');
-    }
-
     /**
      * @return BelongsTo<Category, $this>
      */
@@ -147,7 +130,6 @@ class Category extends Model
     protected function casts(): array
     {
         return [
-            'examples' => 'array',
             'revision' => 'integer',
             'retired_at' => 'immutable_datetime',
             'purge_after' => 'immutable_datetime',

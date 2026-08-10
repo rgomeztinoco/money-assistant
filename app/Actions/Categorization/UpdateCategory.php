@@ -12,34 +12,18 @@ use Illuminate\Validation\ValidationException;
 
 final class UpdateCategory
 {
-    public function __construct(
-        private InvalidateAiClassificationValidationContext $invalidateValidationContext,
-    ) {}
-
-    /**
-     * @param  list<string>  $examples
-     */
     public function handle(
         User $owner,
         int $categoryId,
         int $expectedRevision,
         string $name,
         ?int $parentId,
-        ?string $description,
-        array $examples,
         ?int $expectedParentRevision = null,
     ): Category {
         $name = Str::squish($name);
-        $description = Str::squish((string) $description);
-        $examples = collect($examples)
-            ->map(fn (string $example): string => Str::squish($example))
-            ->filter(fn (string $example): bool => $example !== '')
-            ->unique(fn (string $example): string => Str::lower($example))
-            ->values()
-            ->all();
 
         try {
-            return DB::transaction(function () use ($owner, $categoryId, $expectedRevision, $name, $parentId, $description, $examples, $expectedParentRevision): Category {
+            return DB::transaction(function () use ($owner, $categoryId, $expectedRevision, $name, $parentId, $expectedParentRevision): Category {
                 $category = Category::query()
                     ->whereBelongsTo($owner, 'owner')
                     ->whereKey($categoryId)
@@ -68,19 +52,11 @@ final class UpdateCategory
                     $this->ensureNameAvailable($owner, $category, $name, $parent?->id);
                 }
 
-                $guidanceChanged = $category->description !== ($description === '' ? null : $description)
-                    || $category->examples !== $examples;
                 $category->fill([
                     'parent_id' => $parent?->id,
                     'name' => $name,
-                    'description' => $description === '' ? null : $description,
-                    'examples' => $examples,
                     'revision' => $category->revision + 1,
                 ])->save();
-
-                if ($guidanceChanged) {
-                    $this->invalidateValidationContext->handle($owner);
-                }
 
                 return $category;
             }, 3);
