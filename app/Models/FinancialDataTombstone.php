@@ -11,8 +11,6 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $owner_id
  * @property string $resource_type
  * @property int $resource_id
- * @property string|null $source_reference_type
- * @property int|null $source_reference_id
  * @property CarbonImmutable $deleted_at
  * @property CarbonImmutable $purged_at
  */
@@ -21,8 +19,6 @@ use Illuminate\Database\Eloquent\Model;
     'owner_id',
     'resource_type',
     'resource_id',
-    'source_reference_type',
-    'source_reference_id',
     'deleted_at',
     'purged_at',
 ])]
@@ -40,7 +36,6 @@ class FinancialDataTombstone extends Model
         return [
             'owner_id' => 'integer',
             'resource_id' => 'integer',
-            'source_reference_id' => 'integer',
             'deleted_at' => 'immutable_datetime',
             'purged_at' => 'immutable_datetime',
         ];

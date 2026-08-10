@@ -7,14 +7,12 @@ use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
-use Tests\Support\ConfigureOpenClaw;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
 test('the Dashboard directs attention into filtered owner workflows', function () {
-    ConfigureOpenClaw::asConfigured();
     $owner = User::factory()->create(['reporting_currency' => Currency::Pen]);
     $category = Category::factory()->for($owner, 'owner')->create();
     DailyExchangeRate::factory()->for($owner, 'owner')->create([
@@ -43,11 +41,6 @@ test('the Dashboard directs attention into filtered owner workflows', function (
         ->assertSee('S/ 25.00')
         ->assertSee('S/ 60.00')
         ->assertSee('Review Queue')
-        ->assertSee('OpenClaw')
-        ->assertSee('Configured')
-        ->assertScript(
-            'document.querySelector(\'[data-test="openclaw-launcher"]\')?.getAttribute(\'href\') === \'https://t.me/money_assistant\'',
-        )
         ->click('[data-test="dashboard-spending-usd"]')
         ->assertPathIs('/transactions')
         ->assertQueryStringHas('currency', 'USD')
@@ -83,7 +76,6 @@ test('the Dashboard directs attention into filtered owner workflows', function (
 });
 
 test('missing-rate Dashboard cards retain their reporting context and affected work', function () {
-    ConfigureOpenClaw::asConfigured();
     $owner = User::factory()->create(['reporting_currency' => Currency::Pen]);
     $category = Category::factory()->for($owner, 'owner')->create();
     Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
@@ -120,24 +112,6 @@ test('missing-rate Dashboard cards retain their reporting context and affected w
         ->assertScript(
             'window.location.hash === "#rate-request-'.now()->toDateString().'"',
         )
-        ->assertNoJavaScriptErrors()
-        ->assertNoConsoleLogs();
-});
-
-test('an unavailable OpenClaw launcher leads to its connection settings', function () {
-    config(['services.openclaw.launcher_url' => null]);
-    $owner = User::factory()->create();
-    $this->actingAs($owner);
-
-    $page = visit('/dashboard');
-
-    $page
-        ->assertSee('OpenClaw')
-        ->assertSee('Unavailable')
-        ->click('[data-test="openclaw-launcher"]')
-        ->assertPathIs('/settings/connections')
-        ->assertQueryStringHas('integration', 'openclaw')
-        ->assertSee('OpenClaw setup required')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

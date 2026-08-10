@@ -25,7 +25,6 @@ use App\Http\Controllers\ParserProfileSourceMessageController;
 use App\Http\Controllers\ReceiptBreakdownConfirmationController;
 use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReceiptBreakdownTrashRestorationController;
-use App\Http\Controllers\ReceiptProposalAttachmentController;
 use App\Http\Controllers\ReportingCurrencyController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\SpendingNotificationRecoveryController;
@@ -63,8 +62,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('category_targets.retirement.store');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store']);
-    Route::post('transactions/{transaction}/receipt-proposal-attachments', [ReceiptProposalAttachmentController::class, 'store'])
-        ->name('transactions.receipt_proposal_attachments.store');
+    Route::post('transactions/{transaction}/receipt-breakdown', [ReceiptBreakdownController::class, 'store'])
+        ->name('transactions.receipt_breakdowns.store');
     Route::put('receipt-breakdowns/{receipt_breakdown}', [ReceiptBreakdownController::class, 'update'])
         ->name('receipt_breakdowns.update');
     Route::delete('receipt-breakdowns/{receipt_breakdown}', [ReceiptBreakdownController::class, 'destroy'])

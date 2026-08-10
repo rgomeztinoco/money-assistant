@@ -180,13 +180,6 @@ export type SelectedTransaction = {
         revision: number;
         purge_after: string;
     }>;
-    receipt_proposals: Array<{
-        id: string;
-        processed_at: string;
-        proposed_amount_minor: string;
-        proposed_merchant_description: string;
-        line_item_count: number;
-    }>;
     state_change_idempotency_key: string;
 };
 

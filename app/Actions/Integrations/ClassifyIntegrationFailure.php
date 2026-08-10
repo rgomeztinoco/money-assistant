@@ -7,7 +7,6 @@ use App\Exceptions\AiClassifierTimedOut;
 use App\Exceptions\AiClassifierUnavailable;
 use App\Exceptions\GmailResponseInvalid;
 use App\Exceptions\IdempotencyKeyConflict;
-use App\Exceptions\OpenClawConfirmationRejected;
 use App\Exceptions\StaleCategoryRevision;
 use App\Exceptions\StaleDailyExchangeRateRevision;
 use App\Exceptions\StaleReceiptBreakdownRevision;
@@ -45,7 +44,6 @@ final class ClassifyIntegrationFailure
                 $failure instanceof GmailReauthorizationRequired,
                 $failure instanceof AuthenticationException => IntegrationFailureKind::Authentication,
                 $failure instanceof AuthorizationException => IntegrationFailureKind::Authorization,
-                $failure instanceof OpenClawConfirmationRejected => IntegrationFailureKind::Confirmation,
                 $failure instanceof IdempotencyKeyConflict,
                 $failure instanceof StaleCategoryRevision,
                 $failure instanceof StaleDailyExchangeRateRevision,

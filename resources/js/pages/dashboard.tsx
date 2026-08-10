@@ -2,7 +2,6 @@ import { Form, Head, Link, usePage } from '@inertiajs/react';
 import {
     ArrowRight,
     BarChart3,
-    Bot,
     CircleCheck,
     CircleDollarSign,
     ListChecks,
@@ -51,10 +50,9 @@ type OperatingException = {
         | 'parser_drift'
         | 'missing_exchange_rate'
         | 'gmail_connection'
-        | 'openclaw_unavailable'
         | 'integration_incident';
     incident_id?: number;
-    integration?: 'gmail' | 'ai' | 'bcrp' | 'openclaw';
+    integration?: 'gmail' | 'ai' | 'bcrp';
     failure_kind?: string;
     error_code?: string;
     replayable?: boolean;
@@ -69,7 +67,6 @@ type OperatingException = {
 type OperatingStatus = {
     summary: {
         gmail: string;
-        openclaw: 'configured' | 'unavailable';
         parser_profiles: {
             healthy_count: number;
             degraded_count: number;
@@ -138,23 +135,13 @@ function exceptionPresentation(exception: OperatingException) {
                           : 'Review the Gmail connection and its latest check.',
                 href: `${connectionsEdit.url({ query: { integration: 'gmail' } })}#gmail`,
             };
-        case 'openclaw_unavailable':
-            return {
-                icon: Bot,
-                title: 'OpenClaw is unavailable',
-                description:
-                    'Complete the launcher, capability, and hook configuration.',
-                href: `${connectionsEdit.url({ query: { integration: 'openclaw' } })}#openclaw`,
-            };
         case 'integration_incident': {
             const integrationName =
                 exception.integration === 'ai'
                     ? 'AI'
                     : exception.integration === 'bcrp'
                       ? 'BCRP'
-                      : exception.integration === 'openclaw'
-                        ? 'OpenClaw'
-                        : 'Gmail';
+                      : 'Gmail';
 
             return {
                 icon: TriangleAlert,
@@ -182,9 +169,6 @@ export default function Dashboard({
     const combined = spending.combined_total;
     const healthySystems = [
         operating.summary.gmail === 'connected' ? 'Gmail' : null,
-        operating.summary.openclaw === 'configured'
-            ? 'OpenClaw configured'
-            : null,
         operating.summary.parser_profiles.healthy_count > 0
             ? `${operating.summary.parser_profiles.healthy_count} healthy Parser ${operating.summary.parser_profiles.healthy_count === 1 ? 'Profile' : 'Profiles'}`
             : null,

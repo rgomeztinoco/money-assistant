@@ -6,7 +6,6 @@ use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
 use App\Actions\Categorization\ReadLearnedRuleCandidateFromCorrection;
 use App\Actions\ReceiptReconciliation\ReadReceiptBreakdownState;
 use App\Actions\Retention\ReadFinancialTrash;
-use App\Models\ReceiptProposal;
 use App\Models\SpendingNotificationReference;
 use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
@@ -98,7 +97,6 @@ class ReadTransactionInspector
      *         second_transaction: DuplicateTransactionData
      *     }>,
      *     receipt_breakdown: ReceiptBreakdownState,
-     *     receipt_proposals: list<array{id: string, processed_at: string, proposed_amount_minor: string, proposed_merchant_description: string, line_item_count: int}>,
      *     trashed_receipt_breakdowns: list<array{deletion_id: string, revision: int, purge_after: string}>,
      *     state_change_idempotency_key: string
      * }|null
@@ -137,23 +135,6 @@ class ReadTransactionInspector
         }
 
         $receiptBreakdown = $this->readReceiptBreakdownState->handle($transaction);
-        $receiptProposals = ReceiptProposal::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereDoesntHave('receiptBreakdown')
-            ->where('proposed_transaction->currency', $transaction->currency->value)
-            ->where('proposed_transaction->kind', $transaction->kind->value)
-            ->select([
-                'id',
-                'user_id',
-                'proposal_id',
-                'processed_at',
-                'proposed_transaction',
-                'proposed_line_items',
-            ])
-            ->latest('processed_at')
-            ->limit(20)
-            ->get();
-
         $reviewFields = [];
 
         foreach ($transaction->provisional_fields as $fieldName) {
@@ -300,15 +281,6 @@ class ReadTransactionInspector
                 })
                 ->all()),
             'receipt_breakdown' => $receiptBreakdown,
-            'receipt_proposals' => array_values($receiptProposals
-                ->map(fn (ReceiptProposal $proposal): array => [
-                    'id' => $proposal->proposal_id,
-                    'processed_at' => $proposal->processed_at->toIso8601String(),
-                    'proposed_amount_minor' => (string) $proposal->proposed_transaction['amount_minor'],
-                    'proposed_merchant_description' => $proposal->proposed_transaction['merchant_description'],
-                    'line_item_count' => count($proposal->proposed_line_items),
-                ])
-                ->all()),
             'trashed_receipt_breakdowns' => $this->readFinancialTrash
                 ->receiptBreakdowns($owner, $transaction),
             'state_change_idempotency_key' => (string) Str::uuid(),

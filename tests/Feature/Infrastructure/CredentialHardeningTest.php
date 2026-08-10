@@ -2,7 +2,6 @@
 
 use App\Integrations\OpenClaw\HttpOpenClawHook;
 use App\Models\GmailConnection;
-use App\Models\OpenClawAuditEvent;
 use App\Models\Reminder;
 use App\Models\Transaction;
 use App\Models\User;
@@ -188,7 +187,7 @@ test('the durable schema cannot retain raw Spending Notification or receipt imag
         'token_log',
     ];
 
-    foreach (['spending_notification_references', 'gmail_message_discoveries', 'receipt_proposals'] as $table) {
+    foreach (['spending_notification_references', 'gmail_message_discoveries'] as $table) {
         expect(Schema::getColumnListing($table))
             ->not->toContain(...$forbiddenColumnNames);
     }
@@ -481,81 +480,6 @@ SH);
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
     }
-});
-
-test('rotating the OpenClaw inbound signing identity invalidates the old key without changing financial state', function () {
-    $owner = User::factory()->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create();
-    $financialStateBefore = DB::table('transactions')->where('id', $transaction->id)->sole();
-    $oldKeyPair = sodium_crypto_sign_keypair();
-    $newKeyPair = sodium_crypto_sign_keypair();
-
-    config([
-        'services.openclaw.capability.key_id' => 'openclaw-service-old',
-        'services.openclaw.capability.public_key' => base64_encode(sodium_crypto_sign_publickey($oldKeyPair)),
-        'services.openclaw.capability.agent_id' => 'money-assistant',
-        'services.openclaw.capability.account_id' => 'money-assistant-owner',
-        'services.openclaw.capability.conversation_id' => 'telegram-owner-123',
-        'services.openclaw.capability.owner_sender_id' => 'telegram-owner-123',
-    ]);
-
-    $payload = [
-        'schema_version' => 1,
-        'capability' => 'transaction.read',
-        'interaction' => [
-            'kind' => 'owner_message',
-            'agent_id' => 'money-assistant',
-            'account_id' => 'money-assistant-owner',
-            'conversation_id' => 'telegram-owner-123',
-            'owner_sender_id' => 'telegram-owner-123',
-            'message_id' => 'rotation-rehearsal-message',
-            'occurred_at' => now()->toIso8601String(),
-        ],
-        'input' => ['transaction_id' => $transaction->id],
-    ];
-    $send = function (string $keyId, string $privateKey) use ($payload) {
-        $body = json_encode($payload, JSON_THROW_ON_ERROR);
-        $timestamp = (string) now()->getTimestamp();
-        $nonce = (string) Str::uuid();
-        $signature = sodium_crypto_sign_detached(implode("\n", [
-            $timestamp,
-            $nonce,
-            'POST',
-            '/api/openclaw/v1/transport',
-            hash('sha256', $body),
-        ]), $privateKey);
-
-        return $this->call(
-            'POST',
-            '/api/openclaw/v1/transport',
-            server: [
-                'CONTENT_TYPE' => 'application/json',
-                'HTTP_ACCEPT' => 'application/json',
-                'HTTP_X_MONEY_ASSISTANT_KEY_ID' => $keyId,
-                'HTTP_X_MONEY_ASSISTANT_TIMESTAMP' => $timestamp,
-                'HTTP_X_MONEY_ASSISTANT_NONCE' => $nonce,
-                'HTTP_X_MONEY_ASSISTANT_SIGNATURE' => base64_encode($signature),
-            ],
-            content: $body,
-        );
-    };
-
-    $send('openclaw-service-old', sodium_crypto_sign_secretkey($oldKeyPair))->assertSuccessful();
-
-    config([
-        'services.openclaw.capability.key_id' => 'openclaw-service-new',
-        'services.openclaw.capability.public_key' => base64_encode(sodium_crypto_sign_publickey($newKeyPair)),
-    ]);
-
-    $send('openclaw-service-old', sodium_crypto_sign_secretkey($oldKeyPair))->assertUnauthorized();
-    $send('openclaw-service-new', sodium_crypto_sign_secretkey($newKeyPair))->assertSuccessful();
-
-    expect(DB::table('transactions')->where('id', $transaction->id)->sole())->toEqual($financialStateBefore)
-        ->and(OpenClawAuditEvent::query()->get()->toJson())
-        ->not->toContain(
-            base64_encode(sodium_crypto_sign_secretkey($oldKeyPair)),
-            base64_encode(sodium_crypto_sign_secretkey($newKeyPair)),
-        );
 });
 
 test('rotating the OpenClaw outbound hook token changes only the bearer credential', function () {

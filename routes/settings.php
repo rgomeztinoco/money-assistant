@@ -3,7 +3,6 @@
 use App\Http\Controllers\Settings\ConnectionsController;
 use App\Http\Controllers\Settings\GmailAuthorizationController;
 use App\Http\Controllers\Settings\GmailConnectionCheckController;
-use App\Http\Controllers\Settings\HighImpactOperationController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Middleware\RequirePasskeyConfirmation;
@@ -21,11 +20,6 @@ Route::middleware(['auth'])->group(function () {
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('settings/high-impact-operations/{operationId}', [HighImpactOperationController::class, 'show'])
-        ->name('high_impact_operations.show');
-    Route::post('settings/high-impact-operations/{operationId}', [HighImpactOperationController::class, 'complete'])
-        ->middleware(RequirePasskeyConfirmation::class.':60')
-        ->name('high_impact_operations.complete');
     Route::delete('settings/profile', [ProfileController::class, 'destroy'])
         ->middleware(RequirePasskeyConfirmation::class)
         ->name('profile.destroy');

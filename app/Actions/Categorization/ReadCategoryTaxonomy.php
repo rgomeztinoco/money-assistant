@@ -79,52 +79,6 @@ final class ReadCategoryTaxonomy
     }
 
     /**
-     * @return array{
-     *     categories: list<array{id: int, parent_id: int|null, name: string, description: string|null, examples: list<string>, revision: int, retired_at: string|null}>,
-     *     pagination: array{page: int, per_page: int, total: int, next_page: int|null}
-     * }
-     */
-    public function forOpenClaw(User $owner, int $page, int $perPage): array
-    {
-        $paginator = Category::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->select([
-                'id',
-                'parent_id',
-                'name',
-                'description',
-                'examples',
-                'revision',
-                'retired_at',
-            ])
-            ->orderBy('id')
-            ->paginate($perPage, page: $page);
-
-        return [
-            'categories' => array_values($paginator->getCollection()
-                ->map(fn (Category $category): array => [
-                    'id' => $category->id,
-                    'parent_id' => $category->parent_id,
-                    'name' => $category->name,
-                    'description' => $category->description,
-                    'examples' => $category->examples,
-                    'revision' => $category->revision,
-                    'retired_at' => $category->retired_at?->toIso8601String(),
-                ])
-                ->values()
-                ->all()),
-            'pagination' => [
-                'page' => $paginator->currentPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-                'next_page' => $paginator->hasMorePages()
-                    ? $paginator->currentPage() + 1
-                    : null,
-            ],
-        ];
-    }
-
-    /**
      * @return array{id: int, parent_id: int|null, name: string, description: string|null, examples: list<string>, revision: int, retired_at: string|null, transaction_count: int}
      */
     private function categoryData(Category $category): array

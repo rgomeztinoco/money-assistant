@@ -45,9 +45,12 @@ final class CreateReceiptBreakdownDraft
                 ]);
             }
 
-            if ($currentTransaction->receiptBreakdowns()->where('status', 'draft')->exists()) {
+            if (ReceiptBreakdown::withTrashed()
+                ->where('transaction_id', $currentTransaction->getKey())
+                ->where('status', 'draft')
+                ->exists()) {
                 throw ValidationException::withMessages([
-                    'transaction_id' => 'This Transaction already has a draft Receipt Breakdown.',
+                    'transaction_id' => 'This Transaction already has a draft Receipt Breakdown, including recoverable trash.',
                 ]);
             }
 
@@ -110,7 +113,6 @@ final class CreateReceiptBreakdownDraft
             $breakdown = ReceiptBreakdown::query()->create([
                 'user_id' => $owner->getKey(),
                 'transaction_id' => $currentTransaction->getKey(),
-                'receipt_proposal_id' => null,
                 'status' => 'draft',
                 'revision' => 1,
             ]);

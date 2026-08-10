@@ -87,7 +87,6 @@ class PurgeExpiredFinancialData
                     'id',
                     'user_id',
                     'transaction_id',
-                    'receipt_proposal_id',
                     'deletion_id',
                     'deleted_at',
                 ])
@@ -103,10 +102,6 @@ class PurgeExpiredFinancialData
                 'owner_id' => $breakdown->user_id,
                 'resource_type' => 'receipt_breakdown',
                 'resource_id' => $breakdown->id,
-                'source_reference_type' => $breakdown->receipt_proposal_id === null
-                    ? null
-                    : 'receipt_proposal',
-                'source_reference_id' => $breakdown->receipt_proposal_id,
                 'deleted_at' => $breakdown->deleted_at,
                 'purged_at' => now(),
             ]);

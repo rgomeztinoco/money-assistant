@@ -1,15 +1,12 @@
 <?php
 
-use App\Actions\ReceiptReconciliation\AttachReceiptProposalToTransaction;
 use App\Actions\Retention\PurgeExpiredFinancialData;
 use App\Http\Middleware\RequirePasskeyConfirmation;
 use App\Models\Category;
 use App\Models\CategoryTarget;
 use App\Models\FinancialDataTombstone;
 use App\Models\LineItem;
-use App\Models\OpenClawAuditEvent;
 use App\Models\ReceiptBreakdown;
-use App\Models\ReceiptProposal;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\QueryException;
@@ -17,7 +14,6 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('an eligible explicit deletion moves its payload into recoverable trash for thirty days', function () {
@@ -104,28 +100,6 @@ test('purge removes an expired payload and leaves only a payload-free tombstone'
         'description' => 'Prohibited tombstone description',
         'examples' => ['Prohibited tombstone example'],
     ]);
-    $idempotencyKey = Str::uuid()->toString();
-    $auditEvent = OpenClawAuditEvent::query()->create([
-        'occurred_at' => Date::now(),
-        'service_key_id' => 'openclaw-retention-test',
-        'schema_version' => 1,
-        'capability' => 'category.mutation.confirm',
-        'outcome' => 'success',
-        'http_status' => 200,
-        'nonce_digest' => str_repeat('a', 64),
-        'request_digest' => str_repeat('b', 64),
-        'interaction_digest' => str_repeat('c', 64),
-        'resource_type' => 'category',
-        'result_count' => 1,
-        'event_kind' => 'mutation',
-        'idempotency_key' => $idempotencyKey,
-        'operation_digest' => str_repeat('d', 64),
-        'confirmation_grant_id' => Str::uuid()->toString(),
-        'domain_action' => 'category.create',
-        'resource_id' => $category->id,
-        'resource_revision' => 1,
-    ]);
-
     $this->actingAs($owner)
         ->withSession([RequirePasskeyConfirmation::SESSION_KEY => Date::now()->unix()])
         ->delete(route('categories.destroy', $category), ['expected_revision' => 1]);
@@ -152,11 +126,7 @@ test('purge removes an expired payload and leaves only a payload-free tombstone'
         ->and($serializedTombstone)
         ->not->toContain('Prohibited Tombstone Name')
         ->not->toContain('Prohibited tombstone description')
-        ->not->toContain('Prohibited tombstone example')
-        ->and($auditEvent->fresh())
-        ->id->toBe($auditEvent->id)
-        ->idempotency_key->toBe($idempotencyKey)
-        ->resource_id->toBe($tombstone->resource_id);
+        ->not->toContain('Prohibited tombstone example');
 });
 
 test('a Category referenced by another protected financial resource cannot enter trash', function () {
@@ -316,43 +286,6 @@ test('purge removes an expired Receipt Breakdown payload and its Line Items', fu
         ->not->toContain('Prohibited purged Line Item');
 });
 
-test('a Receipt Proposal reference cannot be repurposed after its Breakdown is discarded', function (bool $purged) {
-    Date::setTestNow('2026-08-01 10:00:00');
-
-    $owner = User::factory()->create();
-    $sourceTransaction = Transaction::factory()->for($owner, 'owner')->create();
-    $targetTransaction = Transaction::factory()
-        ->for($owner, 'owner')
-        ->purchase()
-        ->pen()
-        ->create();
-    $proposal = ReceiptProposal::factory()->for($owner, 'owner')->create();
-    $breakdown = ReceiptBreakdown::factory()
-        ->for($owner, 'owner')
-        ->for($sourceTransaction)
-        ->for($proposal, 'receiptProposal')
-        ->draft()
-        ->create();
-
-    $this->actingAs($owner)->delete(route('receipt_breakdowns.destroy', $breakdown), [
-        'expected_revision' => 1,
-    ]);
-
-    if ($purged) {
-        Date::setTestNow(Date::now()->addDays(30));
-        app(PurgeExpiredFinancialData::class)->handle();
-    }
-
-    expect(fn () => app(AttachReceiptProposalToTransaction::class)->handle(
-        $owner,
-        $targetTransaction,
-        $proposal->proposal_id,
-    ))->toThrow(ValidationException::class);
-})->with([
-    'during trash' => [false],
-    'after purge' => [true],
-]);
-
 test('a discarded Receipt Breakdown reserves its Transaction draft slot during trash', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
@@ -360,12 +293,9 @@ test('a discarded Receipt Breakdown reserves its Transaction draft slot during t
         ->purchase()
         ->pen()
         ->create();
-    $firstProposal = ReceiptProposal::factory()->for($owner, 'owner')->create();
-    $replacementProposal = ReceiptProposal::factory()->for($owner, 'owner')->create();
     $breakdown = ReceiptBreakdown::factory()
         ->for($owner, 'owner')
         ->for($transaction)
-        ->for($firstProposal, 'receiptProposal')
         ->draft()
         ->create();
 
@@ -373,12 +303,7 @@ test('a discarded Receipt Breakdown reserves its Transaction draft slot during t
         'expected_revision' => 1,
     ]);
 
-    expect(fn () => app(AttachReceiptProposalToTransaction::class)->handle(
-        $owner,
-        $transaction,
-        $replacementProposal->proposal_id,
-    ))->toThrow(
-        ValidationException::class,
-        'This Transaction already has a draft Receipt Breakdown, including recoverable trash.',
-    );
+    $this->post(route('transactions.receipt_breakdowns.store', $transaction), [
+        'expected_transaction_revision' => $transaction->revision,
+    ])->assertSessionHasErrors('transaction_id');
 });

@@ -48,16 +48,6 @@ final class ConfirmReceiptBreakdown
                 ]);
             }
 
-            $proposal = $draft->receiptProposal()->lockForUpdate()->first();
-
-            if ($proposal !== null
-                && ($proposal->proposed_transaction['currency'] !== $transaction->currency->value
-                    || $proposal->proposed_transaction['kind'] !== $transaction->kind->value)) {
-                throw ValidationException::withMessages([
-                    'reconciliation' => 'The Transaction currency or kind changed after this draft was attached.',
-                ]);
-            }
-
             if ($draft->revision !== $expectedRevision) {
                 throw StaleReceiptBreakdownRevision::fromBreakdown($draft);
             }

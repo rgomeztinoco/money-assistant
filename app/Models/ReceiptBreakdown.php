@@ -16,7 +16,6 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $user_id
  * @property int $transaction_id
- * @property int|null $receipt_proposal_id
  * @property string $status
  * @property int $revision
  * @property CarbonImmutable|null $confirmed_at
@@ -29,7 +28,6 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'user_id',
     'transaction_id',
-    'receipt_proposal_id',
     'status',
     'revision',
     'confirmed_at',
@@ -61,12 +59,6 @@ final class ReceiptBreakdown extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);
-    }
-
-    /** @return BelongsTo<ReceiptProposal, $this> */
-    public function receiptProposal(): BelongsTo
-    {
-        return $this->belongsTo(ReceiptProposal::class);
     }
 
     /** @return HasMany<LineItem, $this> */
