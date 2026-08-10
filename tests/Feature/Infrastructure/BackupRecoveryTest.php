@@ -52,7 +52,6 @@ test('the application host exports a consistent independently encrypted recovery
     mkdir($fakeBinaryDirectory, 0700, true);
     mkdir($hostRoot.'/etc/money-assistant/secrets', 0700, true);
     mkdir($hostRoot.'/etc/systemd/system', 0700, true);
-    mkdir($hostRoot.'/home/openclaw/.openclaw', 0700, true);
     mkdir($hostRoot.'/opt/money-assistant', 0700, true);
     mkdir($hostRoot.'/var/lib/money-assistant/deployments', 0700, true);
     mkdir($hostRoot.'/var/lib/money-assistant/monitor', 0700, true);
@@ -63,14 +62,12 @@ test('the application host exports a consistent independently encrypted recovery
         'POSTGRES_IMAGE=postgres@example.invalid@sha256:'.str_repeat('b', 64),
         'DB_DATABASE=money_assistant',
         'DB_USERNAME=money_assistant',
-        'OPENCLAW_HOME=/home/openclaw',
         '',
     ]));
     file_put_contents($hostRoot.'/etc/os-release', "NAME=Test Linux\nVERSION_ID=1\n");
     file_put_contents($hostRoot.'/etc/money-assistant/secrets/application_key', 'sensitive-application-key');
     file_put_contents($hostRoot.'/etc/money-assistant/secrets/database_password', 'sensitive-database-password');
     file_put_contents($hostRoot.'/etc/money-assistant/backup-recipient.txt', 'age1testrecipient');
-    file_put_contents($hostRoot.'/home/openclaw/.openclaw/openai-oauth.json', 'encrypted-openclaw-state');
     file_put_contents($hostRoot.'/opt/money-assistant/compose.production.yaml', "services: {}\n");
     file_put_contents($hostRoot.'/etc/systemd/system/money-assistant-production.service', "[Service]\n");
     file_put_contents($hostRoot.'/var/lib/money-assistant/deployments/current.env', "APP_IMAGE_DIGEST=sha256:test\n");
@@ -110,20 +107,6 @@ if [ "${1:-}" = -u ]; then
 fi
 exec /usr/bin/id "$@"
 SH);
-    installFakeBackupBinary($fakeBinaryDirectory, 'openclaw', <<<'SH'
-printf '%s\n' 'OpenClaw 2026.7.1'
-SH);
-    installFakeBackupBinary($fakeBinaryDirectory, 'runuser', <<<'SH'
-printf 'runuser %s\n' "$*" >> "$BACKUP_TEST_COMMAND_LOG"
-while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
-    shift
-done
-shift
-exec "$@"
-SH);
-    installFakeBackupBinary($fakeBinaryDirectory, 'systemctl', <<<'SH'
-printf 'systemctl %s\n' "$*" >> "$BACKUP_TEST_COMMAND_LOG"
-SH);
     installFakeBackupBinary($fakeBinaryDirectory, 'tailscale', <<<'SH'
 printf '%s\n' '1.98.0'
 SH);
@@ -154,12 +137,10 @@ SH);
             ->toContain('database.dump', 'application-storage.tar', 'host-configuration.tar')
             ->and(file_get_contents($commandLog))
             ->toContain('artisan down')
-            ->toContain('systemctl --user stop openclaw-gateway.service')
             ->toContain('stop worker scheduler')
             ->toContain('stop web')
             ->toContain('pg_dump')
             ->toContain('artisan up')
-            ->toContain('systemctl --user start openclaw-gateway.service')
             ->toContain('age --encrypt --recipient-file')
             ->not->toContain('sensitive-application-key', 'sensitive-database-password')
             ->and($process->getErrorOutput())
@@ -168,7 +149,6 @@ SH);
             ->toStartWith('success ');
 
         expect(file_get_contents($extracted.'/version-inventory.txt'))
-            ->toContain('OpenClaw 2026.7.1')
             ->toContain('age test-version')
             ->toContain('1.98.0');
 
@@ -180,7 +160,6 @@ SH);
             ->toContain('etc/money-assistant/secrets/application_key')
             ->toContain('opt/money-assistant/compose.production.yaml')
             ->toContain('etc/systemd/system/money-assistant-production.service')
-            ->toContain('home/openclaw/.openclaw/openai-oauth.json')
             ->toContain('var/lib/money-assistant/deployments/current.env');
 
         file_put_contents($commandLog, '');
@@ -197,7 +176,6 @@ SH);
             ->and(file_get_contents($commandLog))
             ->toContain('start web worker scheduler')
             ->toContain('artisan up')
-            ->toContain('systemctl --user start openclaw-gateway.service')
             ->and(file_get_contents($hostRoot.'/var/lib/money-assistant/monitor/backup-status'))
             ->toStartWith('failed ');
     } finally {
@@ -289,21 +267,13 @@ test('restore uses an isolated temporary environment and verifies the complete r
     mkdir($fakeBinaryDirectory, 0700, true);
     mkdir($bundleDirectory, 0700, true);
     mkdir($hostFiles.'/etc/money-assistant/secrets', 0700, true);
-    mkdir($hostFiles.'/home/openclaw/.config/systemd/user/openclaw-gateway.service.d', 0700, true);
-    mkdir($hostFiles.'/home/openclaw/.openclaw', 0700, true);
     mkdir($hostFiles.'/opt/money-assistant', 0700, true);
     mkdir($storageFiles, 0700, true);
     file_put_contents($hostFiles.'/etc/money-assistant/secrets/application_key', 'base64:restored-application-key');
     file_put_contents($hostFiles.'/etc/money-assistant/secrets/application_previous_keys', '');
     file_put_contents($hostFiles.'/etc/money-assistant/secrets/database_password', 'restored-database-password');
     file_put_contents($hostFiles.'/etc/money-assistant/secrets/google_gmail_client_secret', 'restored-gmail-client-secret');
-    file_put_contents($hostFiles.'/etc/money-assistant/secrets/openclaw_capability_private_key', 'restored-openclaw-private-key');
-    file_put_contents($hostFiles.'/etc/money-assistant/secrets/openclaw_capability_public_key', 'restored-openclaw-public-key');
-    file_put_contents($hostFiles.'/etc/money-assistant/secrets/openclaw_hook_token', 'restored-openclaw-hook-token');
-    file_put_contents($hostFiles.'/etc/money-assistant/openclaw.env', "OPENCLAW_MONEY_ASSISTANT_KEY_ID=recovered\n");
-    file_put_contents($hostFiles.'/etc/money-assistant/production.env', "DB_DATABASE=money_assistant\nDB_USERNAME=money_assistant\nOPENCLAW_HOME=/home/openclaw\n");
-    file_put_contents($hostFiles.'/home/openclaw/.config/systemd/user/openclaw-gateway.service.d/money-assistant.conf', "[Service]\n");
-    file_put_contents($hostFiles.'/home/openclaw/.openclaw/openai-oauth.json', 'restored-openclaw-runtime-state');
+    file_put_contents($hostFiles.'/etc/money-assistant/production.env', "DB_DATABASE=money_assistant\nDB_USERNAME=money_assistant\n");
     file_put_contents($hostFiles.'/opt/money-assistant/compose.production.yaml', "services: {}\n");
     file_put_contents($storageFiles.'/private-file', 'restored-private-file');
     file_put_contents($bundleDirectory.'/database.dump', 'restored-postgresql-dump');
@@ -313,7 +283,6 @@ test('restore uses an isolated temporary environment and verifies the complete r
         'CREATED_AT=2026-08-01T00:00:00Z',
         'APP_IMAGE=registry.example/money-assistant@sha256:'.str_repeat('a', 64),
         'POSTGRES_IMAGE=postgres@example.invalid@sha256:'.str_repeat('b', 64),
-        'OPENCLAW_HOME=/home/openclaw',
         '',
     ]));
     file_put_contents($bundleDirectory.'/version-inventory.txt', "application_image=test\n");

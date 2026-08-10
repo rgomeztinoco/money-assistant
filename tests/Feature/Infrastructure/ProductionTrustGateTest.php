@@ -40,7 +40,6 @@ test('production trust stays withheld until every current deployment drill has f
         'application_image' => 'ghcr.io/rgomeztinoco/money-assistant@sha256:'.str_repeat('a', 64),
         'application_revision' => 'revision-under-test',
         'database_image' => 'postgres:18@sha256:'.str_repeat('d', 64),
-        'openclaw_version' => '2026.7.1',
         'operational_bundle_checksum' => str_repeat('e', 64),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     $environment = [
@@ -70,11 +69,6 @@ printf 'PRODUCTION_TRUST_EVIDENCE gate=%s outcome=passed\n' "$PRODUCTION_TRUST_G
 SH);
         chmod($commandDirectory.'/'.$command, 0700);
     }
-    file_put_contents($commandDirectory.'/read-running-openclaw-version', <<<'SH'
-#!/bin/sh
-printf '%s\n' '2026.7.1'
-SH);
-    chmod($commandDirectory.'/read-running-openclaw-version', 0700);
 
     try {
         $unapprovedCommandDirectory = runProductionTrustScript(
@@ -126,7 +120,6 @@ SH);
             ->gate->toBe('acceptance-matrix')
             ->application_revision->toBe('revision-under-test')
             ->database_image->toBe('postgres:18@sha256:'.str_repeat('d', 64))
-            ->openclaw_version->toBe('2026.7.1')
             ->operational_bundle_checksum->toBe(str_repeat('e', 64))
             ->recorded_at_epoch->toBe($now)
             ->producer->toBe('verify-production-acceptance-matrix')
@@ -177,7 +170,6 @@ SH);
             'application_image' => 'ghcr.io/rgomeztinoco/money-assistant@sha256:'.str_repeat('b', 64),
             'application_revision' => 'new-revision',
             'database_image' => 'postgres:18@sha256:'.str_repeat('d', 64),
-            'openclaw_version' => '2026.7.1',
             'operational_bundle_checksum' => str_repeat('f', 64),
         ], JSON_THROW_ON_ERROR));
 
@@ -290,55 +282,41 @@ test('a pinned upgrade rehearsal requires review and fresh backup evidence befor
     $dependencyReview = $temporaryDirectory.'/dependency-review.txt';
     $acceptanceMatrix = $temporaryDirectory.'/acceptance-matrix.txt';
     $rollbackPlan = $temporaryDirectory.'/rollback-plan.txt';
-    $openClawCommandLog = $temporaryDirectory.'/openclaw-commands.log';
     $now = 1785661200;
     mkdir($fakeBinaryDirectory, 0700, true);
     mkdir($deploymentStateDirectory, 0700, true);
     file_put_contents($backupStatus, 'success '.($now - 3600)."\n");
     $candidate = 'ghcr.io/rgomeztinoco/money-assistant@sha256:'.str_repeat('c', 64);
     $databaseCandidate = 'postgres:18.5@sha256:'.str_repeat('e', 64);
-    $openClawCandidate = '2026.8.0';
     $rollbackCandidate = 'ghcr.io/rgomeztinoco/money-assistant@sha256:'.str_repeat('b', 64);
     $rollbackDatabase = 'postgres:18.4@sha256:'.str_repeat('f', 64);
-    $openClawRollback = '2026.7.1';
     file_put_contents($deploymentStateDirectory.'/current.json', json_encode([
         'application_image' => $candidate,
         'database_image' => $databaseCandidate,
-        'openclaw_version' => $openClawCandidate,
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-    file_put_contents($dependencyReview, "DEPENDENCY_REVIEW outcome=passed application_image={$candidate} database_image={$databaseCandidate} openclaw_version={$openClawCandidate} rollback_application_image={$rollbackCandidate} rollback_database_image={$rollbackDatabase} rollback_openclaw_version={$openClawRollback}\n");
+    file_put_contents($dependencyReview, "DEPENDENCY_REVIEW outcome=passed application_image={$candidate} database_image={$databaseCandidate} rollback_application_image={$rollbackCandidate} rollback_database_image={$rollbackDatabase}\n");
     file_put_contents($acceptanceMatrix, "ACCEPTANCE_MATRIX outcome=passed application_image={$candidate}\n");
-    file_put_contents($rollbackPlan, "ROLLBACK_PLAN application_image={$rollbackCandidate} database_image={$rollbackDatabase} openclaw_version={$openClawRollback}\nRestore the prior pinned release after a failed health check.\n");
+    file_put_contents($rollbackPlan, "ROLLBACK_PLAN application_image={$rollbackCandidate} database_image={$rollbackDatabase}\nRestore the prior pinned release after a failed health check.\n");
     file_put_contents($fakeBinaryDirectory.'/restore-production-backup', <<<'SH'
 #!/bin/sh
 printf 'candidate=%s database=%s args=%s\n' "$RECOVERY_APPLICATION_IMAGE_OVERRIDE" "$RECOVERY_POSTGRES_IMAGE_OVERRIDE" "$*" >> "$UPGRADE_TEST_COMMAND_LOG"
 printf '%s\n' 'Isolated recovery verification completed in 9 seconds.'
 SH);
     chmod($fakeBinaryDirectory.'/restore-production-backup', 0700);
-    file_put_contents($fakeBinaryDirectory.'/rehearse-openclaw-upgrade', <<<'SH'
-#!/bin/sh
-printf 'openclaw=%s\n' "$*" >> "$UPGRADE_TEST_OPENCLAW_COMMAND_LOG"
-printf 'OPENCLAW_UPGRADE_REHEARSAL outcome=passed candidate_version=%s rollback_version=%s running_version=%s\n' "$1" "$2" "$1"
-SH);
-    chmod($fakeBinaryDirectory.'/rehearse-openclaw-upgrade', 0700);
     $environment = [
         'BACKUP_STATUS_FILE' => $backupStatus,
         'DEPLOYMENT_STATE_DIRECTORY' => $deploymentStateDirectory,
         'PRODUCTION_UPGRADE_NOW_EPOCH' => (string) $now,
         'RESTORE_PRODUCTION_BACKUP' => $fakeBinaryDirectory.'/restore-production-backup',
-        'REHEARSE_OPENCLAW_UPGRADE' => $fakeBinaryDirectory.'/rehearse-openclaw-upgrade',
         'UPGRADE_TEST_COMMAND_LOG' => $commandLog,
-        'UPGRADE_TEST_OPENCLAW_COMMAND_LOG' => $openClawCommandLog,
     ];
 
     try {
         $rehearsal = runProductionTrustScript('rehearse-production-upgrade', [
             $candidate,
             '--database-image', $databaseCandidate,
-            '--openclaw-version', $openClawCandidate,
             '--rollback-app-image', $rollbackCandidate,
             '--rollback-database-image', $rollbackDatabase,
-            '--openclaw-rollback-version', $openClawRollback,
             '--rollback-plan', $rollbackPlan,
             '--dependency-review', $dependencyReview,
             '--acceptance-matrix', $acceptanceMatrix,
@@ -357,19 +335,15 @@ SH);
             ->toContain('candidate='.$rollbackCandidate)
             ->toContain('database='.$rollbackDatabase)
             ->and(substr_count(file_get_contents($commandLog), "args=latest\n"))->toBe(2)
-            ->and(file_get_contents($openClawCommandLog))->toBe("openclaw={$openClawCandidate} {$openClawRollback}\n")
             ->and($rehearsal->getOutput())
-            ->not->toContain(file_get_contents($dependencyReview))
-            ->toContain('OPENCLAW_UPGRADE_REHEARSAL outcome=passed');
+            ->not->toContain(file_get_contents($dependencyReview));
 
         file_put_contents($backupStatus, 'success '.($now - 129601)."\n");
         $staleBackup = runProductionTrustScript('rehearse-production-upgrade', [
             $candidate,
             '--database-image', $databaseCandidate,
-            '--openclaw-version', $openClawCandidate,
             '--rollback-app-image', $rollbackCandidate,
             '--rollback-database-image', $rollbackDatabase,
-            '--openclaw-rollback-version', $openClawRollback,
             '--rollback-plan', $rollbackPlan,
             '--dependency-review', $dependencyReview,
             '--acceptance-matrix', $acceptanceMatrix,
@@ -381,10 +355,8 @@ SH);
         $unpinned = runProductionTrustScript('rehearse-production-upgrade', [
             'ghcr.io/rgomeztinoco/money-assistant:latest',
             '--database-image', $databaseCandidate,
-            '--openclaw-version', $openClawCandidate,
             '--rollback-app-image', $rollbackCandidate,
             '--rollback-database-image', $rollbackDatabase,
-            '--openclaw-rollback-version', $openClawRollback,
             '--rollback-plan', $rollbackPlan,
             '--dependency-review', $dependencyReview,
             '--acceptance-matrix', $acceptanceMatrix,
@@ -395,20 +367,6 @@ SH);
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
     }
-});
-
-test('the OpenClaw rehearsal upgrades, health-checks, rolls back, and reapplies the candidate', function () {
-    $script = file_get_contents(base_path('rehearse-openclaw-upgrade'));
-
-    expect($script)
-        ->toContain('openclaw --version')
-        ->toContain('installed OpenClaw version')
-        ->toContain('npm install --global')
-        ->toContain('systemctl --user restart "$openclaw_service"')
-        ->toContain('systemctl --user is-active --quiet "$openclaw_service"')
-        ->toContain('openclaw secrets audit --check')
-        ->toContain('restore_version')
-        ->toContain('OPENCLAW_UPGRADE_REHEARSAL outcome=passed');
 });
 
 test('approved target drills execute retention, independent delivery, and the complete acceptance matrix', function () {
@@ -425,8 +383,8 @@ test('approved target drills execute retention, independent delivery, and the co
         ->toContain('MONITOR_DIRECT_DELIVERY_COMMAND')
         ->toContain('MONITOR_DELIVERY_COMMAND')
         ->toContain('monitor-independent-heartbeat')
-        ->toContain('host=failed application=failed openclaw=failed')
-        ->toContain('host=healthy application=healthy openclaw=healthy')
+        ->toContain('host=failed application=failed')
+        ->toContain('host=healthy application=healthy')
         ->toContain('PRODUCTION_TRUST_EVIDENCE gate=independent-alert outcome=passed')
         ->and($acceptanceMatrix)
         ->toContain('git rev-parse HEAD')
@@ -437,8 +395,6 @@ test('approved target drills execute retention, independent delivery, and the co
         ->toContain('vendor/bin/sail npm run build')
         ->toContain('PRODUCTION_TRUST_EVIDENCE gate=acceptance-matrix outcome=passed');
     expect($credentialRotation)
-        ->toContain('"$rotation_command" inbound')
-        ->toContain('"$rotation_command" outbound')
         ->toContain('"$rotation_command" application')
         ->toContain('PRODUCTION_TRUST_EVIDENCE gate=credential-rotation outcome=passed');
 });

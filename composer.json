@@ -72,8 +72,6 @@
             "npm run lint:check",
             "npm run format:check",
             "npm run types:check",
-            "npm --prefix openclaw/money-assistant-plugin ci",
-            "npm run openclaw:check",
             "@test"
         ],
         "types:check": [

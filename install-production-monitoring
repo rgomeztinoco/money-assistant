@@ -24,7 +24,7 @@ fi
 chmod 0600 "$environment_file"
 
 for script in \
-    deliver-openclaw-monitor-alert \
+    deliver-telegram-monitor-alert \
     evaluate-monitoring-incidents \
     monitor-production \
     production-heartbeat \

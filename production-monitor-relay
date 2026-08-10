@@ -3,7 +3,7 @@
 set -eu
 
 environment_file="${MONITOR_ENVIRONMENT_FILE:-/etc/money-assistant/monitor.env}"
-delivery_command="${MONITOR_DELIVERY_COMMAND:-/usr/local/sbin/deliver-openclaw-monitor-alert}"
+delivery_command="${MONITOR_DELIVERY_COMMAND:-/usr/local/sbin/deliver-telegram-monitor-alert}"
 
 fail()
 {

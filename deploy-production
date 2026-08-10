@@ -127,7 +127,7 @@ load_monitoring_environment()
     fi
 
     if [ -z "$deployment_alert_command" ]; then
-        deployment_alert_command='/usr/local/sbin/deliver-openclaw-monitor-alert'
+        deployment_alert_command='/usr/local/sbin/deliver-telegram-monitor-alert'
     fi
 }
 
@@ -191,15 +191,6 @@ database_user_from()
     database_user="$(environment_value DB_USERNAME "$1" 2>/dev/null || printf '%s' money_assistant)"
     validate_database_identifier "$database_user" DB_USERNAME
     printf '%s\n' "$database_user"
-}
-
-openclaw_version_from()
-{
-    openclaw_version="$(environment_value OPENCLAW_VERSION "$1")" ||
-        fail 'OPENCLAW_VERSION is required'
-    printf '%s\n' "$openclaw_version" | grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$' ||
-        fail 'OPENCLAW_VERSION must be a pinned calendar version'
-    printf '%s\n' "$openclaw_version"
 }
 
 compose()
@@ -341,7 +332,6 @@ record_release()
     maintenance_seconds="${5:-0}"
     active_application_image="$(application_image_from "$active_environment")"
     active_database_image="$(database_image_from "$active_environment")"
-    active_openclaw_version="$(openclaw_version_from "$active_environment")"
     application_image_id="$(docker image inspect --format '{{.Id}}' "$active_application_image")"
     application_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$active_application_image")"
     database_container_id="$(compose "$active_environment" ps --quiet postgres)"
@@ -362,7 +352,6 @@ record_release()
         printf '  "database_image": "%s",\n' "$(json_escape "$active_database_image")"
         printf '  "database_image_id": "%s",\n' "$(json_escape "$database_image_id")"
         printf '  "database_version": "%s",\n' "$(json_escape "$database_version")"
-        printf '  "openclaw_version": "%s",\n' "$(json_escape "$active_openclaw_version")"
         printf '  "operational_bundle_checksum": "%s",\n' "$(json_escape "$operational_bundle_checksum")"
         printf '  "operational_bundle_revision": "%s",\n' "$(json_escape "$operational_bundle_revision")"
         printf '  "maintenance_seconds": %s,\n' "$maintenance_seconds"
@@ -912,7 +901,6 @@ case "$action" in
     verify)
         application_image_from "$environment_file" >/dev/null
         database_image_from "$environment_file" >/dev/null
-        openclaw_version_from "$environment_file" >/dev/null
         verify_stack "$environment_file" || fail 'the production stack is unhealthy'
         record_release \
             verified \

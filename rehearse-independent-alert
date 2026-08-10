@@ -41,9 +41,9 @@ probe_state="${workspace}/probe-state"
 cat > "$probe_command" <<'SH'
 #!/bin/sh
 if [ "$(cat "$INDEPENDENT_ALERT_PROBE_STATE")" = failed ]; then
-    printf '%s\n' 'host=failed application=failed openclaw=failed'
+    printf '%s\n' 'host=failed application=failed'
 else
-    printf '%s\n' 'host=healthy application=healthy openclaw=healthy'
+    printf '%s\n' 'host=healthy application=healthy'
 fi
 SH
 chmod 0700 "$probe_command"

@@ -30,7 +30,6 @@ final class ReadApplicationMonitoringSnapshot
     {
         return [
             $this->gmailStatus(),
-            $this->openClawDeliveryStatus(),
             $this->oldestProcessingItemStatus(),
             $this->repeatedLoginStatus(),
         ];
@@ -60,26 +59,6 @@ final class ReadApplicationMonitoringSnapshot
                 $hasVisibleFailure => 'Gmail synchronization or message processing has failed for 15 minutes. Inspect the Dashboard incident before replaying parked work.',
                 default => 'Gmail synchronization has been unhealthy for 15 minutes. Open Settings > Connections to reconnect or inspect the failure.',
             },
-        ];
-    }
-
-    /** @return array{key: string, severity: 'warning', state: 'healthy'|'failed', grace_seconds: int, message: string} */
-    private function openClawDeliveryStatus(): array
-    {
-        $hasVisibleFailure = IntegrationIncident::query()
-            ->where('integration', IntegrationService::OpenClaw)
-            ->where('visible_at', '<=', now())
-            ->whereNull('recovered_at')
-            ->exists();
-
-        return [
-            'key' => 'openclaw_delivery',
-            'severity' => 'warning',
-            'state' => $hasVisibleFailure ? 'failed' : 'healthy',
-            'grace_seconds' => 0,
-            'message' => $hasVisibleFailure
-                ? 'OpenClaw outbound delivery has been unhealthy for 15 minutes. Inspect the Dashboard incident and replay parked work after recovery.'
-                : 'OpenClaw outbound delivery is healthy.',
         ];
     }
 
