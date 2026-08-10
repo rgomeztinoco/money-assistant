@@ -5,7 +5,6 @@ set -eu
 environment_file="${PRODUCTION_ENVIRONMENT_FILE:-/etc/money-assistant/production.env}"
 compose_file="${PRODUCTION_COMPOSE_FILE:-/opt/money-assistant/compose.production.yaml}"
 project_name="${PRODUCTION_PROJECT_NAME:-money-assistant-production}"
-openclaw_user="${MONITOR_OPENCLAW_USER:-openclaw}"
 backup_status_file="${MONITOR_BACKUP_STATUS_FILE:-/var/lib/money-assistant/monitor/backup-status}"
 credential_deadlines_file="${MONITOR_CREDENTIAL_DEADLINES_FILE:-/etc/money-assistant/credential-deadlines}"
 disk_path="${MONITOR_DISK_PATH:-/var/lib/docker}"
@@ -31,18 +30,6 @@ service_state()
     [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)" = healthy ]
 }
 
-openclaw_is_healthy()
-{
-    openclaw_uid="$(id -u "$openclaw_user" 2>/dev/null || true)"
-    [ -n "$openclaw_uid" ] || return 1
-    runuser --user "$openclaw_user" -- \
-        env "XDG_RUNTIME_DIR=/run/user/${openclaw_uid}" \
-        systemctl --user is-active --quiet openclaw-gateway.service || return 1
-    runuser --user "$openclaw_user" -- \
-        env "XDG_RUNTIME_DIR=/run/user/${openclaw_uid}" \
-        openclaw health --timeout 5000 >/dev/null 2>&1
-}
-
 emit_service()
 {
     if service_state "$2"; then
@@ -63,13 +50,6 @@ if service_state web; then
     fi
 else
     printf 'gmail\twarning\tfailed\t900\tGmail synchronization has been unhealthy for 15 minutes. Restore the application, then inspect Settings > Connections.\n'
-    printf 'openclaw_delivery\twarning\tfailed\t900\tOpenClaw outbound delivery has been unhealthy for 15 minutes. Restore the application and inspect parked Dashboard incidents.\n'
-fi
-
-if openclaw_is_healthy; then
-    printf 'openclaw\tcritical\thealthy\t0\tOpenClaw is healthy.\n'
-else
-    printf 'openclaw\tcritical\tfailed\t0\tOpenClaw is unavailable. Inspect openclaw-gateway.service and its health command.\n'
 fi
 
 backup_state=failed

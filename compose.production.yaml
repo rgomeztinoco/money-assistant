@@ -120,19 +120,12 @@ services:
         restart: unless-stopped
         environment:
             <<: *application-environment
-            OPENCLAW_CAPABILITY_KEY_ID: '${OPENCLAW_CAPABILITY_KEY_ID:?Set OPENCLAW_CAPABILITY_KEY_ID}'
-            OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE: /run/secrets/openclaw_capability_public_key
-            OPENCLAW_CAPABILITY_AGENT_ID: '${OPENCLAW_CAPABILITY_AGENT_ID:?Set OPENCLAW_CAPABILITY_AGENT_ID}'
-            OPENCLAW_CAPABILITY_ACCOUNT_ID: '${OPENCLAW_CAPABILITY_ACCOUNT_ID:?Set OPENCLAW_CAPABILITY_ACCOUNT_ID}'
-            OPENCLAW_CAPABILITY_CONVERSATION_ID: '${OPENCLAW_CAPABILITY_CONVERSATION_ID:?Set OPENCLAW_CAPABILITY_CONVERSATION_ID}'
-            OPENCLAW_CAPABILITY_OWNER_SENDER_ID: '${OPENCLAW_CAPABILITY_OWNER_SENDER_ID:?Set OPENCLAW_CAPABILITY_OWNER_SENDER_ID}'
             GOOGLE_GMAIL_CLIENT_SECRET_FILE: /run/secrets/google_gmail_client_secret
         secrets:
             - application_key
             - application_previous_keys
             - database_password
             - google_gmail_client_secret
-            - openclaw_capability_public_key
         command:
             - frankenphp
             - run
@@ -163,13 +156,10 @@ services:
         environment:
             <<: *application-environment
             DB_HOST: 127.0.0.1
-            OPENCLAW_HOOK_TOKEN_FILE: /run/secrets/openclaw_hook_token
-            OPENCLAW_HOOK_URL: '${OPENCLAW_HOOK_URL:?Set OPENCLAW_HOOK_URL to the private mapped hook}'
         secrets:
             - application_key
             - application_previous_keys
             - database_password
-            - openclaw_hook_token
         networks: []
         network_mode: host
         command:
@@ -319,7 +309,3 @@ secrets:
         file: '${DB_PASSWORD_FILE:?Set DB_PASSWORD_FILE}'
     google_gmail_client_secret:
         file: '${GOOGLE_GMAIL_CLIENT_SECRET_FILE:?Set GOOGLE_GMAIL_CLIENT_SECRET_FILE}'
-    openclaw_capability_public_key:
-        file: '${OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE:?Set OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE}'
-    openclaw_hook_token:
-        file: '${OPENCLAW_HOOK_TOKEN_FILE:?Set OPENCLAW_HOOK_TOKEN_FILE}'

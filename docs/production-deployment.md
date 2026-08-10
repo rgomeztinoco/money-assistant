@@ -2,7 +2,7 @@
 
 Money Assistant publishes immutable release artifacts from a green push to `main`, but it never deploys them automatically. Production activation is an explicit command run by an operator on the server.
 
-This process does not create a GitHub deployment environment, GitHub deployment secrets, a deployment SSH account, Tailscale tags, or Tailscale grants. It does not replace the tailnet policy. The production service manages only the existing Money Assistant Serve route on HTTPS port `8443`; it does not modify the OpenClaw route on `443` or any unrelated route such as `3773`.
+This process does not create a GitHub deployment environment, GitHub deployment secrets, a deployment SSH account, Tailscale tags, or Tailscale grants. It does not replace the tailnet policy. The production service manages only the Money Assistant Serve route on HTTPS port `8443`; it does not modify unrelated routes such as `3773`.
 
 ## One-time server bootstrap
 
@@ -29,8 +29,6 @@ Create these root-owned `0600` secret files using a protected editor or protecte
 /etc/money-assistant/secrets/application_previous_keys
 /etc/money-assistant/secrets/database_password
 /etc/money-assistant/secrets/google_gmail_client_secret
-/etc/money-assistant/secrets/openclaw_capability_public_key
-/etc/money-assistant/secrets/openclaw_hook_token
 ```
 
 `application_key` must initially contain the current application's `APP_KEY` so retained encrypted credentials remain decryptable. `application_previous_keys` may be an empty file when there are no previous keys.
@@ -53,7 +51,7 @@ sudo deploy-production-release <revision>
 
 The command downloads the three public release assets, checks the revision, repository, image digest, and bundle checksum, then invokes the transactional production launcher. A failed migration or candidate health check restores the previous application, operational bundle, and database snapshot before writers resume.
 
-After a successful deployment, it enables production after reboot and verifies the active release, HTTPS `8443`, the unchanged OpenClaw `443` route, loopback-only database and hook listeners, and disabled Funnel state.
+After a successful deployment, it enables production after reboot and verifies the active release, HTTPS `8443`, the loopback-only database listener, and disabled Funnel state.
 
 Inspect the result with:
 
@@ -76,4 +74,4 @@ There is no GitHub-to-server credential and no automatic deployment. Merging pub
 
 The first release activation and promotion of the existing development data are separate operations. A first deployment creates an isolated production database volume and does not modify the currently running development database.
 
-Do not delete or sanitize the current development database until the controlled cutover in GitHub issue `#77` has captured and verified its final backup, stopped all old writers, restored the data into the production volume, verified the financial-state fingerprint and credentials, and passed the live Gmail, OpenClaw, queue, scheduler, monitoring, and reboot checks.
+Do not delete or sanitize the current development database until the controlled cutover in GitHub issue `#77` has captured and verified its final backup, stopped all old writers, restored the data into the production volume, verified the financial-state fingerprint and credentials, and passed the live Gmail, queue, scheduler, monitoring, and reboot checks.

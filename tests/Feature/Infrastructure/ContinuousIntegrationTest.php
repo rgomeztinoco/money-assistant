@@ -43,23 +43,15 @@ test('the rollback rehearsal lets each candidate environment select its applicat
         ->toContain('healthy_digest="${GOOD_APP_IMAGE##*@}"');
 });
 
-test('the production rehearsal supplies isolated values for every required integration boundary', function (): void {
+test('the production rehearsal supplies isolated values for retained integration boundaries', function (): void {
     $imageConfiguration = $this->productionScripts->get('Build rehearsal application images');
     $rehearsalConfiguration = $this->productionScripts->get('Create isolated rehearsal configuration');
 
     expect($imageConfiguration)
         ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE=')
-        ->toContain('OPENCLAW_CAPABILITY_AGENT_ID=')
-        ->toContain('OPENCLAW_CAPABILITY_ACCOUNT_ID=')
-        ->toContain('OPENCLAW_CAPABILITY_CONVERSATION_ID=')
-        ->toContain('OPENCLAW_CAPABILITY_OWNER_SENDER_ID=')
         ->and($rehearsalConfiguration)
         ->toContain('GOOGLE_GMAIL_CLIENT_ID=')
-        ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE=')
-        ->toContain('OPENCLAW_CAPABILITY_AGENT_ID=')
-        ->toContain('OPENCLAW_CAPABILITY_ACCOUNT_ID=')
-        ->toContain('OPENCLAW_CAPABILITY_CONVERSATION_ID=')
-        ->toContain('OPENCLAW_CAPABILITY_OWNER_SENDER_ID=');
+        ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE=');
 });
 
 test('production rehearsal failures report masked diagnostics', function (): void {
@@ -84,8 +76,6 @@ test('production rehearsal failures report masked diagnostics', function (): voi
         ->toContain('APP_KEY_FILE')
         ->toContain('DB_PASSWORD_FILE')
         ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE')
-        ->toContain('OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE')
-        ->toContain('OPENCLAW_HOOK_TOKEN_FILE')
         ->toContain('sudo cat "$secret_file"')
         ->not->toContain('cat "$REHEARSAL_OUTPUT"')
         ->toContain('ps --all')

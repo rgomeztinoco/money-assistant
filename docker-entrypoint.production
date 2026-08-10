@@ -45,16 +45,8 @@ read_secret APP_KEY "${APP_KEY_FILE:?APP_KEY_FILE is required}"
 read_optional_secret APP_PREVIOUS_KEYS "${APP_PREVIOUS_KEYS_FILE:?APP_PREVIOUS_KEYS_FILE is required}"
 read_secret DB_PASSWORD "${DB_PASSWORD_FILE:?DB_PASSWORD_FILE is required}"
 
-if [ -n "${OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE:-}" ]; then
-    read_secret OPENCLAW_CAPABILITY_PUBLIC_KEY "$OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE"
-fi
-
 if [ -n "${GOOGLE_GMAIL_CLIENT_SECRET_FILE:-}" ]; then
     read_secret GOOGLE_GMAIL_CLIENT_SECRET "$GOOGLE_GMAIL_CLIENT_SECRET_FILE"
-fi
-
-if [ -n "${OPENCLAW_HOOK_TOKEN_FILE:-}" ]; then
-    read_secret OPENCLAW_HOOK_TOKEN "$OPENCLAW_HOOK_TOKEN_FILE"
 fi
 
 if [ "$(id -u)" -eq 0 ]; then

@@ -75,20 +75,11 @@ test('development and production lifecycle commands target isolated Compose reso
         ->toContain('--env-file "$environment_file"');
 });
 
-test('development integrations use separate configuration without widening Gmail access', function (): void {
+test('development and production integrations retain only Gmail and AI configuration', function (): void {
     $developmentEnvironment = file_get_contents(base_path('.env.example'));
     $productionEnvironment = file_get_contents(base_path('.env.production.example'));
-    $developmentOpenClawEnvironment = file_get_contents(base_path('openclaw/development.env.example'));
-    $productionOpenClawEnvironment = file_get_contents(base_path('openclaw/production.env.example'));
     $developmentCompose = file_get_contents(base_path('compose.yaml'));
-    $developmentOpenClawLauncher = file_get_contents(base_path('openclaw/run-development'));
     $gmailContract = file_get_contents(base_path('app/Contracts/Gmail.php'));
-    $openClawPolicy = file_get_contents(base_path('openclaw/money-assistant-agent-policy.json'));
-    $pluginManifest = json_decode(
-        file_get_contents(base_path('openclaw/money-assistant-plugin/openclaw.plugin.json')),
-        true,
-        flags: JSON_THROW_ON_ERROR,
-    );
 
     expect($developmentEnvironment)
         ->toContain('APP_URL=http://localhost:8080')
@@ -97,49 +88,20 @@ test('development integrations use separate configuration without widening Gmail
         ->toContain('GOOGLE_GMAIL_CLIENT_ID=')
         ->toContain('GOOGLE_GMAIL_CLIENT_SECRET=')
         ->toContain('GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS=testing')
-        ->toContain('OPENCLAW_CAPABILITY_ACCOUNT_ID=money-assistant-development')
-        ->toContain('OPENCLAW_LAUNCHER_URL=https://t.me/money_assistant_development_bot')
-        ->toContain('OPENCLAW_HOOK_URL=http://127.0.0.1:29789/hooks/money-assistant')
         ->and($productionEnvironment)
         ->toContain('GOOGLE_GMAIL_REDIRECT_URI=https://money-assistant.example.ts.net:8443/settings/connections/gmail/callback')
         ->toContain('GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS=production')
-        ->toContain('OPENCLAW_CAPABILITY_ACCOUNT_ID=money-assistant-owner')
-        ->toContain('OPENCLAW_LAUNCHER_URL=https://t.me/money_assistant_bot')
-        ->toContain('OPENCLAW_HOOK_URL=http://127.0.0.1:19789/hooks/money-assistant')
-        ->and($developmentOpenClawEnvironment)
-        ->toContain('OPENCLAW_PROFILE=money-assistant-development')
-        ->toContain('OPENCLAW_STATE_DIR=${HOME}/.openclaw-money-assistant-development')
-        ->toContain('OPENCLAW_GATEWAY_PORT=29789')
-        ->toContain('TELEGRAM_BOT_TOKEN=')
-        ->toContain('OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID=money-assistant-development')
-        ->toContain('OPENCLAW_MONEY_ASSISTANT_CAPABILITY_ORIGIN=http://127.0.0.1:8080')
-        ->toContain('OPENCLAW_MONEY_ASSISTANT_PRIVATE_KEY_FILE=${HOME}/.config/money-assistant-development/openclaw_capability_private_key')
-        ->toContain('OPENCLAW_MONEY_ASSISTANT_PLUGIN_PATH=')
-        ->and($productionOpenClawEnvironment)
-        ->toContain('OPENCLAW_PROFILE=money-assistant-production')
-        ->toContain('OPENCLAW_STATE_DIR=/home/openclaw/.openclaw-money-assistant-production')
-        ->toContain('OPENCLAW_CONFIG_PATH=/opt/money-assistant/openclaw/money-assistant-agent-policy.json')
-        ->toContain('OPENCLAW_GATEWAY_PORT=19789')
-        ->toContain('TELEGRAM_BOT_TOKEN=')
-        ->toContain('OPENCLAW_MONEY_ASSISTANT_ACCOUNT_ID=money-assistant-owner')
-        ->toContain('OPENCLAW_MONEY_ASSISTANT_CAPABILITY_ORIGIN=http://127.0.0.1:8443')
-        ->toContain('OPENCLAW_MONEY_ASSISTANT_PRIVATE_KEY_FILE=/etc/money-assistant/secrets/openclaw_capability_private_key')
-        ->toContain('OPENCLAW_MONEY_ASSISTANT_PLUGIN_PATH=/opt/money-assistant/openclaw/money-assistant-plugin')
-        ->and($developmentOpenClawLauncher)
-        ->toContain('environment_file="${OPENCLAW_DEVELOPMENT_ENV_FILE:-${script_directory}/development.env}"')
-        ->toContain('OPENCLAW_MONEY_ASSISTANT_PLUGIN_PATH="${OPENCLAW_MONEY_ASSISTANT_PLUGIN_PATH:-${script_directory}/money-assistant-plugin}"')
-        ->toContain('exec openclaw gateway --port "$OPENCLAW_GATEWAY_PORT"')
-        ->toContain('[ -n "${TELEGRAM_BOT_TOKEN:-}" ] || fail \'a separate development Telegram bot token is required\'')
-        ->not->toContain('systemctl')
         ->and($gmailContract)
         ->toContain("public const READ_ONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';")
-        ->and($openClawPolicy)
-        ->toContain('"capabilityOrigin": "${OPENCLAW_MONEY_ASSISTANT_CAPABILITY_ORIGIN}"')
-        ->toContain('"${OPENCLAW_MONEY_ASSISTANT_PLUGIN_PATH}"')
-        ->and($pluginManifest['configSchema']['required'])->toContain('capabilityOrigin')
-        ->and($pluginManifest['configSchema']['properties'])->toHaveKey('capabilityOrigin')
         ->and($developmentCompose)
         ->not->toContain('tailscale', 'https://', '8443');
+
+    expect($developmentEnvironment)
+        ->not->toContain('OPENCLAW_')
+        ->and($productionEnvironment)
+        ->not->toContain('OPENCLAW_')
+        ->and(base_path('openclaw'))
+        ->not->toBeDirectory();
 });
 
 test('continuous integration proves live development and production command isolation', function (): void {

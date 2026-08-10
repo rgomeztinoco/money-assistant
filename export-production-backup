@@ -15,7 +15,6 @@ work_root="${BACKUP_WORK_ROOT:-/run}"
 workspace=''
 application_was_stopped=false
 maintenance_was_enabled=false
-openclaw_was_active=false
 backup_status_file="${BACKUP_EXPORT_STATUS_FILE:-${host_root}/var/lib/money-assistant/monitor/backup-status}"
 backup_completed=false
 
@@ -48,13 +47,6 @@ compose()
         "$@"
 }
 
-openclaw_command()
-{
-    runuser --user "$openclaw_user" -- \
-        env "XDG_RUNTIME_DIR=/run/user/${openclaw_uid}" \
-        "$@"
-}
-
 restore_application()
 {
     strict="${1:-false}"
@@ -75,13 +67,6 @@ restore_application()
         fi
     fi
 
-    if [ "$openclaw_was_active" = true ]; then
-        if [ "$strict" = true ]; then
-            openclaw_command systemctl --user start openclaw-gateway.service >&2
-        else
-            openclaw_command systemctl --user start openclaw-gateway.service >&2 || true
-        fi
-    fi
 }
 
 cleanup()
@@ -111,7 +96,6 @@ trap 'exit 143' TERM
 
 command -v age >/dev/null 2>&1 || fail 'age is required'
 command -v docker >/dev/null 2>&1 || fail 'Docker is required'
-command -v runuser >/dev/null 2>&1 || fail 'runuser is required'
 command -v sha256sum >/dev/null 2>&1 || fail 'sha256sum is required'
 command -v tailscale >/dev/null 2>&1 || fail 'Tailscale is required'
 command -v tar >/dev/null 2>&1 || fail 'tar is required'
@@ -125,23 +109,15 @@ application_digest="$(environment_value APP_IMAGE_DIGEST)" || fail 'APP_IMAGE_DI
 postgres_image="$(environment_value POSTGRES_IMAGE)" || fail 'POSTGRES_IMAGE is required'
 database_name="$(environment_value DB_DATABASE || printf '%s' money_assistant)"
 database_user="$(environment_value DB_USERNAME || printf '%s' money_assistant)"
-openclaw_home="$(environment_value OPENCLAW_HOME)" || fail 'OPENCLAW_HOME is required'
 application_image="${application_repository}@${application_digest}"
 
 printf '%s\n' "$application_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
     fail 'the application image must be pinned by sha256 digest'
 printf '%s\n' "$postgres_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
     fail 'the PostgreSQL image must be pinned by sha256 digest'
-printf '%s\n' "$openclaw_home" | grep -Eq '^/home/[A-Za-z0-9._-]+$' ||
-    fail 'OPENCLAW_HOME must be an absolute dedicated home under /home'
-openclaw_home_relative="${openclaw_home#/}"
-openclaw_user="${openclaw_home##*/}"
-openclaw_uid="$(id -u "$openclaw_user")" || fail 'the dedicated OpenClaw service account does not exist'
-
 for required_path in \
     etc/money-assistant/production.env \
     etc/money-assistant/secrets \
-    "$openclaw_home_relative" \
     opt/money-assistant/compose.production.yaml; do
     [ -e "${host_root}/${required_path}" ] || fail "required recovery path is missing: /${required_path}"
 done
@@ -150,10 +126,6 @@ workspace="$(mktemp -d "${work_root}/money-assistant-backup.XXXXXX")"
 bundle_directory="${workspace}/bundle"
 mkdir -m 0700 "$bundle_directory"
 
-if openclaw_command systemctl --user is-active --quiet openclaw-gateway.service; then
-    openclaw_was_active=true
-    openclaw_command systemctl --user stop openclaw-gateway.service >&2
-fi
 compose exec -T web php artisan down --retry=60 --no-interaction >&2
 maintenance_was_enabled=true
 application_was_stopped=true
@@ -182,7 +154,6 @@ docker run \
 
 set -- \
     etc/money-assistant \
-    "$openclaw_home_relative" \
     opt/money-assistant
 
 for optional_path in \
@@ -217,7 +188,6 @@ APP_IMAGE=${application_image}
 POSTGRES_IMAGE=${postgres_image}
 DB_DATABASE=${database_name}
 DB_USERNAME=${database_user}
-OPENCLAW_HOME=${openclaw_home}
 EOF
 
 {
@@ -231,7 +201,6 @@ EOF
     docker version
     docker compose version
     compose images
-    openclaw_command openclaw --version
     ssh -V
     tailscale version
 } > "${bundle_directory}/version-inventory.txt" 2>&1
@@ -260,7 +229,5 @@ tar -C "$bundle_directory" -cf "${workspace}/money-assistant-backup.tar" \
 restore_application true
 application_was_stopped=false
 maintenance_was_enabled=false
-openclaw_was_active=false
-
 age --encrypt --recipient-file "$age_recipient_file" "${workspace}/money-assistant-backup.tar"
 backup_completed=true

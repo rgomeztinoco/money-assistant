@@ -5,7 +5,6 @@ set -eu
 environment_file="${PRODUCTION_ENVIRONMENT_FILE:-/etc/money-assistant/production.env}"
 compose_file="${PRODUCTION_COMPOSE_FILE:-/opt/money-assistant/compose.production.yaml}"
 project_name="${PRODUCTION_PROJECT_NAME:-money-assistant-production}"
-openclaw_user="${MONITOR_OPENCLAW_USER:-openclaw}"
 
 compose()
 {
@@ -23,21 +22,7 @@ service_state()
     [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)" = healthy ]
 }
 
-openclaw_is_healthy()
-{
-    openclaw_uid="$(id -u "$openclaw_user" 2>/dev/null || true)"
-    [ -n "$openclaw_uid" ] || return 1
-    runuser --user "$openclaw_user" -- \
-        env "XDG_RUNTIME_DIR=/run/user/${openclaw_uid}" \
-        systemctl --user is-active --quiet openclaw-gateway.service || return 1
-    runuser --user "$openclaw_user" -- \
-        env "XDG_RUNTIME_DIR=/run/user/${openclaw_uid}" \
-        openclaw health --timeout 5000 >/dev/null 2>&1
-}
-
 application_state=failed
-openclaw_state=failed
 service_state web && application_state=healthy
-openclaw_is_healthy && openclaw_state=healthy
 
-printf 'host=healthy application=%s openclaw=%s\n' "$application_state" "$openclaw_state"
+printf 'host=healthy application=%s\n' "$application_state"

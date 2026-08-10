@@ -46,12 +46,10 @@ fi
 
 host_state=failed
 application_state=failed
-openclaw_state=failed
 for heartbeat in $heartbeat_output; do
     case "$heartbeat" in
         host=healthy) host_state=healthy ;;
         application=healthy) application_state=healthy ;;
-        openclaw=healthy) openclaw_state=healthy ;;
     esac
 done
 
@@ -63,11 +61,6 @@ printf 'application\tcritical\t%s\t300\t%s\n' \
     "$application_state" \
     "$(if [ "$application_state" = healthy ]; then printf '%s' 'Application heartbeat is healthy.'; else printf '%s' 'Application heartbeat has been absent for five minutes. Inspect money-assistant-production.service when the host is reachable.'; fi)" \
     >> "$heartbeat_checks_file"
-printf 'openclaw\tcritical\t%s\t300\t%s\n' \
-    "$openclaw_state" \
-    "$(if [ "$openclaw_state" = healthy ]; then printf '%s' 'OpenClaw heartbeat is healthy.'; else printf '%s' 'OpenClaw heartbeat has been absent for five minutes. Inspect openclaw-gateway.service when the host is reachable.'; fi)" \
-    >> "$heartbeat_checks_file"
-
 : > "$recovery_checks_file"
 
 if [ -n "${MONITOR_BACKUP_STATUS_FILE:-}" ]; then

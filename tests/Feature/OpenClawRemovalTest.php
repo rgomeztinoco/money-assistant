@@ -47,3 +47,40 @@ test('OpenClaw and Receipt Proposal persistence is absent', function () {
         ->and(Schema::hasColumn('financial_data_tombstones', 'source_reference_type'))->toBeFalse()
         ->and(Schema::hasColumn('financial_data_tombstones', 'source_reference_id'))->toBeFalse();
 });
+
+test('OpenClaw runtime assets and operational integration are absent', function (): void {
+    foreach ([
+        'openclaw',
+        'deliver-openclaw-monitor-alert',
+        'read-running-openclaw-version',
+        'rehearse-openclaw-upgrade',
+    ] as $removedPath) {
+        expect(file_exists(base_path($removedPath)))->toBeFalse();
+    }
+
+    foreach ([
+        '.env.example',
+        '.env.production.example',
+        '.github/workflows/tests.yml',
+        'compose.production.yaml',
+        'deploy-production',
+        'docker-entrypoint.production',
+        'export-production-backup',
+        'monitor-host.env.example',
+        'monitor-independent-heartbeat',
+        'operational-bundle.allowlist',
+        'production-heartbeat',
+        'production-monitor-probe',
+        'production-monitor-relay',
+        'production-trust-gate',
+        'rehearse-all-credential-rotations',
+        'rehearse-credential-rotation',
+        'rehearse-independent-alert',
+        'rehearse-production-upgrade',
+        'restore-production-backup',
+        'verify-private-ingress',
+    ] as $retainedPath) {
+        expect(file_get_contents(base_path($retainedPath)))
+            ->not->toContain('OPENCLAW_', 'OpenClaw', 'openclaw');
+    }
+});

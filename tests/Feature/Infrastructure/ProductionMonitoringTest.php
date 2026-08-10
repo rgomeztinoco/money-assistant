@@ -1,14 +1,11 @@
 <?php
 
-use App\IntegrationService;
 use App\Models\GmailConnection;
-use App\Models\IntegrationIncident;
 use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\Process;
 
 function monitoringTemporaryDirectory(): string
@@ -124,7 +121,7 @@ test('the second device alerts directly after five missing heartbeat minutes', f
     mkdir($fakeBinaryDirectory, 0700, true);
     file_put_contents($tokenFile, 'independent-secret-token');
     installFakeMonitoringCommand($temporaryDirectory, 'probe', <<<'SH'
-printf '%s\n' "${MONITOR_TEST_HEARTBEAT:-host=failed application=failed openclaw=failed}"
+printf '%s\n' "${MONITOR_TEST_HEARTBEAT:-host=failed application=failed}"
 SH);
     installFakeMonitoringCommand($fakeBinaryDirectory, 'curl', <<<'SH'
 /bin/cat >> "$MONITOR_TEST_REQUEST_CONFIG"
@@ -163,21 +160,19 @@ SH);
         expect(file_get_contents($requestConfig))
             ->toContain('Host heartbeat has been absent for five minutes.')
             ->toContain('Application heartbeat has been absent for five minutes.')
-            ->toContain('OpenClaw heartbeat has been absent for five minutes.')
             ->toContain('independent-secret-token')
-            ->and(substr_count(file_get_contents($requestConfig), 'url ='))->toBe(3)
+            ->and(substr_count(file_get_contents($requestConfig), 'url ='))->toBe(2)
             ->and(file_exists($primaryDeliveryLog))->toBeFalse();
 
         runMonitoringScript('monitor-independent-heartbeat', [
             ...$environment,
             'MONITOR_NOW_EPOCH' => '1400',
-            'MONITOR_TEST_HEARTBEAT' => 'host=healthy application=healthy openclaw=healthy',
+            'MONITOR_TEST_HEARTBEAT' => 'host=healthy application=healthy',
         ]);
         expect(file_get_contents($requestConfig))
             ->toContain('[Money Assistant][recovered] Host heartbeat is healthy.')
             ->toContain('[Money Assistant][recovered] Application heartbeat is healthy.')
-            ->toContain('[Money Assistant][recovered] OpenClaw heartbeat is healthy.')
-            ->and(substr_count(file_get_contents($requestConfig), 'url ='))->toBe(6);
+            ->and(substr_count(file_get_contents($requestConfig), 'url ='))->toBe(4);
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
     }
@@ -195,7 +190,7 @@ test('a failed restore uses the primary relay while the host is available', func
     mkdir($stateDirectory, 0700, true);
     file_put_contents($restoreStatus, "failed 1000\n");
     installFakeMonitoringCommand($temporaryDirectory, 'probe', <<<'SH'
-printf '%s\n' 'host=healthy application=healthy openclaw=healthy'
+printf '%s\n' 'host=healthy application=healthy'
 SH);
     installFakeMonitoringCommand($temporaryDirectory, 'primary-delivery', <<<'SH'
 printf '%s\n' "$1" >> "$MONITOR_TEST_PRIMARY_DELIVERY_LOG"
@@ -266,50 +261,6 @@ SH);
     }
 });
 
-test('a primary incident is delivered through the bound OpenClaw Telegram account', function () {
-    $temporaryDirectory = monitoringTemporaryDirectory();
-    $fakeBinaryDirectory = $temporaryDirectory.'/bin';
-    $stateDirectory = $temporaryDirectory.'/state';
-    $commandLog = $temporaryDirectory.'/commands.log';
-    $monitorEnvironment = $temporaryDirectory.'/monitor.env';
-    mkdir($fakeBinaryDirectory, 0700, true);
-    mkdir($stateDirectory, 0700, true);
-    file_put_contents($monitorEnvironment, implode("\n", [
-        'MONITOR_DELIVERY_COMMAND='.base_path('deliver-openclaw-monitor-alert'),
-        'MONITOR_OPENCLAW_USER=openclaw',
-        'MONITOR_OPENCLAW_ACCOUNT_ID=money-assistant-owner',
-        'MONITOR_OPENCLAW_OWNER_SENDER_ID=owner-chat-id',
-        '',
-    ]));
-    installFakeMonitoringCommand($fakeBinaryDirectory, 'id', <<<'SH'
-printf '%s\n' 1001
-SH);
-    installFakeMonitoringCommand($fakeBinaryDirectory, 'runuser', <<<'SH'
-printf 'runuser %s\n' "$*" >> "$MONITOR_TEST_COMMAND_LOG"
-SH);
-
-    try {
-        $process = runMonitoringScript('evaluate-monitoring-incidents', [
-            'MONITOR_DELIVERY_COMMAND' => base_path('production-monitor-relay'),
-            'MONITOR_ENVIRONMENT_FILE' => $monitorEnvironment,
-            'MONITOR_NOW_EPOCH' => '1000',
-            'MONITOR_STATE_DIRECTORY' => $stateDirectory,
-            'MONITOR_TEST_COMMAND_LOG' => $commandLog,
-            'PATH' => $fakeBinaryDirectory.':'.getenv('PATH'),
-        ], "application\tcritical\tfailed\t0\tApplication unavailable\n");
-
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and(file_get_contents($commandLog))
-            ->toContain('openclaw message send')
-            ->toContain('--channel telegram')
-            ->toContain('--account money-assistant-owner')
-            ->toContain('--target owner-chat-id')
-            ->toContain('--message [Money Assistant][critical] Application unavailable');
-    } finally {
-        (new Filesystem)->deleteDirectory($temporaryDirectory);
-    }
-});
-
 test('the application snapshot reports Gmail stalls and repeated Owner login lockouts', function () {
     $owner = User::factory()->create();
     GmailConnection::factory()->for($owner, 'owner')->create([
@@ -357,35 +308,6 @@ test('repeated failed Owner logins create an actionable monitoring signal', func
     event(new Login('web', $owner, false));
 });
 
-test('the application snapshot reports stalled work and visible OpenClaw delivery failures', function () {
-    $owner = User::factory()->create();
-    GmailConnection::factory()->for($owner, 'owner')->create([
-        'last_successful_sync_at' => now(),
-    ]);
-    IntegrationIncident::factory()->for($owner, 'owner')->create([
-        'integration' => IntegrationService::OpenClaw,
-        'visible_at' => now(),
-    ]);
-    IntegrationIncident::factory()->for($owner, 'owner')->create([
-        'integration' => IntegrationService::Gmail,
-        'visible_at' => now(),
-    ]);
-    DB::table('jobs')->insert([
-        'queue' => 'default',
-        'payload' => '{}',
-        'attempts' => 0,
-        'reserved_at' => null,
-        'available_at' => now()->subMinutes(15)->timestamp,
-        'created_at' => now()->subMinutes(20)->timestamp,
-    ]);
-
-    $this->artisan('app:monitor-snapshot')
-        ->expectsOutputToContain("gmail\twarning\tfailed\t0")
-        ->expectsOutputToContain("openclaw_delivery\twarning\tfailed\t0")
-        ->expectsOutputToContain("oldest_processing_item\twarning\tfailed\t0")
-        ->assertSuccessful();
-});
-
 test('the production probe enforces backup disk and credential thresholds', function () {
     $temporaryDirectory = monitoringTemporaryDirectory();
     $fakeBinaryDirectory = $temporaryDirectory.'/bin';
@@ -398,7 +320,6 @@ case "$*" in
     *'inspect --format'*) printf '%s\n' healthy ;;
     *'app:monitor-snapshot'*)
         printf 'gmail\twarning\thealthy\t900\tGmail synchronization is healthy.\n'
-        printf 'openclaw_delivery\twarning\thealthy\t0\tOpenClaw outbound delivery is healthy.\n'
         printf 'oldest_processing_item\twarning\thealthy\t0\tQueued processing is current.\n'
         printf 'repeated_login\tcritical\thealthy\t0\tOwner Account login activity is healthy.\n'
         ;;
@@ -493,7 +414,6 @@ test('production monitoring enforces the decided thresholds and independent serv
         ->and($heartbeat)
         ->toContain('host=healthy')
         ->toContain('application=')
-        ->toContain('openclaw=')
         ->not->toContain('database_password', 'application_key', 'HOOK_TOKEN')
         ->and($backupPull)->toContain('BACKUP_STATUS_FILE')
         ->and($restore)->toContain('RESTORE_STATUS_FILE:-/var/lib/money-assistant/monitor/restore-status')

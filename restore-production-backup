@@ -132,10 +132,8 @@ application_image="$(manifest_value APP_IMAGE)" || fail 'backup is missing APP_I
 postgres_image="$(manifest_value POSTGRES_IMAGE)" || fail 'backup is missing POSTGRES_IMAGE'
 database_name="$(manifest_value DB_DATABASE || printf '%s' money_assistant)"
 database_user="$(manifest_value DB_USERNAME || printf '%s' money_assistant)"
-openclaw_home="$(manifest_value OPENCLAW_HOME)" || fail 'backup is missing OPENCLAW_HOME'
 printf '%s\n' "$application_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' || fail 'backup application image is not pinned'
 printf '%s\n' "$postgres_image" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' || fail 'backup PostgreSQL image is not pinned'
-printf '%s\n' "$openclaw_home" | grep -Eq '^/home/[A-Za-z0-9._-]+$' || fail 'backup OPENCLAW_HOME is invalid'
 
 if [ -n "${RECOVERY_APPLICATION_IMAGE_OVERRIDE:-}" ]; then
     printf '%s\n' "$RECOVERY_APPLICATION_IMAGE_OVERRIDE" | grep -Eq '^.+@sha256:[a-f0-9]{64}$' ||
@@ -155,22 +153,14 @@ tar -xf "${workspace}/bundle/application-storage.tar" -C "${workspace}/applicati
 secret_directory="${workspace}/host/etc/money-assistant/secrets"
 recovered_environment="${workspace}/host/etc/money-assistant/production.env"
 recovered_deployment="${workspace}/host/opt/money-assistant"
-recovered_openclaw_home="${workspace}/host${openclaw_home}"
 for required_secret in \
     application_key \
     database_password \
-    google_gmail_client_secret \
-    openclaw_capability_private_key \
-    openclaw_capability_public_key \
-    openclaw_hook_token; do
+    google_gmail_client_secret; do
     [ -s "${secret_directory}/${required_secret}" ] || fail "backup is missing required secret material: ${required_secret}"
 done
 [ -r "${secret_directory}/application_previous_keys" ] || fail 'backup is missing required secret material: application_previous_keys'
-[ -s "${workspace}/host/etc/money-assistant/openclaw.env" ] || fail 'backup is missing the OpenClaw host environment'
 [ -s "${recovered_deployment}/compose.production.yaml" ] || fail 'backup is missing the production Compose definition'
-[ -d "${recovered_openclaw_home}/.openclaw" ] || fail 'backup is missing the dedicated OpenClaw runtime state'
-find "${recovered_openclaw_home}/.openclaw" -mindepth 1 -print -quit | grep -q . ||
-    fail 'the recovered OpenClaw runtime state is empty'
 
 recovered_services="${workspace}/recovered-services.txt"
 docker compose \
@@ -253,8 +243,6 @@ docker run \
     --mount "type=bind,source=${secret_directory}/application_previous_keys,destination=/run/secrets/application_previous_keys,readonly" \
     --mount "type=bind,source=${secret_directory}/database_password,destination=/run/secrets/database_password,readonly" \
     --mount "type=bind,source=${secret_directory}/google_gmail_client_secret,destination=/run/secrets/google_gmail_client_secret,readonly" \
-    --mount "type=bind,source=${secret_directory}/openclaw_capability_public_key,destination=/run/secrets/openclaw_capability_public_key,readonly" \
-    --mount "type=bind,source=${secret_directory}/openclaw_hook_token,destination=/run/secrets/openclaw_hook_token,readonly" \
     --env-file "$recovered_environment" \
     --env APP_ENV=recovery \
     --env APP_DEBUG=false \
@@ -269,8 +257,6 @@ docker run \
     --env "DB_USERNAME=${database_user}" \
     --env GOOGLE_GMAIL_CLIENT_SECRET_FILE=/run/secrets/google_gmail_client_secret \
     --env LOG_CHANNEL=stderr \
-    --env OPENCLAW_CAPABILITY_PUBLIC_KEY_FILE=/run/secrets/openclaw_capability_public_key \
-    --env OPENCLAW_HOOK_TOKEN_FILE=/run/secrets/openclaw_hook_token \
     --env QUEUE_CONNECTION=database \
     --env SESSION_DRIVER=array \
     "$application_image" \
