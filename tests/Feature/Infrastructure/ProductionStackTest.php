@@ -120,24 +120,21 @@ test('the host-networked worker can reach PostgreSQL without opening the applica
         ->not->toHaveKey('internal');
 });
 
-test('Tailscale is the exclusive HTTPS ingress for approved owner devices', function () {
-    $policy = file_get_contents(base_path('tailscale-policy.hujson'));
+test('Tailscale serves production HTTPS without replacing the existing tailnet policy', function () {
     $service = file_get_contents(base_path('money-assistant-tailnet.service'));
+    $verifier = file_get_contents(base_path('verify-private-ingress'));
 
-    expect($policy)
-        ->toContain('"tag:money-assistant-approved-device"')
-        ->toContain('"srcPosture": ["posture:approved-owner-device"]')
-        ->toContain('"tag:money-assistant:443"')
-        ->toContain('"tag:money-assistant:8443"')
-        ->toContain('"deny": ["tag:money-assistant:80", "tag:money-assistant:18789", "tag:money-assistant:19789"]')
-        ->and($service)
+    expect($service)
         ->toContain('tailscale wait')
         ->toContain('tailscale serve --bg --https=8443 http://127.0.0.1:8443')
         ->toContain('tailscale serve --https=8443 off')
         ->not->toContain('tailscale serve --bg --https=443')
         ->not->toContain('tailscale serve --https=443 off')
         ->not->toContain('--set-path=/hooks/money-assistant')
-        ->not->toContain('tailscale funnel');
+        ->not->toContain('tailscale funnel')
+        ->and($verifier)
+        ->toContain("jq -e '.BackendState == \"Running\"'")
+        ->not->toContain('tag:money-assistant-approved-device', 'tag:money-assistant');
 });
 
 test('OpenClaw integrations have isolated transport and directional credentials', function () {
@@ -379,6 +376,8 @@ test('OpenClaw receipt media has an independent one-hour crash cleanup ceiling',
 
 test('the production stack ships a private ingress verifier', function () {
     $verifier = file_get_contents(base_path('verify-private-ingress'));
+    $openClawProbeStart = strpos($verifier, 'OpenClaw tailnet HTTPS probe failed');
+    $openClawProbe = substr($verifier, strrpos(substr($verifier, 0, $openClawProbeStart), 'curl'));
 
     expect($verifier)
         ->toContain('tailscale serve status --json')
@@ -388,9 +387,14 @@ test('the production stack ships a private ingress verifier', function () {
         ->toContain('tailscale funnel status --json')
         ->toContain('ufw status verbose')
         ->toContain('ss -H -lnt')
+        ->toContain('.TCP["443"].HTTPS == true')
+        ->toContain('.Web[$openclaw_host_port].Handlers["/"].Proxy == "http://127.0.0.1:18789"')
+        ->toContain('https://${PRIVATE_HOSTNAME}/')
         ->toContain("'http://127.0.0.1:19789/hooks/money-assistant'")
         ->not->toContain("'http://127.0.0.1:18789/hooks/money-assistant'")
         ->toContain('docker compose');
+
+    expect($openClawProbe)->toContain('--fail');
 });
 
 test('deployments record pinned application and database versions without secrets', function () {
@@ -432,7 +436,7 @@ test('systemd restores the production stack before private ingress after reboot'
         ->toContain('deployment.lock')
         ->toContain('systemctl reboot')
         ->toContain('systemctl is-active --quiet')
-        ->toContain('verify-private-ingress')
+        ->toContain('/usr/local/sbin/verify-production-deployment')
         ->toContain('app:deployment-rehearsal:verify');
 });
 

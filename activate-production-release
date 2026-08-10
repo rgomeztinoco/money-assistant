@@ -5,7 +5,7 @@ set -eu
 umask 077
 
 bundle_root="${OPERATIONAL_BUNDLE_ROOT:-/var/lib/money-assistant/operational-bundles}"
-allowlist="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/operational-bundle.allowlist"
+allowlist="${OPERATIONAL_BUNDLE_ALLOWLIST:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/operational-bundle.allowlist}"
 source_revision=''
 application_image=''
 bundle_checksum=''
