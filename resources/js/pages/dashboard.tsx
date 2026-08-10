@@ -52,7 +52,7 @@ type OperatingException = {
         | 'gmail_connection'
         | 'integration_incident';
     incident_id?: number;
-    integration?: 'gmail' | 'ai' | 'bcrp';
+    integration?: 'gmail' | 'bcrp';
     failure_kind?: string;
     error_code?: string;
     replayable?: boolean;
@@ -137,11 +137,7 @@ function exceptionPresentation(exception: OperatingException) {
             };
         case 'integration_incident': {
             const integrationName =
-                exception.integration === 'ai'
-                    ? 'AI'
-                    : exception.integration === 'bcrp'
-                      ? 'BCRP'
-                      : 'Gmail';
+                exception.integration === 'bcrp' ? 'BCRP' : 'Gmail';
 
             return {
                 icon: TriangleAlert,

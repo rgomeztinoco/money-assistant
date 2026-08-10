@@ -44,8 +44,6 @@ class CategoryController extends Controller
             owner: $request->user(),
             name: $validated['name'],
             parentId: isset($validated['parent_id']) ? (int) $validated['parent_id'] : null,
-            description: $validated['description'] ?? null,
-            examples: $validated['examples'],
         );
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Category created.')]);
@@ -64,8 +62,6 @@ class CategoryController extends Controller
                 expectedRevision: (int) $validated['expected_revision'],
                 name: $validated['name'],
                 parentId: isset($validated['parent_id']) ? (int) $validated['parent_id'] : null,
-                description: $validated['description'] ?? null,
-                examples: $validated['examples'],
             );
         } catch (StaleCategoryRevision $exception) {
             return back()->withErrors(['expected_revision' => $exception->getMessage()]);

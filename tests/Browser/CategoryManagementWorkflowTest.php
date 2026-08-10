@@ -23,12 +23,9 @@ test('the owner creates a child Category and assigns it from the Transaction ins
         ->assertSee('Uncategorized remains a system state')
         ->fill('Name', 'Dining out')
         ->select('Parent', 'Food')
-        ->fill('AI guidance description', 'Meals prepared by restaurants')
-        ->fill('Example 1', 'Neighborhood bistro')
         ->press('Create Category')
         ->assertSee('Category created.')
         ->assertSee('Dining out')
-        ->assertSee('Examples: Neighborhood bistro')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 

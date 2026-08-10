@@ -1,5 +1,6 @@
 <?php
 
+use App\CategoryAssignmentProvenance;
 use App\Http\Middleware\RequirePasskeyConfirmation;
 use App\Models\Category;
 use App\Models\LearnedRule;
@@ -539,12 +540,12 @@ test('material merchant changes move Correction evidence to a new suggestion def
     expect($dismissedSuggestion->fresh()->status->value)->toBe('dismissed');
 });
 
-test('an unchanged Category approval is not treated as a Correction rule candidate', function () {
+test('an unchanged Learned Rule Category is not treated as a Correction rule candidate', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create([
         'category_id' => $category->id,
-        'category_assignment_provenance' => 'ai',
+        'category_assignment_provenance' => CategoryAssignmentProvenance::LearnedRule,
     ]);
 
     $this->actingAs($owner)->put(route('transactions.category.update', $transaction), [

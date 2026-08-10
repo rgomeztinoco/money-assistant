@@ -2,9 +2,6 @@
 
 namespace App\Actions\Integrations;
 
-use App\Exceptions\AiClassifierResponseInvalid;
-use App\Exceptions\AiClassifierTimedOut;
-use App\Exceptions\AiClassifierUnavailable;
 use App\Exceptions\GmailResponseInvalid;
 use App\Exceptions\IdempotencyKeyConflict;
 use App\Exceptions\StaleCategoryRevision;
@@ -49,14 +46,11 @@ final class ClassifyIntegrationFailure
                 $failure instanceof StaleDailyExchangeRateRevision,
                 $failure instanceof StaleReceiptBreakdownRevision,
                 $failure instanceof StaleTransactionRevision => IntegrationFailureKind::Concurrency,
-                $failure instanceof AiClassifierResponseInvalid,
                 $failure instanceof GmailResponseInvalid,
                 $failure instanceof UnexpectedValueException => IntegrationFailureKind::Schema,
                 $failure instanceof ValidationException,
                 $failure instanceof InvalidArgumentException => IntegrationFailureKind::Validation,
                 $failure instanceof ConnectionException,
-                $failure instanceof AiClassifierTimedOut,
-                $failure instanceof AiClassifierUnavailable,
                 $failure instanceof GmailRequestFailed => IntegrationFailureKind::Transient,
                 default => null,
             };

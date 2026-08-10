@@ -2,8 +2,6 @@ export type CategoryItem = {
     id: number;
     parent_id: number | null;
     name: string;
-    description: string | null;
-    examples: string[];
     revision: number;
     retired_at: string | null;
     transaction_count: number;

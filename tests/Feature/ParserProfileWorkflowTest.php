@@ -6,7 +6,6 @@ use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailMessage;
 use App\Integrations\Gmail\GmailMessageSummary;
 use App\Jobs\ProcessGmailMessage;
-use App\Models\AiClassificationRequest;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\ParserProfile;
@@ -243,7 +242,12 @@ test('the owner can confirm a deterministic Parser Profile and process its sourc
         ->and($reference->processing_outcome)->toBe('created')
         ->and($reference->spending_notification_format_id)->toBe($format->id)
         ->and($discovery->fresh()->processed_at)->not->toBeNull()
-        ->and(AiClassificationRequest::query()->where('transaction_id', $transaction->id)->exists())->toBeTrue();
+        ->and($transaction->category_id)->toBeNull()
+        ->and($transaction->category_assignment_provenance)->toBeNull();
+
+    $this->get(route('review_queue.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('unresolved_category_count', 1));
 
     expect(json_encode($format->getAttributes()))
         ->not->toContain($gmail->messages[$discovery->message_id]->textBody)
@@ -347,8 +351,7 @@ test('reprocessing the same Gmail message returns its original outcome without a
     expect($replayedReference->is($originalReference))->toBeTrue()
         ->and($replayedReference->transaction_id)->toBe($originalReference->transaction_id)
         ->and(SpendingNotificationReference::query()->count())->toBe(1)
-        ->and(Transaction::query()->count())->toBe(1)
-        ->and(AiClassificationRequest::query()->count())->toBe(1);
+        ->and(Transaction::query()->count())->toBe(1);
 });
 
 test('a queued discovery uses an enabled Parser Profile for a future message', function () {

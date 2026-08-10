@@ -7,9 +7,7 @@ import {
     Plus,
     Tags,
     Trash2,
-    X,
 } from 'lucide-react';
-import { useState } from 'react';
 import {
     destroy as deleteCategory,
     store as createCategory,
@@ -54,10 +52,6 @@ function CategoryFields({
     roots: CategoryNode[];
     category?: CategoryItem;
 }) {
-    const [examples, setExamples] = useState(
-        category?.examples.length ? category.examples : [''],
-    );
-
     return (
         <>
             <div className="grid gap-2">
@@ -94,73 +88,6 @@ function CategoryFields({
                     Categories support at most two levels.
                 </p>
             </div>
-            <div className="grid gap-2">
-                <Label htmlFor={`${idPrefix}-description`}>
-                    AI guidance description
-                </Label>
-                <Input
-                    id={`${idPrefix}-description`}
-                    name="description"
-                    defaultValue={category?.description ?? ''}
-                    maxLength={2000}
-                    placeholder="Optional guidance for classification"
-                />
-            </div>
-            <fieldset className="grid gap-2">
-                <legend className="text-sm font-medium">Examples</legend>
-                {examples.map((example, exampleIndex) => (
-                    <div key={exampleIndex} className="flex gap-2">
-                        <Label
-                            htmlFor={`${idPrefix}-example-${exampleIndex}`}
-                            className="sr-only"
-                        >
-                            Example {exampleIndex + 1}
-                        </Label>
-                        <Input
-                            id={`${idPrefix}-example-${exampleIndex}`}
-                            name="examples[]"
-                            defaultValue={example}
-                            maxLength={100}
-                            aria-label={`Example ${exampleIndex + 1}`}
-                            placeholder="Optional example"
-                        />
-                        {examples.length > 1 && (
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`Remove example ${exampleIndex + 1}`}
-                                onClick={() =>
-                                    setExamples((currentExamples) =>
-                                        currentExamples.filter(
-                                            (_, index) =>
-                                                index !== exampleIndex,
-                                        ),
-                                    )
-                                }
-                            >
-                                <X />
-                            </Button>
-                        )}
-                    </div>
-                ))}
-                {examples.length < 20 && (
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-fit"
-                        onClick={() =>
-                            setExamples((currentExamples) => [
-                                ...currentExamples,
-                                '',
-                            ])
-                        }
-                    >
-                        <Plus /> Add example
-                    </Button>
-                )}
-            </fieldset>
         </>
     );
 }
@@ -208,8 +135,6 @@ function EditCategoryDialog({
                                 message={
                                     errors.name ??
                                     errors.parent_id ??
-                                    errors.description ??
-                                    errors.examples ??
                                     errors.expected_revision
                                 }
                             />
@@ -317,14 +242,6 @@ function CategorySummary({ category }: { category: CategoryItem }) {
                     {category.retired_at === null ? 'Active' : 'Retired'}
                 </Badge>
             </div>
-            <p className="text-sm text-muted-foreground">
-                {category.description ?? 'No AI guidance description.'}
-            </p>
-            {category.examples.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                    Examples: {category.examples.join(', ')}
-                </p>
-            )}
             <p className="text-xs text-muted-foreground">
                 {category.transaction_count}{' '}
                 {category.transaction_count === 1
@@ -387,10 +304,7 @@ export default function CategoriesIndex({
                                     />
                                     <InputError
                                         message={
-                                            errors.name ??
-                                            errors.parent_id ??
-                                            errors.description ??
-                                            errors.examples
+                                            errors.name ?? errors.parent_id
                                         }
                                     />
                                     <div className="md:col-span-2">

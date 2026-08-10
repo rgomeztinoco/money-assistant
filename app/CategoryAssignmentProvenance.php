@@ -7,7 +7,6 @@ enum CategoryAssignmentProvenance: string
     case Owner = 'owner';
     case LinkedRefund = 'linked_refund';
     case LearnedRule = 'learned_rule';
-    case Ai = 'ai';
 
     public function canReplace(?self $current): bool
     {
@@ -20,7 +19,6 @@ enum CategoryAssignmentProvenance: string
             self::Owner => 4,
             self::LinkedRefund => 3,
             self::LearnedRule => 2,
-            self::Ai => 1,
         };
     }
 }

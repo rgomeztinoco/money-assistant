@@ -338,7 +338,6 @@ class ReadLedger
         $unresolvedCategoryCount = $confirmedBreakdown === null
             ? ($transaction->category_id === null ? 1 : 0)
             : $confirmedBreakdown->lineItems->whereNull('category_id')->count();
-        $unresolvedCategoryCount += $transaction->hasProvisionalAiCategory() ? 1 : 0;
 
         if ($transaction->category !== null) {
             $provenance = $this->readCategoryAssignmentProvenance->handle($transaction, $owner);
@@ -434,7 +433,6 @@ class ReadLedger
                 ->whereJsonLength('provisional_fields', 0)
                 ->whereJsonLength('refund_relationship_review_reasons', 0);
             $this->whereHasNoUncategorizedContribution($query);
-            $query->whereDoesntHaveProvisionalAiCategory();
             $this->whereHasNoDuplicateRelationship($query, false);
         }
 

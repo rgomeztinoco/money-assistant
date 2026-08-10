@@ -11,13 +11,9 @@ use App\Exceptions\StaleDailyExchangeRateRevision;
 use App\IntegrationFailureKind;
 use App\IntegrationService;
 use App\IntegrationWorkType;
-use App\Jobs\ClassifyTransaction;
 use App\Jobs\DeliverReminder;
-use App\Models\AiClassificationRequest;
 use App\Models\DailyExchangeRateSeedRequest;
-use App\Models\IntegrationIncident;
 use App\Models\ReminderDelivery;
-use App\Models\Transaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -193,59 +189,6 @@ test('the owner replays parked work once with its original source identity', fun
     $this->post(route('integration_incidents.replay.store', $incident))
         ->assertSessionHasErrors('replay');
     Queue::assertPushed(DeliverReminder::class, 1);
-});
-
-test('AI incidents deep-link to the affected transaction', function () {
-    $classificationRequest = AiClassificationRequest::factory()->create();
-    $owner = $classificationRequest->owner;
-    IntegrationIncident::factory()->for($owner, 'owner')->create([
-        'integration' => IntegrationService::Ai,
-        'work_type' => IntegrationWorkType::AiClassification,
-        'work_id' => (string) $classificationRequest->id,
-        'source_identity' => 'ai:transaction:'.$classificationRequest->transaction_id
-            .':revision:'.$classificationRequest->expected_transaction_revision,
-        'visible_at' => now(),
-    ]);
-
-    expect(app(ReadActionableIntegrationIncidents::class)->handle($owner))
-        ->toHaveCount(1)
-        ->and(app(ReadActionableIntegrationIncidents::class)->handle($owner)[0]['affected_url'])
-        ->toBe(route('transactions.index', [
-            'selected' => $classificationRequest->transaction_id,
-        ]));
-});
-
-test('AI replay retains the original transaction revision identity', function () {
-    Queue::fake();
-    $transaction = Transaction::factory()->create(['revision' => 2]);
-    $classificationRequest = AiClassificationRequest::factory()
-        ->for($transaction)
-        ->create([
-            'expected_transaction_revision' => 1,
-            'completed_at' => now(),
-        ]);
-    $owner = $classificationRequest->owner;
-    $sourceIdentity = 'ai:transaction:'.$transaction->id.':revision:1';
-    $incident = IntegrationIncident::factory()->for($owner, 'owner')->create([
-        'integration' => IntegrationService::Ai,
-        'work_type' => IntegrationWorkType::AiClassification,
-        'work_id' => (string) $classificationRequest->id,
-        'source_identity' => $sourceIdentity,
-        'failure_kind' => IntegrationFailureKind::Transient,
-        'parked_at' => now(),
-        'next_attempt_at' => null,
-    ]);
-
-    $this->actingAs($owner)
-        ->post(route('integration_incidents.replay.store', $incident))
-        ->assertSessionHasNoErrors();
-
-    expect($classificationRequest->fresh()->expected_transaction_revision)->toBe(1)
-        ->and($incident->fresh()->source_identity)->toBe($sourceIdentity);
-    Queue::assertPushed(
-        ClassifyTransaction::class,
-        fn (ClassifyTransaction $job): bool => $job->classificationRequestId === $classificationRequest->id,
-    );
 });
 
 test('deterministic failure classes park without entering the retry schedule', function (

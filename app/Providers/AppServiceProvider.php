@@ -2,11 +2,9 @@
 
 namespace App\Providers;
 
-use App\Contracts\AiClassifier;
 use App\Contracts\BcrpData;
 use App\Contracts\Gmail;
 use App\Contracts\OpenClawHook;
-use App\Integrations\Ai\HttpAiClassifier;
 use App\Integrations\BcrpData\HttpBcrpData;
 use App\Integrations\Gmail\GoogleGmail;
 use App\Integrations\OpenClaw\HttpOpenClawHook;
@@ -26,15 +24,6 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(BcrpData::class, HttpBcrpData::class);
-
-        $this->app->singleton(
-            AiClassifier::class,
-            fn (): HttpAiClassifier => new HttpAiClassifier(
-                url: (string) config('services.ai_classifier.url'),
-                token: (string) config('services.ai_classifier.token'),
-                classifierVersion: (string) config('services.ai_classifier.version'),
-            ),
-        );
 
         $this->app->singleton(
             Gmail::class,
@@ -60,11 +49,6 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
-
-        RateLimiter::for(
-            'ai-classifier',
-            fn (): Limit => Limit::perMinute(30),
-        );
 
         RateLimiter::for(
             'gmail-message-processing',

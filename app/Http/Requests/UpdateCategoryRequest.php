@@ -42,9 +42,6 @@ class UpdateCategoryRequest extends FormRequest
                     ->whereNull('retired_at'),
                 Rule::notIn([$categoryId]),
             ],
-            'description' => ['nullable', 'string', 'max:2000'],
-            'examples' => ['present', 'array', 'max:20'],
-            'examples.*' => ['string', 'max:100'],
         ];
     }
 }

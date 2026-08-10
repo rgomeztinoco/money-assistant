@@ -13,8 +13,7 @@ use App\Models\User;
  *     owner: array{id: int, name: string}|null,
  *     linked_purchase: array{id: int, merchant_description: string}|null,
  *     learned_rule: array{id: int, revision: int}|null,
- *     bulk_action: array{id: int}|null,
- *     ai: array{classifier_version: string, confidence: int, outcome: string, explanation: string}|null
+ *     bulk_action: array{id: int}|null
  * }
  */
 class ReadCategoryAssignmentProvenance
@@ -61,18 +60,6 @@ class ReadCategoryAssignmentProvenance
             'bulk_action' => $assignment?->learned_rule_bulk_action_id === null
                 ? null
                 : ['id' => $assignment->learned_rule_bulk_action_id],
-            'ai' => $source === CategoryAssignmentProvenance::Ai
-                && $assignment?->ai_classifier_version !== null
-                && $assignment->ai_confidence !== null
-                && $assignment->ai_outcome !== null
-                && $assignment->ai_explanation !== null
-                    ? [
-                        'classifier_version' => $assignment->ai_classifier_version,
-                        'confidence' => $assignment->ai_confidence,
-                        'outcome' => $assignment->ai_outcome->value,
-                        'explanation' => $assignment->ai_explanation,
-                    ]
-                    : null,
         ];
     }
 

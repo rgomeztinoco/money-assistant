@@ -16,14 +16,12 @@ use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('an eligible explicit deletion moves its payload into recoverable trash for thirty days', function () {
+test('an eligible explicit deletion moves its Category into recoverable trash for thirty days', function () {
     Date::setTestNow('2026-08-01 10:00:00');
 
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create([
         'name' => 'Temporary Category',
-        'description' => 'Recoverable financial payload',
-        'examples' => ['Temporary expense'],
     ]);
 
     $this->actingAs($owner)
@@ -37,21 +35,17 @@ test('an eligible explicit deletion moves its payload into recoverable trash for
 
     expect($trashedCategory)
         ->name->toBe('Temporary Category')
-        ->description->toBe('Recoverable financial payload')
-        ->examples->toBe(['Temporary expense'])
         ->deleted_at->toEqual(Date::now())
         ->purge_after->toEqual(Date::now()->addDays(30))
         ->deletion_id->not->toBeNull();
 });
 
-test('an owner can restore a deleted Category with its identity and payload from the Categories page', function () {
+test('an owner can restore a deleted Category with its identity from the Categories page', function () {
     Date::setTestNow('2026-08-01 10:00:00');
 
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create([
         'name' => 'Recover Me',
-        'description' => 'Original description',
-        'examples' => ['Original example'],
     ]);
 
     $this->actingAs($owner)
@@ -63,8 +57,6 @@ test('an owner can restore a deleted Category with its identity and payload from
     $this->post(route('categories.store'), [
         'name' => 'Recover Me',
         'parent_id' => null,
-        'description' => null,
-        'examples' => [],
     ])->assertSessionHasErrors('name');
 
     Date::setTestNow(Date::now()->addDays(29));
@@ -84,8 +76,6 @@ test('an owner can restore a deleted Category with its identity and payload from
     expect($restoredCategory)
         ->id->toBe($category->id)
         ->name->toBe('Recover Me')
-        ->description->toBe('Original description')
-        ->examples->toBe(['Original example'])
         ->deleted_at->toBeNull()
         ->purge_after->toBeNull()
         ->deletion_id->toBeNull();
@@ -97,8 +87,6 @@ test('purge removes an expired payload and leaves only a payload-free tombstone'
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create([
         'name' => 'Prohibited Tombstone Name',
-        'description' => 'Prohibited tombstone description',
-        'examples' => ['Prohibited tombstone example'],
     ]);
     $this->actingAs($owner)
         ->withSession([RequirePasskeyConfirmation::SESSION_KEY => Date::now()->unix()])
@@ -124,9 +112,7 @@ test('purge removes an expired payload and leaves only a payload-free tombstone'
         ->deleted_at->toEqual($deletedAt)
         ->purged_at->toEqual(Date::now())
         ->and($serializedTombstone)
-        ->not->toContain('Prohibited Tombstone Name')
-        ->not->toContain('Prohibited tombstone description')
-        ->not->toContain('Prohibited tombstone example');
+        ->not->toContain('Prohibited Tombstone Name');
 });
 
 test('a Category referenced by another protected financial resource cannot enter trash', function () {

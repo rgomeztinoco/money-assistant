@@ -2,11 +2,9 @@
 
 namespace App\Models;
 
-use App\AiClassificationOutcome;
 use App\CategoryAssignmentProvenance;
 use Database\Factories\CategoryAssignmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -25,15 +23,6 @@ use Illuminate\Support\Carbon;
  * @property int|null $learned_rule_id
  * @property int|null $learned_rule_revision
  * @property int|null $learned_rule_bulk_action_id
- * @property string|null $ai_classifier_version
- * @property int|null $ai_confidence
- * @property AiClassificationOutcome|null $ai_outcome
- * @property string|null $ai_explanation
- * @property string|null $ai_taxonomy_fingerprint
- * @property int|null $ai_validation_context_revision
- * @property bool|null $ai_requires_review
- * @property Carbon|null $ai_reviewed_at
- * @property bool|null $ai_approved_unchanged
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -49,15 +38,6 @@ use Illuminate\Support\Carbon;
     'learned_rule_id',
     'learned_rule_revision',
     'learned_rule_bulk_action_id',
-    'ai_classifier_version',
-    'ai_confidence',
-    'ai_outcome',
-    'ai_explanation',
-    'ai_taxonomy_fingerprint',
-    'ai_validation_context_revision',
-    'ai_requires_review',
-    'ai_reviewed_at',
-    'ai_approved_unchanged',
 ])]
 class CategoryAssignment extends Model
 {
@@ -99,25 +79,6 @@ class CategoryAssignment extends Model
         return $this->belongsTo(Transaction::class, 'linked_purchase_id');
     }
 
-    /**
-     * @param  Builder<CategoryAssignment>  $query
-     * @return Builder<CategoryAssignment>
-     */
-    public function scopeWhereRequiresAiReview(Builder $query): Builder
-    {
-        return $query
-            ->where('source', CategoryAssignmentProvenance::Ai)
-            ->whereIn('ai_outcome', [
-                AiClassificationOutcome::Medium->value,
-                AiClassificationOutcome::High->value,
-            ])
-            ->where(fn (Builder $query) => $query
-                ->where('ai_requires_review', true)
-                ->orWhere(fn (Builder $query) => $query
-                    ->where('ai_outcome', AiClassificationOutcome::Medium->value)
-                    ->whereNull('ai_requires_review')));
-    }
-
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -128,12 +89,6 @@ class CategoryAssignment extends Model
             'learned_rule_id' => 'integer',
             'learned_rule_revision' => 'integer',
             'learned_rule_bulk_action_id' => 'integer',
-            'ai_confidence' => 'integer',
-            'ai_outcome' => AiClassificationOutcome::class,
-            'ai_requires_review' => 'boolean',
-            'ai_validation_context_revision' => 'integer',
-            'ai_reviewed_at' => 'immutable_datetime',
-            'ai_approved_unchanged' => 'boolean',
         ];
     }
 }

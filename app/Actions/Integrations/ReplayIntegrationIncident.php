@@ -5,12 +5,10 @@ namespace App\Actions\Integrations;
 use App\GmailSynchronizationType;
 use App\IntegrationFailureKind;
 use App\IntegrationWorkType;
-use App\Jobs\ClassifyTransaction;
 use App\Jobs\DeliverReminder;
 use App\Jobs\ProcessGmailMessage;
 use App\Jobs\SeedDailyExchangeRate;
 use App\Jobs\SynchronizeGmail;
-use App\Models\AiClassificationRequest;
 use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
@@ -79,7 +77,6 @@ final class ReplayIntegrationIncident
                 $incident,
             ),
             IntegrationWorkType::GmailMessage => $this->prepareGmailMessage($owner, $incident),
-            IntegrationWorkType::AiClassification => $this->prepareAiClassification($owner, $incident),
             IntegrationWorkType::DailyExchangeRateSeed => $this->prepareDailyExchangeRateSeed(
                 $owner,
                 $incident,
@@ -117,29 +114,6 @@ final class ReplayIntegrationIncident
             ->findOrFail($incident->work_id);
 
         return fn () => ProcessGmailMessage::dispatch($discovery->id);
-    }
-
-    private function prepareAiClassification(
-        User $owner,
-        IntegrationIncident $incident,
-    ): Closure {
-        $request = AiClassificationRequest::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->with('transaction')
-            ->lockForUpdate()
-            ->findOrFail($incident->work_id);
-        $request->forceFill([
-            'attempt_count' => 0,
-            'next_attempt_at' => null,
-            'queued_at' => now(),
-            'claimed_at' => null,
-            'last_attempted_at' => null,
-            'completed_at' => null,
-            'terminal_outcome' => null,
-            'last_error_code' => null,
-        ])->save();
-
-        return fn () => ClassifyTransaction::dispatch($request->id);
     }
 
     private function prepareDailyExchangeRateSeed(

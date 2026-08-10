@@ -3,7 +3,6 @@
 namespace App\Actions\Integrations;
 
 use App\IntegrationWorkType;
-use App\Models\AiClassificationRequest;
 use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\GmailMessageDiscovery;
 use App\Models\IntegrationIncident;
@@ -51,14 +50,6 @@ final class ReadActionableIntegrationIncidents
             )
             ->get(['id'])
             ->keyBy('id');
-        $aiClassificationRequests = AiClassificationRequest::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereIntegerInRaw(
-                'id',
-                $this->workIds($incidents, IntegrationWorkType::AiClassification),
-            )
-            ->get(['id', 'transaction_id'])
-            ->keyBy('id');
         $dailyExchangeRateSeedRequests = DailyExchangeRateSeedRequest::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereIntegerInRaw(
@@ -85,7 +76,6 @@ final class ReadActionableIntegrationIncidents
                 'affected_url' => $this->affectedUrl(
                     $incident,
                     $gmailDiscoveries,
-                    $aiClassificationRequests,
                     $dailyExchangeRateSeedRequests,
                 ),
             ])
@@ -94,13 +84,11 @@ final class ReadActionableIntegrationIncidents
 
     /**
      * @param  Collection<int, GmailMessageDiscovery>  $gmailDiscoveries
-     * @param  Collection<int, AiClassificationRequest>  $aiClassificationRequests
      * @param  Collection<int, DailyExchangeRateSeedRequest>  $dailyExchangeRateSeedRequests
      */
     private function affectedUrl(
         IntegrationIncident $incident,
         Collection $gmailDiscoveries,
-        Collection $aiClassificationRequests,
         Collection $dailyExchangeRateSeedRequests,
     ): string {
         return match ($incident->work_type) {
@@ -111,10 +99,6 @@ final class ReadActionableIntegrationIncidents
             IntegrationWorkType::GmailMessage => $this->gmailMessageUrl(
                 $incident,
                 $gmailDiscoveries,
-            ),
-            IntegrationWorkType::AiClassification => $this->aiClassificationUrl(
-                $incident,
-                $aiClassificationRequests,
             ),
             IntegrationWorkType::DailyExchangeRateSeed => $this->dailyExchangeRateUrl(
                 $incident,
@@ -140,18 +124,6 @@ final class ReadActionableIntegrationIncidents
         return $discovery === null
             ? route('parser_profiles.index')
             : route('parser_profiles.source_messages.show', $discovery);
-    }
-
-    /** @param Collection<int, AiClassificationRequest> $aiClassificationRequests */
-    private function aiClassificationUrl(
-        IntegrationIncident $incident,
-        Collection $aiClassificationRequests,
-    ): string {
-        $request = $aiClassificationRequests->get((int) $incident->work_id);
-
-        return route('transactions.index', [
-            'selected' => $request?->transaction_id,
-        ]);
     }
 
     /** @param Collection<int, DailyExchangeRateSeedRequest> $dailyExchangeRateSeedRequests */
