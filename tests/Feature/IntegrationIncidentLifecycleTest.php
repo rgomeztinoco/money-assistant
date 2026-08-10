@@ -7,7 +7,6 @@ use App\Actions\Integrations\RecordIntegrationFailure;
 use App\Actions\Integrations\RecordIntegrationRecovery;
 use App\Actions\Reporting\SeedDailyExchangeRateFromBcrpData;
 use App\Contracts\BcrpData;
-use App\Exceptions\OpenClawConfirmationRejected;
 use App\Exceptions\StaleDailyExchangeRateRevision;
 use App\IntegrationFailureKind;
 use App\IntegrationService;
@@ -274,7 +273,6 @@ test('deterministic failure classes park without entering the retry schedule', f
     'authentication' => [fn (): Throwable => new AuthenticationException, IntegrationFailureKind::Authentication],
     'authorization' => [fn (): Throwable => new AuthorizationException, IntegrationFailureKind::Authorization],
     'schema' => [fn (): Throwable => new UnexpectedValueException, IntegrationFailureKind::Schema],
-    'confirmation' => [fn (): Throwable => new OpenClawConfirmationRejected('confirmation_invalid'), IntegrationFailureKind::Confirmation],
     'concurrency' => [fn (): Throwable => new StaleDailyExchangeRateRevision, IntegrationFailureKind::Concurrency],
     'validation' => [fn (): Throwable => ValidationException::withMessages(['field' => 'Invalid.']), IntegrationFailureKind::Validation],
 ]);

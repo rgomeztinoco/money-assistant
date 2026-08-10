@@ -12,7 +12,6 @@ use App\Models\LearnedRuleChangePreview;
 use App\Models\LearnedRuleSuggestion;
 use App\Models\ParserProfile;
 use App\Models\ReceiptBreakdown;
-use App\Models\ReceiptProposal;
 use App\Models\Reminder;
 use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
@@ -30,7 +29,6 @@ final class EnsureOwnerAccountCanBeDeleted
      */
     private const array RETAINED_MODELS = [
         Transaction::class,
-        ReceiptProposal::class,
         LearnedRule::class,
         LearnedRuleSuggestion::class,
         LearnedRuleChangePreview::class,

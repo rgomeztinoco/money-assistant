@@ -5,7 +5,6 @@ use App\CategoryAssignmentProvenance;
 use App\Models\Category;
 use App\Models\LineItem;
 use App\Models\ReceiptBreakdown;
-use App\Models\ReceiptProposal;
 use App\Models\Transaction;
 use App\Models\User;
 
@@ -23,27 +22,14 @@ test('the owner attaches edits and confirms a Receipt Breakdown in the Transacti
         'category_id' => $shopping->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
     ]);
-    ReceiptProposal::factory()->recycle($owner)->create([
-        'proposed_transaction' => [
-            'occurred_on' => $transaction->occurred_on->toDateString(),
-            'amount_minor' => 2200,
-            'currency' => 'PEN',
-            'kind' => 'purchase',
-            'merchant_description' => 'Neighborhood market',
-        ],
-        'proposed_line_items' => [[
-            'description' => 'Coffee beans',
-            'line_total_minor' => 2200,
-        ]],
-    ]);
     $this->actingAs($owner);
 
     $page = visit("/transactions?search=Neighborhood&selected={$transaction->id}");
 
     $page
-        ->assertSee('Unattached Receipt Proposals')
+        ->assertSee('Manual itemization')
         ->assertQueryStringHas('search', 'Neighborhood')
-        ->press('Attach proposal')
+        ->press('Create Receipt Breakdown')
         ->assertSee('Draft revision 1')
         ->assertQueryStringHas('search', 'Neighborhood')
         ->assertSee('Draft Line Items do not affect reports.');

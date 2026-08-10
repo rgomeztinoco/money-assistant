@@ -3,7 +3,6 @@
 namespace App\Http\Middleware;
 
 use App\Actions\Ledger\CountOutstandingReviews;
-use App\Actions\OpenClaw\ReadOpenClawStatus;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -11,7 +10,6 @@ class HandleInertiaRequests extends Middleware
 {
     public function __construct(
         private CountOutstandingReviews $countOutstandingReviews,
-        private ReadOpenClawStatus $readOpenClawStatus,
     ) {}
 
     /**
@@ -53,7 +51,6 @@ class HandleInertiaRequests extends Middleware
                     ? 0
                     : $this->countOutstandingReviews->handle($request->user()),
             ],
-            'openclaw' => fn (): array => $this->readOpenClawStatus->handle(),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

@@ -22,10 +22,10 @@ import {
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownConfirmationController';
 import {
     destroy as discardReceiptBreakdown,
+    store as createReceiptBreakdown,
     update as updateReceiptBreakdown,
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
 import { default as restoreReceiptBreakdown } from '@/actions/App/Http/Controllers/ReceiptBreakdownTrashRestorationController';
-import { store as attachReceiptProposal } from '@/actions/App/Http/Controllers/ReceiptProposalAttachmentController';
 import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { update as updateCategory } from '@/actions/App/Http/Controllers/TransactionCategoryController';
 import { update } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
@@ -1205,70 +1205,48 @@ function ReceiptBreakdownSection({
                 </div>
             )}
 
-            {!draft && transaction.receipt_proposals.length > 0 && (
+            {!draft && transaction.trashed_receipt_breakdowns.length === 0 && (
                 <div className="grid gap-3 rounded-lg border border-dashed p-4">
                     <div>
-                        <p className="font-medium">
-                            Unattached Receipt Proposals
-                        </p>
+                        <p className="font-medium">Manual itemization</p>
                         <p className="text-sm text-muted-foreground">
-                            Select one explicitly. Similarity never attaches a
-                            proposal automatically.
+                            Start with one Line Item for the full Transaction,
+                            then edit the draft to match the receipt.
                         </p>
                     </div>
-                    {transaction.receipt_proposals.map((proposal) => (
-                        <Form
-                            key={proposal.id}
-                            {...attachReceiptProposal.form(transaction.id)}
-                            options={{
-                                preserveScroll: true,
-                                preserveState: true,
-                            }}
-                            className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-                        >
-                            {({ errors, processing }) => (
-                                <>
-                                    <input
-                                        type="hidden"
-                                        name="receipt_proposal_id"
-                                        value={proposal.id}
-                                    />
-                                    <div className="text-sm">
-                                        <p className="font-medium">
-                                            {
-                                                proposal.proposed_merchant_description
-                                            }
-                                        </p>
-                                        <p className="text-muted-foreground">
-                                            {formatMinorUnits(
-                                                proposal.proposed_amount_minor,
-                                                transaction.currency,
-                                            )}{' '}
-                                            · {proposal.line_item_count}{' '}
-                                            {proposal.line_item_count === 1
-                                                ? 'item'
-                                                : 'items'}
-                                        </p>
-                                        <InputError
-                                            message={errors.receipt_proposal_id}
-                                        />
-                                    </div>
-                                    <Button
-                                        type="submit"
-                                        variant="outline"
-                                        disabled={processing}
-                                    >
-                                        {processing ? (
-                                            <Spinner />
-                                        ) : (
-                                            <ReceiptText />
-                                        )}
-                                        Attach proposal
-                                    </Button>
-                                </>
-                            )}
-                        </Form>
-                    ))}
+                    <Form
+                        {...createReceiptBreakdown.form(transaction.id)}
+                        options={{
+                            preserveScroll: true,
+                            preserveState: true,
+                        }}
+                        className="grid gap-2"
+                    >
+                        {({ errors, processing }) => (
+                            <>
+                                <input
+                                    type="hidden"
+                                    name="expected_transaction_revision"
+                                    value={transaction.revision}
+                                />
+                                <Button
+                                    type="submit"
+                                    variant="outline"
+                                    className="w-fit"
+                                    disabled={processing}
+                                >
+                                    {processing ? <Spinner /> : <ReceiptText />}
+                                    Create Receipt Breakdown
+                                </Button>
+                                <InputError
+                                    message={
+                                        errors.transaction_id ??
+                                        errors.expected_transaction_revision
+                                    }
+                                />
+                            </>
+                        )}
+                    </Form>
                 </div>
             )}
 
@@ -1329,15 +1307,6 @@ function ReceiptBreakdownSection({
                     ))}
                 </div>
             )}
-
-            {!draft &&
-                !confirmed &&
-                transaction.receipt_proposals.length === 0 &&
-                transaction.trashed_receipt_breakdowns.length === 0 && (
-                    <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                        No Receipt Breakdown or compatible unattached proposal.
-                    </p>
-                )}
         </section>
     );
 }

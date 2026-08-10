@@ -5,7 +5,6 @@ namespace App\Actions\Dashboard;
 use App\Actions\Integrations\ReadActionableIntegrationIncidents;
 use App\Actions\NotificationIngestion\ReadGmailConnectionStatus;
 use App\Actions\NotificationIngestion\ReadParserProfileHealthSummary;
-use App\Actions\OpenClaw\ReadOpenClawStatus;
 use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -15,7 +14,6 @@ final class ReadOperatingStatus
     public function __construct(
         private ReadGmailConnectionStatus $readGmailConnectionStatus,
         private ReadParserProfileHealthSummary $readParserProfileHealthSummary,
-        private ReadOpenClawStatus $readOpenClawStatus,
         private ReadActionableIntegrationIncidents $readActionableIntegrationIncidents,
     ) {}
 
@@ -23,7 +21,6 @@ final class ReadOperatingStatus
      * @return array{
      *     summary: array{
      *         gmail: string,
-     *         openclaw: 'configured'|'unavailable',
      *         parser_profiles: array{healthy_count: int, degraded_count: int},
      *         daily_exchange_rates: array{attention_count: int}
      *     },
@@ -34,8 +31,10 @@ final class ReadOperatingStatus
     {
         $gmail = $this->readGmailConnectionStatus->handle($owner);
         $parserProfiles = $this->readParserProfileHealthSummary->handle($owner);
-        $openClaw = $this->readOpenClawStatus->handle();
-        $integrationIncidents = $this->readActionableIntegrationIncidents->handle($owner);
+        $integrationIncidents = collect($this->readActionableIntegrationIncidents->handle($owner))
+            ->reject(fn (array $incident): bool => $incident['integration'] === 'openclaw')
+            ->values()
+            ->all();
         $incidentSeedRequestIds = collect($integrationIncidents)
             ->where('work_type', 'daily_exchange_rate_seed')
             ->pluck('work_id')
@@ -82,12 +81,6 @@ final class ReadOperatingStatus
             ];
         }
 
-        if ($openClaw['state'] === 'unavailable') {
-            $exceptions[] = [
-                'type' => 'openclaw_unavailable',
-            ];
-        }
-
         foreach ($integrationIncidents as $integrationIncident) {
             $exceptions[] = $integrationIncident;
         }
@@ -95,7 +88,6 @@ final class ReadOperatingStatus
         return [
             'summary' => [
                 'gmail' => $gmail['state'],
-                'openclaw' => $openClaw['state'],
                 'parser_profiles' => [
                     'healthy_count' => $parserProfiles['healthy_count'],
                     'degraded_count' => $parserProfiles['degraded_count'],
