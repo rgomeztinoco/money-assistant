@@ -94,6 +94,8 @@ export type SelectedTransaction = {
     currency: Currency;
     kind: TransactionKind;
     merchant_description: string;
+    payment_instrument_label: string | null;
+    payment_instrument_last_four: string | null;
     confirmed_at: string;
     revision: number;
     voided_at: string | null;
@@ -134,6 +136,12 @@ export type SelectedTransaction = {
     }>;
     duplicate_relationships: DuplicateRelationship[];
     receipt_breakdown: ReceiptBreakdown | null;
+    purchase_options: Array<{
+        id: number;
+        occurred_on: string;
+        merchant_description: string;
+        currency: Currency;
+    }>;
     state_change_idempotency_key: string;
 };
 
@@ -142,6 +150,8 @@ export type LedgerFilters = {
     date_from: string | null;
     date_to: string | null;
     currency: Currency | 'all';
+    kind: TransactionKind | 'all';
+    category_id: number | null;
     category_state: 'all' | 'categorized' | 'uncategorized';
     review_state: 'all' | 'outstanding' | 'clear';
     refund_relationship: 'all' | 'linked' | 'unlinked' | 'not_applicable';

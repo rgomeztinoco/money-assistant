@@ -78,7 +78,6 @@ test('the inspector shows both records and the exact duplicate resolution effect
         ->assertSee('Suspected Duplicate resolved.')
         ->assertSee('Review Queue is clear')
         ->click('Transactions')
-        ->assertSee('Reopen pair')
         ->press('Reopen pair')
         ->assertSee('Suspected Duplicate reopened.')
         ->click('Review Queue')

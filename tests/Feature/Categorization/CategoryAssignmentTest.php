@@ -27,11 +27,12 @@ test('the owner can assign an active Category and return a Transaction to Uncate
 
     $this->get(route('transactions.index', ['selected' => $transaction->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.category.provenance.source', 'owner')
-            ->where('selected_transaction.category.provenance.owner.id', $owner->id)
-            ->where('selected_transaction.category.provenance.owner.name', $owner->name)
-            ->where('selected_transaction.category.provenance.linked_purchase', null)
-            ->where('selected_transaction.category.provenance.merchant_rule', null));
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.category.provenance.source', 'owner')
+                ->where('selected_transaction.category.provenance.owner.id', $owner->id)
+                ->where('selected_transaction.category.provenance.owner.name', $owner->name)
+                ->where('selected_transaction.category.provenance.linked_purchase', null)
+                ->where('selected_transaction.category.provenance.merchant_rule', null)));
 
     $this->put(route('transactions.category.update', $transaction), [
         'expected_revision' => 2,
@@ -91,8 +92,9 @@ test('Merchant Rule assignments expose their exact provenance', function () {
     $this->actingAs($owner)
         ->get(route('transactions.index', ['selected' => $ruleTransaction->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.category.provenance.source', 'merchant_rule')
-            ->where('selected_transaction.category.provenance.merchant_rule.id', $merchantRule->id));
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.category.provenance.source', 'merchant_rule')
+                ->where('selected_transaction.category.provenance.merchant_rule.id', $merchantRule->id)));
 });
 
 test('Category assignment rejects stale revisions and Retired Categories', function () {
@@ -127,9 +129,10 @@ test('the Transaction workspace exposes active Category paths and not a customiz
     $this->actingAs($owner)
         ->get(route('transactions.index', ['selected' => $transaction->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.category', null)
             ->where('category_options', [
                 ['id' => $food->id, 'path' => 'Food'],
                 ['id' => $food->children()->sole()->id, 'path' => 'Food > Groceries'],
-            ]));
+            ])
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.category', null)));
 });

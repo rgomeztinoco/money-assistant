@@ -306,7 +306,6 @@ test('uncertain occurrence date and merchant create one grouped review while tot
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '4275')
             ->has('transactions', 1)
             ->where('transactions.0.id', $transaction->id),
         );

@@ -293,17 +293,19 @@ test('selecting an owned Transaction returns its contextual inspector history an
         ->get(route('transactions.index', ['selected' => $transaction->id]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.id', $transaction->id)
-            ->where('selected_transaction.category.name', 'Groceries')
-            ->where('selected_transaction.category.provenance.source', 'owner')
-            ->where('selected_transaction.review.fields.0.name', 'occurred_on')
-            ->where('selected_transaction.corrections.0.corrected_value', 'Neighborhood market')
-            ->where('selected_transaction.state_changes.0.operation', 'restore')
-            ->where('selected_transaction.source_reference_count', 1)
-            ->where('selected_transaction.linked_refunds.0.id', $refund->id)
-            ->where('selected_transaction.duplicate_relationships.0.id', $suspectedDuplicate->id)
-            ->where('selected_transaction.duplicate_relationships.0.status', 'suspected')
-            ->where('selected_transaction.duplicate_relationships.0.other_transaction.id', $similarTransaction->id),
+            ->missing('selected_transaction')
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.id', $transaction->id)
+                ->where('selected_transaction.category.name', 'Groceries')
+                ->where('selected_transaction.category.provenance.source', 'owner')
+                ->where('selected_transaction.review.fields.0.name', 'occurred_on')
+                ->where('selected_transaction.corrections.0.corrected_value', 'Neighborhood market')
+                ->where('selected_transaction.state_changes.0.operation', 'restore')
+                ->where('selected_transaction.source_reference_count', 1)
+                ->where('selected_transaction.linked_refunds.0.id', $refund->id)
+                ->where('selected_transaction.duplicate_relationships.0.id', $suspectedDuplicate->id)
+                ->where('selected_transaction.duplicate_relationships.0.status', 'suspected')
+                ->where('selected_transaction.duplicate_relationships.0.other_transaction.id', $similarTransaction->id)),
         );
 
 });
@@ -353,15 +355,17 @@ test('the Review Queue is the outstanding preset of the ledger and shares its na
             ->where('review_queue.outstanding_count', 8)
             ->where('workspace.mode', 'review_queue')
             ->where('filters.review_state', 'outstanding')
-            ->has('workspace_transactions', 4)
-            ->where('selected_transaction.id', $reviewTransaction->id),
+            ->has('transactions', 4)
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.id', $reviewTransaction->id)),
         );
 
     $this->get(route('review_queue.index', ['search' => 'Filtered similar']))
         ->assertInertia(fn (Assert $page) => $page
-            ->has('workspace_transactions', 1)
-            ->where('workspace_transactions.0.id', $similarTransaction->id)
-            ->where('selected_transaction.id', $similarTransaction->id),
+            ->has('transactions', 1)
+            ->where('transactions.0.id', $similarTransaction->id)
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.id', $similarTransaction->id)),
         );
 
     $this->get(route('review_queue.index', ['inspector' => 'closed']))

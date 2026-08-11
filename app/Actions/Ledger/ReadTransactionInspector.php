@@ -62,6 +62,8 @@ class ReadTransactionInspector
      *     currency: string,
      *     kind: string,
      *     merchant_description: string,
+     *     payment_instrument_label: string|null,
+     *     payment_instrument_last_four: string|null,
      *     confirmed_at: string,
      *     revision: int,
      *     voided_at: string|null,
@@ -91,6 +93,7 @@ class ReadTransactionInspector
      *         second_transaction: DuplicateTransactionData
      *     }>,
      *     receipt_breakdown: ReceiptBreakdownData|null,
+     *     purchase_options: list<array{id: int, occurred_on: string, merchant_description: string, currency: string}>,
      *     state_change_idempotency_key: string
      * }|null
      */
@@ -187,6 +190,8 @@ class ReadTransactionInspector
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
             'merchant_description' => $transaction->merchant_description,
+            'payment_instrument_label' => $transaction->payment_instrument_label,
+            'payment_instrument_last_four' => $transaction->payment_instrument_last_four,
             'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
             'revision' => $transaction->revision,
             'voided_at' => $transaction->voided_at?->toIso8601String(),
@@ -260,6 +265,21 @@ class ReadTransactionInspector
                 })
                 ->all()),
             'receipt_breakdown' => $receiptBreakdown,
+            'purchase_options' => array_values(Transaction::query()
+                ->whereBelongsTo($owner, 'owner')
+                ->whereNull('voided_at')
+                ->where('kind', 'purchase')
+                ->whereKeyNot($transaction->getKey())
+                ->orderByDesc('occurred_on')
+                ->orderByDesc('id')
+                ->get(['id', 'occurred_on', 'merchant_description', 'currency'])
+                ->map(fn (Transaction $purchase): array => [
+                    'id' => $purchase->id,
+                    'occurred_on' => $purchase->occurred_on->toDateString(),
+                    'merchant_description' => $purchase->merchant_description,
+                    'currency' => $purchase->currency->value,
+                ])
+                ->all()),
             'state_change_idempotency_key' => (string) Str::uuid(),
         ];
     }

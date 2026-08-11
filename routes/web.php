@@ -52,7 +52,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('category-targets/{category_target}/retirement', CategoryTargetRetirementController::class)
         ->name('category_targets.retirement.store');
     Route::resource('transactions', TransactionController::class)
-        ->only(['index', 'store']);
+        ->only(['index', 'store', 'update']);
     Route::resource('merchant-rules', MerchantRuleController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->names([

@@ -1,13 +1,11 @@
 <?php
 
 use App\Actions\Ledger\RecordManualTransaction;
-use App\Actions\Ledger\ResolveTransactionField;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\Models\Category;
 use App\Models\User;
 use App\ReviewableTransactionField;
-use App\TransactionFieldResolution;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 
@@ -15,7 +13,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the owner accepts, corrects, and re-reviews stale uncertain Transaction fields', function () {
+test('the owner edits all current values and clears the Review Queue directly', function () {
     $owner = User::factory()->create();
     $this->actingAs($owner);
 
@@ -41,32 +39,13 @@ test('the owner accepts, corrects, and re-reviews stale uncertain Transaction fi
     $page = visit('/review-queue');
 
     $page
-        ->assertSee('3 fields')
+        ->assertSee('3 reviews')
         ->assertSee('Included in spending totals')
-        ->press('Accept current')
-        ->assertSee('2 fields')
-        ->assertSee('Amount in minor units')
-        ->assertSee('Merchant or description');
-
-    app(ResolveTransactionField::class)->handle(
-        owner: $owner,
-        transaction: $transaction,
-        field: ReviewableTransactionField::MerchantDescription,
-        expectedRevision: 2,
-        resolution: TransactionFieldResolution::Correct,
-        correctedValue: 'Neighborhood market',
-    );
-
-    $page
-        ->fill('Correct Amount in minor units', '9000')
-        ->press('Save Correction')
-        ->assertSee(
-            'This Transaction changed while you were reviewing it. Review the current values and try again.',
-        )
-        ->assertSee('Neighborhood market')
-        ->assertSee('1 field')
-        ->fill('Correct Amount in minor units', '9000')
-        ->press('Save Correction')
+        ->fill('Edit occurrence date', '2026-07-23')
+        ->fill('Edit amount in minor units', '9000')
+        ->fill('Edit merchant or description', 'Neighborhood market')
+        ->press('Save Transaction')
+        ->assertSee('Transaction updated.')
         ->assertSee('Review Queue is clear')
         ->click('Transactions')
         ->assertSee('$ 90.00')

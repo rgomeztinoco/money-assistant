@@ -1,22 +1,15 @@
-import { Form, Head, Link, router, usePage } from '@inertiajs/react';
+import { Deferred, Form, Head, Link, router, usePage } from '@inertiajs/react';
 import {
     ArrowDownLeft,
-    ArrowRightLeft,
     ArrowUpRight,
-    CircleAlert,
     CircleOff,
-    Link2,
     ListChecks,
     ReceiptText,
     RotateCcw,
     Search,
-    Tags,
-    X,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { destroy as reopenSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { store as recordTransaction } from '@/actions/App/Http/Controllers/TransactionController';
-import { store as linkRefund } from '@/actions/App/Http/Controllers/TransactionRefundLinkController';
 import {
     destroy as restoreTransaction,
     store as voidTransaction,
@@ -38,25 +31,16 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { formatMinorUnits } from '@/lib/format-minor-units';
-import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index } from '@/routes/transactions';
 import type {
-    Currency,
     CategoryOption,
-    CombinedTotal,
+    Currency,
     LedgerCategory,
     LedgerFilters,
     SelectedTransaction,
     TransactionKind,
 } from '@/types';
-
-type PurchaseOption = {
-    id: number;
-    occurred_on: string;
-    merchant_description: string;
-    currency: Currency;
-};
 
 type LedgerTransaction = {
     id: number;
@@ -65,7 +49,6 @@ type LedgerTransaction = {
     currency: Currency;
     kind: TransactionKind;
     merchant_description: string;
-    confirmed_at: string;
     revision: number;
     original_purchase: {
         id: number;
@@ -76,11 +59,7 @@ type LedgerTransaction = {
     review_field_count: number;
     refund_relationship_review_count: number;
     duplicate_status: 'suspected' | 'resolved' | 'none';
-    state_change_idempotency_key: string;
-};
-
-type VoidedLedgerTransaction = LedgerTransaction & {
-    voided_at: string;
+    voided_at: string | null;
     duplicate_resolution: {
         id: number;
         revision: number;
@@ -88,127 +67,94 @@ type VoidedLedgerTransaction = LedgerTransaction & {
         second_transaction_revision: number;
         reopen_idempotency_key: string;
     } | null;
+    state_change_idempotency_key: string;
+};
+
+type Pagination = {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    from: number | null;
+    to: number | null;
+    previous_page_url: string | null;
+    next_page_url: string | null;
 };
 
 export type TransactionsIndexProps = {
     today: string;
-    totals: Record<Currency, string>;
-    combined_total: CombinedTotal;
-    category_totals: Array<{
-        category: {
-            id: number | null;
-            name: string;
-        };
-        totals: Record<Currency, string>;
-        combined_total: CombinedTotal;
-    }>;
     category_options: CategoryOption[];
-    purchase_options: PurchaseOption[];
     transactions: LedgerTransaction[];
-    voided_transactions: VoidedLedgerTransaction[];
-    workspace_transactions?: LedgerTransaction[];
-    workspace_voided_transactions?: VoidedLedgerTransaction[];
-    selected_transaction: SelectedTransaction | null;
+    voided_transactions: LedgerTransaction[];
+    pagination: Pagination;
+    selected_transaction_id?: number | null;
+    selected_transaction?: SelectedTransaction | null;
     filters: LedgerFilters;
     workspace: {
         mode: 'transactions' | 'review_queue';
     };
-    unresolved_field_count?: number;
-    unresolved_category_count?: number;
-    unresolved_refund_relationship_count?: number;
-    unresolved_suspected_duplicate_count?: number;
-    stale_transaction?: {
-        id: number;
-        revision: number;
-        amount_minor: string;
-        currency: Currency;
-        kind: TransactionKind;
-        merchant_description: string;
-        occurred_on: string;
-        provisional_fields: string[];
-    } | null;
     errors?: Record<string, string>;
 };
 
-type TransactionKindPresentation = {
-    label: string;
-    icon: LucideIcon;
-    badgeVariant: 'outline' | 'secondary';
-    amountPrefix: string;
-    amountClassName: string;
-};
-
-const transactionKindPresentations: Record<
-    TransactionKind,
-    TransactionKindPresentation
-> = {
-    purchase: {
-        label: 'Purchase',
-        icon: ArrowUpRight,
-        badgeVariant: 'outline',
-        amountPrefix: '',
-        amountClassName: '',
-    },
-    refund: {
-        label: 'Refund',
-        icon: ArrowDownLeft,
-        badgeVariant: 'secondary',
-        amountPrefix: '−',
-        amountClassName: 'text-emerald-700 dark:text-emerald-400',
-    },
-};
-
-function NativeSelectField({
-    id,
-    name = id,
-    label,
-    defaultValue,
-    error,
-    options,
-}: {
-    id: string;
-    name?: string;
-    label: string;
-    defaultValue: string;
-    error?: string;
-    options: ReadonlyArray<{ value: string; label: string }>;
-}) {
-    return (
-        <div className="grid gap-2">
-            <Label htmlFor={id}>{label}</Label>
-            <NativeSelect
-                id={id}
-                name={name}
-                defaultValue={defaultValue}
-                aria-invalid={error ? true : undefined}
-                options={options}
-            />
-            <InputError message={error} />
-        </div>
-    );
+function workspaceQuery(
+    filters: LedgerFilters,
+    selected?: number,
+    page?: number,
+    inspector?: 'closed',
+) {
+    return {
+        search: filters.search || undefined,
+        date_from: filters.date_from ?? undefined,
+        date_to: filters.date_to ?? undefined,
+        currency: filters.currency === 'all' ? undefined : filters.currency,
+        kind: filters.kind === 'all' ? undefined : filters.kind,
+        category_id: filters.category_id ?? undefined,
+        category_state:
+            filters.category_state === 'all'
+                ? undefined
+                : filters.category_state,
+        review_state:
+            filters.review_state === 'all' ? undefined : filters.review_state,
+        refund_relationship:
+            filters.refund_relationship === 'all'
+                ? undefined
+                : filters.refund_relationship,
+        void_state:
+            filters.void_state === 'all' ? undefined : filters.void_state,
+        duplicate_status:
+            filters.duplicate_status === 'all'
+                ? undefined
+                : filters.duplicate_status,
+        selected,
+        page,
+        inspector,
+    };
 }
 
-function transactionAmount(transaction: LedgerTransaction): string {
-    const formattedAmount = formatMinorUnits(
-        transaction.amount_minor,
-        transaction.currency,
-    );
+function workspaceIndex(
+    mode: 'transactions' | 'review_queue',
+    filters?: LedgerFilters,
+    selected?: number,
+    page?: number,
+    inspector?: 'closed',
+) {
+    const options = filters
+        ? { query: workspaceQuery(filters, selected, page, inspector) }
+        : undefined;
 
-    return `${transactionKindPresentations[transaction.kind].amountPrefix}${formattedAmount}`;
+    return mode === 'review_queue' ? reviewQueueIndex(options) : index(options);
 }
 
-function TransactionVoidStateForm({
+function TransactionStateForm({
     transaction,
-    operation,
 }: {
     transaction: LedgerTransaction;
-    operation: 'void' | 'restore';
 }) {
-    const isVoid = operation === 'void';
-    const transactionRoute = isVoid
-        ? voidTransaction.form(transaction.id)
-        : restoreTransaction.form(transaction.id);
-    const Icon = isVoid ? CircleOff : RotateCcw;
+    const isVoided = transaction.voided_at !== null;
+    const transactionRoute = isVoided
+        ? restoreTransaction.form(transaction.id)
+        : voidTransaction.form(transaction.id);
+    const Icon = isVoided ? RotateCcw : CircleOff;
 
     return (
         <Form
@@ -230,12 +176,12 @@ function TransactionVoidStateForm({
                     />
                     <Button
                         type="submit"
-                        variant={isVoid ? 'outline' : 'secondary'}
+                        variant={isVoided ? 'secondary' : 'outline'}
                         size="sm"
                         disabled={processing}
                     >
                         {processing ? <Spinner /> : <Icon />}
-                        {isVoid ? 'Void' : 'Restore'}
+                        {isVoided ? 'Restore' : 'Void'}
                     </Button>
                     <InputError
                         message={
@@ -250,72 +196,10 @@ function TransactionVoidStateForm({
     );
 }
 
-function RefundLinkForm({
-    refund,
-    purchases,
-}: {
-    refund: LedgerTransaction;
-    purchases: PurchaseOption[];
-}) {
-    const selectId = `refund-${refund.id}-purchase`;
-
-    return (
-        <Form
-            {...linkRefund.form(refund.id)}
-            options={{ preserveScroll: true }}
-            className="grid min-w-52 gap-1.5"
-        >
-            {({ errors, processing }) => (
-                <>
-                    <input
-                        type="hidden"
-                        name="expected_revision"
-                        value={refund.revision}
-                    />
-                    <Label htmlFor={selectId} className="sr-only">
-                        Original purchase for {refund.merchant_description}
-                    </Label>
-                    <div className="flex items-center gap-2">
-                        <NativeSelect
-                            id={selectId}
-                            name="purchase_id"
-                            required
-                            defaultValue=""
-                            aria-invalid={errors.purchase_id ? true : undefined}
-                            options={[
-                                {
-                                    value: '',
-                                    label: 'Select original purchase',
-                                },
-                                ...purchases.map((purchase) => ({
-                                    value: purchase.id.toString(),
-                                    label: `${purchase.occurred_on} · ${purchase.merchant_description}`,
-                                })),
-                            ]}
-                        />
-                        <Button
-                            type="submit"
-                            variant="secondary"
-                            size="sm"
-                            disabled={processing}
-                        >
-                            {processing ? <Spinner /> : <Link2 />}
-                            Link Refund
-                        </Button>
-                    </div>
-                    <InputError
-                        message={errors.purchase_id ?? errors.refund_link}
-                    />
-                </>
-            )}
-        </Form>
-    );
-}
-
 function ReopenSuspectedDuplicateForm({
     transaction,
 }: {
-    transaction: VoidedLedgerTransaction;
+    transaction: LedgerTransaction;
 }) {
     const duplicateResolution = transaction.duplicate_resolution;
 
@@ -369,232 +253,13 @@ function ReopenSuspectedDuplicateForm({
     );
 }
 
-function workspaceQuery(filters: LedgerFilters, selected?: number) {
-    return {
-        search: filters.search || undefined,
-        date_from: filters.date_from ?? undefined,
-        date_to: filters.date_to ?? undefined,
-        currency: filters.currency === 'all' ? undefined : filters.currency,
-        category_state:
-            filters.category_state === 'all'
-                ? undefined
-                : filters.category_state,
-        review_state:
-            filters.review_state === 'all' ? undefined : filters.review_state,
-        refund_relationship:
-            filters.refund_relationship === 'all'
-                ? undefined
-                : filters.refund_relationship,
-        void_state:
-            filters.void_state === 'all' ? undefined : filters.void_state,
-        duplicate_status:
-            filters.duplicate_status === 'all'
-                ? undefined
-                : filters.duplicate_status,
-        selected,
-    };
-}
-
-function workspaceIndex(
-    mode: 'transactions' | 'review_queue',
-    filters?: LedgerFilters,
-    selected?: number,
-    inspector?: 'closed',
-) {
-    const options = filters
-        ? {
-              query: {
-                  ...workspaceQuery(filters, selected),
-                  inspector,
-              },
-          }
-        : undefined;
-
-    return mode === 'review_queue' ? reviewQueueIndex(options) : index(options);
-}
-
-function LedgerTable({
-    transactions,
-    purchases,
-    operation,
-    mode,
-    filters,
-    selectedTransactionId,
-}: {
-    transactions: Array<LedgerTransaction | VoidedLedgerTransaction>;
-    purchases: PurchaseOption[];
-    operation: 'void' | 'restore';
-    mode: 'transactions' | 'review_queue';
-    filters: LedgerFilters;
-    selectedTransactionId?: number;
-}) {
-    const showsVoidedState = operation === 'restore';
-
-    return (
-        <div className="overflow-x-auto">
-            <table
-                className={`w-full text-sm ${showsVoidedState ? 'min-w-[48rem]' : 'min-w-[44rem]'}`}
-            >
-                <thead>
-                    <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="pb-3 font-medium">Date</th>
-                        <th className="pb-3 font-medium">
-                            Merchant or description
-                        </th>
-                        <th className="pb-3 font-medium">Kind</th>
-                        {showsVoidedState && (
-                            <th className="pb-3 font-medium">State</th>
-                        )}
-                        <th className="pb-3 text-right font-medium">Amount</th>
-                        <th className="pb-3 text-right font-medium">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {transactions.map((transaction) => {
-                        const presentation =
-                            transactionKindPresentations[transaction.kind];
-                        const KindIcon = presentation.icon;
-
-                        return (
-                            <tr
-                                key={transaction.id}
-                                className={`border-b transition-colors last:border-0 ${selectedTransactionId === transaction.id ? 'bg-primary/5' : 'hover:bg-muted/40'}`}
-                            >
-                                <td className="py-4 pr-4 whitespace-nowrap text-muted-foreground">
-                                    {transaction.occurred_on}
-                                </td>
-                                <td className="py-4 pr-4">
-                                    <p className="font-medium">
-                                        {transaction.merchant_description}
-                                    </p>
-                                    {'voided_at' in transaction && (
-                                        <p className="text-xs text-muted-foreground">
-                                            Voided{' '}
-                                            {transaction.voided_at.slice(0, 10)}
-                                        </p>
-                                    )}
-                                    {transaction.original_purchase && (
-                                        <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                            <Link2 className="size-3" />
-                                            Linked to{' '}
-                                            {
-                                                transaction.original_purchase
-                                                    .merchant_description
-                                            }
-                                        </p>
-                                    )}
-                                    {transaction.category && (
-                                        <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                            <Tags className="size-3" />
-                                            {transaction.category.name}
-                                            {transaction.category.provenance
-                                                .source === 'linked_refund' &&
-                                                ' · from linked purchase'}
-                                        </p>
-                                    )}
-                                    <div className="mt-1 flex flex-wrap gap-1">
-                                        {transaction.review_state ===
-                                            'outstanding' && (
-                                            <Badge variant="secondary">
-                                                Needs review
-                                            </Badge>
-                                        )}
-                                        {transaction.duplicate_status !==
-                                            'none' && (
-                                            <Badge variant="outline">
-                                                {transaction.duplicate_status ===
-                                                'suspected'
-                                                    ? 'Suspected Duplicate'
-                                                    : 'Duplicate resolved'}
-                                            </Badge>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="py-4 pr-4">
-                                    <Badge variant={presentation.badgeVariant}>
-                                        <KindIcon />
-                                        {presentation.label}
-                                    </Badge>
-                                </td>
-                                {showsVoidedState && (
-                                    <td className="py-4 pr-4">
-                                        <Badge variant="secondary">
-                                            <CircleOff />
-                                            Voided
-                                        </Badge>
-                                    </td>
-                                )}
-                                <td
-                                    className={`py-4 text-right font-medium whitespace-nowrap tabular-nums ${presentation.amountClassName}`}
-                                >
-                                    {transactionAmount(transaction)}
-                                </td>
-                                <td className="py-4 pl-4">
-                                    <div className="grid justify-items-end gap-2">
-                                        <Button
-                                            asChild
-                                            variant="ghost"
-                                            size="sm"
-                                        >
-                                            <Link
-                                                href={workspaceIndex(
-                                                    mode,
-                                                    filters,
-                                                    transaction.id,
-                                                )}
-                                                preserveScroll
-                                                preserveState
-                                            >
-                                                Inspect
-                                            </Link>
-                                        </Button>
-                                        {operation === 'void' &&
-                                            transaction.kind === 'refund' &&
-                                            transaction.original_purchase ===
-                                                null &&
-                                            purchases.some(
-                                                (purchase) =>
-                                                    purchase.currency ===
-                                                    transaction.currency,
-                                            ) && (
-                                                <RefundLinkForm
-                                                    refund={transaction}
-                                                    purchases={purchases.filter(
-                                                        (purchase) =>
-                                                            purchase.currency ===
-                                                            transaction.currency,
-                                                    )}
-                                                />
-                                            )}
-                                        {operation === 'restore' &&
-                                        'duplicate_resolution' in transaction &&
-                                        transaction.duplicate_resolution !==
-                                            null ? (
-                                            <ReopenSuspectedDuplicateForm
-                                                transaction={transaction}
-                                            />
-                                        ) : (
-                                            <TransactionVoidStateForm
-                                                transaction={transaction}
-                                                operation={operation}
-                                            />
-                                        )}
-                                    </div>
-                                </td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-        </div>
-    );
-}
-
 function LedgerFiltersForm({
     filters,
+    categoryOptions,
     mode,
 }: {
     filters: LedgerFilters;
+    categoryOptions: CategoryOption[];
     mode: 'transactions' | 'review_queue';
 }) {
     return (
@@ -602,7 +267,7 @@ function LedgerFiltersForm({
             <CardHeader className="gap-1">
                 <CardTitle className="text-base">Find Transactions</CardTitle>
                 <CardDescription>
-                    Search the ledger, then combine only the states you need.
+                    Search by description, then narrow the current ledger state.
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -644,11 +309,11 @@ function LedgerFiltersForm({
                                     defaultValue={filters.date_to ?? ''}
                                 />
                             </div>
-                            <NativeSelectField
+                            <SelectFilter
                                 id="filter-currency"
                                 name="currency"
                                 label="Filter currency"
-                                defaultValue={
+                                value={
                                     filters.currency === 'all'
                                         ? ''
                                         : filters.currency
@@ -659,11 +324,37 @@ function LedgerFiltersForm({
                                     { value: 'PEN', label: 'PEN' },
                                 ]}
                             />
-                            <NativeSelectField
+                            <SelectFilter
+                                id="filter-kind"
+                                name="kind"
+                                label="Filter kind"
+                                value={
+                                    filters.kind === 'all' ? '' : filters.kind
+                                }
+                                options={[
+                                    { value: '', label: 'All kinds' },
+                                    { value: 'purchase', label: 'Purchases' },
+                                    { value: 'refund', label: 'Refunds' },
+                                ]}
+                            />
+                            <SelectFilter
+                                id="filter-category"
+                                name="category_id"
+                                label="Filter Category"
+                                value={filters.category_id?.toString() ?? ''}
+                                options={[
+                                    { value: '', label: 'All Categories' },
+                                    ...categoryOptions.map((category) => ({
+                                        value: category.id.toString(),
+                                        label: category.path,
+                                    })),
+                                ]}
+                            />
+                            <SelectFilter
                                 id="filter-category-state"
                                 name="category_state"
                                 label="Filter Category state"
-                                defaultValue={
+                                value={
                                     filters.category_state === 'all'
                                         ? ''
                                         : filters.category_state
@@ -680,12 +371,12 @@ function LedgerFiltersForm({
                                     },
                                 ]}
                             />
-                            {mode === 'transactions' ? (
-                                <NativeSelectField
+                            {mode === 'transactions' && (
+                                <SelectFilter
                                     id="filter-review-state"
                                     name="review_state"
                                     label="Filter review state"
-                                    defaultValue={
+                                    value={
                                         filters.review_state === 'all'
                                             ? ''
                                             : filters.review_state
@@ -705,18 +396,12 @@ function LedgerFiltersForm({
                                         },
                                     ]}
                                 />
-                            ) : (
-                                <input
-                                    type="hidden"
-                                    name="review_state"
-                                    value="outstanding"
-                                />
                             )}
-                            <NativeSelectField
+                            <SelectFilter
                                 id="filter-refund-relationship"
                                 name="refund_relationship"
                                 label="Filter Refund relationship"
-                                defaultValue={
+                                value={
                                     filters.refund_relationship === 'all'
                                         ? ''
                                         : filters.refund_relationship
@@ -736,47 +421,15 @@ function LedgerFiltersForm({
                                     },
                                     {
                                         value: 'not_applicable',
-                                        label: 'Not a Refund',
+                                        label: 'Purchases',
                                     },
                                 ]}
                             />
-                            {mode === 'transactions' ? (
-                                <NativeSelectField
-                                    id="filter-void-state"
-                                    name="void_state"
-                                    label="Filter void state"
-                                    defaultValue={
-                                        filters.void_state === 'all'
-                                            ? ''
-                                            : filters.void_state
-                                    }
-                                    options={[
-                                        {
-                                            value: '',
-                                            label: 'Active and Voided',
-                                        },
-                                        {
-                                            value: 'active',
-                                            label: 'Active only',
-                                        },
-                                        {
-                                            value: 'voided',
-                                            label: 'Voided only',
-                                        },
-                                    ]}
-                                />
-                            ) : (
-                                <input
-                                    type="hidden"
-                                    name="void_state"
-                                    value="active"
-                                />
-                            )}
-                            <NativeSelectField
+                            <SelectFilter
                                 id="filter-duplicate-status"
                                 name="duplicate_status"
                                 label="Filter duplicate status"
-                                defaultValue={
+                                value={
                                     filters.duplicate_status === 'all'
                                         ? ''
                                         : filters.duplicate_status
@@ -788,11 +441,11 @@ function LedgerFiltersForm({
                                     },
                                     {
                                         value: 'suspected',
-                                        label: 'Suspected Duplicate',
+                                        label: 'Suspected duplicates',
                                     },
                                     {
                                         value: 'resolved',
-                                        label: 'Resolved pair',
+                                        label: 'Resolved duplicates',
                                     },
                                     {
                                         value: 'none',
@@ -800,17 +453,29 @@ function LedgerFiltersForm({
                                     },
                                 ]}
                             />
-                            <div className="flex items-end gap-2 xl:col-span-3 xl:justify-end">
+                            <SelectFilter
+                                id="filter-void-state"
+                                name="void_state"
+                                label="Filter void state"
+                                value={
+                                    filters.void_state === 'all'
+                                        ? ''
+                                        : filters.void_state
+                                }
+                                options={[
+                                    { value: '', label: 'Active and Voided' },
+                                    { value: 'active', label: 'Active only' },
+                                    { value: 'voided', label: 'Voided only' },
+                                ]}
+                            />
+                            <div className="flex items-end gap-2 xl:col-span-2">
                                 <Button type="submit" disabled={processing}>
                                     {processing ? <Spinner /> : <Search />}
                                     Apply filters
                                 </Button>
-                                <Button asChild type="button" variant="outline">
-                                    <Link
-                                        href={workspaceIndex(mode)}
-                                        preserveScroll
-                                    >
-                                        <X /> Clear
+                                <Button asChild type="button" variant="ghost">
+                                    <Link href={workspaceIndex(mode)}>
+                                        Clear
                                     </Link>
                                 </Button>
                             </div>
@@ -822,50 +487,338 @@ function LedgerFiltersForm({
     );
 }
 
+function SelectFilter({
+    id,
+    name,
+    label,
+    value,
+    options,
+}: {
+    id: string;
+    name: string;
+    label: string;
+    value: string;
+    options: Array<{ value: string; label: string }>;
+}) {
+    return (
+        <div className="grid gap-2">
+            <Label htmlFor={id}>{label}</Label>
+            <NativeSelect
+                id={id}
+                name={name}
+                defaultValue={value}
+                options={options}
+            />
+        </div>
+    );
+}
+
+function RecordTransactionForm({ today }: { today: string }) {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Record a Transaction</CardTitle>
+                <CardDescription>
+                    Add a purchase or Refund in its original currency.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Form
+                    {...recordTransaction.form()}
+                    resetOnSuccess={['amount_minor', 'merchant_description']}
+                    className="grid gap-4"
+                >
+                    {({ errors, processing }) => (
+                        <>
+                            <div className="grid gap-2">
+                                <Label htmlFor="occurred_on">
+                                    Occurrence date
+                                </Label>
+                                <Input
+                                    id="occurred_on"
+                                    name="occurred_on"
+                                    type="date"
+                                    defaultValue={today}
+                                />
+                                <InputError message={errors.occurred_on} />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="amount_minor">
+                                    Amount in minor units
+                                </Label>
+                                <Input
+                                    id="amount_minor"
+                                    name="amount_minor"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    inputMode="numeric"
+                                    placeholder="1250"
+                                />
+                                <InputError message={errors.amount_minor} />
+                            </div>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <SelectFilter
+                                    id="currency"
+                                    name="currency"
+                                    label="Currency"
+                                    value="USD"
+                                    options={[
+                                        { value: 'USD', label: 'USD' },
+                                        { value: 'PEN', label: 'PEN' },
+                                    ]}
+                                />
+                                <SelectFilter
+                                    id="kind"
+                                    name="kind"
+                                    label="Transaction kind"
+                                    value="purchase"
+                                    options={[
+                                        {
+                                            value: 'purchase',
+                                            label: 'Purchase',
+                                        },
+                                        { value: 'refund', label: 'Refund' },
+                                    ]}
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="merchant_description">
+                                    Merchant or short description
+                                </Label>
+                                <Input
+                                    id="merchant_description"
+                                    name="merchant_description"
+                                    maxLength={255}
+                                    autoComplete="off"
+                                />
+                                <InputError
+                                    message={errors.merchant_description}
+                                />
+                            </div>
+                            <Button type="submit" disabled={processing}>
+                                {processing && <Spinner />}
+                                Record Transaction
+                            </Button>
+                        </>
+                    )}
+                </Form>
+            </CardContent>
+        </Card>
+    );
+}
+
+function LedgerTable({
+    transactions,
+    mode,
+    filters,
+    page,
+    selectedTransactionId,
+}: {
+    transactions: LedgerTransaction[];
+    mode: 'transactions' | 'review_queue';
+    filters: LedgerFilters;
+    page: number;
+    selectedTransactionId?: number;
+}) {
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full min-w-[44rem] text-sm">
+                <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                        <th className="pb-3 font-medium">Date</th>
+                        <th className="pb-3 font-medium">
+                            Merchant or description
+                        </th>
+                        <th className="pb-3 font-medium">Kind</th>
+                        <th className="pb-3 text-right font-medium">Amount</th>
+                        <th className="pb-3 text-right font-medium">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {transactions.map((transaction) => {
+                        const isRefund = transaction.kind === 'refund';
+                        const isVoided = transaction.voided_at !== null;
+                        const KindIcon = isRefund
+                            ? ArrowDownLeft
+                            : ArrowUpRight;
+
+                        return (
+                            <tr
+                                key={transaction.id}
+                                className={`border-b last:border-0 ${selectedTransactionId === transaction.id ? 'bg-primary/5' : 'hover:bg-muted/40'}`}
+                            >
+                                <td className="py-4 pr-4 whitespace-nowrap text-muted-foreground">
+                                    {transaction.occurred_on}
+                                </td>
+                                <td className="py-4 pr-4">
+                                    <p className="font-medium">
+                                        {transaction.merchant_description}
+                                    </p>
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                        {transaction.category ? (
+                                            <span className="text-xs text-muted-foreground">
+                                                {transaction.category.name}
+                                            </span>
+                                        ) : (
+                                            <Badge variant="outline">
+                                                Uncategorized
+                                            </Badge>
+                                        )}
+                                        {transaction.review_state ===
+                                            'outstanding' && (
+                                            <Badge variant="secondary">
+                                                Needs review
+                                            </Badge>
+                                        )}
+                                        {transaction.voided_at !== null && (
+                                            <Badge variant="secondary">
+                                                <CircleOff /> Voided
+                                            </Badge>
+                                        )}
+                                    </div>
+                                </td>
+                                <td className="py-4 pr-4">
+                                    <Badge
+                                        variant={
+                                            isRefund ? 'secondary' : 'outline'
+                                        }
+                                    >
+                                        <KindIcon />
+                                        {isRefund ? 'Refund' : 'Purchase'}
+                                    </Badge>
+                                </td>
+                                <td
+                                    className={`py-4 text-right font-medium whitespace-nowrap tabular-nums ${isRefund ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
+                                >
+                                    {isRefund ? '−' : ''}
+                                    {formatMinorUnits(
+                                        transaction.amount_minor,
+                                        transaction.currency,
+                                    )}
+                                </td>
+                                <td className="py-4 pl-4">
+                                    <div className="grid justify-items-end gap-2">
+                                        <Button
+                                            asChild
+                                            variant="ghost"
+                                            size="sm"
+                                        >
+                                            <Link
+                                                href={workspaceIndex(
+                                                    mode,
+                                                    filters,
+                                                    transaction.id,
+                                                    page,
+                                                )}
+                                                preserveScroll
+                                                preserveState
+                                            >
+                                                Inspect
+                                            </Link>
+                                        </Button>
+                                        {isVoided &&
+                                        transaction.duplicate_resolution !==
+                                            null ? (
+                                            <ReopenSuspectedDuplicateForm
+                                                transaction={transaction}
+                                            />
+                                        ) : (
+                                            <TransactionStateForm
+                                                transaction={transaction}
+                                            />
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+function PaginationControls({ pagination }: { pagination: Pagination }) {
+    if (pagination.last_page === 1) {
+        return null;
+    }
+
+    return (
+        <div className="flex items-center justify-between gap-4 border-t pt-4">
+            <p className="text-sm text-muted-foreground">
+                {pagination.from}–{pagination.to} of {pagination.total}
+            </p>
+            <div className="flex gap-2">
+                <Button
+                    asChild={pagination.previous_page_url !== null}
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.previous_page_url === null}
+                >
+                    {pagination.previous_page_url ? (
+                        <Link
+                            href={pagination.previous_page_url}
+                            preserveScroll
+                        >
+                            Previous
+                        </Link>
+                    ) : (
+                        <span>Previous</span>
+                    )}
+                </Button>
+                <Button
+                    asChild={pagination.next_page_url !== null}
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.next_page_url === null}
+                >
+                    {pagination.next_page_url ? (
+                        <Link href={pagination.next_page_url} preserveScroll>
+                            Next
+                        </Link>
+                    ) : (
+                        <span>Next</span>
+                    )}
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 export default function TransactionsIndex({
     today,
-    totals,
-    combined_total,
-    category_totals,
     category_options,
-    purchase_options,
     transactions,
     voided_transactions,
-    workspace_transactions,
-    workspace_voided_transactions,
+    pagination,
+    selected_transaction_id,
     selected_transaction,
     filters,
     workspace,
-    unresolved_field_count = 0,
-    unresolved_category_count = 0,
-    unresolved_refund_relationship_count = 0,
-    unresolved_suspected_duplicate_count = 0,
-    stale_transaction = null,
     errors = {},
 }: TransactionsIndexProps) {
-    const { flash } = usePage();
+    const page = usePage<{
+        flash: { transaction_state_error?: string };
+    }>();
     const isReviewQueue = workspace.mode === 'review_queue';
-    const visibleTransactions = workspace_transactions ?? transactions;
-    const visibleVoidedTransactions =
-        workspace_voided_transactions ?? voided_transactions;
-    const outstandingReviewCount =
-        unresolved_category_count +
-        unresolved_field_count +
-        unresolved_refund_relationship_count +
-        unresolved_suspected_duplicate_count;
-    const transactionStateError = flash.transaction_state_error as
-        string | undefined;
-    const refundLinkError = flash.refund_link_error as string | undefined;
-    const voidStateErrors = [
+    const selectedIdValue = new URLSearchParams(
+        page.url.split('?')[1] ?? '',
+    ).get('selected');
+    const selectedTransactionId = selectedIdValue
+        ? Number(selectedIdValue)
+        : (selected_transaction_id ?? undefined);
+    const ledgerRows = [...transactions, ...voided_transactions].sort(
+        (first, second) =>
+            second.occurred_on.localeCompare(first.occurred_on) ||
+            second.id - first.id,
+    );
+    const transactionStateError = page.props.flash?.transaction_state_error;
+    const stateErrors = [
         transactionStateError,
         errors.expected_revision,
         errors.idempotency_key,
         errors.void_state,
-    ].filter((error): error is string => Boolean(error));
-    const refundLinkErrors = [
-        refundLinkError,
-        errors.purchase_id,
-        errors.refund_link,
     ].filter((error): error is string => Boolean(error));
 
     function handleInspectorOpenChange(open: boolean) {
@@ -878,6 +831,7 @@ export default function TransactionsIndex({
                 workspace.mode,
                 filters,
                 undefined,
+                pagination.current_page,
                 isReviewQueue ? 'closed' : undefined,
             ).url,
             {},
@@ -890,397 +844,60 @@ export default function TransactionsIndex({
             <Head title={isReviewQueue ? 'Review Queue' : 'Transactions'} />
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex flex-col gap-1">
+                    <div className="grid gap-1">
                         <h1 className="text-2xl font-semibold tracking-tight">
                             {isReviewQueue ? 'Review Queue' : 'Transactions'}
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             {isReviewQueue
-                                ? 'The outstanding-work preset of the ledger. Review uncertain details without delaying spending totals.'
-                                : 'Search confirmed purchases and Refunds, then inspect their complete ledger context.'}
+                                ? 'Current Uncategorized and uncertain Transaction or Line Item state.'
+                                : 'A focused ledger for finding, reviewing, and editing current Transactions.'}
                         </p>
                     </div>
                     {isReviewQueue && (
                         <Badge variant="outline" className="w-fit">
-                            <ListChecks />
-                            {outstandingReviewCount}{' '}
-                            {outstandingReviewCount === 1
-                                ? 'review'
-                                : 'reviews'}
+                            <ListChecks /> {pagination.total}{' '}
+                            {pagination.total === 1
+                                ? 'Transaction'
+                                : 'Transactions'}
                         </Badge>
                     )}
                 </div>
 
-                {stale_transaction && (
-                    <Card className="border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20">
-                        <CardHeader className="gap-2">
-                            <CardTitle className="text-base">
-                                Transaction changed during review
-                            </CardTitle>
-                            <CardDescription>
-                                Your older update was not applied. This is the
-                                current confirmed state at revision{' '}
-                                {stale_transaction.revision}.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="text-sm">
-                            <p className="font-medium">
-                                {stale_transaction.merchant_description}
-                            </p>
-                            <p className="text-muted-foreground">
-                                {stale_transaction.provisional_fields.length}{' '}
-                                {stale_transaction.provisional_fields.length ===
-                                1
-                                    ? 'field remains'
-                                    : 'fields remain'}{' '}
-                                for review.
-                            </p>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {voidStateErrors.length > 0 && (
+                {stateErrors.length > 0 && (
                     <AlertError
                         title="Transaction state was not changed."
-                        errors={voidStateErrors}
+                        errors={stateErrors}
                     />
                 )}
 
-                {refundLinkErrors.length > 0 && (
-                    <AlertError
-                        title="Refund was not linked."
-                        errors={refundLinkErrors}
-                    />
-                )}
-
-                <LedgerFiltersForm filters={filters} mode={workspace.mode} />
-
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {(['USD', 'PEN'] as const).map((currency) => (
-                        <Card key={currency} className="gap-3">
-                            <CardHeader>
-                                <CardDescription>
-                                    {currency} net spending
-                                </CardDescription>
-                                <CardTitle
-                                    className="text-3xl tabular-nums"
-                                    data-test={`total-${currency.toLowerCase()}`}
-                                >
-                                    {formatMinorUnits(
-                                        totals[currency],
-                                        currency,
-                                    )}
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="text-xs text-muted-foreground">
-                                    Purchases minus Refunds · {totals[currency]}{' '}
-                                    minor units
-                                </p>
-                            </CardContent>
-                        </Card>
-                    ))}
-                    <Card className="gap-3 border-primary/30 bg-primary/[0.03] sm:col-span-2 xl:col-span-1">
-                        <CardHeader>
-                            <CardDescription className="flex items-center gap-2">
-                                <ArrowRightLeft className="size-4" />
-                                Combined net spending
-                            </CardDescription>
-                            {combined_total.amount_minor !== null &&
-                            combined_total.currency !== null ? (
-                                <CardTitle
-                                    className="text-3xl tabular-nums"
-                                    data-test="total-combined"
-                                >
-                                    {formatMinorUnits(
-                                        combined_total.amount_minor,
-                                        combined_total.currency,
-                                    )}
-                                </CardTitle>
-                            ) : (
-                                <CardTitle className="flex items-center gap-2 text-lg">
-                                    <CircleAlert className="size-5 text-amber-600 dark:text-amber-400" />
-                                    Combined total unavailable
-                                </CardTitle>
-                            )}
-                        </CardHeader>
-                        <CardContent className="grid gap-3">
-                            {combined_total.unavailable_reason ===
-                            'reporting_currency_not_selected' ? (
-                                <p className="text-xs text-muted-foreground">
-                                    Choose a Reporting Currency to combine USD
-                                    and PEN spending.
-                                </p>
-                            ) : combined_total.unavailable_reason ===
-                              'missing_exchange_rates' ? (
-                                <p className="text-xs text-muted-foreground">
-                                    Add Daily Exchange Rates for{' '}
-                                    {combined_total.missing_rate_dates.join(
-                                        ', ',
-                                    )}
-                                    .
-                                </p>
-                            ) : (
-                                <p className="text-xs text-muted-foreground">
-                                    Each Transaction is converted and rounded
-                                    half-up before summing.
-                                </p>
-                            )}
-                            {combined_total.unavailable_reason !== null && (
-                                <Button
-                                    asChild
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-fit"
-                                >
-                                    <Link href={dailyExchangeRatesIndex()}>
-                                        Manage exchange rates
-                                    </Link>
-                                </Button>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
-
-                {category_totals.length > 0 && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Category totals</CardTitle>
-                            <CardDescription>
-                                Net totals include linked and unlinked Refunds;
-                                negative totals remain visible.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                            {category_totals.map(
-                                ({ category, totals, combined_total }) => (
-                                    <div
-                                        key={category.id ?? 'uncategorized'}
-                                        className="grid gap-2 rounded-lg border p-4"
-                                    >
-                                        <p className="font-medium">
-                                            {category.name}
-                                        </p>
-                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums">
-                                            <span>
-                                                {formatMinorUnits(
-                                                    totals.USD,
-                                                    'USD',
-                                                )}
-                                            </span>
-                                            <span>
-                                                {formatMinorUnits(
-                                                    totals.PEN,
-                                                    'PEN',
-                                                )}
-                                            </span>
-                                        </div>
-                                        <div className="border-t pt-2 text-sm">
-                                            {combined_total.amount_minor !==
-                                                null &&
-                                            combined_total.currency !== null ? (
-                                                <span className="font-medium tabular-nums">
-                                                    Combined:{' '}
-                                                    {formatMinorUnits(
-                                                        combined_total.amount_minor,
-                                                        combined_total.currency,
-                                                    )}
-                                                </span>
-                                            ) : (
-                                                <span className="text-xs text-muted-foreground">
-                                                    {combined_total.unavailable_reason ===
-                                                    'missing_exchange_rates'
-                                                        ? `Combined unavailable: missing ${combined_total.missing_rate_dates.join(', ')}`
-                                                        : 'Choose a Reporting Currency for a combined total.'}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                ),
-                            )}
-                        </CardContent>
-                    </Card>
-                )}
+                <LedgerFiltersForm
+                    filters={filters}
+                    categoryOptions={category_options}
+                    mode={workspace.mode}
+                />
 
                 <div
                     className={`grid items-start gap-6 ${isReviewQueue ? '' : 'xl:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]'}`}
                 >
-                    {!isReviewQueue && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Record a Transaction</CardTitle>
-                                <CardDescription>
-                                    Saved entries are confirmed and included in
-                                    totals immediately.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <Form
-                                    {...recordTransaction.form()}
-                                    resetOnSuccess={[
-                                        'amount_minor',
-                                        'merchant_description',
-                                    ]}
-                                    className="grid gap-5"
-                                >
-                                    {({
-                                        errors,
-                                        processing,
-                                        recentlySuccessful,
-                                    }) => (
-                                        <>
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="occurred_on">
-                                                    Occurrence date
-                                                </Label>
-                                                <Input
-                                                    id="occurred_on"
-                                                    name="occurred_on"
-                                                    type="date"
-                                                    defaultValue={today}
-                                                    aria-invalid={
-                                                        errors.occurred_on
-                                                            ? true
-                                                            : undefined
-                                                    }
-                                                />
-                                                <InputError
-                                                    message={errors.occurred_on}
-                                                />
-                                            </div>
-
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="amount_minor">
-                                                    Amount in minor units
-                                                </Label>
-                                                <Input
-                                                    id="amount_minor"
-                                                    name="amount_minor"
-                                                    type="number"
-                                                    min="1"
-                                                    step="1"
-                                                    inputMode="numeric"
-                                                    placeholder="1250"
-                                                    aria-describedby="amount_minor_help"
-                                                    aria-invalid={
-                                                        errors.amount_minor
-                                                            ? true
-                                                            : undefined
-                                                    }
-                                                />
-                                                <p
-                                                    id="amount_minor_help"
-                                                    className="text-xs text-muted-foreground"
-                                                >
-                                                    Enter 1250 for 12.50.
-                                                </p>
-                                                <InputError
-                                                    message={
-                                                        errors.amount_minor
-                                                    }
-                                                />
-                                            </div>
-
-                                            <div className="grid gap-4 sm:grid-cols-2">
-                                                <NativeSelectField
-                                                    id="currency"
-                                                    label="Currency"
-                                                    defaultValue="USD"
-                                                    error={errors.currency}
-                                                    options={[
-                                                        {
-                                                            value: 'USD',
-                                                            label: 'USD',
-                                                        },
-                                                        {
-                                                            value: 'PEN',
-                                                            label: 'PEN',
-                                                        },
-                                                    ]}
-                                                />
-
-                                                <NativeSelectField
-                                                    id="kind"
-                                                    label="Transaction kind"
-                                                    defaultValue="purchase"
-                                                    error={errors.kind}
-                                                    options={[
-                                                        {
-                                                            value: 'purchase',
-                                                            label: 'Purchase',
-                                                        },
-                                                        {
-                                                            value: 'refund',
-                                                            label: 'Refund',
-                                                        },
-                                                    ]}
-                                                />
-                                            </div>
-
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="merchant_description">
-                                                    Merchant or short
-                                                    description
-                                                </Label>
-                                                <Input
-                                                    id="merchant_description"
-                                                    name="merchant_description"
-                                                    maxLength={255}
-                                                    placeholder="Neighborhood market"
-                                                    autoComplete="off"
-                                                    aria-invalid={
-                                                        errors.merchant_description
-                                                            ? true
-                                                            : undefined
-                                                    }
-                                                />
-                                                <InputError
-                                                    message={
-                                                        errors.merchant_description
-                                                    }
-                                                />
-                                            </div>
-
-                                            <Button
-                                                type="submit"
-                                                disabled={processing}
-                                                data-test="record-transaction"
-                                                className="w-full"
-                                            >
-                                                {processing && <Spinner />}
-                                                Record Transaction
-                                            </Button>
-
-                                            {recentlySuccessful && (
-                                                <p
-                                                    role="status"
-                                                    className="text-center text-sm text-emerald-700 dark:text-emerald-400"
-                                                >
-                                                    Transaction recorded.
-                                                </p>
-                                            )}
-                                        </>
-                                    )}
-                                </Form>
-                            </CardContent>
-                        </Card>
-                    )}
-
+                    {!isReviewQueue && <RecordTransactionForm today={today} />}
                     <Card className="min-w-0">
                         <CardHeader>
                             <CardTitle>
                                 {isReviewQueue
                                     ? 'Transactions awaiting review'
-                                    : 'Active ledger'}
+                                    : 'Ledger'}
                             </CardTitle>
                             <CardDescription>
-                                {isReviewQueue
-                                    ? 'A durable, prefiltered view of the same ledger. Select a Transaction to review its context.'
-                                    : 'Latest 100 matching active Transactions. Voided Transactions remain separately traceable.'}
+                                {pagination.total} matching current-state{' '}
+                                {pagination.total === 1
+                                    ? 'Transaction'
+                                    : 'Transactions'}
+                                .
                             </CardDescription>
                         </CardHeader>
-                        <CardContent>
-                            {visibleTransactions.length === 0 ? (
+                        <CardContent className="grid gap-4">
+                            {ledgerRows.length === 0 ? (
                                 <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-6 text-center">
                                     <ReceiptText className="size-8 text-muted-foreground" />
                                     <div className="grid gap-1">
@@ -1291,70 +908,44 @@ export default function TransactionsIndex({
                                         </p>
                                         <p className="text-sm text-muted-foreground">
                                             {isReviewQueue
-                                                ? 'Every currently recorded Transaction detail has been resolved.'
+                                                ? 'No current Transaction or Line Item fields need review.'
                                                 : 'Adjust the filters or record a new purchase or Refund.'}
                                         </p>
                                     </div>
                                 </div>
                             ) : (
                                 <LedgerTable
-                                    transactions={visibleTransactions}
-                                    purchases={purchase_options}
-                                    operation="void"
+                                    transactions={ledgerRows}
                                     mode={workspace.mode}
                                     filters={filters}
+                                    page={pagination.current_page}
                                     selectedTransactionId={
-                                        selected_transaction?.id
+                                        selectedTransactionId
                                     }
                                 />
                             )}
+                            <PaginationControls pagination={pagination} />
                         </CardContent>
                     </Card>
                 </div>
-
-                {!isReviewQueue && (
-                    <Card className="min-w-0">
-                        <CardHeader>
-                            <CardTitle>Voided Transactions</CardTitle>
-                            <CardDescription>
-                                Retained for traceability, excluded from active
-                                ledger results and spending totals, and
-                                available to restore.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            {visibleVoidedTransactions.length === 0 ? (
-                                <div className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-center">
-                                    <CircleOff className="size-7 text-muted-foreground" />
-                                    <p className="font-medium">
-                                        No Voided Transactions
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                        Transactions you void will remain
-                                        visible here for restoration.
-                                    </p>
-                                </div>
-                            ) : (
-                                <LedgerTable
-                                    transactions={visibleVoidedTransactions}
-                                    purchases={purchase_options}
-                                    operation="restore"
-                                    mode={workspace.mode}
-                                    filters={filters}
-                                    selectedTransactionId={
-                                        selected_transaction?.id
-                                    }
-                                />
-                            )}
-                        </CardContent>
-                    </Card>
-                )}
             </div>
-            <TransactionInspector
-                transaction={selected_transaction}
-                categoryOptions={category_options}
-                onOpenChange={handleInspectorOpenChange}
-            />
+
+            {selectedTransactionId !== undefined && (
+                <Deferred
+                    data="selected_transaction"
+                    fallback={
+                        <div className="fixed inset-y-0 right-0 z-50 grid w-full max-w-2xl place-items-center border-l bg-background/95">
+                            <Spinner className="size-6" />
+                        </div>
+                    }
+                >
+                    <TransactionInspector
+                        transaction={selected_transaction ?? null}
+                        categoryOptions={category_options}
+                        onOpenChange={handleInspectorOpenChange}
+                    />
+                </Deferred>
+            )}
         </>
     );
 }
