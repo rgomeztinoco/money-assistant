@@ -40,7 +40,6 @@ class IndexTransactionsRequest extends FormRequest
             'review_state' => ['nullable', Rule::in(['outstanding', 'clear'])],
             'refund_relationship' => ['nullable', Rule::in(['linked', 'unlinked', 'not_applicable'])],
             'void_state' => ['nullable', Rule::in(['all', 'active', 'voided'])],
-            'duplicate_status' => ['nullable', Rule::in(['suspected', 'resolved', 'none'])],
             'selected' => ['nullable', 'integer', 'min:1'],
             'inspector' => ['nullable', Rule::in(['closed'])],
             'page' => ['nullable', 'integer', 'min:1'],

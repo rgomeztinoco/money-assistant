@@ -5,7 +5,6 @@ namespace App\Actions\Ledger;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\ExactInteger;
-use App\Models\CategoryAssignment;
 use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
@@ -39,11 +38,7 @@ class UpdateTransaction
                 ->firstOrFail();
             $previousKind = $currentTransaction->kind;
             $previousOriginalPurchaseId = $currentTransaction->original_purchase_id;
-            $previousCategoryId = $currentTransaction->category_id;
             $amountChanged = $currentTransaction->amount_minor !== $amountMinor;
-            $categoryWasOwnerConfirmed = $categoryId !== null
-                && ($previousCategoryId !== $categoryId
-                    || $currentTransaction->category_assignment_provenance !== CategoryAssignmentProvenance::Owner);
             $normalizedMerchantDescription = Str::squish($merchantDescription);
             $remainingProvisionalFields = $this->remainingProvisionalFields(
                 $currentTransaction,
@@ -68,6 +63,7 @@ class UpdateTransaction
                 'category_assignment_provenance' => $categoryId === null
                     ? null
                     : CategoryAssignmentProvenance::Owner,
+                'merchant_rule_id' => null,
                 'original_purchase_id' => $kind === TransactionKind::Refund
                     ? $originalPurchaseId
                     : null,
@@ -76,23 +72,10 @@ class UpdateTransaction
             $currentTransaction->refund_relationship_review_reasons = $this->refundReviewReasons(
                 $currentTransaction,
             );
-            $currentTransaction->revision++;
             $currentTransaction->save();
 
             if ($removeReceiptBreakdown && $amountChanged) {
                 $currentTransaction->receiptBreakdown()->lockForUpdate()->first()?->delete();
-            }
-
-            if ($categoryWasOwnerConfirmed || ($categoryId === null && $previousCategoryId !== null)) {
-                CategoryAssignment::create([
-                    'user_id' => $owner->getKey(),
-                    'transaction_id' => $currentTransaction->getKey(),
-                    'category_id' => $categoryId,
-                    'previous_category_id' => $previousCategoryId,
-                    'source' => CategoryAssignmentProvenance::Owner,
-                    'is_correction' => $previousCategoryId !== $categoryId,
-                    'transaction_revision' => $currentTransaction->revision,
-                ]);
             }
 
             $affectedPurchaseIds = array_filter([
@@ -194,7 +177,6 @@ class UpdateTransaction
                 : [];
 
             if ($linkedRefund->isDirty('refund_relationship_review_reasons')) {
-                $linkedRefund->revision++;
                 $linkedRefund->save();
             }
         }

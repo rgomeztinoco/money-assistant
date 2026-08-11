@@ -230,13 +230,6 @@ test('Receipt Breakdown persistence contains no lifecycle or adjustment-role sta
     }
 
     foreach ([
-        'receipt_breakdown_revision',
-        'receipt_breakdown_status',
-    ] as $column) {
-        expect(Schema::hasColumn('suspected_duplicate_receipt_breakdown_moves', $column))->toBeFalse();
-    }
-
-    foreach ([
         'role',
         'related_line_item_id',
         'requires_review',
@@ -244,7 +237,8 @@ test('Receipt Breakdown persistence contains no lifecycle or adjustment-role sta
         expect(Schema::hasColumn('line_items', $column))->toBeFalse();
     }
 
-    expect(ReceiptBreakdown::query()->count())->toBe(0);
+    expect(Schema::hasTable('suspected_duplicate_receipt_breakdown_moves'))->toBeFalse()
+        ->and(ReceiptBreakdown::query()->count())->toBe(0);
 });
 
 /**

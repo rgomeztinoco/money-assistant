@@ -14,7 +14,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 
 /**
@@ -28,7 +27,6 @@ use Illuminate\Support\Carbon;
  * @property string|null $payment_instrument_label
  * @property string|null $payment_instrument_last_four
  * @property CarbonImmutable $confirmed_at
- * @property int $revision
  * @property list<string> $provisional_fields
  * @property CarbonImmutable|null $voided_at
  * @property string|null $deployment_rehearsal_id
@@ -36,10 +34,10 @@ use Illuminate\Support\Carbon;
  * @property list<string> $refund_relationship_review_reasons
  * @property int|null $category_id
  * @property CategoryAssignmentProvenance|null $category_assignment_provenance
+ * @property int|null $merchant_rule_id
  * @property-read int|string|null $linked_refund_total_minor
  * @property-read bool $linked_refunds_exists
  * @property-read bool $receipt_breakdowns_exists
- * @property-read bool $resolved_duplicate_relationships_as_survivor_exists
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -53,13 +51,13 @@ use Illuminate\Support\Carbon;
     'payment_instrument_label',
     'payment_instrument_last_four',
     'confirmed_at',
-    'revision',
     'provisional_fields',
     'voided_at',
     'original_purchase_id',
     'refund_relationship_review_reasons',
     'category_id',
     'category_assignment_provenance',
+    'merchant_rule_id',
 ])]
 class Transaction extends Model
 {
@@ -70,7 +68,6 @@ class Transaction extends Model
      * @var array<string, mixed>
      */
     protected $attributes = [
-        'revision' => 1,
         'provisional_fields' => '[]',
         'refund_relationship_review_reasons' => '[]',
     ];
@@ -84,36 +81,11 @@ class Transaction extends Model
     }
 
     /**
-     * @return HasMany<TransactionCorrection, $this>
-     */
-    public function corrections(): HasMany
-    {
-        return $this->hasMany(TransactionCorrection::class);
-    }
-
-    /**
-     * @return HasMany<TransactionStateChange, $this>
-     */
-    public function stateChanges(): HasMany
-    {
-        return $this->hasMany(TransactionStateChange::class);
-    }
-
-    /**
      * @return HasMany<SpendingNotificationReference, $this>
      */
     public function spendingNotificationReferences(): HasMany
     {
         return $this->hasMany(SpendingNotificationReference::class);
-    }
-
-    /**
-     * @return HasMany<SuspectedDuplicate, $this>
-     */
-    public function resolvedDuplicateRelationshipsAsSurvivor(): HasMany
-    {
-        return $this->hasMany(SuspectedDuplicate::class, 'survivor_transaction_id')
-            ->whereNotNull('resolved_at');
     }
 
     /**
@@ -140,20 +112,10 @@ class Transaction extends Model
         return $this->belongsTo(Category::class);
     }
 
-    /**
-     * @return HasMany<CategoryAssignment, $this>
-     */
-    public function categoryAssignments(): HasMany
+    /** @return BelongsTo<MerchantRule, $this> */
+    public function merchantRule(): BelongsTo
     {
-        return $this->hasMany(CategoryAssignment::class);
-    }
-
-    /**
-     * @return HasOne<CategoryAssignment, $this>
-     */
-    public function currentCategoryAssignment(): HasOne
-    {
-        return $this->hasOne(CategoryAssignment::class)->ofMany('transaction_revision', 'max');
+        return $this->belongsTo(MerchantRule::class);
     }
 
     /**
@@ -174,28 +136,13 @@ class Transaction extends Model
      */
     public function scopeWhereRequiresReview(Builder $query): Builder
     {
-        $suspectedDuplicatesTable = (new SuspectedDuplicate)->getTable();
-        $transactionsTable = $query->getModel()->getTable();
-
-        return $query->where(function (Builder $query) use ($suspectedDuplicatesTable, $transactionsTable): void {
+        return $query->where(function (Builder $query): void {
             $query
                 ->where(fn (Builder $query) => $query->whereCategoryRequiresReview())
                 ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
                     ->whereHas('lineItems', fn (Builder $query) => $query->whereNull('category_id')))
                 ->orWhereJsonLength('provisional_fields', '>', 0)
-                ->orWhereJsonLength('refund_relationship_review_reasons', '>', 0)
-                ->orWhereExists(function (QueryBuilder $query) use ($suspectedDuplicatesTable, $transactionsTable): void {
-                    $query
-                        ->selectRaw('1')
-                        ->from($suspectedDuplicatesTable)
-                        ->whereColumn($suspectedDuplicatesTable.'.user_id', $transactionsTable.'.user_id')
-                        ->where(function (QueryBuilder $query) use ($suspectedDuplicatesTable, $transactionsTable): void {
-                            $query
-                                ->whereColumn($suspectedDuplicatesTable.'.first_transaction_id', $transactionsTable.'.id')
-                                ->orWhereColumn($suspectedDuplicatesTable.'.second_transaction_id', $transactionsTable.'.id');
-                        })
-                        ->whereNull($suspectedDuplicatesTable.'.resolved_at');
-                });
+                ->orWhereJsonLength('refund_relationship_review_reasons', '>', 0);
         });
     }
 
@@ -218,7 +165,6 @@ class Transaction extends Model
             'currency' => Currency::class,
             'kind' => TransactionKind::class,
             'confirmed_at' => 'immutable_datetime',
-            'revision' => 'integer',
             'provisional_fields' => 'array',
             'voided_at' => 'immutable_datetime',
             'refund_relationship_review_reasons' => 'array',

@@ -3,7 +3,6 @@
 namespace App\Actions\Ledger;
 
 use App\Models\LineItem;
-use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
 use App\Models\User;
 
@@ -34,11 +33,7 @@ class CountOutstandingReviews
             ->toBase()
             ->selectRaw('COALESCE(SUM(jsonb_array_length(refund_relationship_review_reasons)), 0) AS outstanding_count')
             ->value('outstanding_count');
-        $suspectedDuplicateCount = SuspectedDuplicate::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereNull('resolved_at')
-            ->count();
 
-        return $categoryCount + $lineItemCategoryCount + $fieldCount + $refundRelationshipCount + $suspectedDuplicateCount;
+        return $categoryCount + $lineItemCategoryCount + $fieldCount + $refundRelationshipCount;
     }
 }

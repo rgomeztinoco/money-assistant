@@ -111,12 +111,10 @@ test('changing Reporting Currency re-expresses combined totals without altering 
         ->amount_minor->toBe(100)
         ->currency->toBe(Currency::Usd)
         ->kind->toBe(TransactionKind::Purchase)
-        ->revision->toBe(1)
         ->and($penRefund->fresh())
         ->amount_minor->toBe(100)
         ->currency->toBe(Currency::Pen)
-        ->kind->toBe(TransactionKind::Refund)
-        ->revision->toBe(1);
+        ->kind->toBe(TransactionKind::Refund);
 });
 
 test('combined totals state that Reporting Currency has not been selected', function () {
@@ -219,7 +217,7 @@ test('Transaction occurrence dates select their rates and rate edits recalculate
     expect(app(ReadSpendingSummary::class)->handle($owner)['combined_total']['amount_minor'])
         ->toBe('900');
 
-    expect($transactions->map->fresh()->pluck('revision')->all())->toBe([1, 1])
+    expect($transactions->map->fresh()->pluck('amount_minor')->all())->toBe([100, 100])
         ->and(DailyExchangeRate::query()->count())->toBe(2)
         ->and($firstRate->fresh()->revision)->toBe(2);
 });

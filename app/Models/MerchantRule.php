@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
 /**
@@ -22,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property bool $enabled
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property Carbon|null $deleted_at
  * @property-read User $owner
  * @property-read Category $category
  */
@@ -37,7 +39,7 @@ use Illuminate\Support\Carbon;
 class MerchantRule extends Model
 {
     /** @use HasFactory<MerchantRuleFactory> */
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     /** @var array<string, mixed> */
     protected $attributes = ['enabled' => true];

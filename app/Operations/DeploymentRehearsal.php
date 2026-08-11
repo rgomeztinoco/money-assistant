@@ -128,11 +128,8 @@ final class DeploymentRehearsal
 
         $transaction = Transaction::query()
             ->where('deployment_rehearsal_id', $rehearsalId)
-            ->withCount('stateChanges')
             ->first();
 
-        return $transaction !== null
-            && $transaction->voided_at !== null
-            && $transaction->state_changes_count === 1;
+        return $transaction?->voided_at !== null;
     }
 }

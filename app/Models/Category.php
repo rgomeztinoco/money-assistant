@@ -60,22 +60,6 @@ class Category extends Model
         return $this->hasMany(Transaction::class);
     }
 
-    /**
-     * @return HasMany<CategoryAssignment, $this>
-     */
-    public function assignments(): HasMany
-    {
-        return $this->hasMany(CategoryAssignment::class);
-    }
-
-    /**
-     * @return HasMany<CategoryAssignment, $this>
-     */
-    public function previousAssignments(): HasMany
-    {
-        return $this->hasMany(CategoryAssignment::class, 'previous_category_id');
-    }
-
     /** @return HasMany<LineItem, $this> */
     public function lineItems(): HasMany
     {

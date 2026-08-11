@@ -8,7 +8,6 @@ import {
     RotateCcw,
     Search,
 } from 'lucide-react';
-import { destroy as reopenSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { store as recordTransaction } from '@/actions/App/Http/Controllers/TransactionController';
 import {
     destroy as restoreTransaction,
@@ -49,7 +48,6 @@ type LedgerTransaction = {
     currency: Currency;
     kind: TransactionKind;
     merchant_description: string;
-    revision: number;
     original_purchase: {
         id: number;
         merchant_description: string;
@@ -58,16 +56,7 @@ type LedgerTransaction = {
     review_state: 'outstanding' | 'clear';
     review_field_count: number;
     refund_relationship_review_count: number;
-    duplicate_status: 'suspected' | 'resolved' | 'none';
     voided_at: string | null;
-    duplicate_resolution: {
-        id: number;
-        revision: number;
-        first_transaction_revision: number;
-        second_transaction_revision: number;
-        reopen_idempotency_key: string;
-    } | null;
-    state_change_idempotency_key: string;
 };
 
 type Pagination = {
@@ -121,10 +110,6 @@ function workspaceQuery(
                 : filters.refund_relationship,
         void_state:
             filters.void_state === 'all' ? undefined : filters.void_state,
-        duplicate_status:
-            filters.duplicate_status === 'all'
-                ? undefined
-                : filters.duplicate_status,
         selected,
         page,
         inspector,
@@ -164,16 +149,6 @@ function TransactionStateForm({
         >
             {({ errors, processing }) => (
                 <>
-                    <input
-                        type="hidden"
-                        name="expected_revision"
-                        value={transaction.revision}
-                    />
-                    <input
-                        type="hidden"
-                        name="idempotency_key"
-                        value={transaction.state_change_idempotency_key}
-                    />
                     <Button
                         type="submit"
                         variant={isVoided ? 'secondary' : 'outline'}
@@ -183,70 +158,7 @@ function TransactionStateForm({
                         {processing ? <Spinner /> : <Icon />}
                         {isVoided ? 'Restore' : 'Void'}
                     </Button>
-                    <InputError
-                        message={
-                            errors.expected_revision ??
-                            errors.idempotency_key ??
-                            errors.void_state
-                        }
-                    />
-                </>
-            )}
-        </Form>
-    );
-}
-
-function ReopenSuspectedDuplicateForm({
-    transaction,
-}: {
-    transaction: LedgerTransaction;
-}) {
-    const duplicateResolution = transaction.duplicate_resolution;
-
-    if (duplicateResolution === null) {
-        return null;
-    }
-
-    return (
-        <Form
-            {...reopenSuspectedDuplicate.form(duplicateResolution.id)}
-            options={{ preserveScroll: true }}
-            className="grid justify-items-end gap-1"
-        >
-            {({ errors, processing }) => (
-                <>
-                    <input
-                        type="hidden"
-                        name="expected_suspected_duplicate_revision"
-                        value={duplicateResolution.revision}
-                    />
-                    <input
-                        type="hidden"
-                        name="expected_first_transaction_revision"
-                        value={duplicateResolution.first_transaction_revision}
-                    />
-                    <input
-                        type="hidden"
-                        name="expected_second_transaction_revision"
-                        value={duplicateResolution.second_transaction_revision}
-                    />
-                    <input
-                        type="hidden"
-                        name="idempotency_key"
-                        value={duplicateResolution.reopen_idempotency_key}
-                    />
-                    <Button
-                        type="submit"
-                        variant="secondary"
-                        size="sm"
-                        disabled={processing}
-                    >
-                        {processing ? <Spinner /> : <RotateCcw />}
-                        Reopen pair
-                    </Button>
-                    <InputError
-                        message={errors.suspected_duplicate_resolution}
-                    />
+                    <InputError message={errors.void_state} />
                 </>
             )}
         </Form>
@@ -422,34 +334,6 @@ function LedgerFiltersForm({
                                     {
                                         value: 'not_applicable',
                                         label: 'Purchases',
-                                    },
-                                ]}
-                            />
-                            <SelectFilter
-                                id="filter-duplicate-status"
-                                name="duplicate_status"
-                                label="Filter duplicate status"
-                                value={
-                                    filters.duplicate_status === 'all'
-                                        ? ''
-                                        : filters.duplicate_status
-                                }
-                                options={[
-                                    {
-                                        value: '',
-                                        label: 'Any duplicate status',
-                                    },
-                                    {
-                                        value: 'suspected',
-                                        label: 'Suspected duplicates',
-                                    },
-                                    {
-                                        value: 'resolved',
-                                        label: 'Resolved duplicates',
-                                    },
-                                    {
-                                        value: 'none',
-                                        label: 'No duplicate relationship',
                                     },
                                 ]}
                             />
@@ -638,7 +522,6 @@ function LedgerTable({
                 <tbody>
                     {transactions.map((transaction) => {
                         const isRefund = transaction.kind === 'refund';
-                        const isVoided = transaction.voided_at !== null;
                         const KindIcon = isRefund
                             ? ArrowDownLeft
                             : ArrowUpRight;
@@ -717,17 +600,9 @@ function LedgerTable({
                                                 Inspect
                                             </Link>
                                         </Button>
-                                        {isVoided &&
-                                        transaction.duplicate_resolution !==
-                                            null ? (
-                                            <ReopenSuspectedDuplicateForm
-                                                transaction={transaction}
-                                            />
-                                        ) : (
-                                            <TransactionStateForm
-                                                transaction={transaction}
-                                            />
-                                        )}
+                                        <TransactionStateForm
+                                            transaction={transaction}
+                                        />
                                     </div>
                                 </td>
                             </tr>
@@ -814,12 +689,9 @@ export default function TransactionsIndex({
             second.id - first.id,
     );
     const transactionStateError = page.props.flash?.transaction_state_error;
-    const stateErrors = [
-        transactionStateError,
-        errors.expected_revision,
-        errors.idempotency_key,
-        errors.void_state,
-    ].filter((error): error is string => Boolean(error));
+    const stateErrors = [transactionStateError, errors.void_state].filter(
+        (error): error is string => Boolean(error),
+    );
 
     function handleInspectorOpenChange(open: boolean) {
         if (open) {

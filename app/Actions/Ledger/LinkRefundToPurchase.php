@@ -2,11 +2,7 @@
 
 namespace App\Actions\Ledger;
 
-use App\CategoryAssignmentProvenance;
 use App\ExactInteger;
-use App\Exceptions\StaleTransactionRevision;
-use App\Models\Category;
-use App\Models\CategoryAssignment;
 use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
@@ -20,17 +16,11 @@ class LinkRefundToPurchase
         User $owner,
         Transaction $refund,
         Transaction $purchase,
-        int $expectedRevision,
     ): Transaction {
-        if ($expectedRevision < 1) {
-            throw new InvalidArgumentException('The expected Transaction revision must be positive.');
-        }
-
         return DB::transaction(function () use (
             $owner,
             $refund,
             $purchase,
-            $expectedRevision,
         ): Transaction {
             $currentPurchase = Transaction::query()
                 ->whereKey($purchase->getKey())
@@ -44,10 +34,6 @@ class LinkRefundToPurchase
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($currentRefund->revision !== $expectedRevision) {
-                throw StaleTransactionRevision::fromTransaction($currentRefund);
-            }
-
             $this->ensureTransactionsCanBeLinked($currentRefund, $currentPurchase);
 
             $linkedRefundTotal = ExactInteger::from((string) Transaction::query()
@@ -58,31 +44,7 @@ class LinkRefundToPurchase
             $hasReceiptBreakdown = $currentPurchase
                 ->receiptBreakdown()
                 ->exists();
-            $activePurchaseCategory = $currentPurchase->category_id === null
-                ? null
-                : Category::query()
-                    ->whereBelongsTo($owner, 'owner')
-                    ->whereKey($currentPurchase->category_id)
-                    ->whereNull('retired_at')
-                    ->lockForUpdate()
-                    ->first();
-
             $currentRefund->original_purchase_id = $currentPurchase->getKey();
-
-            $categoryAssignmentApplied = false;
-            $previousCategoryId = $currentRefund->category_id;
-
-            if (
-                ! $hasReceiptBreakdown
-                && $activePurchaseCategory !== null
-                && CategoryAssignmentProvenance::LinkedRefund->canReplace(
-                    $currentRefund->category_assignment_provenance,
-                )
-            ) {
-                $currentRefund->category_id = $activePurchaseCategory->id;
-                $currentRefund->category_assignment_provenance = CategoryAssignmentProvenance::LinkedRefund;
-                $categoryAssignmentApplied = true;
-            }
 
             $reviewReasons = [];
 
@@ -99,20 +61,7 @@ class LinkRefundToPurchase
             }
 
             $currentRefund->refund_relationship_review_reasons = $reviewReasons;
-            $currentRefund->revision++;
             $currentRefund->save();
-
-            if ($categoryAssignmentApplied) {
-                CategoryAssignment::create([
-                    'user_id' => $owner->getKey(),
-                    'transaction_id' => $currentRefund->getKey(),
-                    'category_id' => $activePurchaseCategory->id,
-                    'previous_category_id' => $previousCategoryId,
-                    'source' => CategoryAssignmentProvenance::LinkedRefund,
-                    'transaction_revision' => $currentRefund->revision,
-                    'linked_purchase_id' => $currentPurchase->getKey(),
-                ]);
-            }
 
             return $currentRefund;
         }, 3);

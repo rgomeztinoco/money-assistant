@@ -48,12 +48,6 @@ return new class extends Migration
 
         DB::statement('ALTER TABLE line_items ADD CONSTRAINT line_items_total_nonzero CHECK (line_total_minor <> 0)');
 
-        DB::statement('ALTER TABLE suspected_duplicate_receipt_breakdown_moves DROP CONSTRAINT suspected_duplicate_breakdown_moves_revision_positive');
-        DB::statement('ALTER TABLE suspected_duplicate_receipt_breakdown_moves DROP CONSTRAINT suspected_duplicate_breakdown_moves_status_supported');
-
-        Schema::table('suspected_duplicate_receipt_breakdown_moves', function (Blueprint $table) {
-            $table->dropColumn(['receipt_breakdown_revision', 'receipt_breakdown_status']);
-        });
     }
 
     public function down(): void
