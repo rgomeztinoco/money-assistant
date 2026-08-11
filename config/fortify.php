@@ -20,30 +20,12 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Fortify Password Broker
-    |--------------------------------------------------------------------------
-    |
-    | Here you may specify which password broker Fortify can use when a user
-    | is resetting their password. This configured value should match one
-    | of your password brokers setup in your "auth" configuration file.
-    |
-    */
-
-    'passwords' => 'users',
-
-    /*
-    |--------------------------------------------------------------------------
     | Username / Email
     |--------------------------------------------------------------------------
     |
     | This value defines which model attribute should be considered as your
     | application's "username" field. Typically, this might be the email
     | address of the users but you are free to change this value here.
-    |
-    | Out of the box, Fortify expects forgot password and reset password
-    | requests to have a field named 'email'. If the application uses
-    | another name for the field you may define it below as needed.
-    |
     */
 
     'username' => 'email',
@@ -69,8 +51,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | Here you may configure the path where users will get redirected during
-    | authentication or password reset when the operations are successful
-    | and the user is authenticated. You are free to change this value.
+    | authentication operations are successful and the user is authenticated.
+    | You are free to change this value.
     |
     */
 
@@ -117,7 +99,6 @@ return [
 
     'limiters' => [
         'login' => 'login',
-        'two-factor' => 'two-factor',
         'passkeys' => 'passkeys',
     ],
 
@@ -162,12 +143,6 @@ return [
     */
 
     'features' => [
-        Features::emailVerification(),
-        Features::twoFactorAuthentication([
-            'confirm' => true,
-            'confirmPassword' => true,
-            // 'window' => 0
-        ]),
         Features::passkeys([
             'confirmPassword' => true,
         ]),

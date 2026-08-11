@@ -5,7 +5,6 @@ use App\Http\Controllers\Settings\GmailAuthorizationController;
 use App\Http\Controllers\Settings\GmailConnectionCheckController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
-use App\Http\Middleware\RequirePasskeyConfirmation;
 use App\Http\Middleware\RequirePasswordForOwnerEmailChange;
 use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Support\Facades\Route;
@@ -19,11 +18,7 @@ Route::middleware(['auth'])->group(function () {
         ->name('profile.update');
 });
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::delete('settings/profile', [ProfileController::class, 'destroy'])
-        ->middleware(RequirePasskeyConfirmation::class)
-        ->name('profile.destroy');
-
+Route::middleware(['auth'])->group(function () {
     Route::get('settings/security', [SecurityController::class, 'edit'])
         ->middleware(RequirePassword::class)
         ->name('security.edit');

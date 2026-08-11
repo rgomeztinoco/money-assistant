@@ -2,14 +2,10 @@
 
 namespace App\Http\Controllers\Settings;
 
-use App\Actions\Security\DeleteOwnerAccount;
 use App\Actions\Security\InvalidateOtherSessions;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,18 +13,14 @@ class ProfileController extends Controller
 {
     public function __construct(
         private InvalidateOtherSessions $invalidateOtherSessions,
-        private DeleteOwnerAccount $deleteOwnerAccount,
     ) {}
 
     /**
      * Show the user's profile settings page.
      */
-    public function edit(Request $request): Response
+    public function edit(): Response
     {
-        return Inertia::render('settings/profile', [
-            'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
-            'status' => $request->session()->get('status'),
-        ]);
+        return Inertia::render('settings/profile');
     }
 
     /**
@@ -37,10 +29,6 @@ class ProfileController extends Controller
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
         $request->user()->fill($request->validated());
-
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
-        }
 
         $request->user()->save();
 
@@ -54,22 +42,5 @@ class ProfileController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
 
         return to_route('profile.edit');
-    }
-
-    /**
-     * Delete the user's profile.
-     */
-    public function destroy(Request $request): RedirectResponse
-    {
-        $user = $request->user();
-
-        $this->deleteOwnerAccount->handle($user);
-
-        Auth::logout();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return redirect('/');
     }
 }

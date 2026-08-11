@@ -14,7 +14,7 @@ test('a candidate admits only its health probe before deployment activation', fu
     touch($activationMarker);
 
     try {
-        $this->get('/')->assertSuccessful();
+        $this->get('/')->assertRedirectToRoute('login');
     } finally {
         @unlink($activationMarker);
     }
@@ -23,5 +23,5 @@ test('a candidate admits only its health probe before deployment activation', fu
 test('an active release admits application requests', function (): void {
     config()->set('app.deployment_requests_enabled', true);
 
-    $this->get('/')->assertSuccessful();
+    $this->get('/')->assertRedirectToRoute('login');
 });
