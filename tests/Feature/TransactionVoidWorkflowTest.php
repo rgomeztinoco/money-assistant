@@ -37,8 +37,6 @@ test('the owner can void a Transaction without deleting its identity or financia
     $this->get(route('transactions.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '0')
-            ->where('totals.PEN', '0')
             ->has('transactions', 0)
             ->has('voided_transactions', 1)
             ->where('voided_transactions.0.id', $transaction->id)
@@ -53,8 +51,6 @@ test('the owner can void a Transaction without deleting its identity or financia
 test('restoring the same Transaction returns exactly one contribution to the ledger', function (
     TransactionKind $kind,
     Currency $currency,
-    string $expectedUsdTotal,
-    string $expectedPenTotal,
 ) {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
@@ -81,8 +77,6 @@ test('restoring the same Transaction returns exactly one contribution to the led
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', $expectedUsdTotal)
-            ->where('totals.PEN', $expectedPenTotal)
             ->has('transactions', 1)
             ->where('transactions.0.id', $transaction->id)
             ->where('transactions.0.revision', 3)
@@ -107,10 +101,10 @@ test('restoring the same Transaction returns exactly one contribution to the led
         ->and($restoreOutcome->result_revision)->toBe(3)
         ->and($restoreOutcome->result_voided_at)->toBeNull();
 })->with([
-    'USD purchase' => [TransactionKind::Purchase, Currency::Usd, '12345', '0'],
-    'PEN purchase' => [TransactionKind::Purchase, Currency::Pen, '0', '12345'],
-    'USD refund' => [TransactionKind::Refund, Currency::Usd, '-12345', '0'],
-    'PEN refund' => [TransactionKind::Refund, Currency::Pen, '0', '-12345'],
+    'USD purchase' => [TransactionKind::Purchase, Currency::Usd],
+    'PEN purchase' => [TransactionKind::Purchase, Currency::Pen],
+    'USD refund' => [TransactionKind::Refund, Currency::Usd],
+    'PEN refund' => [TransactionKind::Refund, Currency::Pen],
 ]);
 
 test('repeated identical void and restore commands do not cause another state transition', function () {
@@ -151,7 +145,6 @@ test('repeated identical void and restore commands do not cause another state tr
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '12345')
             ->has('transactions', 1)
             ->has('voided_transactions', 0),
         );

@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Reporting\ReadSpendingSummary;
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
 use App\Models\ReceiptBreakdown;
@@ -7,6 +8,12 @@ use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Inertia\Testing\AssertableInertia as Assert;
+
+function categoryTotalFor(User $owner, ?int $categoryId): array
+{
+    return collect(app(ReadSpendingSummary::class)->handle($owner)['category_totals'])
+        ->firstWhere('category.id', $categoryId);
+}
 
 test('multiple partial Refunds link to one purchase without rewriting any Transaction', function () {
     $owner = User::factory()->create();
@@ -49,7 +56,7 @@ test('multiple partial Refunds link to one purchase without rewriting any Transa
     $this->get(route('transactions.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '5000')
+            ->missing('totals')
             ->has('transactions', 3)
             ->where(
                 'transactions.0.original_purchase.id',
@@ -109,7 +116,7 @@ test('cumulative linked Refunds exceeding the purchase remain included and enter
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '-1000')
+            ->missing('totals')
             ->has('transactions', 3),
         );
 
@@ -162,7 +169,7 @@ test('an unambiguous linked Refund defaults to the purchase Category and may mak
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '-5000')
+            ->missing('totals')
             ->where('transactions.0.category.id', $category->id)
             ->where('transactions.0.category.name', 'Clothing')
             ->where(
@@ -171,11 +178,11 @@ test('an unambiguous linked Refund defaults to the purchase Category and may mak
             )
             ->where('transactions.0.category.provenance.linked_purchase.id', $purchase->id)
             ->where('transactions.0.category.provenance.linked_purchase.merchant_description', $purchase->merchant_description)
-            ->has('category_totals', 1)
-            ->where('category_totals.0.category.id', $category->id)
-            ->where('category_totals.0.totals.USD', '-5000')
-            ->where('category_totals.0.totals.PEN', '0'),
+            ->missing('category_totals'),
         );
+
+    expect(categoryTotalFor($owner, $category->id)['totals'])
+        ->toBe(['USD' => '-5000', 'PEN' => '0']);
 });
 
 test('a linked Refund does not receive a Retired Category from its purchase', function () {
@@ -281,11 +288,12 @@ test('a Refund linked to a purchase with a Receipt Breakdown stays Uncategorized
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '6000')
+            ->missing('totals')
             ->where('transactions.0.category', null)
-            ->where('category_totals.0.category.id', $category->id)
-            ->where('category_totals.0.totals.USD', '10000'),
+            ->missing('category_totals'),
         );
+
+    expect(categoryTotalFor($owner, $category->id)['totals']['USD'])->toBe('10000');
 
     $this->get(route('review_queue.index'))
         ->assertInertia(fn (Assert $page) => $page
@@ -317,13 +325,15 @@ test('an unlinked Refund keeps its independent owner Category', function () {
     $this->actingAs($owner)
         ->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.PEN', '-2500')
+            ->missing('totals')
             ->where('transactions.0.id', $refund->id)
             ->where('transactions.0.original_purchase', null)
             ->where('transactions.0.category.id', $category->id)
             ->where('transactions.0.category.provenance.source', 'owner')
-            ->where('category_totals.0.totals.PEN', '-2500'),
+            ->missing('category_totals'),
         );
+
+    expect(categoryTotalFor($owner, $category->id)['totals']['PEN'])->toBe('-2500');
 });
 
 test('a stale Refund link is rejected without changing the current Transaction', function () {
@@ -489,7 +499,7 @@ test('Refunds cannot link across currencies', function () {
     expect($refund->refresh()->original_purchase_id)->toBeNull();
 });
 
-test('the owner can choose an original purchase older than the visible 100-Transaction ledger', function () {
+test('the owner can choose an original purchase older than the visible Transaction page', function () {
     $owner = User::factory()->create();
     $olderPurchase = Transaction::factory()
         ->for($owner, 'owner')
@@ -512,14 +522,17 @@ test('the owner can choose an original purchase older than the visible 100-Trans
         ->create(['occurred_on' => '2026-07-24']);
 
     $this->actingAs($owner)
-        ->get(route('transactions.index'))
+        ->get(route('transactions.index', ['selected' => $refund->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->has('transactions', 100)
-            ->where(
-                'purchase_options',
-                fn ($purchaseOptions): bool => $purchaseOptions
-                    ->contains('id', $olderPurchase->id),
-            ),
+            ->has('transactions', 25)
+            ->where('pagination.total', 102)
+            ->missing('purchase_options')
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where(
+                    'selected_transaction.purchase_options',
+                    fn ($purchaseOptions): bool => $purchaseOptions
+                        ->contains('id', $olderPurchase->id),
+                )),
         );
 
     $this->post(route('transactions.refund_link.store', $refund), [
@@ -614,24 +627,10 @@ test('second-level Category totals roll up to their current parent and remain ex
         ->assertSessionHasNoErrors();
 
     $this->get(route('transactions.index'))
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('category_totals', function ($categoryTotals) use (
-                $parentCategory,
-                $childCategory,
-            ): bool {
-                $parentTotal = $categoryTotals->firstWhere(
-                    'category.id',
-                    $parentCategory->id,
-                );
-                $childTotal = $categoryTotals->firstWhere(
-                    'category.id',
-                    $childCategory->id,
-                );
+        ->assertInertia(fn (Assert $page) => $page->missing('category_totals'));
 
-                return $parentTotal['totals']['USD'] === '-5000'
-                    && $childTotal['totals']['USD'] === '-5000';
-            }),
-        );
+    expect(categoryTotalFor($owner, $parentCategory->id)['totals']['USD'])->toBe('-5000')
+        ->and(categoryTotalFor($owner, $childCategory->id)['totals']['USD'])->toBe('-5000');
 });
 
 test('a Receipt Breakdown does not replace Category totals before reconciled Line Items exist', function () {
@@ -656,7 +655,8 @@ test('a Receipt Breakdown does not replace Category totals before reconciled Lin
     $this->actingAs($owner)
         ->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('category_totals.0.category.id', $category->id)
-            ->where('category_totals.0.totals.USD', '1000'),
+            ->missing('category_totals'),
         );
+
+    expect(categoryTotalFor($owner, $category->id)['totals']['USD'])->toBe('1000');
 });

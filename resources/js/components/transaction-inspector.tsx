@@ -5,7 +5,6 @@ import {
     CircleOff,
     History,
     Link2,
-    PencilLine,
     Plus,
     ReceiptText,
     ScanSearch,
@@ -18,8 +17,7 @@ import {
     update as saveReceiptBreakdown,
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
 import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
-import { update as updateCategory } from '@/actions/App/Http/Controllers/TransactionCategoryController';
-import { update } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
+import { update as updateTransaction } from '@/actions/App/Http/Controllers/TransactionController';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -46,156 +44,9 @@ import { formatMinorUnits } from '@/lib/format-minor-units';
 import type {
     DuplicateRelationship,
     DuplicateTransaction,
-    ReviewField,
     SelectedTransaction,
     CategoryOption,
 } from '@/types';
-
-function CorrectionControl({
-    transactionId,
-    field,
-}: {
-    transactionId: number;
-    field: ReviewField;
-}) {
-    const id = `transaction-${transactionId}-${field.name}-correction`;
-
-    if (field.name === 'currency') {
-        return (
-            <NativeSelect
-                id={id}
-                name="value"
-                defaultValue={field.value}
-                aria-label={`Correct ${field.label}`}
-                options={[
-                    { value: 'USD', label: 'USD' },
-                    { value: 'PEN', label: 'PEN' },
-                ]}
-            />
-        );
-    }
-
-    if (field.name === 'kind') {
-        return (
-            <NativeSelect
-                id={id}
-                name="value"
-                defaultValue={field.value}
-                aria-label={`Correct ${field.label}`}
-                options={[
-                    { value: 'purchase', label: 'Purchase' },
-                    { value: 'refund', label: 'Refund' },
-                ]}
-            />
-        );
-    }
-
-    return (
-        <Input
-            id={id}
-            name="value"
-            type={field.name === 'occurred_on' ? 'date' : 'text'}
-            inputMode={field.name === 'amount_minor' ? 'numeric' : undefined}
-            defaultValue={field.value}
-            aria-label={`Correct ${field.label}`}
-        />
-    );
-}
-
-function ReviewFieldControl({
-    transaction,
-    field,
-}: {
-    transaction: SelectedTransaction;
-    field: ReviewField;
-}) {
-    const routeArguments = {
-        transaction: transaction.id,
-        field: field.name,
-    };
-
-    return (
-        <div className="grid gap-3 rounded-lg border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                    <p className="text-sm font-medium">{field.label}</p>
-                    <p className="text-sm text-muted-foreground">
-                        Current: {field.value}
-                    </p>
-                </div>
-                <Form
-                    {...update.form(routeArguments)}
-                    options={{ preserveScroll: true }}
-                >
-                    {({ errors, processing }) => (
-                        <div className="grid gap-1">
-                            <input
-                                type="hidden"
-                                name="expected_revision"
-                                value={transaction.revision}
-                            />
-                            <input
-                                type="hidden"
-                                name="resolution"
-                                value="accept"
-                            />
-                            <Button
-                                type="submit"
-                                variant="outline"
-                                size="sm"
-                                disabled={processing}
-                            >
-                                {processing ? <Spinner /> : <Check />}
-                                Accept current
-                            </Button>
-                            <InputError message={errors.expected_revision} />
-                        </div>
-                    )}
-                </Form>
-            </div>
-            <Form
-                {...update.form(routeArguments)}
-                options={{ preserveScroll: true }}
-                className="grid gap-2"
-            >
-                {({ errors, processing }) => (
-                    <>
-                        <input
-                            type="hidden"
-                            name="expected_revision"
-                            value={transaction.revision}
-                        />
-                        <input
-                            type="hidden"
-                            name="resolution"
-                            value="correct"
-                        />
-                        <Label
-                            htmlFor={`transaction-${transaction.id}-${field.name}-correction`}
-                        >
-                            Correct {field.label}
-                        </Label>
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                            <div className="min-w-0 flex-1">
-                                <CorrectionControl
-                                    transactionId={transaction.id}
-                                    field={field}
-                                />
-                            </div>
-                            <Button type="submit" disabled={processing}>
-                                {processing ? <Spinner /> : <PencilLine />}
-                                Save Correction
-                            </Button>
-                        </div>
-                        <InputError
-                            message={errors.value ?? errors.expected_revision}
-                        />
-                    </>
-                )}
-            </Form>
-        </div>
-    );
-}
 
 function survivorChoiceBlockReason(
     survivor: DuplicateTransaction,
@@ -820,6 +671,243 @@ function ReceiptBreakdownSection({
     );
 }
 
+function TransactionEditForm({
+    transaction,
+    categoryOptions,
+}: {
+    transaction: SelectedTransaction;
+    categoryOptions: CategoryOption[];
+}) {
+    return (
+        <Form
+            key={`${transaction.id}-${transaction.revision}`}
+            {...updateTransaction.form(transaction.id)}
+            options={{ preserveScroll: true, preserveState: true }}
+            className="grid gap-4 rounded-lg border p-4"
+        >
+            {({ errors, processing }) => (
+                <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-date`}
+                            >
+                                Edit occurrence date
+                            </Label>
+                            <Input
+                                id={`transaction-${transaction.id}-date`}
+                                name="occurred_on"
+                                type="date"
+                                defaultValue={transaction.occurred_on}
+                            />
+                            <InputError message={errors.occurred_on} />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-amount`}
+                            >
+                                Edit amount in minor units
+                            </Label>
+                            <Input
+                                id={`transaction-${transaction.id}-amount`}
+                                name="amount_minor"
+                                type="number"
+                                min="1"
+                                step="1"
+                                inputMode="numeric"
+                                defaultValue={transaction.amount_minor}
+                            />
+                            <InputError message={errors.amount_minor} />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-currency`}
+                            >
+                                Edit currency
+                            </Label>
+                            <NativeSelect
+                                id={`transaction-${transaction.id}-currency`}
+                                name="currency"
+                                defaultValue={transaction.currency}
+                                options={[
+                                    { value: 'USD', label: 'USD' },
+                                    { value: 'PEN', label: 'PEN' },
+                                ]}
+                            />
+                            <InputError message={errors.currency} />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-kind`}
+                            >
+                                Edit Transaction kind
+                            </Label>
+                            <NativeSelect
+                                id={`transaction-${transaction.id}-kind`}
+                                name="kind"
+                                defaultValue={transaction.kind}
+                                options={[
+                                    { value: 'purchase', label: 'Purchase' },
+                                    { value: 'refund', label: 'Refund' },
+                                ]}
+                            />
+                            <InputError message={errors.kind} />
+                        </div>
+                    </div>
+
+                    <div className="grid gap-2">
+                        <Label
+                            htmlFor={`transaction-${transaction.id}-merchant`}
+                        >
+                            Edit merchant or description
+                        </Label>
+                        <Input
+                            id={`transaction-${transaction.id}-merchant`}
+                            name="merchant_description"
+                            maxLength={255}
+                            defaultValue={transaction.merchant_description}
+                        />
+                        <InputError message={errors.merchant_description} />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-instrument`}
+                            >
+                                Edit payment instrument
+                            </Label>
+                            <Input
+                                id={`transaction-${transaction.id}-instrument`}
+                                name="payment_instrument_label"
+                                maxLength={100}
+                                defaultValue={
+                                    transaction.payment_instrument_label ?? ''
+                                }
+                                placeholder="Visa, cash, checking"
+                            />
+                            <InputError
+                                message={errors.payment_instrument_label}
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-last-four`}
+                            >
+                                Edit last four digits
+                            </Label>
+                            <Input
+                                id={`transaction-${transaction.id}-last-four`}
+                                name="payment_instrument_last_four"
+                                inputMode="numeric"
+                                pattern="[0-9]{4}"
+                                maxLength={4}
+                                defaultValue={
+                                    transaction.payment_instrument_last_four ??
+                                    ''
+                                }
+                            />
+                            <InputError
+                                message={errors.payment_instrument_last_four}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-category`}
+                            >
+                                Edit Category
+                            </Label>
+                            <NativeSelect
+                                id={`transaction-${transaction.id}-category`}
+                                name="category_id"
+                                defaultValue={
+                                    transaction.category?.id.toString() ?? ''
+                                }
+                                options={[
+                                    { value: '', label: 'Uncategorized' },
+                                    ...categoryOptions.map((category) => ({
+                                        value: category.id.toString(),
+                                        label: category.path,
+                                    })),
+                                ]}
+                            />
+                            <InputError message={errors.category_id} />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-purchase`}
+                            >
+                                Edit original purchase
+                            </Label>
+                            <NativeSelect
+                                id={`transaction-${transaction.id}-purchase`}
+                                name="original_purchase_id"
+                                defaultValue={
+                                    transaction.original_purchase?.id.toString() ??
+                                    ''
+                                }
+                                options={[
+                                    { value: '', label: 'No Refund link' },
+                                    ...transaction.purchase_options.map(
+                                        (purchase) => ({
+                                            value: purchase.id.toString(),
+                                            label: `${purchase.occurred_on} · ${purchase.merchant_description} · ${purchase.currency}`,
+                                        }),
+                                    ),
+                                ]}
+                            />
+                            <InputError message={errors.original_purchase_id} />
+                        </div>
+                    </div>
+
+                    {transaction.review.fields.length > 0 && (
+                        <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                            Changing a flagged value clears that field&apos;s
+                            current review flag.
+                        </p>
+                    )}
+
+                    {transaction.receipt_breakdown !== null && (
+                        <div className="flex items-start gap-2 rounded-md border p-3">
+                            <input
+                                id={`transaction-${transaction.id}-remove-breakdown`}
+                                name="remove_receipt_breakdown"
+                                type="checkbox"
+                                value="1"
+                                className="mt-0.5 size-4 rounded border-input"
+                            />
+                            <div className="grid gap-1">
+                                <Label
+                                    htmlFor={`transaction-${transaction.id}-remove-breakdown`}
+                                >
+                                    Remove Receipt Breakdown if the amount
+                                    changes
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                    This explicitly removes the current Line
+                                    Items because they would no longer
+                                    reconcile.
+                                </p>
+                                <InputError
+                                    message={errors.remove_receipt_breakdown}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <Button type="submit" disabled={processing}>
+                        {processing && <Spinner />}
+                        Save Transaction
+                    </Button>
+                </>
+            )}
+        </Form>
+    );
+}
+
 export function TransactionInspector({
     transaction,
     categoryOptions,
@@ -832,6 +920,7 @@ export function TransactionInspector({
     const unresolvedReviewCount = transaction
         ? transaction.review.fields.length +
           transaction.review.refund_relationship_reasons.length +
+          (transaction.review.category ? 1 : 0) +
           transaction.duplicate_relationships.filter(
               (relationship) => relationship.status === 'suspected',
           ).length +
@@ -871,12 +960,22 @@ export function TransactionInspector({
                             )}
                         </div>
                         <SheetDescription>
-                            Transaction #{transaction.id} · Revision{' '}
-                            {transaction.revision}
+                            Transaction #{transaction.id} · Edit the current
+                            ledger record directly.
                         </SheetDescription>
                     </SheetHeader>
 
                     <div className="grid gap-6 px-4 pb-6">
+                        <section className="grid gap-3">
+                            <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                                Edit current Transaction
+                            </h2>
+                            <TransactionEditForm
+                                transaction={transaction}
+                                categoryOptions={categoryOptions}
+                            />
+                        </section>
+
                         <section className="grid gap-3">
                             <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
                                 Current values
@@ -928,64 +1027,6 @@ export function TransactionInspector({
                                 Confirmed{' '}
                                 {transaction.confirmed_at.slice(0, 10)}.
                             </p>
-                            <Form
-                                {...updateCategory.form(transaction.id)}
-                                options={{
-                                    preserveScroll: true,
-                                    preserveState: true,
-                                }}
-                                className="grid gap-2 rounded-lg border p-4"
-                            >
-                                {({ errors, processing }) => (
-                                    <>
-                                        <input
-                                            type="hidden"
-                                            name="expected_revision"
-                                            value={transaction.revision}
-                                        />
-                                        <Label
-                                            htmlFor={`transaction-${transaction.id}-category`}
-                                        >
-                                            Assign Category
-                                        </Label>
-                                        <div className="flex flex-col gap-2 sm:flex-row">
-                                            <NativeSelect
-                                                id={`transaction-${transaction.id}-category`}
-                                                name="category_id"
-                                                defaultValue={
-                                                    transaction.category?.id.toString() ??
-                                                    ''
-                                                }
-                                                options={[
-                                                    {
-                                                        value: '',
-                                                        label: 'Uncategorized',
-                                                    },
-                                                    ...categoryOptions.map(
-                                                        (category) => ({
-                                                            value: category.id.toString(),
-                                                            label: category.path,
-                                                        }),
-                                                    ),
-                                                ]}
-                                            />
-                                            <Button
-                                                type="submit"
-                                                disabled={processing}
-                                            >
-                                                {processing && <Spinner />}
-                                                Save Category
-                                            </Button>
-                                        </div>
-                                        <InputError
-                                            message={
-                                                errors.category_id ??
-                                                errors.expected_revision
-                                            }
-                                        />
-                                    </>
-                                )}
-                            </Form>
                         </section>
 
                         <ReceiptBreakdownSection
@@ -993,29 +1034,6 @@ export function TransactionInspector({
                             transaction={transaction}
                             categoryOptions={categoryOptions}
                         />
-
-                        {transaction.review.fields.length > 0 && (
-                            <section className="grid gap-3">
-                                <div className="flex items-center justify-between gap-2">
-                                    <h2 className="font-semibold">
-                                        Uncertain details
-                                    </h2>
-                                    <Badge variant="secondary">
-                                        {transaction.review.fields.length}{' '}
-                                        {transaction.review.fields.length === 1
-                                            ? 'field'
-                                            : 'fields'}
-                                    </Badge>
-                                </div>
-                                {transaction.review.fields.map((field) => (
-                                    <ReviewFieldControl
-                                        key={field.name}
-                                        transaction={transaction}
-                                        field={field}
-                                    />
-                                ))}
-                            </section>
-                        )}
 
                         {transaction.review.category && (
                             <section className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/20">
@@ -1042,7 +1060,7 @@ export function TransactionInspector({
                                     <p>
                                         {reason.name ===
                                         'cumulative_refunds_exceed_purchase'
-                                            ? 'The confirmed Refunds remain included. Review the linked purchase before making any separate Correction.'
+                                            ? 'The confirmed Refunds remain included. Review the linked purchase and edit the current Refund if needed.'
                                             : 'The purchase has a Receipt Breakdown. No Line Items were copied or inferred for this Refund.'}
                                     </p>
                                 </section>
@@ -1214,8 +1232,8 @@ export function TransactionInspector({
                             {transaction.corrections.length === 0 &&
                             transaction.state_changes.length === 0 ? (
                                 <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                                    No Corrections or void-state changes have
-                                    been recorded.
+                                    No legacy field changes or void-state
+                                    changes have been recorded.
                                 </p>
                             ) : (
                                 <div className="grid gap-2">
@@ -1226,7 +1244,7 @@ export function TransactionInspector({
                                                 className="rounded-lg border p-3 text-sm"
                                             >
                                                 <p className="font-medium">
-                                                    Correction ·{' '}
+                                                    Legacy field change ·{' '}
                                                     {correction.field_label}
                                                 </p>
                                                 <p className="text-muted-foreground">

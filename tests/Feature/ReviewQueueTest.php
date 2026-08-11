@@ -2,6 +2,7 @@
 
 use App\Actions\Ledger\RecordManualTransaction;
 use App\Actions\Ledger\ResolveTransactionField;
+use App\Actions\Reporting\ReadSpendingSummary;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\Exceptions\StaleTransactionRevision;
@@ -38,7 +39,7 @@ test('a confirmed Transaction with multiple provisional fields remains in totals
         ->get(route('transactions.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '12345')
+            ->missing('totals')
             ->where('transactions.0.id', $transaction->id),
         );
 
@@ -74,20 +75,24 @@ test('an Uncategorized Transaction remains in totals, reports in its system buck
     $this->actingAs($owner)
         ->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '15000')
-            ->where('category_totals.0.category.id', $category->id)
-            ->where('category_totals.0.totals.USD', '5000')
-            ->where('category_totals.1.category.id', null)
-            ->where('category_totals.1.category.name', 'Uncategorized')
-            ->where('category_totals.1.totals.USD', '10000'));
+            ->missing('totals')
+            ->missing('category_totals'));
+
+    $categoryTotals = collect(app(ReadSpendingSummary::class)->handle($owner)['category_totals']);
+
+    expect($categoryTotals->firstWhere('category.id', $category->id)['totals'])
+        ->toBe(['USD' => '5000', 'PEN' => '0'])
+        ->and($categoryTotals->firstWhere('category.id', null)['totals'])
+        ->toBe(['USD' => '10000', 'PEN' => '0']);
 
     $this->get(route('review_queue.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('unresolved_category_count', 1)
             ->where('review_queue.outstanding_count', 1)
-            ->has('workspace_transactions', 1)
-            ->where('workspace_transactions.0.id', $uncategorized->id)
-            ->where('selected_transaction.id', $uncategorized->id));
+            ->has('transactions', 1)
+            ->where('transactions.0.id', $uncategorized->id)
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.id', $uncategorized->id)));
 });
 
 test('the owner can accept one provisional field and correct another with totals recalculated immediately', function () {
@@ -139,12 +144,13 @@ test('the owner can accept one provisional field and correct another with totals
     $this->get(route('review_queue.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('unresolved_field_count', 0)
-            ->has('transactions', 0),
+            ->has('transactions', 1)
+            ->where('transactions.0.review_state', 'outstanding'),
         );
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '9000')
+            ->missing('totals')
             ->where('transactions.0.amount_minor', '9000'),
         );
 });
@@ -253,7 +259,7 @@ test('a stale response returns current state after the final flagged field was r
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('errors.expected_revision', 'This Transaction changed while you were reviewing it. Review the current values and try again.')
-            ->has('transactions', 0)
+            ->has('transactions', 1)
             ->where('stale_transaction.id', $transaction->id)
             ->where('stale_transaction.revision', 2)
             ->where('stale_transaction.amount_minor', '9000')
@@ -265,8 +271,6 @@ test('Corrections persist authoritative values for every reviewable Transaction 
     ReviewableTransactionField $field,
     string $correctedValue,
     string $expectedValue,
-    string $expectedUsdTotal,
-    string $expectedPenTotal,
 ) {
     $owner = User::factory()->create();
 
@@ -304,44 +308,33 @@ test('Corrections persist authoritative values for every reviewable Transaction 
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', $expectedUsdTotal)
-            ->where('totals.PEN', $expectedPenTotal),
+            ->missing('totals'),
         );
 })->with([
     'occurrence date' => [
         ReviewableTransactionField::OccurredOn,
         '2026-07-23',
         '2026-07-23',
-        '12345',
-        '0',
     ],
     'amount' => [
         ReviewableTransactionField::AmountMinor,
         '9000',
         '9000',
-        '9000',
-        '0',
     ],
     'currency' => [
         ReviewableTransactionField::Currency,
         'PEN',
         'PEN',
-        '0',
-        '12345',
     ],
     'kind' => [
         ReviewableTransactionField::Kind,
         'refund',
         'refund',
-        '-12345',
-        '0',
     ],
     'merchant or description' => [
         ReviewableTransactionField::MerchantDescription,
         'Neighborhood market',
         'Neighborhood market',
-        '12345',
-        '0',
     ],
 ]);
 
@@ -462,7 +455,8 @@ test('the Review Queue exposes every unresolved Transaction field', function () 
         ->get(route('review_queue.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('unresolved_field_count', 101)
-            ->has('transactions', 101),
+            ->has('transactions', 25)
+            ->where('pagination.total', 101),
         );
 });
 

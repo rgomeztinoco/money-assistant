@@ -1,5 +1,7 @@
 <?php
 
+use App\CategoryAssignmentProvenance;
+use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -8,12 +10,15 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('filters, selection, and scroll context persist while correcting a Transaction in the inspector', function () {
+test('filters, selection, and scroll context persist while directly editing a Transaction in the inspector', function () {
     $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
     Transaction::factory()
         ->for($owner, 'owner')
         ->provisional([ReviewableTransactionField::MerchantDescription])
         ->create([
+            'category_id' => $category->id,
+            'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
             'merchant_description' => 'Neighborhood market',
             'occurred_on' => '2026-07-20',
         ]);
@@ -32,25 +37,31 @@ test('filters, selection, and scroll context persist while correcting a Transact
         ->assertQueryStringHas('search', 'Neighborhood')
         ->assertQueryStringHas('review_state', 'outstanding')
         ->assertSee('Neighborhood market')
-        ->assertDontSee('Unrelated pharmacy')
-        ->script('window.scrollTo(0, document.body.scrollHeight)');
+        ->assertDontSee('Unrelated pharmacy');
+
+    $page->script(
+        "document.body.style.minHeight = '2500px'; window.scrollTo(0, document.body.scrollHeight)",
+    );
+
+    $page->assertScript('window.scrollY > 0');
 
     $page
         ->press('Inspect')
         ->assertQueryStringHas('search', 'Neighborhood')
         ->assertQueryStringHas('review_state', 'outstanding')
         ->assertQueryStringHas('selected')
-        ->assertSee('Current values')
+        ->assertSee('Edit current Transaction')
         ->assertSee('Included in spending totals')
         ->assertSee('Provenance')
-        ->assertScript('window.scrollY > 0')
-        ->fill('Correct Merchant or description', 'Neighborhood market Lima')
-        ->press('Save Correction')
-        ->assertSee('Correction saved.')
+        ->fill('Edit merchant or description', 'Neighborhood market Lima')
+        ->press('Save Transaction')
+        ->assertSee('Transaction updated.')
         ->assertQueryStringHas('search', 'Neighborhood')
         ->assertQueryStringHas('review_state', 'outstanding')
         ->assertSee('Neighborhood market Lima')
-        ->assertSee('Correction · Merchant or description')
+        ->assertSee('Review clear')
+        ->press('Close')
+        ->assertScript('window.scrollY > 0')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
@@ -66,10 +77,10 @@ test('the Review Queue inspector can be dismissed without immediately reopening'
     $page = visit('/review-queue');
 
     $page
-        ->assertSee('Current values')
+        ->assertSee('Edit current Transaction')
         ->press('Close')
         ->assertQueryStringHas('inspector', 'closed')
-        ->assertDontSee('Current values')
+        ->assertDontSee('Edit current Transaction')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

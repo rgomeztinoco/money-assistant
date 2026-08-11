@@ -10,8 +10,9 @@ beforeEach(function () {
 
 test('the owner sets reporting preferences and sees an exact combined total', function () {
     $owner = User::factory()->create();
+    $today = now()->toDateString();
     Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
-        'occurred_on' => '2026-07-24',
+        'occurred_on' => $today,
         'amount_minor' => 1,
         'merchant_description' => 'Exact rounding purchase',
     ]);
@@ -24,7 +25,7 @@ test('the owner sets reporting preferences and sees an exact combined total', fu
         ->select('Currency', 'PEN')
         ->press('Save Reporting Currency')
         ->assertSee('Reporting Currency updated.')
-        ->fill('Applicable date', '2026-07-24')
+        ->fill('Applicable date', $today)
         ->fill('PEN per USD', '3.500000')
         ->press('Add Rate')
         ->assertSee('Daily Exchange Rate created.')
@@ -32,12 +33,11 @@ test('the owner sets reporting preferences and sees an exact combined total', fu
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
-    $page = visit(route('transactions.index'));
+    $page = visit(route('dashboard'));
 
     $page
         ->assertSee('$ 0.01')
         ->assertSee('S/ 0.04')
-        ->assertSee('Exact rounding purchase')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

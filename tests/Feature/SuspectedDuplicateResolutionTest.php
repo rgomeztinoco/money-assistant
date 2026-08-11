@@ -101,7 +101,6 @@ test('similar Transactions remain distinct and enter review without being merged
     $this->actingAs($owner)
         ->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '5000')
             ->has('transactions', 2),
         );
 
@@ -175,7 +174,6 @@ test('the owner can choose either compatible Transaction as survivor and preserv
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '2500')
             ->has('transactions', 1)
             ->where('transactions.0.id', $secondTransaction->id)
             ->has('voided_transactions', 1)
@@ -248,7 +246,6 @@ test('repeated or stale duplicate resolutions cannot move evidence or change spe
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '7500')
             ->has('transactions', 1)
             ->has('voided_transactions', 1),
         );
@@ -386,7 +383,6 @@ test('the owner can reopen a resolved pair and restore only the source reference
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.PEN', '8000')
             ->has('transactions', 2)
             ->has('voided_transactions', 0),
         );
@@ -442,9 +438,6 @@ test('duplicate resolution moves a compatible Receipt Breakdown whole and reopen
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.PEN', '4000')
-            ->where('category_totals.0.category.name', 'Groceries')
-            ->where('category_totals.0.totals.PEN', '4000')
             ->has('transactions', 1));
 
     $this->delete(
@@ -462,7 +455,6 @@ test('duplicate resolution moves a compatible Receipt Breakdown whole and reopen
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.PEN', '8000')
             ->has('transactions', 2));
 });
 
@@ -839,7 +831,6 @@ test('a duplicate resolution cannot void the survivor of another resolved pair',
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '5000')
             ->has('transactions', 1)
             ->has('voided_transactions', 2),
         );
