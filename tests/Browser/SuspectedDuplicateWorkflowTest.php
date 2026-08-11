@@ -71,7 +71,7 @@ test('the inspector shows both records and the exact duplicate resolution effect
         ->click('Keep Market receipt')
         ->assertSee('Keep Market receipt active.')
         ->assertSee('Move 1 source reference from Market notification to Market receipt.')
-        ->assertSee('Move 1 Receipt Breakdown with all Line Items intact from Market notification to Market receipt.')
+        ->assertSee('Move the Receipt Breakdown with all Line Items intact from Market notification to Market receipt.')
         ->assertSee('Void Market notification and remove $ 25.00 from USD net spending.')
         ->assertSee('Remove $ 25.00 from Groceries Category spending.')
         ->press('Confirm resolution')

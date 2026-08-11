@@ -148,16 +148,12 @@ class ReopenSuspectedDuplicate
 
                     if (
                         $receiptBreakdown->transaction_id !== $receiptBreakdownMove->to_transaction_id
-                        || $receiptBreakdown->revision !== $receiptBreakdownMove->receipt_breakdown_revision
-                        || $receiptBreakdown->status !== $receiptBreakdownMove->receipt_breakdown_status
                     ) {
                         throw new InvalidArgumentException('A moved Receipt Breakdown changed before the relationship could be reopened.');
                     }
 
-                    if (in_array($receiptBreakdown->status, ['draft', 'confirmed'], true)
-                        && $receiptBreakdowns
-                            ->where('transaction_id', $receiptBreakdownMove->from_transaction_id)
-                            ->contains('status', $receiptBreakdown->status)) {
+                    if ($receiptBreakdowns
+                        ->contains('transaction_id', $receiptBreakdownMove->from_transaction_id)) {
                         throw new InvalidArgumentException('Reopening would overwrite newer Receipt Breakdown work.');
                     }
                 }

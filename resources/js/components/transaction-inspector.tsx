@@ -1,7 +1,6 @@
 import { Form } from '@inertiajs/react';
 import {
     Check,
-    ArchiveRestore,
     CircleAlert,
     CircleOff,
     History,
@@ -15,15 +14,9 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import {
-    destroy as removeConfirmedReceiptBreakdown,
-    store as confirmReceiptBreakdown,
-} from '@/actions/App/Http/Controllers/ReceiptBreakdownConfirmationController';
-import {
-    destroy as discardReceiptBreakdown,
-    store as createReceiptBreakdown,
-    update as updateReceiptBreakdown,
+    destroy as removeReceiptBreakdown,
+    update as saveReceiptBreakdown,
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
-import { default as restoreReceiptBreakdown } from '@/actions/App/Http/Controllers/ReceiptBreakdownTrashRestorationController';
 import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { update as updateCategory } from '@/actions/App/Http/Controllers/TransactionCategoryController';
 import { update } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
@@ -54,35 +47,9 @@ import type {
     DuplicateRelationship,
     DuplicateTransaction,
     ReviewField,
-    ReceiptLineItem,
     SelectedTransaction,
     CategoryOption,
 } from '@/types';
-
-const receiptLineItemRoleOptions: Array<{
-    value: ReceiptLineItem['role'];
-    label: string;
-}> = [
-    { value: 'purchased_item', label: 'Purchased item' },
-    { value: 'tax', label: 'Tax' },
-    { value: 'discount', label: 'Discount' },
-    { value: 'tip', label: 'Tip' },
-    { value: 'fee', label: 'Fee' },
-    { value: 'rounding', label: 'Rounding' },
-    { value: 'other_adjustment', label: 'Other adjustment' },
-    { value: 'unidentified', label: 'Unidentified known amount' },
-];
-
-function receiptLineItemRoleLabel(role: ReceiptLineItem['role']): string {
-    return (
-        receiptLineItemRoleOptions.find((option) => option.value === role)
-            ?.label ?? role
-    );
-}
-
-function isAdjustmentRole(role: ReceiptLineItem['role']): boolean {
-    return role !== 'purchased_item' && role !== 'unidentified';
-}
 
 function CorrectionControl({
     transactionId,
@@ -248,15 +215,11 @@ function survivorChoiceBlockReason(
         return 'The records have different original purchase relationships.';
     }
 
-    const conflictingReceiptBreakdownStatus =
-        transactionToVoid.receipt_breakdown_statuses.find(
-            (status) =>
-                status !== 'superseded' &&
-                survivor.receipt_breakdown_statuses.includes(status),
-        );
-
-    if (conflictingReceiptBreakdownStatus) {
-        return `Both Transactions have a ${conflictingReceiptBreakdownStatus} Receipt Breakdown.`;
+    if (
+        survivor.has_receipt_breakdown &&
+        transactionToVoid.has_receipt_breakdown
+    ) {
+        return 'Both Transactions have a Receipt Breakdown.';
     }
 
     if (transactionToVoid.has_linked_refunds) {
@@ -466,23 +429,10 @@ function SuspectedDuplicateDialog({
                                         {transactionToVoid.merchant_description}{' '}
                                         to {survivor.merchant_description}.
                                     </p>
-                                    {transactionToVoid
-                                        .receipt_breakdown_statuses.length >
-                                        0 && (
+                                    {transactionToVoid.has_receipt_breakdown && (
                                         <p>
-                                            Move{' '}
-                                            {
-                                                transactionToVoid
-                                                    .receipt_breakdown_statuses
-                                                    .length
-                                            }{' '}
-                                            Receipt{' '}
-                                            {transactionToVoid
-                                                .receipt_breakdown_statuses
-                                                .length === 1
-                                                ? 'Breakdown'
-                                                : 'Breakdowns'}{' '}
-                                            with all Line Items intact from{' '}
+                                            Move the Receipt Breakdown with all
+                                            Line Items intact from{' '}
                                             {
                                                 transactionToVoid.merchant_description
                                             }{' '}
@@ -564,55 +514,43 @@ function ReceiptBreakdownSection({
     transaction: SelectedTransaction;
     categoryOptions: CategoryOption[];
 }) {
-    const draft = transaction.receipt_breakdown.draft;
-    const confirmed = transaction.receipt_breakdown.confirmed;
-    const [draftLineItems, setDraftLineItems] = useState(() =>
-        (draft?.line_items ?? []).map((lineItem) => ({
-            ...lineItem,
-            clientId: lineItem.id,
-        })),
+    const breakdown = transaction.receipt_breakdown;
+    const [lineItems, setLineItems] = useState(
+        () =>
+            breakdown?.line_items.map((lineItem) => ({
+                ...lineItem,
+                clientId: lineItem.id,
+            })) ?? [
+                {
+                    id: '',
+                    clientId: crypto.randomUUID(),
+                    description: transaction.merchant_description,
+                    quantity: null,
+                    unit_price_minor: null,
+                    line_total_minor: transaction.amount_minor,
+                    category:
+                        transaction.category === null
+                            ? null
+                            : {
+                                  id: transaction.category.id,
+                                  name: transaction.category.name,
+                              },
+                },
+            ],
     );
-    const draftIsDirty =
-        draft !== null &&
-        JSON.stringify(
-            draftLineItems.map((lineItem) => ({
-                id: lineItem.id || null,
-                description: lineItem.description,
-                role: lineItem.role,
-                quantity: lineItem.quantity,
-                unit_price_minor: lineItem.unit_price_minor,
-                line_total_minor: lineItem.line_total_minor,
-                category_id: lineItem.category?.id ?? null,
-                related_line_item_id: lineItem.related_line_item_id,
-            })),
-        ) !==
-            JSON.stringify(
-                draft.line_items.map((lineItem) => ({
-                    id: lineItem.id,
-                    description: lineItem.description,
-                    role: lineItem.role,
-                    quantity: lineItem.quantity,
-                    unit_price_minor: lineItem.unit_price_minor,
-                    line_total_minor: lineItem.line_total_minor,
-                    category_id: lineItem.category?.id ?? null,
-                    related_line_item_id: lineItem.related_line_item_id,
-                })),
-            );
 
-    function updateDraftLineItem(
+    function updateLineItem(
         clientId: string,
         field:
             | 'description'
-            | 'role'
             | 'quantity'
             | 'unit_price_minor'
             | 'line_total_minor'
-            | 'category_id'
-            | 'related_line_item_id',
+            | 'category_id',
         value: string,
     ) {
-        setDraftLineItems((lineItems) =>
-            lineItems.map((lineItem) => {
+        setLineItems((currentLineItems) =>
+            currentLineItems.map((lineItem) => {
                 if (lineItem.clientId !== clientId) {
                     return lineItem;
                 }
@@ -630,36 +568,6 @@ function ReceiptBreakdownSection({
                     };
                 }
 
-                if (field === 'related_line_item_id') {
-                    const relatedLineItem = lineItems.find(
-                        (candidate) => candidate.id === value,
-                    );
-
-                    return {
-                        ...lineItem,
-                        related_line_item_id: value || null,
-                        category:
-                            lineItem.category ??
-                            relatedLineItem?.category ??
-                            null,
-                    };
-                }
-
-                if (field === 'role') {
-                    const role = value as ReceiptLineItem['role'];
-
-                    return {
-                        ...lineItem,
-                        role,
-                        category:
-                            role === 'unidentified' ? null : lineItem.category,
-                        related_line_item_id: isAdjustmentRole(role)
-                            ? lineItem.related_line_item_id
-                            : null,
-                        requires_review: role === 'unidentified',
-                    };
-                }
-
                 return { ...lineItem, [field]: value };
             }),
         );
@@ -671,510 +579,221 @@ function ReceiptBreakdownSection({
                 <h2 className="flex items-center gap-2 font-semibold">
                     <ReceiptText className="size-4" /> Receipt Breakdown
                 </h2>
-                {confirmed && <Badge variant="outline">Active</Badge>}
-                {draft && <Badge variant="secondary">Draft</Badge>}
+                {breakdown && <Badge variant="outline">Active</Badge>}
             </div>
 
-            {confirmed && (
-                <div className="grid gap-3 rounded-lg border p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                        <p className="font-medium">
-                            Confirmed revision {confirmed.revision}
-                        </p>
-                        <p className="tabular-nums">
-                            {formatMinorUnits(
-                                confirmed.total_minor,
-                                transaction.currency,
-                            )}
-                        </p>
-                    </div>
-                    <div className="grid gap-2">
-                        {confirmed.line_items.map((lineItem) => (
-                            <div
-                                key={lineItem.id}
-                                className="flex items-start justify-between gap-3 border-t pt-2 text-sm first:border-0 first:pt-0"
-                            >
-                                <div>
-                                    <p className="font-medium">
-                                        {lineItem.description}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                        {receiptLineItemRoleLabel(
-                                            lineItem.role,
-                                        )}{' '}
-                                        ·{' '}
-                                        {lineItem.category?.name ??
-                                            'Uncategorized'}
-                                        {lineItem.quantity !== null && (
-                                            <> · Quantity {lineItem.quantity}</>
-                                        )}
-                                        {lineItem.unit_price_minor !== null && (
-                                            <>
-                                                {' '}
-                                                · Unit{' '}
-                                                {formatMinorUnits(
-                                                    lineItem.unit_price_minor,
-                                                    transaction.currency,
-                                                )}
-                                            </>
-                                        )}
-                                        {lineItem.related_line_item_id !==
-                                            null && <> · Item-specific</>}
-                                    </p>
-                                </div>
-                                <p className="tabular-nums">
-                                    {formatMinorUnits(
-                                        lineItem.line_total_minor,
-                                        transaction.currency,
-                                    )}
-                                </p>
-                            </div>
-                        ))}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                        These Line Items replace the Transaction Category in
-                        reports; they do not add another contribution.
+            <div className="grid gap-3 rounded-lg border p-4">
+                <div className="grid gap-1 text-sm">
+                    <p className="font-medium">
+                        {breakdown
+                            ? 'Current itemization'
+                            : 'Manual itemization'}
                     </p>
-                    {!draft ? (
-                        <Form
-                            {...removeConfirmedReceiptBreakdown.form(
-                                confirmed.id,
-                            )}
-                            options={{
-                                preserveScroll: true,
-                                preserveState: true,
-                            }}
-                            className="grid gap-1"
-                        >
-                            {({ errors, processing }) => (
-                                <>
-                                    <input
-                                        type="hidden"
-                                        name="expected_revision"
-                                        value={confirmed.revision}
-                                    />
-                                    <Button
-                                        type="submit"
-                                        variant="outline"
-                                        size="sm"
-                                        className="w-fit"
-                                        disabled={processing}
-                                    >
-                                        {processing ? <Spinner /> : <History />}
-                                        Remove from reports
-                                    </Button>
-                                    <InputError
-                                        message={
-                                            errors.receipt_breakdown ??
-                                            errors.expected_revision
-                                        }
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                        This returns the confirmed breakdown to
-                                        draft without deleting its Line Items.
-                                    </p>
-                                </>
-                            )}
-                        </Form>
-                    ) : (
-                        <p className="text-xs text-muted-foreground">
-                            Discard the replacement draft before removing this
-                            confirmed breakdown from reports.
-                        </p>
-                    )}
+                    <p className="text-muted-foreground">
+                        Signed Line Item totals must equal{' '}
+                        {formatMinorUnits(
+                            transaction.amount_minor,
+                            transaction.currency,
+                        )}
+                        . Quantity and unit price are optional context only.
+                    </p>
                 </div>
-            )}
 
-            {draft && (
-                <div className="grid gap-3 rounded-lg border border-primary/30 bg-primary/[0.03] p-4">
-                    <div className="grid gap-1 text-sm">
-                        <p className="font-medium">
-                            Draft revision {draft.revision}
-                        </p>
-                        <p className="text-muted-foreground">
-                            Draft total:{' '}
-                            {formatMinorUnits(
-                                draft.total_minor,
-                                transaction.currency,
-                            )}{' '}
-                            · Delta:{' '}
-                            {formatMinorUnits(
-                                draft.delta_minor,
-                                transaction.currency,
-                            )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                            Draft Line Items do not affect reports.
-                        </p>
-                    </div>
-                    <Form
-                        {...updateReceiptBreakdown.form(draft.id)}
-                        options={{ preserveScroll: true, preserveState: true }}
-                        className="grid gap-3"
-                    >
-                        {({ errors, processing }) => (
-                            <>
-                                <input
-                                    type="hidden"
-                                    name="expected_revision"
-                                    value={draft.revision}
-                                />
-                                {draftLineItems.map((lineItem, index) => (
-                                    <div
-                                        key={lineItem.clientId}
-                                        className="grid gap-3 rounded-md border bg-background p-3 sm:grid-cols-2"
-                                    >
-                                        <input
-                                            type="hidden"
-                                            name={`line_items[${index}][id]`}
-                                            value={lineItem.id}
-                                        />
-                                        <div className="grid gap-2">
-                                            <Label
-                                                htmlFor={`receipt-line-${lineItem.clientId}-role`}
-                                            >
-                                                Role
-                                            </Label>
-                                            <NativeSelect
-                                                id={`receipt-line-${lineItem.clientId}-role`}
-                                                name={`line_items[${index}][role]`}
-                                                value={lineItem.role}
-                                                onChange={(event) =>
-                                                    updateDraftLineItem(
-                                                        lineItem.clientId,
-                                                        'role',
-                                                        event.target.value,
-                                                    )
-                                                }
-                                                options={
-                                                    receiptLineItemRoleOptions
-                                                }
-                                            />
-                                        </div>
-                                        {isAdjustmentRole(lineItem.role) && (
-                                            <div className="grid gap-2">
-                                                <Label
-                                                    htmlFor={`receipt-line-${lineItem.clientId}-related-item`}
-                                                >
-                                                    Applies to
-                                                </Label>
-                                                <NativeSelect
-                                                    id={`receipt-line-${lineItem.clientId}-related-item`}
-                                                    name={`line_items[${index}][related_line_item_id]`}
-                                                    value={
-                                                        lineItem.related_line_item_id ??
-                                                        ''
-                                                    }
-                                                    onChange={(event) =>
-                                                        updateDraftLineItem(
-                                                            lineItem.clientId,
-                                                            'related_line_item_id',
-                                                            event.target.value,
-                                                        )
-                                                    }
-                                                    options={[
-                                                        {
-                                                            value: '',
-                                                            label: 'Whole receipt',
-                                                        },
-                                                        ...draftLineItems
-                                                            .filter(
-                                                                (candidate) =>
-                                                                    candidate.role ===
-                                                                        'purchased_item' &&
-                                                                    candidate.id !==
-                                                                        '',
-                                                            )
-                                                            .map(
-                                                                (
-                                                                    candidate,
-                                                                ) => ({
-                                                                    value: candidate.id,
-                                                                    label: candidate.description,
-                                                                }),
-                                                            ),
-                                                    ]}
-                                                />
-                                                <p className="text-xs text-muted-foreground">
-                                                    Item-specific adjustments
-                                                    default to the purchased
-                                                    item&apos;s Category.
-                                                </p>
-                                            </div>
-                                        )}
-                                        <div className="grid gap-2">
-                                            <Label
-                                                htmlFor={`receipt-line-${lineItem.clientId}-description`}
-                                            >
-                                                Description
-                                            </Label>
-                                            <Input
-                                                id={`receipt-line-${lineItem.clientId}-description`}
-                                                name={`line_items[${index}][description]`}
-                                                value={lineItem.description}
-                                                onChange={(event) =>
-                                                    updateDraftLineItem(
-                                                        lineItem.clientId,
-                                                        'description',
-                                                        event.target.value,
-                                                    )
-                                                }
-                                                required
-                                            />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label
-                                                htmlFor={`receipt-line-${lineItem.clientId}-quantity`}
-                                            >
-                                                Printed quantity
-                                            </Label>
-                                            <Input
-                                                id={`receipt-line-${lineItem.clientId}-quantity`}
-                                                name={`line_items[${index}][quantity]`}
-                                                inputMode="decimal"
-                                                value={lineItem.quantity ?? ''}
-                                                onChange={(event) =>
-                                                    updateDraftLineItem(
-                                                        lineItem.clientId,
-                                                        'quantity',
-                                                        event.target.value,
-                                                    )
-                                                }
-                                                placeholder="Optional context"
-                                            />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label
-                                                htmlFor={`receipt-line-${lineItem.clientId}-unit-price`}
-                                            >
-                                                Printed unit price in minor
-                                                units
-                                            </Label>
-                                            <Input
-                                                id={`receipt-line-${lineItem.clientId}-unit-price`}
-                                                name={`line_items[${index}][unit_price_minor]`}
-                                                type="number"
-                                                step="1"
-                                                value={
-                                                    lineItem.unit_price_minor ??
-                                                    ''
-                                                }
-                                                onChange={(event) =>
-                                                    updateDraftLineItem(
-                                                        lineItem.clientId,
-                                                        'unit_price_minor',
-                                                        event.target.value,
-                                                    )
-                                                }
-                                                placeholder="Optional context"
-                                            />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label
-                                                htmlFor={`receipt-line-${lineItem.clientId}-total`}
-                                            >
-                                                Signed total in minor units
-                                            </Label>
-                                            <Input
-                                                id={`receipt-line-${lineItem.clientId}-total`}
-                                                name={`line_items[${index}][line_total_minor]`}
-                                                type="number"
-                                                min={
-                                                    lineItem.role ===
-                                                    'purchased_item'
-                                                        ? '1'
-                                                        : undefined
-                                                }
-                                                step="1"
-                                                value={
-                                                    lineItem.line_total_minor
-                                                }
-                                                onChange={(event) =>
-                                                    updateDraftLineItem(
-                                                        lineItem.clientId,
-                                                        'line_total_minor',
-                                                        event.target.value,
-                                                    )
-                                                }
-                                                required
-                                            />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label
-                                                htmlFor={`receipt-line-${lineItem.clientId}-category`}
-                                            >
-                                                Category
-                                            </Label>
-                                            {lineItem.role ===
-                                                'unidentified' && (
-                                                <input
-                                                    type="hidden"
-                                                    name={`line_items[${index}][category_id]`}
-                                                    value=""
-                                                />
-                                            )}
-                                            <NativeSelect
-                                                id={`receipt-line-${lineItem.clientId}-category`}
-                                                name={
-                                                    lineItem.role ===
-                                                    'unidentified'
-                                                        ? undefined
-                                                        : `line_items[${index}][category_id]`
-                                                }
-                                                disabled={
-                                                    lineItem.role ===
-                                                    'unidentified'
-                                                }
-                                                value={
-                                                    lineItem.category?.id.toString() ??
-                                                    ''
-                                                }
-                                                onChange={(event) =>
-                                                    updateDraftLineItem(
-                                                        lineItem.clientId,
-                                                        'category_id',
-                                                        event.target.value,
-                                                    )
-                                                }
-                                                options={[
-                                                    {
-                                                        value: '',
-                                                        label: 'Uncategorized',
-                                                    },
-                                                    ...categoryOptions.map(
-                                                        (category) => ({
-                                                            value: category.id.toString(),
-                                                            label: category.path,
-                                                        }),
-                                                    ),
-                                                ]}
-                                            />
-                                            {lineItem.role ===
-                                                'unidentified' && (
-                                                <p className="text-xs text-muted-foreground">
-                                                    Unidentified amounts stay
-                                                    Uncategorized and in the
-                                                    Review Queue.
-                                                </p>
-                                            )}
-                                        </div>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="w-fit text-destructive sm:col-span-2"
-                                            disabled={
-                                                draftLineItems.length === 1
-                                            }
-                                            onClick={() =>
-                                                setDraftLineItems((lineItems) =>
-                                                    lineItems.filter(
-                                                        (candidate) =>
-                                                            candidate.clientId !==
-                                                            lineItem.clientId,
-                                                    ),
+                <Form
+                    {...saveReceiptBreakdown.form(transaction.id)}
+                    options={{ preserveScroll: true, preserveState: true }}
+                    className="grid gap-3"
+                >
+                    {({ errors, processing }) => (
+                        <>
+                            {lineItems.map((lineItem, index) => (
+                                <div
+                                    key={lineItem.clientId}
+                                    className="grid gap-3 rounded-md border bg-background p-3 sm:grid-cols-2"
+                                >
+                                    <div className="grid gap-2 sm:col-span-2">
+                                        <Label
+                                            htmlFor={`receipt-line-${lineItem.clientId}-description`}
+                                        >
+                                            Description
+                                        </Label>
+                                        <Input
+                                            id={`receipt-line-${lineItem.clientId}-description`}
+                                            name={`line_items[${index}][description]`}
+                                            value={lineItem.description}
+                                            onChange={(event) =>
+                                                updateLineItem(
+                                                    lineItem.clientId,
+                                                    'description',
+                                                    event.target.value,
                                                 )
                                             }
-                                        >
-                                            <Trash2 /> Remove item
-                                        </Button>
+                                            required
+                                        />
                                     </div>
-                                ))}
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-fit"
-                                    disabled={draftLineItems.length >= 200}
-                                    onClick={() => {
-                                        const clientId = crypto.randomUUID();
+                                    <div className="grid gap-2">
+                                        <Label
+                                            htmlFor={`receipt-line-${lineItem.clientId}-quantity`}
+                                        >
+                                            Quantity
+                                        </Label>
+                                        <Input
+                                            id={`receipt-line-${lineItem.clientId}-quantity`}
+                                            name={`line_items[${index}][quantity]`}
+                                            inputMode="decimal"
+                                            value={lineItem.quantity ?? ''}
+                                            onChange={(event) =>
+                                                updateLineItem(
+                                                    lineItem.clientId,
+                                                    'quantity',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="Optional context"
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label
+                                            htmlFor={`receipt-line-${lineItem.clientId}-unit-price`}
+                                        >
+                                            Unit price in minor units
+                                        </Label>
+                                        <Input
+                                            id={`receipt-line-${lineItem.clientId}-unit-price`}
+                                            name={`line_items[${index}][unit_price_minor]`}
+                                            type="number"
+                                            step="1"
+                                            value={
+                                                lineItem.unit_price_minor ?? ''
+                                            }
+                                            onChange={(event) =>
+                                                updateLineItem(
+                                                    lineItem.clientId,
+                                                    'unit_price_minor',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="Optional context"
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label
+                                            htmlFor={`receipt-line-${lineItem.clientId}-total`}
+                                        >
+                                            Signed total in minor units
+                                        </Label>
+                                        <Input
+                                            id={`receipt-line-${lineItem.clientId}-total`}
+                                            name={`line_items[${index}][line_total_minor]`}
+                                            type="number"
+                                            step="1"
+                                            value={lineItem.line_total_minor}
+                                            onChange={(event) =>
+                                                updateLineItem(
+                                                    lineItem.clientId,
+                                                    'line_total_minor',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            required
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label
+                                            htmlFor={`receipt-line-${lineItem.clientId}-category`}
+                                        >
+                                            Category
+                                        </Label>
+                                        <NativeSelect
+                                            id={`receipt-line-${lineItem.clientId}-category`}
+                                            name={`line_items[${index}][category_id]`}
+                                            value={
+                                                lineItem.category?.id.toString() ??
+                                                ''
+                                            }
+                                            onChange={(event) =>
+                                                updateLineItem(
+                                                    lineItem.clientId,
+                                                    'category_id',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            options={[
+                                                {
+                                                    value: '',
+                                                    label: 'Uncategorized',
+                                                },
+                                                ...categoryOptions.map(
+                                                    (category) => ({
+                                                        value: category.id.toString(),
+                                                        label: category.path,
+                                                    }),
+                                                ),
+                                            ]}
+                                        />
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="w-fit text-destructive sm:col-span-2"
+                                        disabled={lineItems.length === 1}
+                                        onClick={() =>
+                                            setLineItems((currentLineItems) =>
+                                                currentLineItems.filter(
+                                                    (candidate) =>
+                                                        candidate.clientId !==
+                                                        lineItem.clientId,
+                                                ),
+                                            )
+                                        }
+                                    >
+                                        <Trash2 /> Remove item
+                                    </Button>
+                                </div>
+                            ))}
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="w-fit"
+                                disabled={lineItems.length >= 200}
+                                onClick={() =>
+                                    setLineItems((currentLineItems) => [
+                                        ...currentLineItems,
+                                        {
+                                            id: '',
+                                            clientId: crypto.randomUUID(),
+                                            description: '',
+                                            quantity: null,
+                                            unit_price_minor: null,
+                                            line_total_minor: '1',
+                                            category: null,
+                                        },
+                                    ])
+                                }
+                            >
+                                <Plus /> Add Line Item
+                            </Button>
+                            <InputError message={errors.line_items} />
+                            <Button type="submit" disabled={processing}>
+                                {processing && <Spinner />}
+                                {breakdown
+                                    ? 'Replace Receipt Breakdown'
+                                    : 'Save Receipt Breakdown'}
+                            </Button>
+                        </>
+                    )}
+                </Form>
 
-                                        setDraftLineItems((lineItems) => [
-                                            ...lineItems,
-                                            {
-                                                id: '',
-                                                clientId,
-                                                description: '',
-                                                role: 'purchased_item' as const,
-                                                quantity: null,
-                                                unit_price_minor: null,
-                                                line_total_minor: '1',
-                                                category: null,
-                                                related_line_item_id: null,
-                                                requires_review: false,
-                                            },
-                                        ]);
-                                    }}
-                                >
-                                    <Plus /> Add Line Item
-                                </Button>
-                                <InputError
-                                    message={
-                                        errors.line_items ??
-                                        errors.expected_revision
-                                    }
-                                />
-                                <Button
-                                    type="submit"
-                                    variant="secondary"
-                                    disabled={processing}
-                                >
-                                    {processing && <Spinner />}
-                                    Save draft revision
-                                </Button>
-                            </>
-                        )}
-                    </Form>
+                {breakdown && (
                     <Form
-                        {...confirmReceiptBreakdown.form(draft.id)}
+                        {...removeReceiptBreakdown.form(transaction.id)}
                         options={{ preserveScroll: true, preserveState: true }}
                         className="grid gap-1"
                     >
                         {({ errors, processing }) => (
                             <>
-                                <input
-                                    type="hidden"
-                                    name="expected_revision"
-                                    value={draft.revision}
-                                />
-                                <Button
-                                    type="submit"
-                                    disabled={
-                                        processing ||
-                                        draft.delta_minor !== '0' ||
-                                        draftIsDirty
-                                    }
-                                >
-                                    {processing ? <Spinner /> : <Check />}
-                                    Confirm exact breakdown
-                                </Button>
-                                <InputError
-                                    message={
-                                        errors.reconciliation ??
-                                        errors.expected_revision
-                                    }
-                                />
-                                {draftIsDirty && (
-                                    <p className="text-xs text-muted-foreground">
-                                        Save these edits as a new draft revision
-                                        before confirming.
-                                    </p>
-                                )}
-                            </>
-                        )}
-                    </Form>
-                    <Form
-                        {...discardReceiptBreakdown.form(draft.id)}
-                        options={{ preserveScroll: true, preserveState: true }}
-                        className="grid gap-1"
-                    >
-                        {({ errors, processing }) => (
-                            <>
-                                <input
-                                    type="hidden"
-                                    name="expected_revision"
-                                    value={draft.revision}
-                                />
                                 <Button
                                     type="submit"
                                     variant="ghost"
@@ -1183,127 +802,20 @@ function ReceiptBreakdownSection({
                                     disabled={processing}
                                 >
                                     {processing ? <Spinner /> : <Trash2 />}
-                                    Move draft to trash
+                                    Remove Receipt Breakdown
                                 </Button>
                                 <InputError
-                                    message={
-                                        errors.receipt_breakdown ??
-                                        errors.expected_revision
-                                    }
+                                    message={errors.receipt_breakdown}
                                 />
                                 <p className="text-xs text-muted-foreground">
-                                    This draft and its Line Items remain
-                                    recoverable in trash for 30 days. Reporting
-                                    is unchanged.
+                                    Reporting will return to the Transaction
+                                    Category.
                                 </p>
                             </>
                         )}
                     </Form>
-                </div>
-            )}
-
-            {!draft && transaction.trashed_receipt_breakdowns.length === 0 && (
-                <div className="grid gap-3 rounded-lg border border-dashed p-4">
-                    <div>
-                        <p className="font-medium">Manual itemization</p>
-                        <p className="text-sm text-muted-foreground">
-                            Start with one Line Item for the full Transaction,
-                            then edit the draft to match the receipt.
-                        </p>
-                    </div>
-                    <Form
-                        {...createReceiptBreakdown.form(transaction.id)}
-                        options={{
-                            preserveScroll: true,
-                            preserveState: true,
-                        }}
-                        className="grid gap-2"
-                    >
-                        {({ errors, processing }) => (
-                            <>
-                                <input
-                                    type="hidden"
-                                    name="expected_transaction_revision"
-                                    value={transaction.revision}
-                                />
-                                <Button
-                                    type="submit"
-                                    variant="outline"
-                                    className="w-fit"
-                                    disabled={processing}
-                                >
-                                    {processing ? <Spinner /> : <ReceiptText />}
-                                    Create Receipt Breakdown
-                                </Button>
-                                <InputError
-                                    message={
-                                        errors.transaction_id ??
-                                        errors.expected_transaction_revision
-                                    }
-                                />
-                            </>
-                        )}
-                    </Form>
-                </div>
-            )}
-
-            {!draft && transaction.trashed_receipt_breakdowns.length > 0 && (
-                <div className="grid gap-3 rounded-lg border border-dashed p-4">
-                    <div>
-                        <p className="font-medium">
-                            Receipt Breakdowns in trash
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                            Restore a draft before its 30-day recovery window
-                            expires.
-                        </p>
-                    </div>
-                    {transaction.trashed_receipt_breakdowns.map((breakdown) => (
-                        <Form
-                            key={breakdown.deletion_id}
-                            {...restoreReceiptBreakdown.form(
-                                breakdown.deletion_id,
-                            )}
-                            options={{
-                                preserveScroll: true,
-                                preserveState: true,
-                            }}
-                            className="flex flex-col justify-between gap-3 rounded-md border p-3 sm:flex-row sm:items-center"
-                        >
-                            {({ processing }) => (
-                                <>
-                                    <div>
-                                        <p className="text-sm font-medium">
-                                            Draft revision {breakdown.revision}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            Purges after{' '}
-                                            {new Date(
-                                                breakdown.purge_after,
-                                            ).toLocaleString()}
-                                        </p>
-                                    </div>
-                                    <Button
-                                        type="submit"
-                                        variant="outline"
-                                        size="sm"
-                                        disabled={processing}
-                                        aria-label={`Restore draft revision ${breakdown.revision}`}
-                                    >
-                                        {processing ? (
-                                            <Spinner />
-                                        ) : (
-                                            <ArchiveRestore />
-                                        )}
-                                        Restore draft revision{' '}
-                                        {breakdown.revision}
-                                    </Button>
-                                </>
-                            )}
-                        </Form>
-                    ))}
-                </div>
-            )}
+                )}
+            </div>
         </section>
     );
 }
@@ -1323,9 +835,8 @@ export function TransactionInspector({
           transaction.duplicate_relationships.filter(
               (relationship) => relationship.status === 'suspected',
           ).length +
-          (transaction.receipt_breakdown.confirmed?.line_items.filter(
-              (lineItem) =>
-                  lineItem.category === null || lineItem.requires_review,
+          (transaction.receipt_breakdown?.line_items.filter(
+              (lineItem) => lineItem.category === null,
           ).length ?? 0)
         : 0;
 
@@ -1478,7 +989,7 @@ export function TransactionInspector({
                         </section>
 
                         <ReceiptBreakdownSection
-                            key={`${transaction.receipt_breakdown.draft?.id ?? 'none'}-${transaction.receipt_breakdown.draft?.revision ?? 0}-${transaction.receipt_breakdown.confirmed?.id ?? 'none'}`}
+                            key={`${transaction.receipt_breakdown?.id ?? 'none'}-${transaction.receipt_breakdown?.line_items.map((lineItem) => lineItem.id).join('-') ?? ''}`}
                             transaction={transaction}
                             categoryOptions={categoryOptions}
                         />

@@ -24,16 +24,6 @@ class ReceiptBreakdownFactory extends Factory
                 ->whereKey($attributes['transaction_id'])
                 ->firstOrFail()
                 ->user_id,
-            'status' => 'confirmed',
-            'confirmed_at' => now(),
         ];
-    }
-
-    public function draft(): static
-    {
-        return $this->state(fn (): array => [
-            'status' => 'draft',
-            'confirmed_at' => null,
-        ]);
     }
 }

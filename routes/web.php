@@ -14,9 +14,7 @@ use App\Http\Controllers\MerchantRuleController;
 use App\Http\Controllers\ParserProfileController;
 use App\Http\Controllers\ParserProfilePreviewController;
 use App\Http\Controllers\ParserProfileSourceMessageController;
-use App\Http\Controllers\ReceiptBreakdownConfirmationController;
 use App\Http\Controllers\ReceiptBreakdownController;
-use App\Http\Controllers\ReceiptBreakdownTrashRestorationController;
 use App\Http\Controllers\ReportingCurrencyController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\SpendingNotificationRecoveryController;
@@ -63,16 +61,10 @@ Route::middleware(['auth'])->group(function () {
             'update' => 'merchant_rules.update',
             'destroy' => 'merchant_rules.destroy',
         ]);
-    Route::post('transactions/{transaction}/receipt-breakdown', [ReceiptBreakdownController::class, 'store'])
-        ->name('transactions.receipt_breakdowns.store');
-    Route::put('receipt-breakdowns/{receipt_breakdown}', [ReceiptBreakdownController::class, 'update'])
-        ->name('receipt_breakdowns.update');
-    Route::delete('receipt-breakdowns/{receipt_breakdown}', [ReceiptBreakdownController::class, 'destroy'])
-        ->name('receipt_breakdowns.destroy');
-    Route::post('receipt-breakdowns/{receipt_breakdown}/confirmation', [ReceiptBreakdownConfirmationController::class, 'store'])
-        ->name('receipt_breakdowns.confirmation.store');
-    Route::delete('receipt-breakdowns/{receipt_breakdown}/confirmation', [ReceiptBreakdownConfirmationController::class, 'destroy'])
-        ->name('receipt_breakdowns.confirmation.destroy');
+    Route::put('transactions/{transaction}/receipt-breakdown', [ReceiptBreakdownController::class, 'update'])
+        ->name('transactions.receipt_breakdowns.update');
+    Route::delete('transactions/{transaction}/receipt-breakdown', [ReceiptBreakdownController::class, 'destroy'])
+        ->name('transactions.receipt_breakdowns.destroy');
     Route::put('transactions/{transaction}/category', [TransactionCategoryController::class, 'update'])
         ->name('transactions.category.update');
     Route::resource('categories', CategoryController::class)
@@ -93,8 +85,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('categories.destroy');
     Route::post('trash/categories/{deletionId}/restoration', CategoryTrashRestorationController::class)
         ->name('trash.categories.restoration.store');
-    Route::post('trash/receipt-breakdowns/{deletionId}/restoration', ReceiptBreakdownTrashRestorationController::class)
-        ->name('trash.receipt_breakdowns.restoration.store');
     Route::post('categories/{category}/retirement', [CategoryRetirementController::class, 'store'])
         ->name('categories.retirement.store');
     Route::delete('categories/{category}/retirement', [CategoryRetirementController::class, 'destroy'])

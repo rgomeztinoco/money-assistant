@@ -12,7 +12,7 @@ use App\Models\SuspectedDuplicateResolution;
 use App\Models\SuspectedDuplicateSourceMove;
 use App\Models\Transaction;
 use App\Models\User;
-use App\ReceiptBreakdownSetFingerprint;
+use App\ReceiptBreakdownFingerprint;
 use App\SourceReferenceSetFingerprint;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -29,8 +29,8 @@ function suspectedDuplicateSourceReferenceFingerprint(Transaction $transaction):
 
 function suspectedDuplicateReceiptBreakdownFingerprint(Transaction $transaction): string
 {
-    return ReceiptBreakdownSetFingerprint::fromBreakdowns(
-        $transaction->receiptBreakdowns()->orderBy('id')->get(),
+    return ReceiptBreakdownFingerprint::fromBreakdown(
+        $transaction->receiptBreakdown()->first(),
     );
 }
 
@@ -440,22 +440,6 @@ test('duplicate resolution moves a compatible Receipt Breakdown whole and reopen
         ->and($lineItem->refresh()->receipt_breakdown_id)->toBe($breakdown->id)
         ->and(SuspectedDuplicateReceiptBreakdownMove::query()->count())->toBe(1);
 
-    $breakdown->forceFill([
-        'status' => 'draft',
-        'confirmed_at' => null,
-    ])->save();
-
-    $this->delete(route('receipt_breakdowns.destroy', $breakdown), [
-        'expected_revision' => $breakdown->revision,
-    ])->assertSessionHasErrors('receipt_breakdown');
-
-    expect($breakdown->fresh()->deleted_at)->toBeNull();
-
-    $breakdown->forceFill([
-        'status' => 'confirmed',
-        'confirmed_at' => now(),
-    ])->save();
-
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('totals.PEN', '4000')
@@ -482,7 +466,7 @@ test('duplicate resolution moves a compatible Receipt Breakdown whole and reopen
             ->has('transactions', 2));
 });
 
-test('duplicate resolution rejects conflicting draft states without merging Line Items', function () {
+test('duplicate resolution rejects conflicting Receipt Breakdowns without merging Line Items', function () {
     $owner = User::factory()->create();
     [$survivor, $transactionToVoid] = Transaction::factory()
         ->count(2)
@@ -490,21 +474,19 @@ test('duplicate resolution rejects conflicting draft states without merging Line
         ->purchase()
         ->pen()
         ->create(['amount_minor' => 4_000]);
-    $survivorDraft = ReceiptBreakdown::factory()
+    $survivorBreakdown = ReceiptBreakdown::factory()
         ->recycle($owner)
         ->for($survivor)
-        ->draft()
         ->create();
-    $voidedDraft = ReceiptBreakdown::factory()
+    $voidedBreakdown = ReceiptBreakdown::factory()
         ->recycle($owner)
         ->for($transactionToVoid)
-        ->draft()
         ->create();
-    $survivorItem = LineItem::factory()->for($survivorDraft)->create([
+    $survivorItem = LineItem::factory()->for($survivorBreakdown)->create([
         'description' => 'Survivor work',
         'line_total_minor' => 4_000,
     ]);
-    $voidedItem = LineItem::factory()->for($voidedDraft)->create([
+    $voidedItem = LineItem::factory()->for($voidedBreakdown)->create([
         'description' => 'Other work',
         'line_total_minor' => 4_000,
     ]);
@@ -529,14 +511,14 @@ test('duplicate resolution rejects conflicting draft states without merging Line
 
     expect($survivor->refresh()->voided_at)->toBeNull()
         ->and($transactionToVoid->refresh()->voided_at)->toBeNull()
-        ->and($survivorDraft->refresh()->transaction_id)->toBe($survivor->id)
-        ->and($voidedDraft->refresh()->transaction_id)->toBe($transactionToVoid->id)
+        ->and($survivorBreakdown->refresh()->transaction_id)->toBe($survivor->id)
+        ->and($voidedBreakdown->refresh()->transaction_id)->toBe($transactionToVoid->id)
         ->and($survivorItem->refresh()->description)->toBe('Survivor work')
         ->and($voidedItem->refresh()->description)->toBe('Other work')
         ->and(SuspectedDuplicateReceiptBreakdownMove::query()->count())->toBe(0);
 });
 
-test('reopening duplicate resolution cannot overwrite changes to a moved Receipt Breakdown', function () {
+test('reopening duplicate resolution cannot overwrite a newer Receipt Breakdown', function () {
     $owner = User::factory()->create();
     [$survivor, $transactionToVoid] = Transaction::factory()
         ->count(2)
@@ -544,12 +526,11 @@ test('reopening duplicate resolution cannot overwrite changes to a moved Receipt
         ->purchase()
         ->pen()
         ->create(['amount_minor' => 4_000]);
-    $draft = ReceiptBreakdown::factory()
+    $movedBreakdown = ReceiptBreakdown::factory()
         ->recycle($owner)
         ->for($transactionToVoid)
-        ->draft()
         ->create();
-    LineItem::factory()->for($draft)->create(['line_total_minor' => 4_000]);
+    LineItem::factory()->for($movedBreakdown)->create(['line_total_minor' => 4_000]);
     $suspectedDuplicate = app(MarkSuspectedDuplicate::class)->handle(
         owner: $owner,
         firstTransaction: $survivor,
@@ -565,7 +546,11 @@ test('reopening duplicate resolution cannot overwrite changes to a moved Receipt
             ),
         )
         ->assertSessionHasNoErrors();
-    $draft->update(['revision' => 2]);
+    $newerBreakdown = ReceiptBreakdown::factory()
+        ->recycle($owner)
+        ->for($transactionToVoid)
+        ->create();
+    LineItem::factory()->for($newerBreakdown)->create(['line_total_minor' => 4_000]);
 
     $this->from(route('transactions.index'))
         ->delete(
@@ -580,8 +565,8 @@ test('reopening duplicate resolution cannot overwrite changes to a moved Receipt
         ->assertRedirect(route('transactions.index'))
         ->assertSessionHasErrors('suspected_duplicate_resolution');
 
-    expect($draft->refresh()->transaction_id)->toBe($survivor->id)
-        ->and($draft->revision)->toBe(2)
+    expect($movedBreakdown->refresh()->transaction_id)->toBe($survivor->id)
+        ->and($newerBreakdown->refresh()->transaction_id)->toBe($transactionToVoid->id)
         ->and($survivor->refresh()->voided_at)->toBeNull()
         ->and($transactionToVoid->refresh()->voided_at)->not->toBeNull()
         ->and($suspectedDuplicate->refresh()->resolved_at)->not->toBeNull();
@@ -762,12 +747,11 @@ test('Receipt Breakdown changes invalidate the reviewed duplicate resolution eff
         $firstTransaction,
         'd3217948-c26a-45c6-9a9c-1f5ff8d7864e',
     );
-    $newerDraft = ReceiptBreakdown::factory()
+    $newerBreakdown = ReceiptBreakdown::factory()
         ->recycle($owner)
         ->for($secondTransaction)
-        ->draft()
         ->create();
-    LineItem::factory()->for($newerDraft)->create(['line_total_minor' => 3_300]);
+    LineItem::factory()->for($newerBreakdown)->create(['line_total_minor' => 3_300]);
 
     $this->actingAs($owner)
         ->from(route('review_queue.index'))
@@ -780,7 +764,7 @@ test('Receipt Breakdown changes invalidate the reviewed duplicate resolution eff
 
     expect($firstTransaction->refresh()->voided_at)->toBeNull()
         ->and($secondTransaction->refresh()->voided_at)->toBeNull()
-        ->and($newerDraft->refresh()->transaction_id)->toBe($secondTransaction->id)
+        ->and($newerBreakdown->refresh()->transaction_id)->toBe($secondTransaction->id)
         ->and($suspectedDuplicate->refresh()->resolved_at)->toBeNull()
         ->and(SuspectedDuplicateReceiptBreakdownMove::query()->count())->toBe(0);
 });

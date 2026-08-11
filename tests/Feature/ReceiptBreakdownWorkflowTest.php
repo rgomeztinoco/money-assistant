@@ -2,402 +2,201 @@
 
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
-use App\Models\DailyExchangeRate;
-use App\Models\LineItem;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
-use App\ReviewableTransactionField;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\TestCase;
 
-test('the owner creates a manual Receipt Breakdown from a Transaction', function () {
+test('the owner atomically saves a reconciled purchase Receipt Breakdown', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2500,
-        'category_id' => $category->id,
-        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
-    ]);
-    $this->actingAs($owner)
-        ->get(route('transactions.index', ['selected' => $transaction->id]))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.receipt_breakdown.draft', null)
-            ->missing('selected_transaction.receipt_proposals')
-            ->where('category_totals.0.category.name', 'Groceries')
-            ->where('category_totals.0.totals.PEN', '2500'));
-
-    expect(ReceiptBreakdown::query()->count())->toBe(0);
-
-    $this->post(route('transactions.receipt_breakdowns.store', $transaction), [
-        'expected_transaction_revision' => $transaction->revision,
-    ])->assertRedirect(route('transactions.index'));
-
-    $this->get(route('transactions.index', ['selected' => $transaction->id]))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.receipt_breakdown.draft.revision', 1)
-            ->where('selected_transaction.receipt_breakdown.draft.total_minor', '2500')
-            ->where('selected_transaction.receipt_breakdown.draft.delta_minor', '0')
-            ->has('selected_transaction.receipt_breakdown.draft.line_items', 1)
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.0.description', $transaction->merchant_description)
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.0.category.name', 'Groceries')
-            ->where('category_totals.0.category.name', 'Groceries')
-            ->where('category_totals.0.totals.PEN', '2500'));
-
-    $this->post(route('transactions.receipt_breakdowns.store', $transaction), [
-        'expected_transaction_revision' => $transaction->revision,
-    ])->assertSessionHasErrors('transaction_id');
-
-    expect(ReceiptBreakdown::query()->where('status', 'draft')->count())->toBe(1);
-});
-
-test('manual Receipt Breakdown editing preserves signed adjustments and printed item context', function () {
-    $owner = User::factory()->create();
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2600,
-    ]);
-    $this->actingAs($owner)
-        ->post(route('transactions.receipt_breakdowns.store', $transaction), [
-            'expected_transaction_revision' => $transaction->revision,
-        ])
-        ->assertRedirect();
-
-    $draft = ReceiptBreakdown::query()->sole();
-
-    $this->put(route('receipt_breakdowns.update', $draft), [
-        'expected_revision' => 1,
-        'line_items' => [
-            [
-                'description' => 'Coffee beans',
-                'role' => 'purchased_item',
-                'quantity' => '3',
-                'unit_price_minor' => 999,
-                'line_total_minor' => 2500,
-                'category_id' => null,
-            ],
-            [
-                'description' => 'Tax',
-                'role' => 'tax',
-                'quantity' => null,
-                'unit_price_minor' => null,
-                'line_total_minor' => 300,
-                'category_id' => null,
-            ],
-            [
-                'description' => 'Printed discount',
-                'role' => 'discount',
-                'quantity' => null,
-                'unit_price_minor' => null,
-                'line_total_minor' => -200,
-                'category_id' => null,
-            ],
-        ],
-    ])->assertRedirect();
-
-    $this->get(route('transactions.index', ['selected' => $transaction->id]))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.receipt_breakdown.draft.total_minor', '2600')
-            ->where('selected_transaction.receipt_breakdown.draft.delta_minor', '0')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.0.role', 'purchased_item')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.0.quantity', '3')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.0.unit_price_minor', '999')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.0.line_total_minor', '2500')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.1.role', 'tax')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.1.line_total_minor', '300')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.2.role', 'discount')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.2.line_total_minor', '-200'));
-});
-
-test('the owner edits only the expected draft revision and drafts remain outside reports', function () {
-    $owner = User::factory()->create();
-    $transactionCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
-    $coffeeCategory = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2500,
-        'category_id' => $transactionCategory->id,
-        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
-    ]);
-    $this->actingAs($owner)->post(route('transactions.receipt_breakdowns.store', $transaction), [
-        'expected_transaction_revision' => $transaction->revision,
-    ])->assertRedirect();
-
-    $draft = ReceiptBreakdown::query()->with('lineItems')->sole();
-    $lineItems = $draft->lineItems->values();
-    $replacement = [
-        [
-            'id' => $lineItems[0]->line_item_id,
-            'description' => 'Coffee beans',
-            'line_total_minor' => 1200,
-            'category_id' => $coffeeCategory->id,
-        ],
-        [
-            'id' => null,
-            'description' => 'Bread',
-            'line_total_minor' => 1300,
-            'category_id' => null,
-        ],
-    ];
-
-    $unsafeReplacement = $replacement;
-    $unsafeReplacement[0]['line_total_minor'] = 9_007_199_254_740_992;
-
-    $this->put(route('receipt_breakdowns.update', $draft), [
-        'expected_revision' => 1,
-        'line_items' => $unsafeReplacement,
-    ])->assertSessionHasErrors('line_items.0.line_total_minor');
-
-    expect($draft->refresh()->revision)->toBe(1);
-
-    $this->put(route('receipt_breakdowns.update', $draft), [
-        'expected_revision' => 1,
-        'line_items' => $replacement,
-    ])->assertRedirect();
-
-    $this->get(route('transactions.index', ['selected' => $transaction->id]))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.receipt_breakdown.draft.revision', 2)
-            ->where('selected_transaction.receipt_breakdown.draft.total_minor', '2500')
-            ->where('selected_transaction.receipt_breakdown.draft.delta_minor', '0')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.0.category.name', 'Groceries')
-            ->where('selected_transaction.receipt_breakdown.draft.line_items.1.description', 'Bread')
-            ->where('category_totals.0.category.name', 'Shopping')
-            ->where('category_totals.0.totals.PEN', '2500'));
-
-    $replacement[0]['line_total_minor'] = 1100;
-
-    $this->put(route('receipt_breakdowns.update', $draft), [
-        'expected_revision' => 1,
-        'line_items' => $replacement,
-    ])->assertSessionHasErrors('expected_revision');
-
-    expect($draft->refresh()->revision)->toBe(2)
-        ->and($draft->lineItems()->firstOrFail()->line_item_id)->toBe($lineItems[0]->line_item_id)
-        ->and($draft->lineItems()->count())->toBe(2);
-});
-
-test('the owner confirms an explicit Uncategorized Unidentified Line Item for a known amount', function () {
-    $owner = User::factory()->create();
-    $groceries = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
-    $fees = Category::factory()->recycle($owner)->create(['name' => 'Fees & Taxes']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2600,
-    ]);
-    $this->actingAs($owner)->post(route('transactions.receipt_breakdowns.store', $transaction), [
-        'expected_transaction_revision' => $transaction->revision,
-    ])->assertRedirect();
-
-    $draft = ReceiptBreakdown::query()->sole();
-
-    $this->put(route('receipt_breakdowns.update', $draft), [
-        'expected_revision' => 1,
-        'line_items' => [
-            [
-                'id' => null,
-                'description' => 'Coffee beans',
-                'role' => 'purchased_item',
-                'quantity' => '2',
-                'unit_price_minor' => 1250,
-                'line_total_minor' => 2500,
-                'category_id' => $groceries->id,
-            ],
-            [
-                'id' => null,
-                'description' => 'Printed discount',
-                'role' => 'discount',
-                'quantity' => null,
-                'unit_price_minor' => null,
-                'line_total_minor' => -200,
-                'category_id' => $groceries->id,
-            ],
-            [
-                'id' => null,
-                'description' => 'Service fee',
-                'role' => 'fee',
-                'quantity' => null,
-                'unit_price_minor' => null,
-                'line_total_minor' => 100,
-                'category_id' => $fees->id,
-            ],
-            [
-                'id' => null,
-                'description' => 'Receipt detail unavailable',
-                'role' => 'unidentified',
-                'quantity' => null,
-                'unit_price_minor' => null,
-                'line_total_minor' => 200,
-                'category_id' => null,
-            ],
-        ],
-    ])->assertRedirect()->assertSessionHasNoErrors();
-
-    $this->post(route('receipt_breakdowns.confirmation.store', $draft), [
-        'expected_revision' => 2,
-    ])->assertRedirect()->assertSessionHasNoErrors();
-
-    $this->get(route('transactions.index', ['selected' => $transaction->id]))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.receipt_breakdown.confirmed.total_minor', '2600')
-            ->where('selected_transaction.receipt_breakdown.confirmed.line_items.3.role', 'unidentified')
-            ->where('selected_transaction.receipt_breakdown.confirmed.line_items.3.category', null)
-            ->where('selected_transaction.receipt_breakdown.confirmed.line_items.3.requires_review', true)
-            ->where('category_totals.0.category.name', 'Fees & Taxes')
-            ->where('category_totals.0.totals.PEN', '100')
-            ->where('category_totals.1.category.name', 'Groceries')
-            ->where('category_totals.1.totals.PEN', '2300')
-            ->where('category_totals.2.category.name', 'Uncategorized')
-            ->where('category_totals.2.totals.PEN', '200'));
-
-    $this->get(route('review_queue.index'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('unresolved_category_count', 1)
-            ->where('review_queue.outstanding_count', 1));
-
-    expect($draft->refresh()->lineItems()->count())->toBe(4);
-});
-
-test('an item-specific adjustment defaults to its purchased item Category', function () {
-    $owner = User::factory()->create();
+    $fallbackCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
     $groceries = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
     $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2600,
-    ]);
-    $draft = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->draft()->create();
-    $purchasedItem = LineItem::factory()->for($draft)->create([
-        'description' => 'Coffee beans',
-        'line_total_minor' => 2500,
-        'category_id' => $groceries->id,
-    ]);
-    $tax = LineItem::factory()->for($draft)->create([
-        'description' => 'Item tax',
-        'role' => 'tax',
-        'line_total_minor' => 100,
-        'category_id' => null,
+        'amount_minor' => 2_500,
+        'category_id' => $fallbackCategory->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
     ]);
 
     $this->actingAs($owner)
-        ->post(route('receipt_breakdowns.confirmation.store', $draft), [
-            'expected_revision' => 1,
+        ->put(route('transactions.receipt_breakdowns.update', $transaction), [
+            'line_items' => [
+                [
+                    'description' => 'Coffee beans',
+                    'quantity' => '2',
+                    'unit_price_minor' => 600,
+                    'line_total_minor' => 1_200,
+                    'category_id' => $groceries->id,
+                ],
+                [
+                    'description' => 'Bread',
+                    'quantity' => null,
+                    'unit_price_minor' => null,
+                    'line_total_minor' => 1_300,
+                    'category_id' => null,
+                ],
+            ],
         ])
-        ->assertSessionHasErrors('line_items');
-
-    $this->put(route('receipt_breakdowns.update', $draft), [
-        'expected_revision' => 1,
-        'line_items' => [
-            [
-                'id' => $purchasedItem->line_item_id,
-                'description' => $purchasedItem->description,
-                'line_total_minor' => 2500,
-                'category_id' => $groceries->id,
-            ],
-            [
-                'id' => $tax->line_item_id,
-                'description' => $tax->description,
-                'role' => 'tax',
-                'line_total_minor' => 100,
-                'category_id' => null,
-                'related_line_item_id' => $purchasedItem->line_item_id,
-            ],
-        ],
-    ])->assertSessionHasNoErrors();
-
-    $this->post(route('receipt_breakdowns.confirmation.store', $draft), [
-        'expected_revision' => 2,
-    ])->assertSessionHasNoErrors();
+        ->assertRedirect(route('transactions.index'))
+        ->assertSessionHasNoErrors();
 
     $this->get(route('transactions.index', ['selected' => $transaction->id]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.receipt_breakdown.confirmed.line_items.1.related_line_item_id', $purchasedItem->line_item_id)
-            ->where('selected_transaction.receipt_breakdown.confirmed.line_items.1.category.name', 'Groceries')
-            ->where('category_totals.0.category.name', 'Groceries')
-            ->where('category_totals.0.totals.PEN', '2600'));
-});
-
-test('only an exactly reconciled expected draft confirms and replaces Transaction Category reporting', function () {
-    $owner = User::factory()->create();
-    $transactionCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
-    $lineItemCategory = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2500,
-        'category_id' => $transactionCategory->id,
-        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
-    ]);
-    $this->actingAs($owner)->post(route('transactions.receipt_breakdowns.store', $transaction), [
-        'expected_transaction_revision' => $transaction->revision,
-    ])->assertRedirect();
-
-    $draft = ReceiptBreakdown::query()->with('lineItems')->sole();
-    $initialLineItem = $draft->lineItems->sole();
-
-    $this->put(route('receipt_breakdowns.update', $draft), [
-        'expected_revision' => 1,
-        'line_items' => [
-            [
-                'id' => $initialLineItem->line_item_id,
-                'description' => 'Coffee',
-                'line_total_minor' => 1000,
-                'category_id' => null,
-            ],
-            [
-                'id' => null,
-                'description' => 'Fruit',
-                'line_total_minor' => 1200,
-                'category_id' => null,
-            ],
-        ],
-    ])->assertRedirect();
-
-    $this->post(route('receipt_breakdowns.confirmation.store', $draft), [
-        'expected_revision' => 2,
-    ])->assertSessionHasErrors('reconciliation');
-
-    expect($draft->lineItems()->count())->toBe(2);
-
-    $lineItems = $draft->lineItems()->get()->values();
-
-    $this->put(route('receipt_breakdowns.update', $draft), [
-        'expected_revision' => 2,
-        'line_items' => [
-            [
-                'id' => $lineItems[0]->line_item_id,
-                'description' => 'Coffee',
-                'line_total_minor' => 1200,
-                'category_id' => $lineItemCategory->id,
-            ],
-            [
-                'id' => $lineItems[1]->line_item_id,
-                'description' => 'Fruit',
-                'line_total_minor' => 1300,
-                'category_id' => null,
-            ],
-        ],
-    ])->assertRedirect();
-
-    $this->post(route('receipt_breakdowns.confirmation.store', $draft), [
-        'expected_revision' => 2,
-    ])->assertSessionHasErrors('expected_revision');
-
-    $this->post(route('receipt_breakdowns.confirmation.store', $draft), [
-        'expected_revision' => 3,
-    ])->assertRedirect();
-
-    $this->get(route('transactions.index', ['selected' => $transaction->id]))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.PEN', '2500')
-            ->where('selected_transaction.receipt_breakdown.draft', null)
-            ->where('selected_transaction.receipt_breakdown.confirmed.revision', 3)
-            ->where('selected_transaction.receipt_breakdown.confirmed.total_minor', '2500')
-            ->has('category_totals', 2)
+            ->where('selected_transaction.receipt_breakdown.total_minor', '2500')
+            ->has('selected_transaction.receipt_breakdown.line_items', 2)
+            ->where('selected_transaction.receipt_breakdown.line_items.0.description', 'Coffee beans')
+            ->where('selected_transaction.receipt_breakdown.line_items.0.quantity', '2')
+            ->where('selected_transaction.receipt_breakdown.line_items.0.unit_price_minor', '600')
+            ->where('selected_transaction.receipt_breakdown.line_items.0.category.name', 'Groceries')
+            ->where('selected_transaction.receipt_breakdown.line_items.1.category', null)
             ->where('category_totals.0.category.name', 'Groceries')
             ->where('category_totals.0.totals.PEN', '1200')
             ->where('category_totals.1.category.name', 'Uncategorized')
             ->where('category_totals.1.totals.PEN', '1300'));
+});
+
+test('an unreconciled replacement leaves the current Receipt Breakdown unchanged', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+        'amount_minor' => 2_500,
+    ]);
+    $this->actingAs($owner);
+
+    saveReceiptBreakdown($this, $transaction, [[
+        'description' => 'Original itemization',
+        'quantity' => null,
+        'unit_price_minor' => null,
+        'line_total_minor' => 2_500,
+        'category_id' => null,
+    ]])->assertSessionHasNoErrors();
+
+    saveReceiptBreakdown($this, $transaction, [[
+        'description' => 'Incomplete replacement',
+        'quantity' => null,
+        'unit_price_minor' => null,
+        'line_total_minor' => 2_400,
+        'category_id' => null,
+    ]])->assertSessionHasErrors('line_items');
+
+    $this->get(route('transactions.index', ['selected' => $transaction->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('selected_transaction.receipt_breakdown.line_items', 1)
+            ->where('selected_transaction.receipt_breakdown.line_items.0.description', 'Original itemization')
+            ->where('selected_transaction.receipt_breakdown.total_minor', '2500'));
+});
+
+test('saving again replaces every Line Item and removal restores Transaction Category reporting', function () {
+    $owner = User::factory()->create();
+    $fallbackCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
+    $groceries = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
+    $dining = Category::factory()->recycle($owner)->create(['name' => 'Dining']);
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+        'amount_minor' => 2_500,
+        'category_id' => $fallbackCategory->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $this->actingAs($owner);
+
+    saveReceiptBreakdown($this, $transaction, [[
+        'description' => 'Groceries',
+        'quantity' => null,
+        'unit_price_minor' => null,
+        'line_total_minor' => 2_500,
+        'category_id' => $groceries->id,
+    ]])->assertSessionHasNoErrors();
+
+    saveReceiptBreakdown($this, $transaction, [[
+        'description' => 'Lunch',
+        'quantity' => '1',
+        'unit_price_minor' => 2_500,
+        'line_total_minor' => 2_700,
+        'category_id' => $dining->id,
+    ], [
+        'description' => 'Discount',
+        'quantity' => null,
+        'unit_price_minor' => null,
+        'line_total_minor' => -200,
+        'category_id' => $dining->id,
+    ]])->assertSessionHasNoErrors();
+
+    $this->get(route('transactions.index', ['selected' => $transaction->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('selected_transaction.receipt_breakdown.line_items', 2)
+            ->where('selected_transaction.receipt_breakdown.line_items.0.description', 'Lunch')
+            ->where('selected_transaction.receipt_breakdown.line_items.1.description', 'Discount')
+            ->where('category_totals.0.category.name', 'Dining')
+            ->where('category_totals.0.totals.PEN', '2500'));
+
+    $this->delete(route('transactions.receipt_breakdowns.destroy', $transaction))
+        ->assertRedirect(route('transactions.index'))
+        ->assertSessionHasNoErrors();
+
+    $this->get(route('transactions.index', ['selected' => $transaction->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('selected_transaction.receipt_breakdown', null)
+            ->where('category_totals.0.category.name', 'Shopping')
+            ->where('category_totals.0.totals.PEN', '2500'));
+});
+
+test('the owner saves an independently reviewed Refund Receipt Breakdown', function () {
+    $owner = User::factory()->create();
+    $purchaseCategory = Category::factory()->recycle($owner)->create(['name' => 'Appliances']);
+    $refundCategory = Category::factory()->recycle($owner)->create(['name' => 'Returns']);
+    $purchase = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+        'amount_minor' => 2_500,
+        'category_id' => $purchaseCategory->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $refund = Transaction::factory()->recycle($owner)->refund()->pen()->create([
+        'amount_minor' => 800,
+        'original_purchase_id' => $purchase->id,
+    ]);
+    $this->actingAs($owner);
+
+    saveReceiptBreakdown($this, $refund, [[
+        'description' => 'Returned appliance part',
+        'line_total_minor' => 800,
+        'category_id' => $refundCategory->id,
+    ]])->assertSessionHasNoErrors();
+
+    $this->get(route('transactions.index', ['selected' => $refund->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('totals.PEN', '1700')
+            ->where('selected_transaction.kind', 'refund')
+            ->where('selected_transaction.receipt_breakdown.line_items.0.description', 'Returned appliance part')
+            ->where('category_totals.0.category.name', 'Appliances')
+            ->where('category_totals.0.totals.PEN', '2500')
+            ->where('category_totals.1.category.name', 'Returns')
+            ->where('category_totals.1.totals.PEN', '-800'));
+});
+
+test('Uncategorized Line Items remain visible in the Review Queue', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+        'amount_minor' => 2_500,
+    ]);
+    $this->actingAs($owner);
+
+    saveReceiptBreakdown($this, $transaction, [[
+        'description' => 'Known item',
+        'quantity' => null,
+        'unit_price_minor' => null,
+        'line_total_minor' => 2_300,
+        'category_id' => Category::factory()->recycle($owner)->create()->id,
+    ], [
+        'description' => 'Receipt detail unavailable',
+        'quantity' => null,
+        'unit_price_minor' => null,
+        'line_total_minor' => 200,
+        'category_id' => null,
+    ]])->assertSessionHasNoErrors();
 
     $this->get(route('review_queue.index'))
         ->assertOk()
@@ -405,376 +204,47 @@ test('only an exactly reconciled expected draft confirms and replaces Transactio
             ->where('unresolved_category_count', 1)
             ->where('review_queue.outstanding_count', 1)
             ->where('workspace_transactions.0.id', $transaction->id));
-
-    $this->post(route('transactions.receipt_breakdowns.store', $transaction), [
-        'expected_transaction_revision' => $transaction->revision,
-    ])->assertRedirect();
-
-    $replacementDraft = ReceiptBreakdown::query()->where('status', 'draft')->sole();
-
-    $this->post(route('receipt_breakdowns.confirmation.store', $replacementDraft), [
-        'expected_revision' => 1,
-    ])->assertRedirect();
-
-    expect($draft->refresh()->status)->toBe('superseded')
-        ->and($draft->lineItems()->count())->toBe(2)
-        ->and(ReceiptBreakdown::query()->where('status', 'draft')->count())->toBe(0)
-        ->and(ReceiptBreakdown::query()->where('status', 'confirmed')->count())->toBe(1)
-        ->and(ReceiptBreakdown::query()->count())->toBe(2);
 });
 
-test('a linked Refund receives an independently reviewed Receipt Breakdown', function () {
-    $owner = User::factory()->create();
-    $purchaseCategory = Category::factory()->recycle($owner)->create(['name' => 'Appliances']);
-    $refundCategory = Category::factory()->recycle($owner)->create(['name' => 'Returns']);
-    $purchase = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2500,
-    ]);
-    $purchaseBreakdown = ReceiptBreakdown::factory()->recycle($owner)->for($purchase)->create();
-    LineItem::factory()->for($purchaseBreakdown)->create([
-        'description' => 'Coffee maker',
-        'category_id' => $purchaseCategory->id,
-        'line_total_minor' => 2500,
-    ]);
-    $refund = Transaction::factory()->recycle($owner)->refund()->pen()->create([
-        'amount_minor' => 800,
-        'original_purchase_id' => $purchase->id,
-    ]);
-    $this->actingAs($owner)->post(route('transactions.receipt_breakdowns.store', $refund), [
-        'expected_transaction_revision' => $refund->revision,
-    ])->assertRedirect()->assertSessionHasNoErrors();
+test('Receipt Breakdown persistence contains no lifecycle or adjustment-role state', function () {
+    foreach ([
+        'status',
+        'revision',
+        'confirmed_at',
+        'deletion_id',
+        'purge_after',
+        'deleted_at',
+    ] as $column) {
+        expect(Schema::hasColumn('receipt_breakdowns', $column))->toBeFalse();
+    }
 
-    $refundDraft = ReceiptBreakdown::query()
-        ->where('transaction_id', $refund->id)
-        ->where('status', 'draft')
-        ->sole();
-    $refundLineItem = $refundDraft->lineItems()->sole();
+    foreach ([
+        'receipt_breakdown_revision',
+        'receipt_breakdown_status',
+    ] as $column) {
+        expect(Schema::hasColumn('suspected_duplicate_receipt_breakdown_moves', $column))->toBeFalse();
+    }
 
-    expect($purchaseBreakdown->lineItems()->sole()->description)->toBe('Coffee maker')
-        ->and($refundDraft->lineItems()->count())->toBe(1);
+    foreach ([
+        'role',
+        'related_line_item_id',
+        'requires_review',
+    ] as $column) {
+        expect(Schema::hasColumn('line_items', $column))->toBeFalse();
+    }
 
-    $this->put(route('receipt_breakdowns.update', $refundDraft), [
-        'expected_revision' => 1,
-        'line_items' => [[
-            'id' => $refundLineItem->line_item_id,
-            'description' => 'Independently reviewed return',
-            'line_total_minor' => 800,
-            'category_id' => $refundCategory->id,
-        ]],
-    ])->assertRedirect()->assertSessionHasNoErrors();
-
-    $this->post(route('receipt_breakdowns.confirmation.store', $refundDraft), [
-        'expected_revision' => 2,
-    ])->assertRedirect()->assertSessionHasNoErrors();
-
-    $this->get(route('transactions.index', ['selected' => $refund->id]))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.PEN', '1700')
-            ->where('selected_transaction.kind', 'refund')
-            ->where('selected_transaction.receipt_breakdown.confirmed.line_items.0.description', 'Independently reviewed return')
-            ->where('category_totals.0.category.name', 'Appliances')
-            ->where('category_totals.0.totals.PEN', '2500')
-            ->where('category_totals.1.category.name', 'Returns')
-            ->where('category_totals.1.totals.PEN', '-800'));
-
-    expect($purchaseBreakdown->refresh()->status)->toBe('confirmed')
-        ->and($purchaseBreakdown->lineItems()->count())->toBe(1);
+    expect(ReceiptBreakdown::query()->count())->toBe(0);
 });
 
-test('an incompatible Transaction Correction demotes its confirmed breakdown and restores fallback reporting', function (
-    ReviewableTransactionField $field,
-    string $correctedValue,
-    string $expectedPenTotal,
-    string $expectedUsdTotal,
-) {
-    $owner = User::factory()->create();
-    $fallbackCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
-    $lineItemCategory = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
-    $transaction = Transaction::factory()
-        ->recycle($owner)
-        ->purchase()
-        ->pen()
-        ->provisional([$field])
-        ->create([
-            'amount_minor' => 2500,
-            'category_id' => $fallbackCategory->id,
-            'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
-        ]);
-    $breakdown = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->create();
-    LineItem::factory()->for($breakdown)->create([
-        'category_id' => $lineItemCategory->id,
-        'line_total_minor' => 2500,
+/**
+ * @param  list<array{description: string, quantity?: string|null, unit_price_minor?: int|null, line_total_minor: int, category_id?: int|null}>  $lineItems
+ */
+function saveReceiptBreakdown(
+    TestCase $test,
+    Transaction $transaction,
+    array $lineItems,
+): TestResponse {
+    return $test->put(route('transactions.receipt_breakdowns.update', $transaction), [
+        'line_items' => $lineItems,
     ]);
-
-    $this->actingAs($owner)->patch(route('review_queue.fields.update', [
-        'transaction' => $transaction,
-        'field' => $field,
-    ]), [
-        'expected_revision' => 1,
-        'resolution' => 'correct',
-        'value' => $correctedValue,
-    ])->assertSessionHasNoErrors();
-
-    $this->get(route('transactions.index', ['selected' => $transaction->id]))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.PEN', $expectedPenTotal)
-            ->where('totals.USD', $expectedUsdTotal)
-            ->where('category_totals.0.category.name', 'Shopping')
-            ->where('selected_transaction.receipt_breakdown.confirmed', null)
-            ->where('selected_transaction.receipt_breakdown.draft.revision', 2));
-
-    expect($breakdown->refresh()->status)->toBe('draft')
-        ->and($breakdown->confirmed_at)->toBeNull();
-})->with([
-    'amount' => [ReviewableTransactionField::AmountMinor, '3000', '3000', '0'],
-    'currency' => [ReviewableTransactionField::Currency, 'USD', '0', '2500'],
-    'kind' => [ReviewableTransactionField::Kind, 'refund', '-2500', '0'],
-]);
-
-test('removing a confirmed Receipt Breakdown demotes it to a draft before it can be discarded', function () {
-    $owner = User::factory()->create();
-    $fallbackCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
-    $lineItemCategory = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2500,
-        'category_id' => $fallbackCategory->id,
-        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
-    ]);
-    $breakdown = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->create();
-    LineItem::factory()->for($breakdown)->create([
-        'category_id' => $lineItemCategory->id,
-        'line_total_minor' => 2500,
-    ]);
-
-    $this->actingAs($owner)
-        ->delete(route('receipt_breakdowns.confirmation.destroy', $breakdown), [
-            'expected_revision' => 1,
-        ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
-
-    $this->get(route('transactions.index', ['selected' => $transaction->id]))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('category_totals.0.category.name', 'Shopping')
-            ->where('category_totals.0.totals.PEN', '2500')
-            ->where('selected_transaction.receipt_breakdown.confirmed', null)
-            ->where('selected_transaction.receipt_breakdown.draft.revision', 2));
-
-    expect($breakdown->refresh()->status)->toBe('draft')
-        ->and($breakdown->confirmed_at)->toBeNull()
-        ->and($breakdown->lineItems()->count())->toBe(1);
-});
-
-test('removing a confirmed Receipt Breakdown never overwrites a replacement draft', function () {
-    $owner = User::factory()->create();
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2500,
-    ]);
-    $confirmed = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->create();
-    $confirmedItem = LineItem::factory()->for($confirmed)->create([
-        'description' => 'Confirmed work',
-        'line_total_minor' => 2500,
-    ]);
-    $draft = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->draft()->create();
-    $draftItem = LineItem::factory()->for($draft)->create([
-        'description' => 'Newer owner work',
-        'line_total_minor' => 2500,
-    ]);
-
-    $this->actingAs($owner)
-        ->from(route('transactions.index'))
-        ->delete(route('receipt_breakdowns.confirmation.destroy', $confirmed), [
-            'expected_revision' => 1,
-        ])
-        ->assertRedirect(route('transactions.index'))
-        ->assertSessionHasErrors('receipt_breakdown');
-
-    expect($confirmed->refresh()->status)->toBe('confirmed')
-        ->and($draft->refresh()->status)->toBe('draft')
-        ->and($confirmedItem->refresh()->description)->toBe('Confirmed work')
-        ->and($draftItem->refresh()->description)->toBe('Newer owner work');
-});
-
-test('draft discard is explicit and cannot trash a newer revision', function () {
-    $owner = User::factory()->create();
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2500,
-    ]);
-    $draft = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->draft()->create();
-    LineItem::factory()->for($draft)->create(['line_total_minor' => 2500]);
-    $draft->update(['revision' => 2]);
-    $this->actingAs($owner);
-
-    $this->from(route('transactions.index'))
-        ->delete(route('receipt_breakdowns.destroy', $draft), [
-            'expected_revision' => 1,
-        ])
-        ->assertRedirect(route('transactions.index'))
-        ->assertSessionHasErrors('expected_revision');
-
-    expect($draft->fresh())->not->toBeNull()
-        ->and($draft->lineItems()->count())->toBe(1);
-
-    $this->delete(route('receipt_breakdowns.destroy', $draft), [
-        'expected_revision' => 2,
-    ])->assertRedirect()->assertSessionHasNoErrors();
-
-    expect(ReceiptBreakdown::find($draft->id))->toBeNull()
-        ->and(ReceiptBreakdown::onlyTrashed()->find($draft->id))->not->toBeNull()
-        ->and(LineItem::query()->count())->toBe(1);
-});
-
-test('confirmation rejects a draft whose Transaction became Voided', function () {
-    $owner = User::factory()->create();
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
-        'amount_minor' => 2500,
-    ]);
-    $draft = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->draft()->create();
-    LineItem::factory()->for($draft)->create(['line_total_minor' => 2500]);
-    $transaction->update(['voided_at' => now(), 'revision' => 2]);
-
-    $this->actingAs($owner)
-        ->post(route('receipt_breakdowns.confirmation.store', $draft), [
-            'expected_revision' => 1,
-        ])
-        ->assertSessionHasErrors('reconciliation');
-
-    expect($draft->refresh()->status)->toBe('draft');
-});
-
-test('combined reporting allocates one converted Transaction total across confirmed Line Items exactly', function () {
-    $owner = User::factory()->create(['reporting_currency' => 'PEN']);
-    $coffee = Category::factory()->recycle($owner)->create(['name' => 'Coffee']);
-    $fruit = Category::factory()->recycle($owner)->create(['name' => 'Fruit']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
-        'occurred_on' => '2026-07-28',
-        'amount_minor' => 2,
-    ]);
-    $breakdown = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->create();
-    LineItem::factory()->for($breakdown)->create([
-        'line_item_id' => '01983d79-a780-72f0-bb34-9b4f3f0cf390',
-        'category_id' => $coffee->id,
-        'line_total_minor' => 1,
-    ]);
-    LineItem::factory()->for($breakdown)->create([
-        'line_item_id' => '01983d79-a780-72f0-bb34-9b4f3f0cf391',
-        'category_id' => $fruit->id,
-        'line_total_minor' => 1,
-    ]);
-    DailyExchangeRate::factory()->recycle($owner)->create([
-        'applicable_on' => '2026-07-28',
-        'pen_per_usd_scaled' => 1_500_000,
-    ]);
-
-    $this->actingAs($owner)
-        ->get(route('transactions.index'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('combined_total.amount_minor', '3')
-            ->where('category_totals.0.category.name', 'Coffee')
-            ->where('category_totals.0.combined_total.amount_minor', '2')
-            ->where('category_totals.1.category.name', 'Fruit')
-            ->where('category_totals.1.combined_total.amount_minor', '1'));
-});
-
-test('combined reporting resolves equal remainder ties by stable Line Item identity', function () {
-    $owner = User::factory()->create(['reporting_currency' => 'PEN']);
-    $coffee = Category::factory()->recycle($owner)->create(['name' => 'Coffee']);
-    $fruit = Category::factory()->recycle($owner)->create(['name' => 'Fruit']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
-        'occurred_on' => '2026-07-28',
-        'amount_minor' => 2,
-    ]);
-    $breakdown = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->create();
-    LineItem::factory()->for($breakdown)->create([
-        'line_item_id' => '01983d79-a780-72f0-bb34-9b4f3f0cf391',
-        'category_id' => $coffee->id,
-        'line_total_minor' => 1,
-    ]);
-    LineItem::factory()->for($breakdown)->create([
-        'line_item_id' => '01983d79-a780-72f0-bb34-9b4f3f0cf390',
-        'category_id' => $fruit->id,
-        'line_total_minor' => 1,
-    ]);
-    $rate = DailyExchangeRate::factory()->recycle($owner)->create([
-        'applicable_on' => '2026-07-28',
-        'pen_per_usd_scaled' => 1_500_000,
-    ]);
-
-    $this->actingAs($owner)
-        ->get(route('transactions.index'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('combined_total.amount_minor', '3')
-            ->where('category_totals.0.category.name', 'Coffee')
-            ->where('category_totals.0.combined_total.amount_minor', '1')
-            ->where('category_totals.1.category.name', 'Fruit')
-            ->where('category_totals.1.combined_total.amount_minor', '2'));
-
-    $this->patch(route('daily_exchange_rates.update', $rate), [
-        'expected_revision' => 1,
-        'pen_per_usd' => '2.500000',
-    ])->assertSessionHasNoErrors();
-
-    $this->get(route('transactions.index'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('combined_total.amount_minor', '5')
-            ->where('category_totals.0.combined_total.amount_minor', '2')
-            ->where('category_totals.1.combined_total.amount_minor', '3'));
-
-    $this->patch(route('daily_exchange_rates.update', $rate), [
-        'expected_revision' => 2,
-        'pen_per_usd' => '1.500000',
-    ])->assertSessionHasNoErrors();
-
-    $this->get(route('transactions.index'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('combined_total.amount_minor', '3')
-            ->where('category_totals.0.combined_total.amount_minor', '1')
-            ->where('category_totals.1.combined_total.amount_minor', '2'));
-
-    expect($transaction->fresh()->revision)->toBe(1)
-        ->and($breakdown->lineItems()->count())->toBe(2);
-});
-
-test('combined reporting apportions signed adjustments by mathematical largest remainder', function () {
-    $owner = User::factory()->create(['reporting_currency' => 'PEN']);
-    $discounts = Category::factory()->recycle($owner)->create(['name' => 'Discounts']);
-    $goods = Category::factory()->recycle($owner)->create(['name' => 'Goods']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
-        'occurred_on' => '2026-07-28',
-        'amount_minor' => 2,
-    ]);
-    $breakdown = ReceiptBreakdown::factory()->recycle($owner)->for($transaction)->create();
-    LineItem::factory()->for($breakdown)->create([
-        'line_item_id' => '01983d79-a780-72f0-bb34-9b4f3f0cf390',
-        'category_id' => $goods->id,
-        'line_total_minor' => 3,
-    ]);
-    LineItem::factory()->for($breakdown)->create([
-        'line_item_id' => '01983d79-a780-72f0-bb34-9b4f3f0cf391',
-        'description' => 'Printed discount',
-        'role' => 'discount',
-        'category_id' => $discounts->id,
-        'line_total_minor' => -1,
-    ]);
-    DailyExchangeRate::factory()->recycle($owner)->create([
-        'applicable_on' => '2026-07-28',
-        'pen_per_usd_scaled' => 1_500_000,
-    ]);
-
-    $this->actingAs($owner)
-        ->get(route('transactions.index'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('combined_total.amount_minor', '3')
-            ->where('category_totals.0.category.name', 'Discounts')
-            ->where('category_totals.0.combined_total.amount_minor', '-2')
-            ->where('category_totals.1.category.name', 'Goods')
-            ->where('category_totals.1.combined_total.amount_minor', '5'));
-});
+}

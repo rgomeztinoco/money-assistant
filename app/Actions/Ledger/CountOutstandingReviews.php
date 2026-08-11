@@ -20,7 +20,6 @@ class CountOutstandingReviews
             ->whereNull('category_id')
             ->whereHas('receiptBreakdown', fn ($query) => $query
                 ->whereBelongsTo($owner, 'owner')
-                ->where('status', 'confirmed')
                 ->whereHas('transaction', fn ($query) => $query->whereNull('voided_at')))
             ->count();
         $fieldCount = (int) Transaction::query()
