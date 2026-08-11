@@ -12,8 +12,7 @@ use App\Models\User;
  *     source: string,
  *     owner: array{id: int, name: string}|null,
  *     linked_purchase: array{id: int, merchant_description: string}|null,
- *     learned_rule: array{id: int, revision: int}|null,
- *     bulk_action: array{id: int}|null
+ *     merchant_rule: array{id: int}|null
  * }
  */
 class ReadCategoryAssignmentProvenance
@@ -50,16 +49,9 @@ class ReadCategoryAssignmentProvenance
             'linked_purchase' => $source === CategoryAssignmentProvenance::LinkedRefund
                 ? $this->linkedPurchase($transaction, $assignment)
                 : null,
-            'learned_rule' => $assignment?->learned_rule_id !== null
-                && $assignment->learned_rule_revision !== null
-                    ? [
-                        'id' => $assignment->learned_rule_id,
-                        'revision' => $assignment->learned_rule_revision,
-                    ]
-                    : null,
-            'bulk_action' => $assignment?->learned_rule_bulk_action_id === null
+            'merchant_rule' => $assignment?->merchant_rule_id === null
                 ? null
-                : ['id' => $assignment->learned_rule_bulk_action_id],
+                : ['id' => $assignment->merchant_rule_id],
         ];
     }
 

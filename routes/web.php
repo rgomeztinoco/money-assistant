@@ -10,14 +10,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InsightsController;
 use App\Http\Controllers\IntegrationIncidentAcknowledgementController;
 use App\Http\Controllers\IntegrationIncidentReplayController;
-use App\Http\Controllers\LearnedRuleBulkActionConfirmationController;
-use App\Http\Controllers\LearnedRuleBulkActionController;
-use App\Http\Controllers\LearnedRuleController;
-use App\Http\Controllers\LearnedRuleHistoricalApplicationController;
-use App\Http\Controllers\LearnedRulePreviewController;
-use App\Http\Controllers\LearnedRuleRetirementController;
-use App\Http\Controllers\LearnedRuleSuggestionController;
-use App\Http\Controllers\LearnedRuleSuggestionPreviewController;
+use App\Http\Controllers\MerchantRuleController;
 use App\Http\Controllers\ParserProfileController;
 use App\Http\Controllers\ParserProfilePreviewController;
 use App\Http\Controllers\ParserProfileSourceMessageController;
@@ -32,7 +25,6 @@ use App\Http\Controllers\SuspectedDuplicateResolutionController;
 use App\Http\Controllers\TransactionCategoryController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionFieldReviewController;
-use App\Http\Controllers\TransactionLearnedRulePreviewController;
 use App\Http\Controllers\TransactionRefundLinkController;
 use App\Http\Controllers\TransactionVoidController;
 use App\Http\Middleware\RequirePasskeyConfirmation;
@@ -63,6 +55,14 @@ Route::middleware(['auth'])->group(function () {
         ->name('category_targets.retirement.store');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store']);
+    Route::resource('merchant-rules', MerchantRuleController::class)
+        ->only(['index', 'store', 'update', 'destroy'])
+        ->names([
+            'index' => 'merchant_rules.index',
+            'store' => 'merchant_rules.store',
+            'update' => 'merchant_rules.update',
+            'destroy' => 'merchant_rules.destroy',
+        ]);
     Route::post('transactions/{transaction}/receipt-breakdown', [ReceiptBreakdownController::class, 'store'])
         ->name('transactions.receipt_breakdowns.store');
     Route::put('receipt-breakdowns/{receipt_breakdown}', [ReceiptBreakdownController::class, 'update'])
@@ -88,31 +88,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('daily_exchange_rates.retry_seed');
     Route::put('reporting-currency', [ReportingCurrencyController::class, 'update'])
         ->name('reporting_currency.update');
-    Route::resource('learned-rules', LearnedRuleController::class)
-        ->only(['index', 'store', 'update'])
-        ->names([
-            'index' => 'learned_rules.index',
-            'store' => 'learned_rules.store',
-            'update' => 'learned_rules.update',
-        ]);
-    Route::post('learned-rule-previews', [LearnedRulePreviewController::class, 'store'])
-        ->name('learned_rule_previews.store');
-    Route::post('learned-rules/{learned_rule}/retirement', [LearnedRuleRetirementController::class, 'store'])
-        ->name('learned_rules.retirement.store');
-    Route::delete('learned-rules/{learned_rule}/retirement', [LearnedRuleRetirementController::class, 'destroy'])
-        ->name('learned_rules.retirement.destroy');
-    Route::post('learned-rules/{learned_rule}/historical-applications', [LearnedRuleHistoricalApplicationController::class, 'store'])
-        ->name('learned_rules.historical_applications.store');
-    Route::post('learned-rule-bulk-actions/{learned_rule_bulk_action}/confirmation', [LearnedRuleBulkActionConfirmationController::class, 'store'])
-        ->name('learned_rule_bulk_actions.confirmation.store');
-    Route::delete('learned-rule-bulk-actions/{learned_rule_bulk_action}', [LearnedRuleBulkActionController::class, 'destroy'])
-        ->name('learned_rule_bulk_actions.destroy');
-    Route::delete('learned-rule-suggestions/{learned_rule_suggestion}', [LearnedRuleSuggestionController::class, 'destroy'])
-        ->name('learned_rule_suggestions.destroy');
-    Route::post('learned-rule-suggestions/{learned_rule_suggestion}/preview', [LearnedRuleSuggestionPreviewController::class, 'store'])
-        ->name('learned_rule_suggestions.preview.store');
-    Route::post('transactions/{transaction}/learned-rule-preview', [TransactionLearnedRulePreviewController::class, 'store'])
-        ->name('transactions.learned_rule_preview.store');
     Route::delete('categories/{category}', [CategoryController::class, 'destroy'])
         ->middleware(RequirePasskeyConfirmation::class)
         ->name('categories.destroy');

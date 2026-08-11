@@ -3,6 +3,7 @@
 use App\CategoryAssignmentProvenance;
 use App\Http\Middleware\RequirePasskeyConfirmation;
 use App\Models\Category;
+use App\Models\MerchantRule;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\Date;
@@ -123,6 +124,18 @@ test('retirement enforces blockers and referenced Categories cannot be permanent
         ->assertSessionHasErrors('category');
 
     $this->assertModelExists($child);
+});
+
+test('a Category targeted by a disabled Merchant Rule cannot be retired', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create();
+
+    $this->actingAs($owner)
+        ->post(route('categories.retirement.store', $category), ['expected_revision' => 1])
+        ->assertSessionHasErrors('category');
+
+    expect($category->fresh()->retired_at)->toBeNull();
 });
 
 test('only a never-referenced Category can be deleted after fresh passkey authentication', function () {

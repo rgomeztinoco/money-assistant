@@ -5,7 +5,7 @@ import {
     LayoutGrid,
     ListChecks,
     MailSearch,
-    Sparkles,
+    Store,
     ReceiptText,
     Tags,
 } from 'lucide-react';
@@ -25,7 +25,7 @@ import { dashboard } from '@/routes';
 import { index as categoriesIndex } from '@/routes/categories';
 import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
 import { index as insightsIndex } from '@/routes/insights';
-import { index as learnedRulesIndex } from '@/routes/learned_rules';
+import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import { index as parserProfilesIndex } from '@/routes/parser_profiles';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
@@ -63,9 +63,9 @@ export function AppSidebar() {
             icon: Tags,
         },
         {
-            title: 'Learned Rules',
-            href: learnedRulesIndex(),
-            icon: Sparkles,
+            title: 'Merchant Rules',
+            href: merchantRulesIndex(),
+            icon: Store,
         },
         {
             title: 'Daily Exchange Rates',

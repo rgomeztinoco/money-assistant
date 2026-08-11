@@ -3,7 +3,6 @@
 namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
-use App\Actions\Categorization\ReadLearnedRuleCandidateFromCorrection;
 use App\Actions\ReceiptReconciliation\ReadReceiptBreakdownState;
 use App\Actions\Retention\ReadFinancialTrash;
 use App\Models\SpendingNotificationReference;
@@ -53,7 +52,6 @@ class ReadTransactionInspector
 {
     public function __construct(
         private ReadCategoryAssignmentProvenance $readCategoryAssignmentProvenance,
-        private ReadLearnedRuleCandidateFromCorrection $readLearnedRuleCandidateFromCorrection,
         private ReadReceiptBreakdownState $readReceiptBreakdownState,
         private ReadFinancialTrash $readFinancialTrash,
     ) {}
@@ -78,7 +76,6 @@ class ReadTransactionInspector
      *     original_purchase: RelatedTransactionData|null,
      *     linked_refunds: list<RelatedTransactionData>,
      *     corrections: list<array{id: int, field: string, field_label: string, previous_value: string, corrected_value: string, transaction_revision: int, created_at: string|null}>,
-     *     learned_rule_candidate: array{transaction_id: int, transaction_revision: int, category_id: int, category_name: string, merchant_pattern: string, merchant_key: string, match_mode: string, transaction_kind: string, currency: string, payment_instrument_label: null, payment_instrument_last_four: null}|null,
      *     state_changes: list<array{id: int, operation: string, result_revision: int, result_voided_at: string|null, created_at: string|null}>,
      *     source_reference_count: int,
      *     source_references: list<array{id: int, processing_outcome: string, created_at: string|null}>,
@@ -227,7 +224,6 @@ class ReadTransactionInspector
                     'created_at' => $correction->created_at?->toIso8601String(),
                 ])
                 ->all()),
-            'learned_rule_candidate' => $this->readLearnedRuleCandidateFromCorrection->handle($transaction),
             'state_changes' => array_values($transaction->stateChanges
                 ->map(fn (TransactionStateChange $stateChange): array => [
                     'id' => $stateChange->id,

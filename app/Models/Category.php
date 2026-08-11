@@ -82,24 +82,10 @@ class Category extends Model
         return $this->hasMany(LineItem::class);
     }
 
-    /**
-     * @return HasMany<LearnedRuleRevision, $this>
-     */
-    public function learnedRuleRevisions(): HasMany
+    /** @return HasMany<MerchantRule, $this> */
+    public function merchantRules(): HasMany
     {
-        return $this->hasMany(LearnedRuleRevision::class);
-    }
-
-    /** @return HasMany<LearnedRuleSuggestion, $this> */
-    public function learnedRuleSuggestions(): HasMany
-    {
-        return $this->hasMany(LearnedRuleSuggestion::class);
-    }
-
-    /** @return HasMany<LearnedRuleBulkActionItem, $this> */
-    public function learnedRuleBulkActionItems(): HasMany
-    {
-        return $this->hasMany(LearnedRuleBulkActionItem::class, 'previous_category_id');
+        return $this->hasMany(MerchantRule::class);
     }
 
     /**
