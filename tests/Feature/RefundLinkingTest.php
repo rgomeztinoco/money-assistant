@@ -241,7 +241,7 @@ test('linked Refund Category precedence overrides automation', function (
         ->and($refund->category_assignment_provenance)
         ->toBe(CategoryAssignmentProvenance::LinkedRefund);
 })->with([
-    CategoryAssignmentProvenance::LearnedRule,
+    CategoryAssignmentProvenance::MerchantRule,
 ]);
 
 test('a Refund linked to a purchase with a Receipt Breakdown stays Uncategorized for later allocation review', function () {

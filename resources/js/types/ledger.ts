@@ -1,5 +1,3 @@
-import type { LearnedRuleCandidate } from './learned-rule';
-
 export type Currency = 'USD' | 'PEN';
 export type TransactionKind = 'purchase' | 'refund';
 export type ReviewableFieldName =
@@ -16,7 +14,7 @@ export type ReviewField = {
 };
 
 export type CategoryAssignmentProvenance = {
-    source: 'owner' | 'linked_refund' | 'learned_rule';
+    source: 'owner' | 'linked_refund' | 'merchant_rule';
     owner: {
         id: number;
         name: string;
@@ -25,11 +23,7 @@ export type CategoryAssignmentProvenance = {
         id: number;
         merchant_description: string;
     } | null;
-    learned_rule: {
-        id: number;
-        revision: number;
-    } | null;
-    bulk_action: {
+    merchant_rule: {
         id: number;
     } | null;
 };
@@ -142,7 +136,6 @@ export type SelectedTransaction = {
         transaction_revision: number;
         created_at: string | null;
     }>;
-    learned_rule_candidate: LearnedRuleCandidate | null;
     state_changes: Array<{
         id: number;
         operation: 'void' | 'restore';

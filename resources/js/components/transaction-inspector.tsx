@@ -10,7 +10,6 @@ import {
     Plus,
     ReceiptText,
     ScanSearch,
-    Sparkles,
     ShieldCheck,
     Trash2,
 } from 'lucide-react';
@@ -28,7 +27,6 @@ import { default as restoreReceiptBreakdown } from '@/actions/App/Http/Controlle
 import { store as resolveSuspectedDuplicate } from '@/actions/App/Http/Controllers/SuspectedDuplicateResolutionController';
 import { update as updateCategory } from '@/actions/App/Http/Controllers/TransactionCategoryController';
 import { update } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
-import { store as previewLearnedRule } from '@/actions/App/Http/Controllers/TransactionLearnedRulePreviewController';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -1477,83 +1475,6 @@ export function TransactionInspector({
                                     </>
                                 )}
                             </Form>
-                            {transaction.learned_rule_candidate && (
-                                <div className="grid gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
-                                    <div className="flex items-start gap-3">
-                                        <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-                                        <div className="grid gap-1">
-                                            <h2 className="font-semibold">
-                                                Create an exact Learned Rule?
-                                            </h2>
-                                            <p className="text-sm text-muted-foreground">
-                                                Future{' '}
-                                                <span className="capitalize">
-                                                    {
-                                                        transaction
-                                                            .learned_rule_candidate
-                                                            .transaction_kind
-                                                    }
-                                                </span>{' '}
-                                                Transactions in{' '}
-                                                {
-                                                    transaction
-                                                        .learned_rule_candidate
-                                                        .currency
-                                                }{' '}
-                                                matching “
-                                                {
-                                                    transaction
-                                                        .learned_rule_candidate
-                                                        .merchant_pattern
-                                                }
-                                                ” exactly would use{' '}
-                                                {
-                                                    transaction
-                                                        .learned_rule_candidate
-                                                        .category_name
-                                                }
-                                                . Nothing is activated
-                                                automatically, and existing
-                                                Transactions do not change.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <Form
-                                        {...previewLearnedRule.form(
-                                            transaction.id,
-                                        )}
-                                        options={{ preserveScroll: true }}
-                                    >
-                                        {({ errors, processing }) => (
-                                            <div className="grid gap-1">
-                                                <input
-                                                    type="hidden"
-                                                    name="expected_revision"
-                                                    value={transaction.revision}
-                                                />
-                                                <Button
-                                                    type="submit"
-                                                    size="sm"
-                                                    className="w-fit"
-                                                    disabled={processing}
-                                                >
-                                                    {processing ? (
-                                                        <Spinner />
-                                                    ) : (
-                                                        <Sparkles />
-                                                    )}
-                                                    Preview exact rule
-                                                </Button>
-                                                <InputError
-                                                    message={
-                                                        errors.transaction_id
-                                                    }
-                                                />
-                                            </div>
-                                        )}
-                                    </Form>
-                                </div>
-                            )}
                         </section>
 
                         <ReceiptBreakdownSection
@@ -1704,27 +1625,12 @@ export function TransactionInspector({
                                     </p>
                                 )}
                                 {transaction.category?.provenance
-                                    .learned_rule && (
+                                    .merchant_rule && (
                                     <p className="text-muted-foreground">
-                                        Learned Rule #{' '}
+                                        Merchant Rule #{' '}
                                         {
                                             transaction.category.provenance
-                                                .learned_rule.id
-                                        }{' '}
-                                        · Revision{' '}
-                                        {
-                                            transaction.category.provenance
-                                                .learned_rule.revision
-                                        }
-                                    </p>
-                                )}
-                                {transaction.category?.provenance
-                                    .bulk_action && (
-                                    <p className="text-muted-foreground">
-                                        Historical application group #{' '}
-                                        {
-                                            transaction.category.provenance
-                                                .bulk_action.id
+                                                .merchant_rule.id
                                         }
                                     </p>
                                 )}

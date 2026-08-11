@@ -14,10 +14,6 @@ use Illuminate\Validation\ValidationException;
 
 final class AssignCategoryToTransaction
 {
-    public function __construct(
-        private CollectLearnedRuleSuggestionEvidence $collectLearnedRuleSuggestionEvidence,
-    ) {}
-
     public function handle(
         User $owner,
         int $transactionId,
@@ -76,7 +72,7 @@ final class AssignCategoryToTransaction
             $transaction->revision++;
             $transaction->save();
 
-            $assignment = CategoryAssignment::create([
+            CategoryAssignment::create([
                 'user_id' => $owner->getKey(),
                 'transaction_id' => $transaction->getKey(),
                 'category_id' => $category?->id,
@@ -85,13 +81,6 @@ final class AssignCategoryToTransaction
                 'is_correction' => $isCategoryCorrection,
                 'transaction_revision' => $transaction->revision,
             ]);
-
-            if ($isCategoryCorrection) {
-                $this->collectLearnedRuleSuggestionEvidence->handle(
-                    $transaction,
-                    $category === null ? null : $assignment,
-                );
-            }
 
             return $transaction;
         }, 3);

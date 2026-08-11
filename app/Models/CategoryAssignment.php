@@ -20,9 +20,7 @@ use Illuminate\Support\Carbon;
  * @property bool $is_correction
  * @property int $transaction_revision
  * @property int|null $linked_purchase_id
- * @property int|null $learned_rule_id
- * @property int|null $learned_rule_revision
- * @property int|null $learned_rule_bulk_action_id
+ * @property int|null $merchant_rule_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -35,9 +33,7 @@ use Illuminate\Support\Carbon;
     'is_correction',
     'transaction_revision',
     'linked_purchase_id',
-    'learned_rule_id',
-    'learned_rule_revision',
-    'learned_rule_bulk_action_id',
+    'merchant_rule_id',
 ])]
 class CategoryAssignment extends Model
 {
@@ -86,9 +82,7 @@ class CategoryAssignment extends Model
             'source' => CategoryAssignmentProvenance::class,
             'is_correction' => 'boolean',
             'transaction_revision' => 'integer',
-            'learned_rule_id' => 'integer',
-            'learned_rule_revision' => 'integer',
-            'learned_rule_bulk_action_id' => 'integer',
+            'merchant_rule_id' => 'integer',
         ];
     }
 }

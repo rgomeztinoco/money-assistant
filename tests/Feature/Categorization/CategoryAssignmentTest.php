@@ -3,6 +3,7 @@
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
 use App\Models\CategoryAssignment;
+use App\Models\MerchantRule;
 use App\Models\Transaction;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -30,7 +31,7 @@ test('the owner can assign an active Category and return a Transaction to Uncate
             ->where('selected_transaction.category.provenance.owner.id', $owner->id)
             ->where('selected_transaction.category.provenance.owner.name', $owner->name)
             ->where('selected_transaction.category.provenance.linked_purchase', null)
-            ->where('selected_transaction.category.provenance.learned_rule', null));
+            ->where('selected_transaction.category.provenance.merchant_rule', null));
 
     $this->put(route('transactions.category.update', $transaction), [
         'expected_revision' => 2,
@@ -67,32 +68,31 @@ test('an owner Category assignment replaces every lower-precedence source', func
 })->with([
     'Uncategorized' => null,
     'linked Refund default' => CategoryAssignmentProvenance::LinkedRefund,
-    'Learned Rule' => CategoryAssignmentProvenance::LearnedRule,
+    'Merchant Rule' => CategoryAssignmentProvenance::MerchantRule,
 ]);
 
-test('Learned Rule assignments expose their exact provenance', function () {
+test('Merchant Rule assignments expose their exact provenance', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $merchantRule = MerchantRule::factory()->for($owner, 'owner')->for($category)->create();
     $ruleTransaction = Transaction::factory()->for($owner, 'owner')->create([
         'category_id' => $category->id,
-        'category_assignment_provenance' => CategoryAssignmentProvenance::LearnedRule,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::MerchantRule,
     ]);
     CategoryAssignment::factory()
         ->for($owner, 'owner')
         ->for($ruleTransaction)
         ->for($category)
         ->create([
-            'source' => CategoryAssignmentProvenance::LearnedRule->value,
+            'source' => CategoryAssignmentProvenance::MerchantRule->value,
             'transaction_revision' => 1,
-            'learned_rule_id' => 42,
-            'learned_rule_revision' => 3,
+            'merchant_rule_id' => $merchantRule->id,
         ]);
     $this->actingAs($owner)
         ->get(route('transactions.index', ['selected' => $ruleTransaction->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.category.provenance.source', 'learned_rule')
-            ->where('selected_transaction.category.provenance.learned_rule.id', 42)
-            ->where('selected_transaction.category.provenance.learned_rule.revision', 3));
+            ->where('selected_transaction.category.provenance.source', 'merchant_rule')
+            ->where('selected_transaction.category.provenance.merchant_rule.id', $merchantRule->id));
 });
 
 test('Category assignment rejects stale revisions and Retired Categories', function () {

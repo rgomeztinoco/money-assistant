@@ -5,7 +5,7 @@ use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\MerchantNormalizer;
 use App\Models\Category;
-use App\Models\LearnedRule;
+use App\Models\MerchantRule;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
@@ -92,10 +92,10 @@ test('the removal migration clears every AI-derived Category and classifier queu
     ]);
 
     DB::statement('ALTER TABLE transactions DROP CONSTRAINT transactions_category_assignment_complete');
-    DB::statement("ALTER TABLE transactions ADD CONSTRAINT transactions_category_assignment_complete CHECK ((category_id IS NULL AND category_assignment_provenance IS NULL) OR (category_id IS NOT NULL AND category_assignment_provenance IN ('owner', 'linked_refund', 'learned_rule', 'ai')))");
+    DB::statement("ALTER TABLE transactions ADD CONSTRAINT transactions_category_assignment_complete CHECK ((category_id IS NULL AND category_assignment_provenance IS NULL) OR (category_id IS NOT NULL AND category_assignment_provenance IN ('owner', 'linked_refund', 'merchant_rule', 'ai')))");
     DB::statement('ALTER TABLE category_assignments DROP CONSTRAINT category_assignments_source_details_complete');
     DB::statement('ALTER TABLE category_assignments DROP CONSTRAINT category_assignments_source_supported');
-    DB::statement("ALTER TABLE category_assignments ADD CONSTRAINT category_assignments_source_supported CHECK (source IN ('owner', 'linked_refund', 'learned_rule', 'ai'))");
+    DB::statement("ALTER TABLE category_assignments ADD CONSTRAINT category_assignments_source_supported CHECK (source IN ('owner', 'linked_refund', 'merchant_rule', 'ai'))");
 
     DB::table('transactions')->where('id', $purchase->id)->update([
         'category_assignment_provenance' => 'ai',
@@ -271,17 +271,14 @@ test('a Transaction without a deterministic rule stays Uncategorized in the Revi
             ->where('unresolved_category_count', 1));
 });
 
-test('a deterministic Learned Rule still categorizes a future Transaction', function () {
+test('a deterministic Merchant Rule still categorizes a future Transaction', function () {
     Queue::fake();
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    $rule = LearnedRule::factory()->for($owner, 'owner')->create();
-    $rule->revisions()->create([
-        'revision' => 1,
+    MerchantRule::factory()->for($owner, 'owner')->for($category)->create([
         'category_id' => $category->id,
-        'merchant_pattern' => 'Rule Merchant',
+        'merchant' => 'Rule Merchant',
         'merchant_key' => app(MerchantNormalizer::class)->normalize('Rule Merchant'),
-        'match_mode' => 'exact',
         'transaction_kind' => 'purchase',
         'currency' => 'PEN',
     ]);
@@ -290,7 +287,7 @@ test('a deterministic Learned Rule still categorizes a future Transaction', func
 
     expect($transaction)
         ->category_id->toBe($category->id)
-        ->category_assignment_provenance->toBe(CategoryAssignmentProvenance::LearnedRule);
+        ->category_assignment_provenance->toBe(CategoryAssignmentProvenance::MerchantRule);
     Queue::assertNothingPushed();
 
     $this->actingAs($owner)

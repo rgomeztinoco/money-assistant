@@ -16,10 +16,8 @@ final class EnsureCategoryCanBeDeleted
             throw new CategoryOperationBlocked('This Category has historical Transaction or Line Item assignments and must be retired instead.');
         }
 
-        if ($category->learnedRuleRevisions()->exists()
-            || $category->learnedRuleSuggestions()->exists()
-            || $category->learnedRuleBulkActionItems()->exists()) {
-            throw new CategoryOperationBlocked('This Category has historical Learned Rule activity and must be retired instead.');
+        if ($category->merchantRules()->exists()) {
+            throw new CategoryOperationBlocked('Delete or retarget every Merchant Rule using this Category first.');
         }
 
         if ($category->targets()->exists()) {

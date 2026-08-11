@@ -6,7 +6,7 @@ enum CategoryAssignmentProvenance: string
 {
     case Owner = 'owner';
     case LinkedRefund = 'linked_refund';
-    case LearnedRule = 'learned_rule';
+    case MerchantRule = 'merchant_rule';
 
     public function canReplace(?self $current): bool
     {
@@ -18,7 +18,7 @@ enum CategoryAssignmentProvenance: string
         return match ($this) {
             self::Owner => 4,
             self::LinkedRefund => 3,
-            self::LearnedRule => 2,
+            self::MerchantRule => 2,
         };
     }
 }
