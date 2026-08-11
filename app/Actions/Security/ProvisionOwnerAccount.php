@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Actions\Fortify;
+namespace App\Actions\Security;
 
 use App\Actions\Categorization\InstallStartingTaxonomy;
 use App\Concerns\PasswordValidationRules;
@@ -8,9 +8,8 @@ use App\Concerns\ProfileValidationRules;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
-use Laravel\Fortify\Contracts\CreatesNewUsers;
 
-class CreateNewUser implements CreatesNewUsers
+class ProvisionOwnerAccount
 {
     use PasswordValidationRules, ProfileValidationRules;
 
@@ -18,12 +17,8 @@ class CreateNewUser implements CreatesNewUsers
         private InstallStartingTaxonomy $installStartingTaxonomy,
     ) {}
 
-    /**
-     * Validate and create a newly registered user.
-     *
-     * @param  array<string, string>  $input
-     */
-    public function create(array $input): User
+    /** @param array<string, string> $input */
+    public function handle(array $input): User
     {
         Validator::make($input, [
             ...$this->profileRules(),

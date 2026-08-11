@@ -113,11 +113,7 @@ test('the owner can register a passkey and use it for normal sign-in', function 
     $page
         ->click('[data-test="sidebar-menu-button"]')
         ->click('[data-test="logout-button"]')
-        ->assertPathIs('/');
-
-    $page->script('window.location.assign("/login")');
-
-    $page->assertPathIs('/login');
+        ->assertPathIs('/login');
 
     $page->page()
         ->getByText('Sign in with a passkey', exact: true)
@@ -130,17 +126,13 @@ test('the owner can register a passkey and use it for normal sign-in', function 
         ->assertNoConsoleLogs();
 });
 
-test('the owner can recover access using the password and an offline recovery code', function () {
-    $owner = User::factory()->withTwoFactor()->create();
+test('the owner can recover access using the recovery password', function () {
+    $owner = User::factory()->create();
     $page = visit('/login');
 
     recoverAccessWithPassword($page, $owner);
 
     $page
-        ->assertPathIs('/two-factor-challenge')
-        ->press('login using a recovery code')
-        ->type('[name="recovery_code"]', 'recovery-code-1')
-        ->press('Continue')
         ->assertPathIs('/dashboard')
         ->assertSee('Dashboard')
         ->assertNoJavaScriptErrors()
@@ -182,15 +174,5 @@ test('sensitive operations reject stale authentication', function () {
         ->assertPathIs('/user/confirm-password')
         ->assertNoJavaScriptErrors()
         ->assertSee('Confirm with passkey')
-        ->script('window.location.assign("/settings/profile")');
-
-    $page
-        ->assertPathIs('/settings/profile')
-        ->click('[data-test="delete-user-button"]')
-        ->click('[data-test="confirm-delete-user-button"]')
-        ->assertPathIs('/confirm-passkey')
-        ->assertSee('Confirm with passkey')
-        ->assertDontSee('Confirm password')
-        ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

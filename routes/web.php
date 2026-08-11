@@ -38,9 +38,11 @@ use App\Http\Controllers\TransactionVoidController;
 use App\Http\Middleware\RequirePasskeyConfirmation;
 use Illuminate\Support\Facades\Route;
 
-Route::inertia('/', 'welcome')->name('home');
+Route::redirect('/', '/dashboard')
+    ->middleware('auth')
+    ->name('home');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::post(
         'integration-incidents/{integrationIncident}/acknowledgement',

@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Actions\Fortify\CreateNewUser;
+use App\Actions\Security\ProvisionOwnerAccount;
 use App\Models\User;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -13,7 +13,7 @@ use Illuminate\Database\QueryException;
 #[Description('Provision the single Owner Account')]
 class CreateOwnerAccount extends Command
 {
-    public function __construct(private CreateNewUser $createNewUser)
+    public function __construct(private ProvisionOwnerAccount $provisionOwnerAccount)
     {
         parent::__construct();
     }
@@ -34,7 +34,7 @@ class CreateOwnerAccount extends Command
         $password = (string) $this->secret('Recovery password');
 
         try {
-            $this->createNewUser->create([
+            $this->provisionOwnerAccount->handle([
                 'name' => $name,
                 'email' => $email,
                 'password' => $password,
