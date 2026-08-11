@@ -42,7 +42,6 @@ class LinkRefundToPurchaseRequest extends FormRequest
                     )
                     ->whereNull('voided_at'),
             ],
-            'expected_revision' => ['required', 'integer', 'min:1'],
         ];
     }
 }

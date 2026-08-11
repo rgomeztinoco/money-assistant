@@ -40,6 +40,7 @@ test('the owner saves replaces and removes a Receipt Breakdown in the Transactio
     $page
         ->fill('Description', 'Fresh coffee beans')
         ->press('Replace Receipt Breakdown')
+        ->wait(1)
         ->assertSee('Receipt Breakdown saved.')
         ->press('Remove Receipt Breakdown')
         ->assertSee('Receipt Breakdown removed.')

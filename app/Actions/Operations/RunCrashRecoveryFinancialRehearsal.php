@@ -45,8 +45,6 @@ class RunCrashRecoveryFinancialRehearsal
                 owner: $owner,
                 transaction: $transaction,
                 operation: TransactionVoidOperation::Void,
-                expectedRevision: 1,
-                idempotencyKey: $rehearsalId,
             );
 
             return $transaction->refresh();

@@ -3,7 +3,6 @@
 namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
-use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -25,7 +24,6 @@ use Illuminate\Support\Str;
  *     review_state?: string|null,
  *     refund_relationship?: string|null,
  *     void_state?: string|null,
- *     duplicate_status?: string|null,
  *     selected?: int|string|null,
  *     inspector?: string|null
  * }
@@ -40,7 +38,6 @@ use Illuminate\Support\Str;
  *     review_state: string,
  *     refund_relationship: string,
  *     void_state: string,
- *     duplicate_status: string
  * }
  * @phpstan-type LedgerTransactionData array{
  *     id: int,
@@ -50,17 +47,13 @@ use Illuminate\Support\Str;
  *     kind: string,
  *     merchant_description: string,
  *     confirmed_at: string,
- *     revision: int,
  *     original_purchase: array{id: int, merchant_description: string}|null,
  *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
  *     review_state: string,
  *     review_field_count: int,
  *     fields: list<array{name: string, label: string, value: string}>,
  *     refund_relationship_review_count: int,
- *     duplicate_status: string,
  *     voided_at: string|null,
- *     duplicate_resolution: array{id: int, revision: int, first_transaction_revision: int, second_transaction_revision: int, reopen_idempotency_key: string}|null,
- *     state_change_idempotency_key: string
  * }
  */
 class ReadLedger
@@ -73,10 +66,10 @@ class ReadLedger
         'kind',
         'merchant_description',
         'confirmed_at',
-        'revision',
         'original_purchase_id',
         'category_id',
         'category_assignment_provenance',
+        'merchant_rule_id',
         'provisional_fields',
         'refund_relationship_review_reasons',
     ];
@@ -108,81 +101,18 @@ class ReadLedger
             ->with([
                 'originalPurchase:id,merchant_description',
                 'category:id,name',
-                'currentCategoryAssignment.owner:id,name',
-                'currentCategoryAssignment.linkedPurchase:id,merchant_description',
                 'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id',
             ])
             ->orderByDesc('occurred_on')
             ->orderByDesc('id');
         $transactions = $transactionQuery->paginate(25)->withQueryString();
         $transactionModels = collect($transactions->items());
-        $visibleTransactionIds = $transactionModels
-            ->map(fn (Transaction $transaction): int => $transaction->id)
-            ->all();
-        $duplicateStatuses = [];
-
-        if ($visibleTransactionIds !== []) {
-            $visibleDuplicateRelationships = SuspectedDuplicate::query()
-                ->whereBelongsTo($owner, 'owner')
-                ->where(function ($query) use ($visibleTransactionIds): void {
-                    $query
-                        ->whereIn('first_transaction_id', $visibleTransactionIds)
-                        ->orWhereIn('second_transaction_id', $visibleTransactionIds);
-                })
-                ->get(['first_transaction_id', 'second_transaction_id', 'resolved_at']);
-
-            foreach ($visibleDuplicateRelationships as $relationship) {
-                $status = $relationship->resolved_at === null ? 'suspected' : 'resolved';
-
-                foreach ([$relationship->first_transaction_id, $relationship->second_transaction_id] as $transactionId) {
-                    if ($status === 'suspected' || ! isset($duplicateStatuses[$transactionId])) {
-                        $duplicateStatuses[$transactionId] = $status;
-                    }
-                }
-            }
-        }
-
-        $duplicateResolutionsByVoidedTransaction = SuspectedDuplicate::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereIn('voided_transaction_id', $visibleTransactionIds)
-            ->whereNotNull('resolved_at')
-            ->with([
-                'firstTransaction:id,revision',
-                'secondTransaction:id,revision',
-            ])
-            ->get([
-                'id',
-                'first_transaction_id',
-                'second_transaction_id',
-                'revision',
-                'voided_transaction_id',
-            ])
-            ->keyBy('voided_transaction_id');
-
-        $ledgerRows = $transactionModels->map(function (Transaction $transaction) use ($owner, $duplicateStatuses, $duplicateResolutionsByVoidedTransaction): array {
-            $duplicateResolution = $duplicateResolutionsByVoidedTransaction->get(
-                $transaction->id,
-            );
-
-            return [
-                ...$this->transactionData(
-                    $transaction,
-                    $owner,
-                    $duplicateStatuses[$transaction->id] ?? 'none',
-                ),
+        $ledgerRows = $transactionModels->map(
+            fn (Transaction $transaction): array => [
+                ...$this->transactionData($transaction, $owner),
                 'voided_at' => $transaction->voided_at?->toIso8601String(),
-                'duplicate_resolution' => $duplicateResolution === null
-                    ? null
-                    : [
-                        'id' => $duplicateResolution->id,
-                        'revision' => $duplicateResolution->revision,
-                        'first_transaction_revision' => $duplicateResolution->firstTransaction->revision,
-                        'second_transaction_revision' => $duplicateResolution->secondTransaction->revision,
-                        'reopen_idempotency_key' => (string) Str::uuid(),
-                    ],
-                'state_change_idempotency_key' => (string) Str::uuid(),
-            ];
-        });
+            ],
+        );
 
         return [
             'today' => now(config('app.timezone'))->toDateString(),
@@ -215,17 +145,15 @@ class ReadLedger
      *     kind: string,
      *     merchant_description: string,
      *     confirmed_at: string,
-     *     revision: int,
      *     original_purchase: array{id: int, merchant_description: string}|null,
      *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
      *     review_state: string,
      *     review_field_count: int,
      *     fields: list<array{name: string, label: string, value: string}>,
-     *     refund_relationship_review_count: int,
-     *     duplicate_status: string
+     *     refund_relationship_review_count: int
      * }
      */
-    private function transactionData(Transaction $transaction, User $owner, string $duplicateStatus): array
+    private function transactionData(Transaction $transaction, User $owner): array
     {
         $category = null;
         $receiptBreakdown = $transaction->receiptBreakdown?->lineItems->isNotEmpty() === true
@@ -263,7 +191,6 @@ class ReadLedger
             'kind' => $transaction->kind->value,
             'merchant_description' => $transaction->merchant_description,
             'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
-            'revision' => $transaction->revision,
             'original_purchase' => $transaction->originalPurchase === null
                 ? null
                 : [
@@ -274,13 +201,11 @@ class ReadLedger
             'review_state' => $unresolvedCategoryCount > 0
                 || $transaction->provisional_fields !== []
                 || $transaction->refund_relationship_review_reasons !== []
-                || $duplicateStatus === 'suspected'
                     ? 'outstanding'
                     : 'clear',
             'review_field_count' => count($transaction->provisional_fields) + $unresolvedCategoryCount,
             'fields' => $reviewFields,
             'refund_relationship_review_count' => count($transaction->refund_relationship_review_reasons),
-            'duplicate_status' => $duplicateStatus,
         ];
     }
 
@@ -301,7 +226,6 @@ class ReadLedger
             'review_state' => $filters['review_state'] ?? 'all',
             'refund_relationship' => $filters['refund_relationship'] ?? 'all',
             'void_state' => $filters['void_state'] ?? 'all',
-            'duplicate_status' => $filters['duplicate_status'] ?? 'all',
         ];
     }
 
@@ -344,55 +268,9 @@ class ReadLedger
                 ->whereJsonLength('provisional_fields', 0)
                 ->whereJsonLength('refund_relationship_review_reasons', 0);
             $this->whereHasNoUncategorizedContribution($query);
-            $this->whereHasNoDuplicateRelationship($query, false);
-        }
-
-        if ($filters['duplicate_status'] === 'suspected') {
-            $this->whereHasDuplicateRelationship($query, false);
-        } elseif ($filters['duplicate_status'] === 'resolved') {
-            $this->whereHasDuplicateRelationship($query, true);
-            $this->whereHasNoDuplicateRelationship($query, false);
-        } elseif ($filters['duplicate_status'] === 'none') {
-            $this->whereHasNoDuplicateRelationship($query);
         }
 
         return $query;
-    }
-
-    /** @param Builder<Transaction> $query */
-    private function whereHasDuplicateRelationship(Builder $query, ?bool $resolved = null): void
-    {
-        $query->whereExists(function ($query) use ($resolved): void {
-            $query
-                ->selectRaw('1')
-                ->from('suspected_duplicates')
-                ->whereColumn('suspected_duplicates.user_id', 'transactions.user_id')
-                ->where(function ($query): void {
-                    $query
-                        ->whereColumn('suspected_duplicates.first_transaction_id', 'transactions.id')
-                        ->orWhereColumn('suspected_duplicates.second_transaction_id', 'transactions.id');
-                })
-                ->when($resolved === true, fn ($query) => $query->whereNotNull('suspected_duplicates.resolved_at'))
-                ->when($resolved === false, fn ($query) => $query->whereNull('suspected_duplicates.resolved_at'));
-        });
-    }
-
-    /** @param Builder<Transaction> $query */
-    private function whereHasNoDuplicateRelationship(Builder $query, ?bool $resolved = null): void
-    {
-        $query->whereNotExists(function ($query) use ($resolved): void {
-            $query
-                ->selectRaw('1')
-                ->from('suspected_duplicates')
-                ->whereColumn('suspected_duplicates.user_id', 'transactions.user_id')
-                ->where(function ($query): void {
-                    $query
-                        ->whereColumn('suspected_duplicates.first_transaction_id', 'transactions.id')
-                        ->orWhereColumn('suspected_duplicates.second_transaction_id', 'transactions.id');
-                })
-                ->when($resolved === true, fn ($query) => $query->whereNotNull('suspected_duplicates.resolved_at'))
-                ->when($resolved === false, fn ($query) => $query->whereNull('suspected_duplicates.resolved_at'));
-        });
     }
 
     /** @param Builder<Transaction> $query */

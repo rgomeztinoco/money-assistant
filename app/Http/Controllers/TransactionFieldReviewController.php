@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Ledger\ResolveTransactionField;
-use App\Exceptions\StaleTransactionRevision;
 use App\Http\Requests\ResolveTransactionFieldRequest;
 use App\Models\Transaction;
 use App\ReviewableTransactionField;
@@ -23,20 +22,13 @@ class TransactionFieldReviewController extends Controller
         $validated = $request->validated();
         $resolution = TransactionFieldResolution::from($validated['resolution']);
 
-        try {
-            $this->resolveTransactionField->handle(
-                owner: $request->user(),
-                transaction: $transaction,
-                field: $field,
-                expectedRevision: (int) $validated['expected_revision'],
-                resolution: $resolution,
-                correctedValue: $validated['value'] ?? null,
-            );
-        } catch (StaleTransactionRevision $exception) {
-            return back()->withErrors([
-                'expected_revision' => $exception->getMessage(),
-            ])->with('stale_transaction', $exception->currentState());
-        }
+        $this->resolveTransactionField->handle(
+            owner: $request->user(),
+            transaction: $transaction,
+            field: $field,
+            resolution: $resolution,
+            correctedValue: $validated['value'] ?? null,
+        );
 
         Inertia::flash('toast', [
             'type' => 'success',

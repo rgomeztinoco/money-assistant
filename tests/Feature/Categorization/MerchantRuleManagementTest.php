@@ -79,7 +79,7 @@ test('the owner can edit disable enable and delete a Merchant Rule', function ()
     $this->delete(route('merchant_rules.destroy', $rule))
         ->assertRedirect(route('merchant_rules.index'));
 
-    $this->assertModelMissing($rule);
+    $this->assertSoftDeleted($rule);
 });
 
 test('a Merchant Rule requires an active Category owned by the owner', function () {

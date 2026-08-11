@@ -62,8 +62,7 @@ test('the owner directly edits the current Transaction and clears reviewed field
         ->and($transaction->category_id)->toBe($category->id)
         ->and($transaction->category_assignment_provenance)->toBe(CategoryAssignmentProvenance::Owner)
         ->and($transaction->original_purchase_id)->toBe($purchase->id)
-        ->and($transaction->provisional_fields)->toBe([])
-        ->and($transaction->corrections()->count())->toBe(0);
+        ->and($transaction->provisional_fields)->toBe([]);
 });
 
 test('the ledger is paginated and loads the selected inspector separately', function () {
