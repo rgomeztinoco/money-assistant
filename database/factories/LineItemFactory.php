@@ -22,9 +22,7 @@ class LineItemFactory extends Factory
             'line_item_id' => fake()->uuid(),
             'receipt_breakdown_id' => ReceiptBreakdown::factory(),
             'description' => fake()->words(2, true),
-            'role' => 'purchased_item',
             'line_total_minor' => fake()->numberBetween(1, 100_000),
-            'requires_review' => false,
         ];
     }
 }

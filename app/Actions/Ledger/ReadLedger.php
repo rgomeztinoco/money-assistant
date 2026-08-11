@@ -152,7 +152,7 @@ class ReadLedger
                 'category:id,name',
                 'currentCategoryAssignment.owner:id,name',
                 'currentCategoryAssignment.linkedPurchase:id,merchant_description',
-                'receiptBreakdowns.lineItems:id,receipt_breakdown_id,category_id',
+                'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id',
             ])
             ->orderByDesc('occurred_on')
             ->orderByDesc('id');
@@ -174,7 +174,7 @@ class ReadLedger
                 'category:id,name',
                 'currentCategoryAssignment.owner:id,name',
                 'currentCategoryAssignment.linkedPurchase:id,merchant_description',
-                'receiptBreakdowns.lineItems:id,receipt_breakdown_id,category_id',
+                'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id',
             ])
             ->orderByDesc('voided_at')
             ->orderByDesc('id');
@@ -332,12 +332,12 @@ class ReadLedger
     private function transactionData(Transaction $transaction, User $owner, string $duplicateStatus): array
     {
         $category = null;
-        $confirmedBreakdown = $transaction->receiptBreakdowns
-            ->first(fn ($breakdown): bool => $breakdown->status === 'confirmed'
-                && $breakdown->lineItems->isNotEmpty());
-        $unresolvedCategoryCount = $confirmedBreakdown === null
+        $receiptBreakdown = $transaction->receiptBreakdown?->lineItems->isNotEmpty() === true
+            ? $transaction->receiptBreakdown
+            : null;
+        $unresolvedCategoryCount = $receiptBreakdown === null
             ? ($transaction->category_id === null ? 1 : 0)
-            : $confirmedBreakdown->lineItems->whereNull('category_id')->count();
+            : $receiptBreakdown->lineItems->whereNull('category_id')->count();
 
         if ($transaction->category !== null) {
             $provenance = $this->readCategoryAssignmentProvenance->handle($transaction, $owner);
@@ -492,12 +492,10 @@ class ReadLedger
                 ->where(function (Builder $query): void {
                     $query
                         ->whereNull('category_id')
-                        ->whereDoesntHave('receiptBreakdowns', fn (Builder $query) => $query
-                            ->where('status', 'confirmed')
+                        ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
                             ->whereHas('lineItems'));
                 })
-                ->orWhereHas('receiptBreakdowns', fn (Builder $query) => $query
-                    ->where('status', 'confirmed')
+                ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
                     ->whereHas('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
         });
     }
@@ -510,12 +508,10 @@ class ReadLedger
                 ->where(function (Builder $query): void {
                     $query
                         ->whereNotNull('category_id')
-                        ->whereDoesntHave('receiptBreakdowns', fn (Builder $query) => $query
-                            ->where('status', 'confirmed')
+                        ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
                             ->whereHas('lineItems'));
                 })
-                ->orWhereHas('receiptBreakdowns', fn (Builder $query) => $query
-                    ->where('status', 'confirmed')
+                ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
                     ->whereHas('lineItems')
                     ->whereDoesntHave('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
         });

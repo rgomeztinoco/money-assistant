@@ -54,7 +54,7 @@ class ResolveTransactionField
                 $previousValue = $field->valueFor($currentTransaction);
                 $normalizedValue = $field->normalizeCorrection($correctedValue);
                 $currentTransaction->setAttribute($field->value, $normalizedValue);
-                $this->demoteInvalidatedReceiptBreakdown($currentTransaction, $field);
+                $this->removeInvalidatedReceiptBreakdown($currentTransaction, $field);
 
                 $currentTransaction->corrections()->create([
                     'field' => $field,
@@ -80,48 +80,31 @@ class ResolveTransactionField
         });
     }
 
-    private function demoteInvalidatedReceiptBreakdown(
+    private function removeInvalidatedReceiptBreakdown(
         Transaction $transaction,
         ReviewableTransactionField $field,
     ): void {
-        if (! in_array($field, [
-            ReviewableTransactionField::AmountMinor,
-            ReviewableTransactionField::Currency,
-            ReviewableTransactionField::Kind,
-        ], true)) {
+        if ($field !== ReviewableTransactionField::AmountMinor) {
             return;
         }
 
-        $breakdowns = ReceiptBreakdown::query()
+        $breakdown = ReceiptBreakdown::query()
             ->where('transaction_id', $transaction->getKey())
-            ->orderBy('id')
             ->lockForUpdate()
-            ->get();
-        $confirmedBreakdown = $breakdowns->firstWhere('status', 'confirmed');
+            ->first();
 
-        if ($confirmedBreakdown === null) {
+        if ($breakdown === null) {
             return;
         }
 
-        if ($field === ReviewableTransactionField::AmountMinor) {
-            $lineItemTotal = ExactInteger::from(0);
+        $lineItemTotal = ExactInteger::from(0);
 
-            foreach ($confirmedBreakdown->lineItems()->lockForUpdate()->get() as $lineItem) {
-                $lineItemTotal = $lineItemTotal->add(ExactInteger::from($lineItem->line_total_minor));
-            }
-
-            if ($lineItemTotal->compare(ExactInteger::from($transaction->amount_minor)) === 0) {
-                return;
-            }
+        foreach ($breakdown->lineItems()->lockForUpdate()->get() as $lineItem) {
+            $lineItemTotal = $lineItemTotal->add(ExactInteger::from($lineItem->line_total_minor));
         }
 
-        $confirmedBreakdown->status = $breakdowns->contains('status', 'draft')
-            ? 'superseded'
-            : 'draft';
-        $confirmedBreakdown->confirmed_at = $confirmedBreakdown->status === 'draft'
-            ? null
-            : $confirmedBreakdown->confirmed_at;
-        $confirmedBreakdown->revision++;
-        $confirmedBreakdown->save();
+        if ($lineItemTotal->compare(ExactInteger::from($transaction->amount_minor)) !== 0) {
+            $breakdown->delete();
+        }
     }
 }

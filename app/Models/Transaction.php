@@ -164,8 +164,7 @@ class Transaction extends Model
     {
         return $query
             ->whereNull('category_id')
-            ->whereDoesntHave('receiptBreakdowns', fn (Builder $query) => $query
-                ->where('status', 'confirmed')
+            ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
                 ->whereHas('lineItems'));
     }
 
@@ -181,8 +180,7 @@ class Transaction extends Model
         return $query->where(function (Builder $query) use ($suspectedDuplicatesTable, $transactionsTable): void {
             $query
                 ->where(fn (Builder $query) => $query->whereCategoryRequiresReview())
-                ->orWhereHas('receiptBreakdowns', fn (Builder $query) => $query
-                    ->where('status', 'confirmed')
+                ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
                     ->whereHas('lineItems', fn (Builder $query) => $query->whereNull('category_id')))
                 ->orWhereJsonLength('provisional_fields', '>', 0)
                 ->orWhereJsonLength('refund_relationship_review_reasons', '>', 0)
@@ -202,11 +200,11 @@ class Transaction extends Model
     }
 
     /**
-     * @return HasMany<ReceiptBreakdown, $this>
+     * @return HasOne<ReceiptBreakdown, $this>
      */
-    public function receiptBreakdowns(): HasMany
+    public function receiptBreakdown(): HasOne
     {
-        return $this->hasMany(ReceiptBreakdown::class);
+        return $this->hasOne(ReceiptBreakdown::class);
     }
 
     /**

@@ -4,14 +4,13 @@ namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
 use App\Actions\ReceiptReconciliation\ReadReceiptBreakdownState;
-use App\Actions\Retention\ReadFinancialTrash;
 use App\Models\SpendingNotificationReference;
 use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
 use App\Models\TransactionCorrection;
 use App\Models\TransactionStateChange;
 use App\Models\User;
-use App\ReceiptBreakdownSetFingerprint;
+use App\ReceiptBreakdownFingerprint;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
 use App\SourceReferenceSetFingerprint;
@@ -19,7 +18,7 @@ use Illuminate\Support\Str;
 
 /**
  * @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance
- * @phpstan-import-type ReceiptBreakdownState from ReadReceiptBreakdownState
+ * @phpstan-import-type ReceiptBreakdownData from ReadReceiptBreakdownState
  *
  * @phpstan-type RelatedTransactionData array{
  *     id: int,
@@ -41,7 +40,7 @@ use Illuminate\Support\Str;
  *     revision: int,
  *     original_purchase_id: int|null,
  *     has_linked_refunds: bool,
- *     receipt_breakdown_statuses: list<string>,
+ *     has_receipt_breakdown: bool,
  *     protects_resolved_duplicate: bool,
  *     source_reference_count: int,
  *     source_reference_fingerprint: string,
@@ -53,7 +52,6 @@ class ReadTransactionInspector
     public function __construct(
         private ReadCategoryAssignmentProvenance $readCategoryAssignmentProvenance,
         private ReadReceiptBreakdownState $readReceiptBreakdownState,
-        private ReadFinancialTrash $readFinancialTrash,
     ) {}
 
     /**
@@ -92,8 +90,7 @@ class ReadTransactionInspector
      *         first_transaction: DuplicateTransactionData,
      *         second_transaction: DuplicateTransactionData
      *     }>,
-     *     receipt_breakdown: ReceiptBreakdownState,
-     *     trashed_receipt_breakdowns: list<array{deletion_id: string, revision: int, purge_after: string}>,
+     *     receipt_breakdown: ReceiptBreakdownData|null,
      *     state_change_idempotency_key: string
      * }|null
      */
@@ -121,7 +118,7 @@ class ReadTransactionInspector
                     ->orderByDesc('result_revision'),
                 'spendingNotificationReferences' => fn ($query) => $query
                     ->orderByDesc('created_at'),
-                'receiptBreakdowns.lineItems.category:id,name',
+                'receiptBreakdown.lineItems.category:id,name',
             ])
             ->find($transactionId);
 
@@ -163,7 +160,7 @@ class ReadTransactionInspector
                     ->with([
                         'category:id,name',
                         'spendingNotificationReferences:id,transaction_id',
-                        'receiptBreakdowns:id,transaction_id,status,revision',
+                        'receiptBreakdown:id,transaction_id,updated_at',
                     ])
                     ->withExists([
                         'linkedRefunds',
@@ -173,7 +170,7 @@ class ReadTransactionInspector
                     ->with([
                         'category:id,name',
                         'spendingNotificationReferences:id,transaction_id',
-                        'receiptBreakdowns:id,transaction_id,status,revision',
+                        'receiptBreakdown:id,transaction_id,updated_at',
                     ])
                     ->withExists([
                         'linkedRefunds',
@@ -201,8 +198,8 @@ class ReadTransactionInspector
                     'provenance' => $this->readCategoryAssignmentProvenance->handle($transaction, $owner),
                 ],
             'review' => [
-                'category' => ($receiptBreakdown['confirmed'] === null
-                    || $receiptBreakdown['confirmed']['line_items'] === [])
+                'category' => ($receiptBreakdown === null
+                    || $receiptBreakdown['line_items'] === [])
                     && $transaction->category_id === null,
                 'fields' => $reviewFields,
                 'refund_relationship_reasons' => $refundRelationshipReasons,
@@ -263,8 +260,6 @@ class ReadTransactionInspector
                 })
                 ->all()),
             'receipt_breakdown' => $receiptBreakdown,
-            'trashed_receipt_breakdowns' => $this->readFinancialTrash
-                ->receiptBreakdowns($owner, $transaction),
             'state_change_idempotency_key' => (string) Str::uuid(),
         ];
     }
@@ -290,25 +285,19 @@ class ReadTransactionInspector
      */
     private function duplicateTransactionData(Transaction $transaction): array
     {
-        $receiptBreakdownStatuses = [];
-
-        foreach ($transaction->receiptBreakdowns as $receiptBreakdown) {
-            $receiptBreakdownStatuses[] = $receiptBreakdown->status;
-        }
-
         return [
             ...$this->relatedTransactionData($transaction),
             'revision' => $transaction->revision,
             'original_purchase_id' => $transaction->original_purchase_id,
             'has_linked_refunds' => (bool) $transaction->linked_refunds_exists,
-            'receipt_breakdown_statuses' => $receiptBreakdownStatuses,
+            'has_receipt_breakdown' => $transaction->receiptBreakdown !== null,
             'protects_resolved_duplicate' => (bool) $transaction->resolved_duplicate_relationships_as_survivor_exists,
             'source_reference_count' => $transaction->spendingNotificationReferences->count(),
             'source_reference_fingerprint' => SourceReferenceSetFingerprint::fromIds(
                 $transaction->spendingNotificationReferences->modelKeys(),
             ),
-            'receipt_breakdown_fingerprint' => ReceiptBreakdownSetFingerprint::fromBreakdowns(
-                $transaction->receiptBreakdowns,
+            'receipt_breakdown_fingerprint' => ReceiptBreakdownFingerprint::fromBreakdown(
+                $transaction->receiptBreakdown,
             ),
         ];
     }

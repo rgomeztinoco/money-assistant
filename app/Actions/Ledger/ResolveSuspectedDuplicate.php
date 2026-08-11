@@ -12,7 +12,7 @@ use App\Models\SuspectedDuplicateResolution;
 use App\Models\SuspectedDuplicateSourceMove;
 use App\Models\Transaction;
 use App\Models\User;
-use App\ReceiptBreakdownSetFingerprint;
+use App\ReceiptBreakdownFingerprint;
 use App\SourceReferenceSetFingerprint;
 use App\SuspectedDuplicateOperation;
 use Illuminate\Database\QueryException;
@@ -157,39 +157,30 @@ class ResolveSuspectedDuplicate
                     ->orderBy('id')
                     ->lockForUpdate()
                     ->get();
-                $receiptBreakdownsToMove = $receiptBreakdowns
-                    ->where('transaction_id', $voidedTransaction->id);
-                $firstReceiptBreakdowns = $receiptBreakdowns
-                    ->where('transaction_id', $firstTransaction->id);
-                $secondReceiptBreakdowns = $receiptBreakdowns
-                    ->where('transaction_id', $secondTransaction->id);
+                $receiptBreakdownToMove = $receiptBreakdowns
+                    ->firstWhere('transaction_id', $voidedTransaction->id);
+                $firstReceiptBreakdown = $receiptBreakdowns
+                    ->firstWhere('transaction_id', $firstTransaction->id);
+                $secondReceiptBreakdown = $receiptBreakdowns
+                    ->firstWhere('transaction_id', $secondTransaction->id);
 
                 if (
                     ! hash_equals(
                         $expectedFirstReceiptBreakdownFingerprint,
-                        ReceiptBreakdownSetFingerprint::fromBreakdowns($firstReceiptBreakdowns),
+                        ReceiptBreakdownFingerprint::fromBreakdown($firstReceiptBreakdown),
                     )
                     || ! hash_equals(
                         $expectedSecondReceiptBreakdownFingerprint,
-                        ReceiptBreakdownSetFingerprint::fromBreakdowns($secondReceiptBreakdowns),
+                        ReceiptBreakdownFingerprint::fromBreakdown($secondReceiptBreakdown),
                     )
                 ) {
                     throw new InvalidArgumentException('The Receipt Breakdowns changed while you were reviewing this Suspected Duplicate.');
                 }
 
-                $survivorActiveStatuses = $receiptBreakdowns
-                    ->where('transaction_id', $currentSurvivor->id)
-                    ->whereIn('status', ['draft', 'confirmed'])
-                    ->pluck('status');
-                $conflictingStatus = $receiptBreakdownsToMove
-                    ->whereIn('status', ['draft', 'confirmed'])
-                    ->pluck('status')
-                    ->intersect($survivorActiveStatuses)
-                    ->first();
-
-                if (is_string($conflictingStatus)) {
+                if ($receiptBreakdownToMove !== null
+                    && $receiptBreakdowns->contains('transaction_id', $currentSurvivor->id)) {
                     throw new InvalidArgumentException(
-                        "Both Transactions have a {$conflictingStatus} Receipt Breakdown. Discard or reconcile one before resolving this pair.",
+                        'Both Transactions have a Receipt Breakdown. Remove one before resolving this pair.',
                     );
                 }
 
@@ -269,17 +260,15 @@ class ResolveSuspectedDuplicate
                     ]);
                 }
 
-                foreach ($receiptBreakdownsToMove as $receiptBreakdown) {
-                    $receiptBreakdown->transaction_id = $currentSurvivor->id;
-                    $receiptBreakdown->save();
+                if ($receiptBreakdownToMove !== null) {
+                    $receiptBreakdownToMove->transaction_id = $currentSurvivor->id;
+                    $receiptBreakdownToMove->save();
 
                     SuspectedDuplicateReceiptBreakdownMove::create([
                         'suspected_duplicate_resolution_id' => $resolution->id,
-                        'receipt_breakdown_id' => $receiptBreakdown->id,
+                        'receipt_breakdown_id' => $receiptBreakdownToMove->id,
                         'from_transaction_id' => $voidedTransaction->id,
                         'to_transaction_id' => $currentSurvivor->id,
-                        'receipt_breakdown_revision' => $receiptBreakdown->revision,
-                        'receipt_breakdown_status' => $receiptBreakdown->status,
                     ]);
                 }
 

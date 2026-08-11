@@ -6,7 +6,6 @@ use App\Exceptions\GmailResponseInvalid;
 use App\Exceptions\IdempotencyKeyConflict;
 use App\Exceptions\StaleCategoryRevision;
 use App\Exceptions\StaleDailyExchangeRateRevision;
-use App\Exceptions\StaleReceiptBreakdownRevision;
 use App\Exceptions\StaleTransactionRevision;
 use App\IntegrationFailureKind;
 use App\Integrations\Gmail\GmailReauthorizationRequired;
@@ -44,7 +43,6 @@ final class ClassifyIntegrationFailure
                 $failure instanceof IdempotencyKeyConflict,
                 $failure instanceof StaleCategoryRevision,
                 $failure instanceof StaleDailyExchangeRateRevision,
-                $failure instanceof StaleReceiptBreakdownRevision,
                 $failure instanceof StaleTransactionRevision => IntegrationFailureKind::Concurrency,
                 $failure instanceof GmailResponseInvalid,
                 $failure instanceof UnexpectedValueException => IntegrationFailureKind::Schema,

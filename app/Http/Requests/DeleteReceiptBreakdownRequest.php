@@ -6,7 +6,7 @@ use App\Models\Transaction;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-final class CreateReceiptBreakdownRequest extends FormRequest
+final class DeleteReceiptBreakdownRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -16,15 +16,9 @@ final class CreateReceiptBreakdownRequest extends FormRequest
             && $transaction->user_id === $this->user()->getKey();
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, ValidationRule|array<mixed>|string>
-     */
+    /** @return array<string, ValidationRule|array<mixed>|string> */
     public function rules(): array
     {
-        return [
-            'expected_transaction_revision' => ['required', 'integer', 'min:1'],
-        ];
+        return [];
     }
 }

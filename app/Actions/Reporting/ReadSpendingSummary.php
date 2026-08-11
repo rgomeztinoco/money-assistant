@@ -70,10 +70,9 @@ final class ReadSpendingSummary
             ->tap(fn (Builder $query): Builder => $this->forPeriod($query, $dateFrom, $dateTo))
             ->select(['id', 'occurred_on', 'amount_minor', 'currency', 'kind', 'category_id'])
             ->with([
-                'receiptBreakdowns' => fn ($query) => $query
-                    ->where('status', 'confirmed')
+                'receiptBreakdown' => fn ($query) => $query
                     ->select(['id', 'transaction_id']),
-                'receiptBreakdowns.lineItems:id,line_item_id,receipt_breakdown_id,category_id,line_total_minor',
+                'receiptBreakdown.lineItems:id,line_item_id,receipt_breakdown_id,category_id,line_total_minor',
             ])
             ->lazyById();
 
@@ -90,17 +89,18 @@ final class ReadSpendingSummary
                 $originalContribution,
             );
 
-            $confirmedBreakdown = $transaction->receiptBreakdowns
-                ->first(fn ($breakdown): bool => $breakdown->lineItems->isNotEmpty());
+            $receiptBreakdown = $transaction->receiptBreakdown?->lineItems->isNotEmpty() === true
+                ? $transaction->receiptBreakdown
+                : null;
             $categoryContributions = [];
 
-            if ($confirmedBreakdown === null) {
+            if ($receiptBreakdown === null) {
                 $categoryContributions[] = [
                     'category_keys' => $this->categoryKeys($transaction->category_id, $categoriesById),
                     'amount' => $originalContribution,
                 ];
             } else {
-                foreach ($confirmedBreakdown->lineItems as $lineItem) {
+                foreach ($receiptBreakdown->lineItems as $lineItem) {
                     $lineItemContribution = ExactInteger::from($lineItem->line_total_minor);
 
                     if ($transaction->kind === TransactionKind::Refund) {
@@ -167,13 +167,13 @@ final class ReadSpendingSummary
 
             $overall = $this->addCombinedContribution($overall, $combinedContribution);
 
-            $combinedCategoryContributions = $confirmedBreakdown === null
+            $combinedCategoryContributions = $receiptBreakdown === null
                 ? [[
                     'category_keys' => $this->categoryKeys($transaction->category_id, $categoriesById),
                     'amount' => $combinedContribution,
                 ]]
                 : $this->allocateConvertedLineItems(
-                    $confirmedBreakdown->lineItems,
+                    $receiptBreakdown->lineItems,
                     ExactInteger::from($transaction->amount_minor),
                     ExactInteger::from($convertedAmount),
                     $categoriesById,

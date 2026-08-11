@@ -56,8 +56,7 @@ class LinkRefundToPurchase
                 ->sum('amount_minor'))
                 ->add(ExactInteger::from($currentRefund->amount_minor));
             $hasReceiptBreakdown = $currentPurchase
-                ->receiptBreakdowns()
-                ->where('status', 'confirmed')
+                ->receiptBreakdown()
                 ->exists();
             $activePurchaseCategory = $currentPurchase->category_id === null
                 ? null

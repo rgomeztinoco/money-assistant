@@ -2,8 +2,6 @@
 
 namespace App\Models;
 
-use App\Concerns\HasFinancialTrash;
-use Carbon\CarbonImmutable;
 use Database\Factories\ReceiptBreakdownFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,34 +14,17 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $user_id
  * @property int $transaction_id
- * @property string $status
- * @property int $revision
- * @property CarbonImmutable|null $confirmed_at
- * @property string|null $deletion_id
- * @property CarbonImmutable|null $purge_after
- * @property CarbonImmutable|null $deleted_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable([
     'user_id',
     'transaction_id',
-    'status',
-    'revision',
-    'confirmed_at',
 ])]
 final class ReceiptBreakdown extends Model
 {
     /** @use HasFactory<ReceiptBreakdownFactory> */
     use HasFactory;
-
-    use HasFinancialTrash;
-
-    /** @var array<string, mixed> */
-    protected $attributes = [
-        'status' => 'confirmed',
-        'revision' => 1,
-    ];
 
     /**
      * @return BelongsTo<User, $this>
@@ -65,27 +46,5 @@ final class ReceiptBreakdown extends Model
     public function lineItems(): HasMany
     {
         return $this->hasMany(LineItem::class)->orderBy('id');
-    }
-
-    /** @return HasMany<SuspectedDuplicateReceiptBreakdownMove, $this> */
-    public function suspectedDuplicateMoves(): HasMany
-    {
-        return $this->hasMany(
-            SuspectedDuplicateReceiptBreakdownMove::class,
-            'receipt_breakdown_id',
-        );
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'revision' => 'integer',
-            'confirmed_at' => 'immutable_datetime',
-            'purge_after' => 'immutable_datetime',
-            'deleted_at' => 'immutable_datetime',
-        ];
     }
 }

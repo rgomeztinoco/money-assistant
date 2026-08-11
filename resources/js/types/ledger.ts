@@ -48,7 +48,7 @@ export type DuplicateTransaction = RelatedTransaction & {
     revision: number;
     original_purchase_id: number | null;
     has_linked_refunds: boolean;
-    receipt_breakdown_statuses: Array<'draft' | 'confirmed' | 'superseded'>;
+    has_receipt_breakdown: boolean;
     protects_resolved_duplicate: boolean;
     source_reference_count: number;
     source_reference_fingerprint: string;
@@ -69,20 +69,9 @@ export type DuplicateRelationship = {
     second_transaction: DuplicateTransaction;
 };
 
-export type ReceiptLineItemRole =
-    | 'purchased_item'
-    | 'tax'
-    | 'discount'
-    | 'tip'
-    | 'fee'
-    | 'rounding'
-    | 'other_adjustment'
-    | 'unidentified';
-
 export type ReceiptLineItem = {
     id: string;
     description: string;
-    role: ReceiptLineItemRole;
     quantity: string | null;
     unit_price_minor: string | null;
     line_total_minor: string;
@@ -90,17 +79,11 @@ export type ReceiptLineItem = {
         id: number;
         name: string;
     } | null;
-    related_line_item_id: string | null;
-    requires_review: boolean;
 };
 
 export type ReceiptBreakdown = {
     id: number;
-    revision: number;
-    status: 'draft' | 'confirmed';
     total_minor: string;
-    delta_minor: string;
-    confirmed_at: string | null;
     line_items: ReceiptLineItem[];
 };
 
@@ -150,15 +133,7 @@ export type SelectedTransaction = {
         created_at: string | null;
     }>;
     duplicate_relationships: DuplicateRelationship[];
-    receipt_breakdown: {
-        draft: ReceiptBreakdown | null;
-        confirmed: ReceiptBreakdown | null;
-    };
-    trashed_receipt_breakdowns: Array<{
-        deletion_id: string;
-        revision: number;
-        purge_after: string;
-    }>;
+    receipt_breakdown: ReceiptBreakdown | null;
     state_change_idempotency_key: string;
 };
 
