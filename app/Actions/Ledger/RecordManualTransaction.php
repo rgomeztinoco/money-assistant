@@ -3,7 +3,6 @@
 namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ApplyMerchantRuleToTransaction;
-use App\Actions\Reporting\DiscoverMissingDailyExchangeRates;
 use App\Currency;
 use App\Models\Transaction;
 use App\Models\User;
@@ -18,7 +17,6 @@ class RecordManualTransaction
 {
     public function __construct(
         private ApplyMerchantRuleToTransaction $applyMerchantRuleToTransaction,
-        private DiscoverMissingDailyExchangeRates $discoverMissingDailyExchangeRates,
     ) {}
 
     /**
@@ -45,7 +43,7 @@ class RecordManualTransaction
             throw new InvalidArgumentException('A merchant or short description is required.');
         }
 
-        $transaction = DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $provisionalFields, $paymentInstrumentLabel, $paymentInstrumentLastFour): Transaction {
+        return DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $provisionalFields, $paymentInstrumentLabel, $paymentInstrumentLastFour): Transaction {
             $transaction = Transaction::create([
                 'user_id' => $owner->getKey(),
                 'occurred_on' => $occurredOn,
@@ -66,8 +64,5 @@ class RecordManualTransaction
             return $this->applyMerchantRuleToTransaction->handle($transaction);
         });
 
-        $this->discoverMissingDailyExchangeRates->handle();
-
-        return $transaction;
     }
 }

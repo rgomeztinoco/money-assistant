@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Currency;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -20,11 +19,10 @@ use Laravel\Fortify\PasskeyAuthenticatable;
  * @property string $email
  * @property string $password
  * @property string|null $remember_token
- * @property Currency|null $reporting_currency
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password', 'reporting_currency'])]
+#[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
@@ -64,14 +62,6 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
-     * @return HasMany<DailyExchangeRate, $this>
-     */
-    public function dailyExchangeRates(): HasMany
-    {
-        return $this->hasMany(DailyExchangeRate::class);
-    }
-
-    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -80,7 +70,6 @@ class User extends Authenticatable implements PasskeyUser
     {
         return [
             'password' => 'hashed',
-            'reporting_currency' => Currency::class,
         ];
     }
 }

@@ -1,12 +1,15 @@
 <?php
 
 use App\Currency;
+use App\IntegrationService;
+use App\IntegrationWorkType;
 use App\Models\Category;
 use App\Models\LineItem;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -235,4 +238,22 @@ test('unsupported report currencies return not found', function () {
     $this->actingAs(User::factory()->create())
         ->get('/reports/EUR')
         ->assertNotFound();
+});
+
+test('exchange-rate acquisition and Reporting Currency contracts are absent', function () {
+    Artisan::call('schedule:list');
+
+    expect(Route::has('daily_exchange_rates.index'))->toBeFalse()
+        ->and(Route::has('daily_exchange_rates.store'))->toBeFalse()
+        ->and(Route::has('daily_exchange_rates.update'))->toBeFalse()
+        ->and(Route::has('daily_exchange_rates.retry_seed'))->toBeFalse()
+        ->and(Route::has('reporting_currency.update'))->toBeFalse()
+        ->and(Schema::hasTable('daily_exchange_rates'))->toBeFalse()
+        ->and(Schema::hasTable('daily_exchange_rate_seed_requests'))->toBeFalse()
+        ->and(Schema::hasColumn('users', 'reporting_currency'))->toBeFalse()
+        ->and(collect(IntegrationService::cases())->pluck('value')->all())
+        ->not->toContain('bcrp')
+        ->and(collect(IntegrationWorkType::cases())->pluck('value')->all())
+        ->not->toContain('daily_exchange_rate_seed')
+        ->and(Artisan::output())->not->toContain('daily-exchange-rate');
 });

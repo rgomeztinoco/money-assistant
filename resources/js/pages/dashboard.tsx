@@ -3,7 +3,6 @@ import {
     ArrowRight,
     BarChart3,
     CircleCheck,
-    CircleDollarSign,
     ListChecks,
     MailWarning,
     ShieldAlert,
@@ -25,7 +24,6 @@ import {
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { dashboard } from '@/routes';
 import { edit as connectionsEdit } from '@/routes/connections';
-import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
 import { index as parserProfilesIndex } from '@/routes/parser_profiles';
 import { show as reportShow } from '@/routes/reports';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
@@ -46,11 +44,10 @@ type OperatingException = {
     type:
         | 'parser_security'
         | 'parser_drift'
-        | 'missing_exchange_rate'
         | 'gmail_connection'
         | 'integration_incident';
     incident_id?: number;
-    integration?: 'gmail' | 'bcrp';
+    integration?: 'gmail';
     failure_kind?: string;
     error_code?: string;
     replayable?: boolean;
@@ -58,7 +55,6 @@ type OperatingException = {
     profile_id?: number;
     profile_name?: string | null;
     count?: number;
-    applicable_on?: string;
     state?: string;
 };
 
@@ -68,9 +64,6 @@ type OperatingStatus = {
         parser_profiles: {
             healthy_count: number;
             degraded_count: number;
-        };
-        daily_exchange_rates: {
-            attention_count: number;
         };
     };
     exceptions: OperatingException[];
@@ -109,18 +102,6 @@ function exceptionPresentation(exception: OperatingException) {
                     },
                 })}#parser-alert-${exception.profile_id}-drift`,
             };
-        case 'missing_exchange_rate':
-            return {
-                icon: CircleDollarSign,
-                title: 'Daily Exchange Rate needed',
-                description: `Enter or retry the rate for ${exception.applicable_on ?? 'the affected date'}.`,
-                href: `${dailyExchangeRatesIndex.url({
-                    query: {
-                        date: exception.applicable_on,
-                        status: 'attention',
-                    },
-                })}#rate-request-${exception.applicable_on}`,
-            };
         case 'gmail_connection':
             return {
                 icon: MailWarning,
@@ -134,12 +115,9 @@ function exceptionPresentation(exception: OperatingException) {
                 href: `${connectionsEdit.url({ query: { integration: 'gmail' } })}#gmail`,
             };
         case 'integration_incident': {
-            const integrationName =
-                exception.integration === 'bcrp' ? 'BCRP' : 'Gmail';
-
             return {
                 icon: TriangleAlert,
-                title: `${integrationName} work ${exception.state === 'parked' ? 'is parked' : 'is retrying'}`,
+                title: `Gmail work ${exception.state === 'parked' ? 'is parked' : 'is retrying'}`,
                 description:
                     exception.state === 'parked'
                         ? 'Automatic retries stopped. Review the affected item or replay the original work.'
@@ -336,7 +314,7 @@ export default function Dashboard({
 
                                 return (
                                     <Card
-                                        key={`${exception.type}-${exception.incident_id ?? exception.profile_id ?? exception.applicable_on ?? index}`}
+                                        key={`${exception.type}-${exception.incident_id ?? exception.profile_id ?? index}`}
                                         className="border-amber-300 py-4 dark:border-amber-800"
                                     >
                                         <CardHeader className="flex-row items-start gap-3">

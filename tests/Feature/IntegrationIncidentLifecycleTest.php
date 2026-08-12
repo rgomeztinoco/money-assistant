@@ -5,20 +5,16 @@ use App\Actions\Integrations\ClassifyIntegrationFailure;
 use App\Actions\Integrations\ReadActionableIntegrationIncidents;
 use App\Actions\Integrations\RecordIntegrationFailure;
 use App\Actions\Integrations\RecordIntegrationRecovery;
-use App\Actions\Reporting\SeedDailyExchangeRateFromBcrpData;
-use App\Contracts\BcrpData;
-use App\Exceptions\StaleDailyExchangeRateRevision;
+use App\Exceptions\IdempotencyKeyConflict;
 use App\IntegrationFailureKind;
 use App\IntegrationService;
 use App\IntegrationWorkType;
 use App\Jobs\DeliverReminder;
-use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\ReminderDelivery;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 
@@ -29,10 +25,10 @@ test('a continuous transient failure becomes visible after fifteen minutes and p
 
     $decision = $recordFailure->handle(
         owner: $owner,
-        integration: IntegrationService::Bcrp,
-        workType: IntegrationWorkType::DailyExchangeRateSeed,
-        workId: '42',
-        sourceIdentity: 'daily-exchange-rate:2026-08-01',
+        integration: IntegrationService::Gmail,
+        workType: IntegrationWorkType::GmailSynchronization,
+        workId: 'gmail-connection:incremental',
+        sourceIdentity: 'gmail:synchronization:gmail-connection:incremental',
         failureKind: IntegrationFailureKind::Transient,
         errorCode: 'connection_failed',
     );
@@ -53,10 +49,10 @@ test('a continuous transient failure becomes visible after fifteen minutes and p
 
     $decision = $recordFailure->handle(
         owner: $owner,
-        integration: IntegrationService::Bcrp,
-        workType: IntegrationWorkType::DailyExchangeRateSeed,
-        workId: '42',
-        sourceIdentity: 'daily-exchange-rate:2026-08-01',
+        integration: IntegrationService::Gmail,
+        workType: IntegrationWorkType::GmailSynchronization,
+        workId: 'gmail-connection:incremental',
+        sourceIdentity: 'gmail:synchronization:gmail-connection:incremental',
         failureKind: IntegrationFailureKind::Transient,
         errorCode: 'connection_failed',
     );
@@ -104,35 +100,6 @@ test('acknowledgement and recovery each remove an actionable incident', function
 
     expect($incident->fresh()->recovered_at?->toIso8601String())->toBe(now()->toIso8601String())
         ->and(app(ReadActionableIntegrationIncidents::class)->handle($owner))->toBeEmpty();
-});
-
-test('BCRP transport work follows the shared retry window and parks for replay', function () {
-    $this->travelTo(CarbonImmutable::parse('2026-08-01 10:00:00 UTC'));
-    $seedRequest = DailyExchangeRateSeedRequest::factory()->required()->create([
-        'applicable_on' => '2026-08-01',
-    ]);
-    app()->instance(BcrpData::class, new class implements BcrpData
-    {
-        public function findObservation(CarbonImmutable $applicableOn): never
-        {
-            throw new ConnectionException('BCRPData is temporarily unavailable.');
-        }
-    });
-    $action = app(SeedDailyExchangeRateFromBcrpData::class);
-
-    $action->handle($seedRequest->id);
-
-    $incident = $seedRequest->owner->integrationIncidents()->sole();
-    expect($seedRequest->fresh()->next_attempt_at?->toIso8601String())
-        ->toBe($incident->next_attempt_at?->toIso8601String())
-        ->and($incident->failure_kind)->toBe(IntegrationFailureKind::Transient)
-        ->and($incident->parked_at)->toBeNull();
-
-    $this->travelTo($incident->retry_until);
-    $action->handle($seedRequest->id);
-
-    expect($seedRequest->fresh()->retrieval_failed_at?->toIso8601String())->toBe(now()->toIso8601String())
-        ->and($incident->fresh()->parked_at?->toIso8601String())->toBe(now()->toIso8601String());
 });
 
 test('the owner replays parked work once with its original source identity', function () {
@@ -216,6 +183,6 @@ test('deterministic failure classes park without entering the retry schedule', f
     'authentication' => [fn (): Throwable => new AuthenticationException, IntegrationFailureKind::Authentication],
     'authorization' => [fn (): Throwable => new AuthorizationException, IntegrationFailureKind::Authorization],
     'schema' => [fn (): Throwable => new UnexpectedValueException, IntegrationFailureKind::Schema],
-    'concurrency' => [fn (): Throwable => new StaleDailyExchangeRateRevision, IntegrationFailureKind::Concurrency],
+    'concurrency' => [fn (): Throwable => new IdempotencyKeyConflict, IntegrationFailureKind::Concurrency],
     'validation' => [fn (): Throwable => ValidationException::withMessages(['field' => 'Invalid.']), IntegrationFailureKind::Validation],
 ]);

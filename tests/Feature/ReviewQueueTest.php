@@ -1,7 +1,6 @@
 <?php
 
 use App\Actions\Ledger\RecordManualTransaction;
-use App\Actions\Reporting\ReadSpendingSummary;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\Models\Category;
@@ -72,12 +71,18 @@ test('an Uncategorized Transaction remains in totals, reports in its system buck
             ->missing('totals')
             ->missing('category_totals'));
 
-    $categoryTotals = collect(app(ReadSpendingSummary::class)->handle($owner)['category_totals']);
+    $report = $this->get(route('reports.show', [
+        'currency' => Currency::Usd,
+        'date_from' => '2000-01-01',
+        'date_to' => now()->toDateString(),
+    ]));
+    $categoryTotals = collect($report->inertiaProps('category_groups'))
+        ->flatMap(fn (array $group): array => [$group, ...$group['children']]);
 
-    expect($categoryTotals->firstWhere('category.id', $category->id)['totals'])
-        ->toBe(['USD' => '5000', 'PEN' => '0'])
-        ->and($categoryTotals->firstWhere('category.id', null)['totals'])
-        ->toBe(['USD' => '10000', 'PEN' => '0']);
+    expect($categoryTotals->firstWhere('category.id', $category->id)['amount_minor'])
+        ->toBe('5000')
+        ->and($categoryTotals->firstWhere('category.id', null)['amount_minor'])
+        ->toBe('10000');
 
     $this->get(route('review_queue.index'))
         ->assertInertia(fn (Assert $page) => $page

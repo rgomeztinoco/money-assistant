@@ -1,18 +1,30 @@
 <?php
 
-use App\Actions\Reporting\ReadSpendingSummary;
 use App\CategoryAssignmentProvenance;
+use App\Currency;
 use App\Models\Category;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\TestCase;
 
-function categoryTotalFor(User $owner, ?int $categoryId): array
-{
-    return collect(app(ReadSpendingSummary::class)->handle($owner)['category_totals'])
-        ->firstWhere('category.id', $categoryId);
+function categoryTotalFor(
+    TestCase $test,
+    User $owner,
+    Currency $currency,
+    ?int $categoryId,
+): string {
+    $response = $test->actingAs($owner)->get(route('reports.show', [
+        'currency' => $currency,
+        'date_from' => '2000-01-01',
+        'date_to' => now()->toDateString(),
+    ]));
+
+    return (string) collect($response->inertiaProps('category_groups'))
+        ->flatMap(fn (array $group): array => [$group, ...$group['children']])
+        ->firstWhere('category.id', $categoryId)['amount_minor'];
 }
 
 test('multiple partial Refunds link to one purchase without rewriting any Transaction', function () {
@@ -240,7 +252,7 @@ test('a Refund linked to a purchase with a Receipt Breakdown stays Uncategorized
             ->missing('category_totals'),
         );
 
-    expect(categoryTotalFor($owner, $category->id)['totals']['USD'])->toBe('10000');
+    expect(categoryTotalFor($this, $owner, Currency::Usd, $category->id))->toBe('10000');
 
     $this->get(route('review_queue.index'))
         ->assertInertia(fn (Assert $page) => $page
@@ -280,7 +292,7 @@ test('an unlinked Refund keeps its independent owner Category', function () {
             ->missing('category_totals'),
         );
 
-    expect(categoryTotalFor($owner, $category->id)['totals']['PEN'])->toBe('-2500');
+    expect(categoryTotalFor($this, $owner, Currency::Pen, $category->id))->toBe('-2500');
 });
 
 test('invalid or unauthenticated Refund relationships are rejected', function () {
@@ -544,8 +556,8 @@ test('second-level Category totals roll up to their current parent and remain ex
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page->missing('category_totals'));
 
-    expect(categoryTotalFor($owner, $parentCategory->id)['totals']['USD'])->toBe('-5000')
-        ->and(categoryTotalFor($owner, $childCategory->id)['totals']['USD'])->toBe('-5000');
+    expect(categoryTotalFor($this, $owner, Currency::Usd, $parentCategory->id))->toBe('-5000')
+        ->and(categoryTotalFor($this, $owner, Currency::Usd, $childCategory->id))->toBe('-5000');
 });
 
 test('a Receipt Breakdown does not replace Category totals before reconciled Line Items exist', function () {
@@ -573,5 +585,5 @@ test('a Receipt Breakdown does not replace Category totals before reconciled Lin
             ->missing('category_totals'),
         );
 
-    expect(categoryTotalFor($owner, $category->id)['totals']['USD'])->toBe('1000');
+    expect(categoryTotalFor($this, $owner, Currency::Usd, $category->id))->toBe('1000');
 });
