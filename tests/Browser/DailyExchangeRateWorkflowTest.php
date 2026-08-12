@@ -8,7 +8,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the owner sets reporting preferences and sees an exact combined total', function () {
+test('exchange-rate maintenance does not combine the Dashboard currency totals', function () {
     $owner = User::factory()->create();
     $today = now()->toDateString();
     Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
@@ -37,7 +37,9 @@ test('the owner sets reporting preferences and sees an exact combined total', fu
 
     $page
         ->assertSee('$ 0.01')
-        ->assertSee('S/ 0.04')
+        ->assertSee('S/ 0.00')
+        ->assertDontSee('S/ 0.04')
+        ->assertDontSee('Combined spending')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

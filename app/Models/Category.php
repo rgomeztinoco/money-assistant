@@ -75,12 +75,6 @@ class Category extends Model
         return $this->hasMany(self::class, 'parent_id');
     }
 
-    /** @return HasMany<CategoryTarget, $this> */
-    public function targets(): HasMany
-    {
-        return $this->hasMany(CategoryTarget::class);
-    }
-
     /**
      * @return array<string, string>
      */

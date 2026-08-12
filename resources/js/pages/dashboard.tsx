@@ -7,7 +7,6 @@ import {
     ListChecks,
     MailWarning,
     ShieldAlert,
-    Target,
     TriangleAlert,
     WalletCards,
 } from 'lucide-react';
@@ -27,11 +26,11 @@ import { formatMinorUnits } from '@/lib/format-minor-units';
 import { dashboard } from '@/routes';
 import { edit as connectionsEdit } from '@/routes/connections';
 import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
-import { index as insightsIndex } from '@/routes/insights';
 import { index as parserProfilesIndex } from '@/routes/parser_profiles';
+import { show as reportShow } from '@/routes/reports';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
-import type { CombinedTotal, Currency } from '@/types';
+import type { Currency } from '@/types';
 
 type DashboardPeriod = {
     label: string;
@@ -41,7 +40,6 @@ type DashboardPeriod = {
 
 type DashboardSpending = {
     totals: Record<Currency, string>;
-    combined_total: CombinedTotal;
 };
 
 type OperatingException = {
@@ -162,7 +160,6 @@ export default function Dashboard({
     operating: OperatingStatus;
 }) {
     const { review_queue } = usePage().props;
-    const combined = spending.combined_total;
     const healthySystems = [
         operating.summary.gmail === 'connected' ? 'Gmail' : null,
         operating.summary.parser_profiles.healthy_count > 0
@@ -234,12 +231,11 @@ export default function Dashboard({
                             </div>
                             <CardTitle>Current spending</CardTitle>
                             <CardDescription>
-                                Net purchases and Refunds in original
-                                currencies, plus the selected Reporting Currency
-                                when rates are complete.
+                                Net purchases and Refunds kept separate in their
+                                original currencies.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="grid gap-3 sm:grid-cols-3">
+                        <CardContent className="grid gap-3 sm:grid-cols-2">
                             {(['USD', 'PEN'] as const).map((currency) => (
                                 <Link
                                     key={currency}
@@ -250,7 +246,7 @@ export default function Dashboard({
                                         },
                                     })}
                                     data-test={`dashboard-spending-${currency.toLowerCase()}`}
-                                    className="rounded-lg border bg-muted/20 p-4 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                    className="rounded-lg border bg-muted/20 p-4 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                                 >
                                     <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                                         {currency}
@@ -263,102 +259,38 @@ export default function Dashboard({
                                     </span>
                                 </Link>
                             ))}
-
-                            {combined.currency !== null &&
-                            combined.amount_minor !== null ? (
-                                <Link
-                                    href={transactionsIndex({
-                                        query: periodQuery(period),
-                                    })}
-                                    data-test="dashboard-spending-combined"
-                                    className="rounded-lg border bg-primary p-4 text-primary-foreground transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                                >
-                                    <span className="text-xs font-medium tracking-wide uppercase opacity-80">
-                                        Combined in {combined.currency}
-                                    </span>
-                                    <span className="mt-2 block text-2xl font-semibold tabular-nums">
-                                        {formatMinorUnits(
-                                            combined.amount_minor,
-                                            combined.currency,
-                                        )}
-                                    </span>
-                                </Link>
-                            ) : (
-                                <a
-                                    href={`${dailyExchangeRatesIndex.url({
-                                        query: {
-                                            ...periodQuery(period),
-                                            date: combined
-                                                .missing_rate_dates[0],
-                                        },
-                                    })}${
-                                        combined.unavailable_reason ===
-                                        'reporting_currency_not_selected'
-                                            ? '#reporting-currency'
-                                            : `#rate-request-${combined.missing_rate_dates[0]}`
-                                    }`}
-                                    data-test="dashboard-spending-combined"
-                                    className="rounded-lg border border-dashed p-4 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                                >
-                                    <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                                        Combined spending
-                                    </span>
-                                    <span className="mt-2 block font-medium">
-                                        {combined.unavailable_reason ===
-                                        'reporting_currency_not_selected'
-                                            ? 'Choose a Reporting Currency'
-                                            : 'Complete missing exchange rates'}
-                                    </span>
-                                </a>
-                            )}
                         </CardContent>
                     </Card>
                 </section>
 
-                <section className="grid gap-4 lg:grid-cols-2">
+                <section>
                     <Card>
                         <CardHeader>
                             <BarChart3 className="size-5 text-muted-foreground" />
-                            <CardTitle>Spending Insights</CardTitle>
+                            <CardTitle>Currency reports</CardTitle>
                             <CardDescription>
-                                Comparisons will appear after enough complete,
-                                reviewed months establish a factual baseline.
+                                Inspect selected periods, monthly history, and
+                                Category groups without combining currencies.
                             </CardDescription>
                         </CardHeader>
-                        <CardFooter>
+                        <CardFooter className="flex-wrap gap-2">
                             <Button asChild variant="outline">
                                 <Link
-                                    href={insightsIndex({
+                                    href={reportShow('PEN', {
                                         query: periodQuery(period),
                                     })}
                                 >
-                                    Open Insights
+                                    Open PEN report
                                     <ArrowRight />
                                 </Link>
                             </Button>
-                        </CardFooter>
-                    </Card>
-
-                    <Card>
-                        <CardHeader>
-                            <Target className="size-5 text-muted-foreground" />
-                            <CardTitle>Category Targets</CardTitle>
-                            <CardDescription>
-                                No active Category Targets. Targets remain
-                                owner-approved intentions, not forecasts.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardFooter>
                             <Button asChild variant="outline">
                                 <Link
-                                    href={insightsIndex({
-                                        query: {
-                                            ...periodQuery(period),
-                                            section: 'targets',
-                                        },
+                                    href={reportShow('USD', {
+                                        query: periodQuery(period),
                                     })}
                                 >
-                                    View target area
+                                    Open USD report
                                     <ArrowRight />
                                 </Link>
                             </Button>

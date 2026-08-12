@@ -2,7 +2,6 @@
 
 use App\Currency;
 use App\Models\Category;
-use App\Models\DailyExchangeRate;
 use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\Transaction;
 use App\Models\User;
@@ -15,10 +14,6 @@ beforeEach(function () {
 test('the Dashboard directs attention into filtered owner workflows', function () {
     $owner = User::factory()->create(['reporting_currency' => Currency::Pen]);
     $category = Category::factory()->for($owner, 'owner')->create();
-    DailyExchangeRate::factory()->for($owner, 'owner')->create([
-        'applicable_on' => now()->toDateString(),
-        'pen_per_usd_scaled' => 3_500_000,
-    ]);
     Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
         'occurred_on' => now()->toDateString(),
         'amount_minor' => 1_000,
@@ -39,21 +34,11 @@ test('the Dashboard directs attention into filtered owner workflows', function (
         ->assertSee('Current spending')
         ->assertSee('$ 10.00')
         ->assertSee('S/ 25.00')
-        ->assertSee('S/ 60.00')
+        ->assertDontSee('Combined spending')
         ->assertSee('Review Queue')
         ->click('[data-test="dashboard-spending-usd"]')
         ->assertPathIs('/transactions')
         ->assertQueryStringHas('currency', 'USD')
-        ->assertQueryStringHas(
-            'date_from',
-            now()->startOfMonth()->toDateString(),
-        )
-        ->assertQueryStringHas('date_to', now()->toDateString())
-        ->script('window.location.assign("/dashboard")');
-
-    $page
-        ->click('[data-test="dashboard-spending-combined"]')
-        ->assertPathIs('/transactions')
         ->assertQueryStringHas(
             'date_from',
             now()->startOfMonth()->toDateString(),
@@ -67,15 +52,19 @@ test('the Dashboard directs attention into filtered owner workflows', function (
         ->script('window.location.assign("/dashboard")');
 
     $page
-        ->click('[data-test="nav-insights"]')
-        ->assertPathIs('/insights')
-        ->assertSee('Spending Insights')
-        ->assertSee('Category Targets')
+        ->click('[data-test="nav-reports"]')
+        ->assertPathIs('/reports/PEN')
+        ->assertSee('PEN spending report')
+        ->assertDontSee('Spending Baseline')
+        ->assertDontSee('Category Targets')
+        ->click('[data-test="report-switch-usd"]')
+        ->assertPathIs('/reports/USD')
+        ->assertSee('USD spending report')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
 
-test('missing-rate Dashboard cards retain their reporting context and affected work', function () {
+test('missing-rate Dashboard exceptions retain their affected work', function () {
     $owner = User::factory()->create(['reporting_currency' => Currency::Pen]);
     $category = Category::factory()->for($owner, 'owner')->create();
     Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
@@ -89,20 +78,6 @@ test('missing-rate Dashboard cards retain their reporting context and affected w
     $this->actingAs($owner);
 
     $page = visit('/dashboard');
-
-    $page
-        ->click('[data-test="dashboard-spending-combined"]')
-        ->assertPathIs('/daily-exchange-rates')
-        ->assertQueryStringHas('date', now()->toDateString())
-        ->assertQueryStringHas(
-            'date_from',
-            now()->startOfMonth()->toDateString(),
-        )
-        ->assertQueryStringHas('date_to', now()->toDateString())
-        ->assertScript(
-            'window.location.hash === "#rate-request-'.now()->toDateString().'"',
-        )
-        ->script('window.location.assign("/dashboard")');
 
     $page
         ->click('[data-test="dashboard-exception-missing_exchange_rate"]')

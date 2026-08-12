@@ -2,7 +2,6 @@
 
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
-use App\Models\CategoryTarget;
 use App\Models\MerchantRule;
 use App\Models\Transaction;
 use App\Models\User;
@@ -82,7 +81,7 @@ test('renaming and moving a Category preserves its identity on historical Transa
     $category = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
         'name' => 'Cafes',
     ]);
-    $transaction = Transaction::factory()->for($owner, 'owner')->create([
+    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->create([
         'occurred_on' => today(),
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
@@ -101,10 +100,13 @@ test('renaming and moving a Category preserves its identity on historical Transa
                 ->where('selected_transaction.category.id', $category->id)
                 ->where('selected_transaction.category.name', 'Coffee Shops')));
 
-    $this->get(route('insights.index', ['date_from' => today()->startOfMonth()->toDateString()]))
+    $this->get(route('reports.show', [
+        'currency' => 'PEN',
+        'date_from' => today()->startOfMonth()->toDateString(),
+    ]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('period.spending.category_totals', fn ($totals) => collect($totals)
-                ->contains(fn (array $total): bool => $total['category']['name'] === 'Coffee Shops')));
+            ->where('category_groups.0.category.name', 'Travel')
+            ->where('category_groups.0.children.0.category.name', 'Coffee Shops'));
 });
 
 test('archiving a Category preserves current assignments and reporting while preventing future assignments', function () {
@@ -114,14 +116,12 @@ test('archiving a Category preserves current assignments and reporting while pre
         'name' => 'Dining',
     ]);
     $merchantRule = MerchantRule::factory()->for($owner, 'owner')->for($child)->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create([
+    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->create([
         'occurred_on' => today(),
         'category_id' => $child->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::MerchantRule,
         'merchant_rule_id' => $merchantRule->id,
     ]);
-    CategoryTarget::factory()->for($owner, 'owner')->for($child)->create();
-
     $this->actingAs($owner)
         ->post(route('categories.archival.store', $parent))
         ->assertRedirect(route('categories.index'))
@@ -141,10 +141,14 @@ test('archiving a Category preserves current assignments and reporting while pre
                 ->where('selected_transaction.category.id', $child->id)
                 ->where('selected_transaction.category.name', 'Dining')));
 
-    $this->get(route('insights.index', ['date_from' => today()->startOfMonth()->toDateString()]))
+    $this->get(route('reports.show', [
+        'currency' => 'PEN',
+        'date_from' => today()->startOfMonth()->toDateString(),
+    ]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('period.spending.category_totals', fn ($totals) => collect($totals)
-                ->contains(fn (array $total): bool => $total['category']['name'] === 'Dining')));
+            ->where('category_groups.0.category.name', 'Food')
+            ->where('category_groups.0.children.0.category.name', 'Dining')
+            ->where('category_groups.0.children.0.category.archived', true));
 
     $otherTransaction = Transaction::factory()->for($owner, 'owner')->create();
 
