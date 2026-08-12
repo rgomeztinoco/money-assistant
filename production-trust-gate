@@ -13,8 +13,6 @@ deployment_record="${state_directory}/current.json"
 gate_registry='forced-crash 7948800 rehearse-production-crash -
 backup-retention 129600 pull-production-backup -
 clean-restore 7948800 restore-production-backup -
-retention-purge 2678400 rehearse-production-retention purge
-audit-tombstone 2678400 rehearse-production-retention tombstone
 credential-rotation 7948800 rehearse-all-credential-rotations -
 independent-alert 2678400 rehearse-independent-alert -
 pinned-upgrade 2678400 rehearse-production-upgrade -

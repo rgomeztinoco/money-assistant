@@ -6,7 +6,7 @@ use App\Models\Category;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class ChangeCategoryRetirementRequest extends FormRequest
+class ChangeCategoryArchivalRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -26,8 +26,6 @@ class ChangeCategoryRetirementRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'expected_revision' => ['required', 'integer', 'min:1'],
-        ];
+        return [];
     }
 }

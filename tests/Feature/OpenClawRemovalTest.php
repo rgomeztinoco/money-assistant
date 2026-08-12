@@ -44,8 +44,7 @@ test('OpenClaw and Receipt Proposal persistence is absent', function () {
     }
 
     expect(Schema::hasColumn('receipt_breakdowns', 'receipt_proposal_id'))->toBeFalse()
-        ->and(Schema::hasColumn('financial_data_tombstones', 'source_reference_type'))->toBeFalse()
-        ->and(Schema::hasColumn('financial_data_tombstones', 'source_reference_id'))->toBeFalse();
+        ->and(Schema::hasTable('financial_data_tombstones'))->toBeFalse();
 });
 
 test('OpenClaw runtime assets and operational integration are absent', function (): void {

@@ -2,7 +2,6 @@
 
 namespace App\Actions\Categorization;
 
-use App\Exceptions\StaleCategoryRevision;
 use App\Models\Category;
 use App\Models\User;
 use Illuminate\Database\QueryException;
@@ -15,24 +14,18 @@ final class UpdateCategory
     public function handle(
         User $owner,
         int $categoryId,
-        int $expectedRevision,
         string $name,
         ?int $parentId,
-        ?int $expectedParentRevision = null,
     ): Category {
         $name = Str::squish($name);
 
         try {
-            return DB::transaction(function () use ($owner, $categoryId, $expectedRevision, $name, $parentId, $expectedParentRevision): Category {
+            return DB::transaction(function () use ($owner, $categoryId, $name, $parentId): Category {
                 $category = Category::query()
                     ->whereBelongsTo($owner, 'owner')
                     ->whereKey($categoryId)
                     ->lockForUpdate()
                     ->firstOrFail();
-
-                if ($category->revision !== $expectedRevision) {
-                    throw new StaleCategoryRevision;
-                }
 
                 if ($parentId !== null && $category->children()->exists()) {
                     throw ValidationException::withMessages([
@@ -42,20 +35,13 @@ final class UpdateCategory
 
                 $parent = $this->activeParent($owner, $parentId, $category->id);
 
-                if ($parent !== null
-                    && $expectedParentRevision !== null
-                    && $parent->revision !== $expectedParentRevision) {
-                    throw new StaleCategoryRevision;
-                }
-
-                if ($category->retired_at === null) {
+                if ($category->archived_at === null) {
                     $this->ensureNameAvailable($owner, $category, $name, $parent?->id);
                 }
 
                 $category->fill([
                     'parent_id' => $parent?->id,
                     'name' => $name,
-                    'revision' => $category->revision + 1,
                 ])->save();
 
                 return $category;
@@ -82,7 +68,7 @@ final class UpdateCategory
             ->whereKey($parentId)
             ->whereKeyNot($categoryId)
             ->whereNull('parent_id')
-            ->whereNull('retired_at')
+            ->whereNull('archived_at')
             ->lockForUpdate()
             ->first();
 
@@ -100,7 +86,7 @@ final class UpdateCategory
         $exists = Category::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereKeyNot($category->id)
-            ->whereNull('retired_at')
+            ->whereNull('archived_at')
             ->whereRaw('lower(name) = lower(?)', [$name])
             ->when(
                 $parentId === null,

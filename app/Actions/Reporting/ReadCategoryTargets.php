@@ -53,7 +53,7 @@ final class ReadCategoryTargets
 
         $options = Category::query()
             ->whereBelongsTo($owner, 'owner')
-            ->whereNull('retired_at')
+            ->whereNull('archived_at')
             ->whereNotIn('id', $targetedCategoryIds)
             ->orderBy('name')
             ->get(['id', 'name'])

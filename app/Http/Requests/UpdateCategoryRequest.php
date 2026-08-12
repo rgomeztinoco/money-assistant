@@ -31,7 +31,6 @@ class UpdateCategoryRequest extends FormRequest
         $categoryId = $category instanceof Category ? $category->getKey() : 0;
 
         return [
-            'expected_revision' => ['required', 'integer', 'min:1'],
             'name' => ['required', 'string', 'max:255'],
             'parent_id' => [
                 'nullable',
@@ -39,7 +38,7 @@ class UpdateCategoryRequest extends FormRequest
                 Rule::exists('categories', 'id')
                     ->where('user_id', $this->user()->getKey())
                     ->whereNull('parent_id')
-                    ->whereNull('retired_at'),
+                    ->whereNull('archived_at'),
                 Rule::notIn([$categoryId]),
             ],
         ];

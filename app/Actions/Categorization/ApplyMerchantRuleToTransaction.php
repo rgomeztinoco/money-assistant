@@ -30,7 +30,7 @@ final class ApplyMerchantRuleToTransaction
                 ->where('user_id', $lockedTransaction->user_id)
                 ->where('merchant_key', $this->merchantNormalizer->normalize($lockedTransaction->merchant_description))
                 ->where('enabled', true)
-                ->whereHas('category', fn (Builder $query) => $query->whereNull('retired_at'))
+                ->whereHas('category', fn (Builder $query) => $query->whereNull('archived_at'))
                 ->where(fn (Builder $query) => $query
                     ->whereNull('transaction_kind')
                     ->orWhere('transaction_kind', $lockedTransaction->kind))

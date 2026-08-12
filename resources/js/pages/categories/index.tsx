@@ -6,18 +6,15 @@ import {
     PencilLine,
     Plus,
     Tags,
-    Trash2,
 } from 'lucide-react';
 import {
-    destroy as deleteCategory,
+    destroy as unarchiveCategory,
+    store as archiveCategory,
+} from '@/actions/App/Http/Controllers/CategoryArchivalController';
+import {
     store as createCategory,
     update as updateCategory,
 } from '@/actions/App/Http/Controllers/CategoryController';
-import {
-    destroy as reactivateCategory,
-    store as retireCategory,
-} from '@/actions/App/Http/Controllers/CategoryRetirementController';
-import { default as restoreCategory } from '@/actions/App/Http/Controllers/CategoryTrashRestorationController';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -75,7 +72,7 @@ function CategoryFields({
                         ...roots
                             .filter(
                                 (root) =>
-                                    root.retired_at === null &&
+                                    root.archived_at === null &&
                                     root.id !== category?.id,
                             )
                             .map((root) => ({
@@ -121,22 +118,13 @@ function EditCategoryDialog({
                 >
                     {({ errors, processing }) => (
                         <>
-                            <input
-                                type="hidden"
-                                name="expected_revision"
-                                value={category.revision}
-                            />
                             <CategoryFields
                                 idPrefix={`category-${category.id}`}
                                 roots={roots}
                                 category={category}
                             />
                             <InputError
-                                message={
-                                    errors.name ??
-                                    errors.parent_id ??
-                                    errors.expected_revision
-                                }
+                                message={errors.name ?? errors.parent_id}
                             />
                             <Button type="submit" disabled={processing}>
                                 {processing && <Spinner />}
@@ -150,28 +138,17 @@ function EditCategoryDialog({
     );
 }
 
-function LifecycleActions({
-    category,
-    hasChildren,
-}: {
-    category: CategoryItem;
-    hasChildren: boolean;
-}) {
-    const isRetired = category.retired_at !== null;
-    const lifecycleRoute = isRetired
-        ? reactivateCategory.form(category.id)
-        : retireCategory.form(category.id);
+function LifecycleActions({ category }: { category: CategoryItem }) {
+    const isArchived = category.archived_at !== null;
+    const lifecycleRoute = isArchived
+        ? unarchiveCategory.form(category.id)
+        : archiveCategory.form(category.id);
 
     return (
         <div className="flex flex-wrap gap-2">
             <Form {...lifecycleRoute} options={{ preserveScroll: true }}>
                 {({ errors, processing }) => (
                     <div className="grid gap-1">
-                        <input
-                            type="hidden"
-                            name="expected_revision"
-                            value={category.revision}
-                        />
                         <Button
                             type="submit"
                             variant="secondary"
@@ -180,51 +157,17 @@ function LifecycleActions({
                         >
                             {processing ? (
                                 <Spinner />
-                            ) : isRetired ? (
+                            ) : isArchived ? (
                                 <ArchiveRestore />
                             ) : (
                                 <Archive />
                             )}
-                            {isRetired ? 'Reactivate' : 'Retire'}
+                            {isArchived ? 'Unarchive' : 'Archive'}
                         </Button>
-                        <InputError
-                            message={
-                                errors.category ?? errors.expected_revision
-                            }
-                        />
+                        <InputError message={errors.category} />
                     </div>
                 )}
             </Form>
-            {category.transaction_count === 0 && !hasChildren && (
-                <Form
-                    {...deleteCategory.form(category.id)}
-                    options={{ preserveScroll: true }}
-                >
-                    {({ errors, processing }) => (
-                        <div className="grid gap-1">
-                            <input
-                                type="hidden"
-                                name="expected_revision"
-                                value={category.revision}
-                            />
-                            <Button
-                                type="submit"
-                                variant="destructive"
-                                size="sm"
-                                disabled={processing}
-                            >
-                                {processing ? <Spinner /> : <Trash2 />}
-                                Delete
-                            </Button>
-                            <InputError
-                                message={
-                                    errors.category ?? errors.expected_revision
-                                }
-                            />
-                        </div>
-                    )}
-                </Form>
-            )}
         </div>
     );
 }
@@ -236,18 +179,17 @@ function CategorySummary({ category }: { category: CategoryItem }) {
                 <h3 className="font-medium">{category.name}</h3>
                 <Badge
                     variant={
-                        category.retired_at === null ? 'outline' : 'secondary'
+                        category.archived_at === null ? 'outline' : 'secondary'
                     }
                 >
-                    {category.retired_at === null ? 'Active' : 'Retired'}
+                    {category.archived_at === null ? 'Active' : 'Archived'}
                 </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
                 {category.transaction_count}{' '}
                 {category.transaction_count === 1
                     ? 'Transaction assignment'
-                    : 'Transaction assignments'}{' '}
-                | Revision {category.revision}
+                    : 'Transaction assignments'}
             </p>
         </div>
     );
@@ -255,14 +197,8 @@ function CategorySummary({ category }: { category: CategoryItem }) {
 
 export default function CategoriesIndex({
     categories,
-    trashed_categories: trashedCategories,
 }: {
     categories: CategoryNode[];
-    trashed_categories: Array<{
-        deletion_id: string;
-        name: string;
-        purge_after: string;
-    }>;
 }) {
     return (
         <>
@@ -326,64 +262,6 @@ export default function CategoriesIndex({
                     </CardContent>
                 </Card>
 
-                {trashedCategories.length > 0 && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <ArchiveRestore className="size-5" /> Category
-                                trash
-                            </CardTitle>
-                            <CardDescription>
-                                Restore deleted Categories before their 30-day
-                                recovery window expires.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-3">
-                            {trashedCategories.map((category) => (
-                                <div
-                                    key={category.deletion_id}
-                                    className="flex flex-col justify-between gap-3 rounded-lg border p-3 sm:flex-row sm:items-center"
-                                >
-                                    <div>
-                                        <p className="font-medium">
-                                            {category.name}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            Purges after{' '}
-                                            {new Date(
-                                                category.purge_after,
-                                            ).toLocaleString()}
-                                        </p>
-                                    </div>
-                                    <Form
-                                        {...restoreCategory.form(
-                                            category.deletion_id,
-                                        )}
-                                        options={{ preserveScroll: true }}
-                                    >
-                                        {({ processing }) => (
-                                            <Button
-                                                type="submit"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={processing}
-                                                aria-label={`Restore ${category.name}`}
-                                            >
-                                                {processing ? (
-                                                    <Spinner />
-                                                ) : (
-                                                    <ArchiveRestore />
-                                                )}
-                                                Restore
-                                            </Button>
-                                        )}
-                                    </Form>
-                                </div>
-                            ))}
-                        </CardContent>
-                    </Card>
-                )}
-
                 <div className="grid gap-4 xl:grid-cols-2">
                     {categories.map((root) => (
                         <Card key={root.id} className="gap-0 overflow-hidden">
@@ -395,12 +273,7 @@ export default function CategoriesIndex({
                                             category={root}
                                             roots={categories}
                                         />
-                                        <LifecycleActions
-                                            category={root}
-                                            hasChildren={
-                                                root.children.length > 0
-                                            }
-                                        />
+                                        <LifecycleActions category={root} />
                                     </div>
                                 </div>
 
@@ -424,7 +297,6 @@ export default function CategoriesIndex({
                                                     />
                                                     <LifecycleActions
                                                         category={child}
-                                                        hasChildren={false}
                                                     />
                                                 </div>
                                             </div>

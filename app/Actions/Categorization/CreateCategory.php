@@ -2,7 +2,6 @@
 
 namespace App\Actions\Categorization;
 
-use App\Exceptions\StaleCategoryRevision;
 use App\Models\Category;
 use App\Models\User;
 use Illuminate\Database\QueryException;
@@ -16,19 +15,12 @@ final class CreateCategory
         User $owner,
         string $name,
         ?int $parentId,
-        ?int $expectedParentRevision = null,
     ): Category {
         $name = Str::squish($name);
 
         try {
-            return DB::transaction(function () use ($owner, $name, $parentId, $expectedParentRevision): Category {
+            return DB::transaction(function () use ($owner, $name, $parentId): Category {
                 $parent = $this->activeParent($owner, $parentId);
-
-                if ($parent !== null
-                    && $expectedParentRevision !== null
-                    && $parent->revision !== $expectedParentRevision) {
-                    throw new StaleCategoryRevision;
-                }
 
                 $this->ensureNameAvailable($owner, $name, $parent?->id);
 
@@ -61,7 +53,7 @@ final class CreateCategory
             ->whereBelongsTo($owner, 'owner')
             ->whereKey($parentId)
             ->whereNull('parent_id')
-            ->whereNull('retired_at')
+            ->whereNull('archived_at')
             ->lockForUpdate()
             ->first();
 
@@ -78,7 +70,7 @@ final class CreateCategory
     {
         $exists = Category::query()
             ->whereBelongsTo($owner, 'owner')
-            ->whereNull('retired_at')
+            ->whereNull('archived_at')
             ->whereRaw('lower(name) = lower(?)', [$name])
             ->when(
                 $parentId === null,

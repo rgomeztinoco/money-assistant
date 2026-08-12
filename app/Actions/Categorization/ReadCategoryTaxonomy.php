@@ -12,10 +12,9 @@ final class ReadCategoryTaxonomy
      *     id: int,
      *     name: string,
      *     parent_id: int|null,
-     *     revision: int,
-     *     retired_at: string|null,
+     *     archived_at: string|null,
      *     transaction_count: int,
-     *     children: list<array{id: int, parent_id: int|null, name: string, revision: int, retired_at: string|null, transaction_count: int}>
+     *     children: list<array{id: int, parent_id: int|null, name: string, archived_at: string|null, transaction_count: int}>
      * }>
      */
     public function handle(User $owner): array
@@ -27,11 +26,10 @@ final class ReadCategoryTaxonomy
                 'user_id',
                 'parent_id',
                 'name',
-                'revision',
-                'retired_at',
+                'archived_at',
             ])
             ->withCount('transactions')
-            ->orderByRaw('retired_at IS NOT NULL')
+            ->orderByRaw('archived_at IS NOT NULL')
             ->orderByRaw('lower(name)')
             ->get();
 
@@ -56,7 +54,10 @@ final class ReadCategoryTaxonomy
     {
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
-            ->whereNull('retired_at')
+            ->whereNull('archived_at')
+            ->where(fn ($query) => $query
+                ->whereNull('parent_id')
+                ->orWhereHas('parent', fn ($query) => $query->whereNull('archived_at')))
             ->select(['id', 'user_id', 'parent_id', 'name'])
             ->with('parent:id,name')
             ->orderByRaw('lower(name)')
@@ -75,7 +76,7 @@ final class ReadCategoryTaxonomy
     }
 
     /**
-     * @return array{id: int, parent_id: int|null, name: string, revision: int, retired_at: string|null, transaction_count: int}
+     * @return array{id: int, parent_id: int|null, name: string, archived_at: string|null, transaction_count: int}
      */
     private function categoryData(Category $category): array
     {
@@ -83,8 +84,7 @@ final class ReadCategoryTaxonomy
             'id' => $category->id,
             'parent_id' => $category->parent_id,
             'name' => $category->name,
-            'revision' => $category->revision,
-            'retired_at' => $category->retired_at?->toIso8601String(),
+            'archived_at' => $category->archived_at?->toIso8601String(),
             'transaction_count' => $category->transactions_count,
         ];
     }

@@ -53,8 +53,6 @@ test('production trust stays withheld until every current deployment drill has f
         'forced-crash' => 'rehearse-production-crash',
         'backup-retention' => 'pull-production-backup',
         'clean-restore' => 'restore-production-backup',
-        'retention-purge' => 'rehearse-production-retention',
-        'audit-tombstone' => 'rehearse-production-retention',
         'credential-rotation' => 'rehearse-all-credential-rotations',
         'independent-alert' => 'rehearse-independent-alert',
         'pinned-upgrade' => 'rehearse-production-upgrade',
@@ -369,17 +367,12 @@ SH);
     }
 });
 
-test('approved target drills execute retention, independent delivery, and the complete acceptance matrix', function () {
-    $retention = file_get_contents(base_path('rehearse-production-retention'));
+test('approved target drills execute independent delivery and the complete acceptance matrix', function () {
     $independentAlert = file_get_contents(base_path('rehearse-independent-alert'));
     $acceptanceMatrix = file_get_contents(base_path('verify-production-acceptance-matrix'));
     $credentialRotation = file_get_contents(base_path('rehearse-all-credential-rotations'));
 
-    expect($retention)
-        ->toContain('app:rehearse-production-retention')
-        ->toContain('retention-purge')
-        ->toContain('audit-tombstone')
-        ->and($independentAlert)
+    expect($independentAlert)
         ->toContain('MONITOR_DIRECT_DELIVERY_COMMAND')
         ->toContain('MONITOR_DELIVERY_COMMAND')
         ->toContain('monitor-independent-heartbeat')

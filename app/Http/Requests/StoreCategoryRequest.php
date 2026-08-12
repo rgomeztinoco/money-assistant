@@ -31,7 +31,7 @@ class StoreCategoryRequest extends FormRequest
                 Rule::exists('categories', 'id')
                     ->where('user_id', $this->user()->getKey())
                     ->whereNull('parent_id')
-                    ->whereNull('retired_at'),
+                    ->whereNull('archived_at'),
             ],
         ];
     }

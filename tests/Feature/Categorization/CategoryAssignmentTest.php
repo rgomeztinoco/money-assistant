@@ -68,14 +68,14 @@ test('an owner Category assignment replaces the current Merchant Rule source', f
         ->merchant_rule_id->toBeNull();
 });
 
-test('Category assignment rejects Retired Categories', function () {
+test('Category assignment rejects archived Categories', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create();
-    $retired = Category::factory()->for($owner, 'owner')->create(['retired_at' => now()]);
+    $archived = Category::factory()->for($owner, 'owner')->archived()->create();
 
     $this->actingAs($owner)
         ->put(route('transactions.category.update', $transaction), [
-            'category_id' => $retired->id,
+            'category_id' => $archived->id,
         ])->assertSessionHasErrors('category_id');
 
     expect($transaction->fresh()->category_id)->toBeNull();
@@ -85,7 +85,7 @@ test('the Transaction workspace exposes active Category paths and not a customiz
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     Category::factory()->for($owner, 'owner')->for($food, 'parent')->create(['name' => 'Groceries']);
-    Category::factory()->for($owner, 'owner')->create(['name' => 'Old', 'retired_at' => now()]);
+    Category::factory()->for($owner, 'owner')->create(['name' => 'Old', 'archived_at' => now()]);
     $transaction = Transaction::factory()->for($owner, 'owner')->create();
 
     $this->actingAs($owner)

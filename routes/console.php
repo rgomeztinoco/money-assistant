@@ -5,7 +5,6 @@ use App\Actions\Reminders\DispatchPendingReminderDeliveries;
 use App\Actions\Reminders\EnqueueDueReminderDeliveries;
 use App\Actions\Reporting\DiscoverMissingDailyExchangeRates;
 use App\Actions\Reporting\DispatchPendingDailyExchangeRateSeeds;
-use App\Actions\Retention\PurgeExpiredFinancialData;
 use App\GmailSynchronizationType;
 use App\Operations\DeploymentRehearsal;
 use App\Operations\RuntimeHealth;
@@ -21,14 +20,6 @@ Schedule::call(
 )
     ->dailyAt('00:00')
     ->name('gmail-seven-day-reconciliation')
-    ->onOneServer()
-    ->withoutOverlapping();
-
-Schedule::call(
-    fn () => app(PurgeExpiredFinancialData::class)->handle(),
-)
-    ->dailyAt('02:30')
-    ->name('expired-financial-data-purge')
     ->onOneServer()
     ->withoutOverlapping();
 
