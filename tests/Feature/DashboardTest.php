@@ -5,7 +5,6 @@ use App\IntegrationFailureKind;
 use App\IntegrationService;
 use App\IntegrationWorkType;
 use App\Models\Category;
-use App\Models\DailyExchangeRate;
 use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\GmailConnection;
 use App\Models\IntegrationIncident;
@@ -35,10 +34,6 @@ test('the Dashboard shows current-month spending and Review Queue workload', fun
     $this->travelTo(CarbonImmutable::parse('2026-08-18 15:00:00 UTC'));
     $owner = User::factory()->create(['reporting_currency' => Currency::Pen]);
     $category = Category::factory()->for($owner, 'owner')->create();
-    DailyExchangeRate::factory()->for($owner, 'owner')->create([
-        'applicable_on' => '2026-08-04',
-        'pen_per_usd_scaled' => 3_500_000,
-    ]);
     Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
         'occurred_on' => '2026-08-04',
         'amount_minor' => 100,
@@ -71,8 +66,7 @@ test('the Dashboard shows current-month spending and Review Queue workload', fun
             ->where('period.date_to', '2026-08-18')
             ->where('spending.totals.USD', '100')
             ->where('spending.totals.PEN', '400')
-            ->where('spending.combined_total.currency', Currency::Pen->value)
-            ->where('spending.combined_total.amount_minor', '750')
+            ->missing('spending.combined_total')
             ->where('review_queue.outstanding_count', 1));
 });
 

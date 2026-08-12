@@ -24,9 +24,9 @@ import {
 import { dashboard } from '@/routes';
 import { index as categoriesIndex } from '@/routes/categories';
 import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
-import { index as insightsIndex } from '@/routes/insights';
 import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import { index as parserProfilesIndex } from '@/routes/parser_profiles';
+import { show as reportShow } from '@/routes/reports';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
@@ -51,8 +51,8 @@ export function AppSidebar() {
             badgeCount: review_queue.outstanding_count,
         },
         {
-            title: 'Insights',
-            href: insightsIndex(),
+            title: 'Reports',
+            href: reportShow('PEN'),
             icon: BarChart3,
         },
     ];

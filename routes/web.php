@@ -2,11 +2,8 @@
 
 use App\Http\Controllers\CategoryArchivalController;
 use App\Http\Controllers\CategoryController;
-use App\Http\Controllers\CategoryTargetController;
-use App\Http\Controllers\CategoryTargetRetirementController;
 use App\Http\Controllers\DailyExchangeRateController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\InsightsController;
 use App\Http\Controllers\IntegrationIncidentAcknowledgementController;
 use App\Http\Controllers\IntegrationIncidentReplayController;
 use App\Http\Controllers\MerchantRuleController;
@@ -14,6 +11,7 @@ use App\Http\Controllers\ParserProfileController;
 use App\Http\Controllers\ParserProfilePreviewController;
 use App\Http\Controllers\ParserProfileSourceMessageController;
 use App\Http\Controllers\ReceiptBreakdownController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReportingCurrencyController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\SpendingNotificationRecoveryController;
@@ -39,15 +37,7 @@ Route::middleware(['auth'])->group(function () {
         'integration-incidents/{integrationIncident}/replay',
         IntegrationIncidentReplayController::class,
     )->name('integration_incidents.replay.store');
-    Route::get('insights', InsightsController::class)->name('insights.index');
-    Route::resource('category-targets', CategoryTargetController::class)
-        ->only(['store', 'update'])
-        ->names([
-            'store' => 'category_targets.store',
-            'update' => 'category_targets.update',
-        ]);
-    Route::post('category-targets/{category_target}/retirement', CategoryTargetRetirementController::class)
-        ->name('category_targets.retirement.store');
+    Route::get('reports/{currency}', ReportController::class)->name('reports.show');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store', 'update']);
     Route::resource('merchant-rules', MerchantRuleController::class)
