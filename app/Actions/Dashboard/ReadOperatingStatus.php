@@ -5,9 +5,7 @@ namespace App\Actions\Dashboard;
 use App\Actions\Integrations\ReadActionableIntegrationIncidents;
 use App\Actions\NotificationIngestion\ReadGmailConnectionStatus;
 use App\Actions\NotificationIngestion\ReadParserProfileHealthSummary;
-use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Builder;
 
 final class ReadOperatingStatus
 {
@@ -21,8 +19,7 @@ final class ReadOperatingStatus
      * @return array{
      *     summary: array{
      *         gmail: string,
-     *         parser_profiles: array{healthy_count: int, degraded_count: int},
-     *         daily_exchange_rates: array{attention_count: int}
+     *         parser_profiles: array{healthy_count: int, degraded_count: int}
      *     },
      *     exceptions: list<array<string, bool|int|string|null>>
      * }
@@ -35,25 +32,6 @@ final class ReadOperatingStatus
             ->reject(fn (array $incident): bool => $incident['integration'] === 'openclaw')
             ->values()
             ->all();
-        $incidentSeedRequestIds = collect($integrationIncidents)
-            ->where('work_type', 'daily_exchange_rate_seed')
-            ->pluck('work_id')
-            ->map(fn (string $workId): int => (int) $workId)
-            ->all();
-        $exchangeRateRequests = DailyExchangeRateSeedRequest::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->when(
-                $incidentSeedRequestIds !== [],
-                fn (Builder $query) => $query->whereNotIn('id', $incidentSeedRequestIds),
-            )
-            ->whereNull('completed_at')
-            ->where(function (Builder $query): void {
-                $query
-                    ->whereNotNull('owner_entry_required_at')
-                    ->orWhereNotNull('retrieval_failed_at');
-            })
-            ->orderBy('applicable_on')
-            ->get(['applicable_on']);
         $exceptions = [];
 
         foreach ($parserProfiles['alerts'] as $alert) {
@@ -64,13 +42,6 @@ final class ReadOperatingStatus
                 'profile_id' => $alert['profile_id'],
                 'profile_name' => $alert['profile_name'],
                 'count' => $alert['count'],
-            ];
-        }
-
-        foreach ($exchangeRateRequests as $exchangeRateRequest) {
-            $exceptions[] = [
-                'type' => 'missing_exchange_rate',
-                'applicable_on' => $exchangeRateRequest->applicable_on->toDateString(),
             ];
         }
 
@@ -91,9 +62,6 @@ final class ReadOperatingStatus
                 'parser_profiles' => [
                     'healthy_count' => $parserProfiles['healthy_count'],
                     'degraded_count' => $parserProfiles['degraded_count'],
-                ],
-                'daily_exchange_rates' => [
-                    'attention_count' => $exchangeRateRequests->count(),
                 ],
             ],
             'exceptions' => $exceptions,

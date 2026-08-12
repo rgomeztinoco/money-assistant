@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\CategoryArchivalController;
 use App\Http\Controllers\CategoryController;
-use App\Http\Controllers\DailyExchangeRateController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\IntegrationIncidentAcknowledgementController;
 use App\Http\Controllers\IntegrationIncidentReplayController;
@@ -12,7 +11,6 @@ use App\Http\Controllers\ParserProfilePreviewController;
 use App\Http\Controllers\ParserProfileSourceMessageController;
 use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReportController;
-use App\Http\Controllers\ReportingCurrencyController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\SpendingNotificationRecoveryController;
 use App\Http\Controllers\SpendingNotificationRetryController;
@@ -56,17 +54,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('transactions.category.update');
     Route::resource('categories', CategoryController::class)
         ->only(['index', 'store', 'update']);
-    Route::resource('daily-exchange-rates', DailyExchangeRateController::class)
-        ->only(['index', 'store', 'update'])
-        ->names([
-            'index' => 'daily_exchange_rates.index',
-            'store' => 'daily_exchange_rates.store',
-            'update' => 'daily_exchange_rates.update',
-        ]);
-    Route::post('daily-exchange-rate-seed-requests/{dailyExchangeRateSeedRequest}/retry', [DailyExchangeRateController::class, 'retrySeed'])
-        ->name('daily_exchange_rates.retry_seed');
-    Route::put('reporting-currency', [ReportingCurrencyController::class, 'update'])
-        ->name('reporting_currency.update');
     Route::post('categories/{category}/archival', [CategoryArchivalController::class, 'store'])
         ->name('categories.archival.store');
     Route::delete('categories/{category}/archival', [CategoryArchivalController::class, 'destroy'])

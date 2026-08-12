@@ -1,11 +1,9 @@
 <?php
 
-use App\Currency;
 use App\IntegrationFailureKind;
 use App\IntegrationService;
 use App\IntegrationWorkType;
 use App\Models\Category;
-use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\GmailConnection;
 use App\Models\IntegrationIncident;
 use App\Models\ParserProfile;
@@ -32,7 +30,7 @@ test('authenticated users can visit the dashboard', function () {
 
 test('the Dashboard shows current-month spending and Review Queue workload', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-18 15:00:00 UTC'));
-    $owner = User::factory()->create(['reporting_currency' => Currency::Pen]);
+    $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
         'occurred_on' => '2026-08-04',
@@ -89,25 +87,17 @@ test('the Dashboard promotes only actionable integration and parser exceptions',
             'transaction_id' => null,
             'processing_outcome' => 'authentication_failed',
         ]);
-    DailyExchangeRateSeedRequest::factory()->for($owner, 'owner')->create();
-    DailyExchangeRateSeedRequest::factory()->for($owner, 'owner')->create([
-        'applicable_on' => '2026-08-07',
-        'owner_entry_required_at' => now(),
-    ]);
-
     $this->actingAs($owner)
         ->get(route('dashboard'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('operating.summary.gmail', 'connected')
             ->where('operating.summary.parser_profiles.healthy_count', 1)
             ->where('operating.summary.parser_profiles.degraded_count', 1)
-            ->where('operating.summary.daily_exchange_rates.attention_count', 1)
-            ->has('operating.exceptions', 2)
+            ->missing('operating.summary.daily_exchange_rates')
+            ->has('operating.exceptions', 1)
             ->where('operating.exceptions.0.type', 'parser_security')
             ->where('operating.exceptions.0.profile_id', $degradedProfile->id)
-            ->where('operating.exceptions.0.count', 1)
-            ->where('operating.exceptions.1.type', 'missing_exchange_rate')
-            ->where('operating.exceptions.1.applicable_on', '2026-08-07'));
+            ->where('operating.exceptions.0.count', 1));
 });
 
 test('the Dashboard promotes stale Gmail synchronization instead of reporting it healthy', function () {

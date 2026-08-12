@@ -45,8 +45,8 @@ return new class extends Migration
             $table->index(['integration', 'parked_at']);
         });
 
-        DB::statement("ALTER TABLE integration_incidents ADD CONSTRAINT integration_incidents_integration_supported CHECK (integration IN ('gmail', 'ai', 'bcrp', 'openclaw'))");
-        DB::statement("ALTER TABLE integration_incidents ADD CONSTRAINT integration_incidents_work_type_supported CHECK (work_type IN ('gmail_synchronization', 'gmail_message', 'ai_classification', 'daily_exchange_rate_seed', 'reminder_delivery'))");
+        DB::statement("ALTER TABLE integration_incidents ADD CONSTRAINT integration_incidents_integration_supported CHECK (integration IN ('gmail', 'ai', 'openclaw'))");
+        DB::statement("ALTER TABLE integration_incidents ADD CONSTRAINT integration_incidents_work_type_supported CHECK (work_type IN ('gmail_synchronization', 'gmail_message', 'ai_classification', 'reminder_delivery'))");
         DB::statement("ALTER TABLE integration_incidents ADD CONSTRAINT integration_incidents_failure_kind_supported CHECK (failure_kind IN ('transient', 'authentication', 'authorization', 'schema', 'confirmation', 'concurrency', 'validation', 'deterministic'))");
     }
 

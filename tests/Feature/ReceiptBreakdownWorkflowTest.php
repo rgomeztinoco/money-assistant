@@ -1,7 +1,7 @@
 <?php
 
-use App\Actions\Reporting\ReadSpendingSummary;
 use App\CategoryAssignmentProvenance;
+use App\Currency;
 use App\Models\Category;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
@@ -11,10 +11,21 @@ use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
-function receiptCategoryTotalFor(User $owner, ?int $categoryId): array
-{
-    return collect(app(ReadSpendingSummary::class)->handle($owner)['category_totals'])
-        ->firstWhere('category.id', $categoryId);
+function receiptCategoryTotalFor(
+    TestCase $test,
+    User $owner,
+    Currency $currency,
+    ?int $categoryId,
+): string {
+    $response = $test->actingAs($owner)->get(route('reports.show', [
+        'currency' => $currency,
+        'date_from' => '2000-01-01',
+        'date_to' => now()->toDateString(),
+    ]));
+
+    return (string) collect($response->inertiaProps('category_groups'))
+        ->flatMap(fn (array $group): array => [$group, ...$group['children']])
+        ->firstWhere('category.id', $categoryId)['amount_minor'];
 }
 
 test('the owner atomically saves a reconciled purchase Receipt Breakdown', function () {
@@ -62,8 +73,8 @@ test('the owner atomically saves a reconciled purchase Receipt Breakdown', funct
                 ->where('selected_transaction.receipt_breakdown.line_items.0.category.name', 'Groceries')
                 ->where('selected_transaction.receipt_breakdown.line_items.1.category', null)));
 
-    expect(receiptCategoryTotalFor($owner, $groceries->id)['totals']['PEN'])->toBe('1200')
-        ->and(receiptCategoryTotalFor($owner, null)['totals']['PEN'])->toBe('1300');
+    expect(receiptCategoryTotalFor($this, $owner, Currency::Pen, $groceries->id))->toBe('1200')
+        ->and(receiptCategoryTotalFor($this, $owner, Currency::Pen, null))->toBe('1300');
 });
 
 test('an unreconciled replacement leaves the current Receipt Breakdown unchanged', function () {
@@ -140,7 +151,7 @@ test('saving again replaces every Line Item and removal restores Transaction Cat
                 ->where('selected_transaction.receipt_breakdown.line_items.0.description', 'Lunch')
                 ->where('selected_transaction.receipt_breakdown.line_items.1.description', 'Discount')));
 
-    expect(receiptCategoryTotalFor($owner, $dining->id)['totals']['PEN'])->toBe('2500');
+    expect(receiptCategoryTotalFor($this, $owner, Currency::Pen, $dining->id))->toBe('2500');
 
     $this->delete(route('transactions.receipt_breakdowns.destroy', $transaction))
         ->assertRedirect(route('transactions.index'))
@@ -152,7 +163,7 @@ test('saving again replaces every Line Item and removal restores Transaction Cat
             ->loadDeferredProps(fn (Assert $inspector) => $inspector
                 ->where('selected_transaction.receipt_breakdown', null)));
 
-    expect(receiptCategoryTotalFor($owner, $fallbackCategory->id)['totals']['PEN'])->toBe('2500');
+    expect(receiptCategoryTotalFor($this, $owner, Currency::Pen, $fallbackCategory->id))->toBe('2500');
 });
 
 test('the owner saves an independently reviewed Refund Receipt Breakdown', function () {
@@ -184,8 +195,8 @@ test('the owner saves an independently reviewed Refund Receipt Breakdown', funct
                 ->where('selected_transaction.kind', 'refund')
                 ->where('selected_transaction.receipt_breakdown.line_items.0.description', 'Returned appliance part')));
 
-    expect(receiptCategoryTotalFor($owner, $purchaseCategory->id)['totals']['PEN'])->toBe('2500')
-        ->and(receiptCategoryTotalFor($owner, $refundCategory->id)['totals']['PEN'])->toBe('-800');
+    expect(receiptCategoryTotalFor($this, $owner, Currency::Pen, $purchaseCategory->id))->toBe('2500')
+        ->and(receiptCategoryTotalFor($this, $owner, Currency::Pen, $refundCategory->id))->toBe('-800');
 });
 
 test('Uncategorized Line Items remain visible in the Review Queue', function () {

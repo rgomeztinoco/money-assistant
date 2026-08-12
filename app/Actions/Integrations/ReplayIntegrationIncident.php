@@ -7,9 +7,7 @@ use App\IntegrationFailureKind;
 use App\IntegrationWorkType;
 use App\Jobs\DeliverReminder;
 use App\Jobs\ProcessGmailMessage;
-use App\Jobs\SeedDailyExchangeRate;
 use App\Jobs\SynchronizeGmail;
-use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\IntegrationIncident;
@@ -77,10 +75,6 @@ final class ReplayIntegrationIncident
                 $incident,
             ),
             IntegrationWorkType::GmailMessage => $this->prepareGmailMessage($owner, $incident),
-            IntegrationWorkType::DailyExchangeRateSeed => $this->prepareDailyExchangeRateSeed(
-                $owner,
-                $incident,
-            ),
             IntegrationWorkType::ReminderDelivery => $this->prepareReminderDelivery($owner, $incident),
         };
     }
@@ -114,34 +108,6 @@ final class ReplayIntegrationIncident
             ->findOrFail($incident->work_id);
 
         return fn () => ProcessGmailMessage::dispatch($discovery->id);
-    }
-
-    private function prepareDailyExchangeRateSeed(
-        User $owner,
-        IntegrationIncident $incident,
-    ): Closure {
-        $seedRequest = DailyExchangeRateSeedRequest::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->lockForUpdate()
-            ->findOrFail($incident->work_id);
-
-        if ($seedRequest->retrieval_failed_at === null) {
-            throw new InvalidArgumentException('The original BCRP work is not parked.');
-        }
-
-        $seedRequest->forceFill([
-            'attempt_count' => 0,
-            'missing_observation_count' => 0,
-            'transport_failure_count' => 0,
-            'next_attempt_at' => null,
-            'queued_at' => now(),
-            'claimed_at' => null,
-            'last_attempted_at' => null,
-            'retrieval_failed_at' => null,
-            'last_error_code' => null,
-        ])->save();
-
-        return fn () => SeedDailyExchangeRate::dispatch($seedRequest->id);
     }
 
     private function prepareReminderDelivery(

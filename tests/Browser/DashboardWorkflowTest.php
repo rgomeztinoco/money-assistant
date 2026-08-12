@@ -1,8 +1,6 @@
 <?php
 
-use App\Currency;
 use App\Models\Category;
-use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -12,7 +10,7 @@ beforeEach(function () {
 });
 
 test('the Dashboard directs attention into filtered owner workflows', function () {
-    $owner = User::factory()->create(['reporting_currency' => Currency::Pen]);
+    $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
         'occurred_on' => now()->toDateString(),
@@ -60,33 +58,6 @@ test('the Dashboard directs attention into filtered owner workflows', function (
         ->click('[data-test="report-switch-usd"]')
         ->assertPathIs('/reports/USD')
         ->assertSee('USD spending report')
-        ->assertNoJavaScriptErrors()
-        ->assertNoConsoleLogs();
-});
-
-test('missing-rate Dashboard exceptions retain their affected work', function () {
-    $owner = User::factory()->create(['reporting_currency' => Currency::Pen]);
-    $category = Category::factory()->for($owner, 'owner')->create();
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
-        'occurred_on' => now()->toDateString(),
-        'category_id' => $category->id,
-    ]);
-    DailyExchangeRateSeedRequest::factory()->for($owner, 'owner')->create([
-        'applicable_on' => now()->toDateString(),
-        'owner_entry_required_at' => now(),
-    ]);
-    $this->actingAs($owner);
-
-    $page = visit('/dashboard');
-
-    $page
-        ->click('[data-test="dashboard-exception-missing_exchange_rate"]')
-        ->assertPathIs('/daily-exchange-rates')
-        ->assertQueryStringHas('date', now()->toDateString())
-        ->assertQueryStringHas('status', 'attention')
-        ->assertScript(
-            'window.location.hash === "#rate-request-'.now()->toDateString().'"',
-        )
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

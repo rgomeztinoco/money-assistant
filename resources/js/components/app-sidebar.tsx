@@ -1,6 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
-    ArrowRightLeft,
     BarChart3,
     LayoutGrid,
     ListChecks,
@@ -23,7 +22,6 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import { index as categoriesIndex } from '@/routes/categories';
-import { index as dailyExchangeRatesIndex } from '@/routes/daily_exchange_rates';
 import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import { index as parserProfilesIndex } from '@/routes/parser_profiles';
 import { show as reportShow } from '@/routes/reports';
@@ -66,11 +64,6 @@ export function AppSidebar() {
             title: 'Merchant Rules',
             href: merchantRulesIndex(),
             icon: Store,
-        },
-        {
-            title: 'Daily Exchange Rates',
-            href: dailyExchangeRatesIndex(),
-            icon: ArrowRightLeft,
         },
         {
             title: 'Parser Profiles',

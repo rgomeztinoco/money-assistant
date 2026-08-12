@@ -3,8 +3,6 @@
 use App\Actions\NotificationIngestion\DispatchGmailSynchronizations;
 use App\Actions\Reminders\DispatchPendingReminderDeliveries;
 use App\Actions\Reminders\EnqueueDueReminderDeliveries;
-use App\Actions\Reporting\DiscoverMissingDailyExchangeRates;
-use App\Actions\Reporting\DispatchPendingDailyExchangeRateSeeds;
 use App\GmailSynchronizationType;
 use App\Operations\DeploymentRehearsal;
 use App\Operations\RuntimeHealth;
@@ -37,18 +35,6 @@ Schedule::everyMinute()
             fn () => app(DeploymentRehearsal::class)->dispatchDueScheduledProbes(),
         )
             ->name('deployment-rehearsal-probes')
-            ->withoutOverlapping();
-
-        Schedule::call(
-            fn () => app(DiscoverMissingDailyExchangeRates::class)->handle(),
-        )
-            ->name('daily-exchange-rate-discovery')
-            ->withoutOverlapping();
-
-        Schedule::call(
-            fn () => app(DispatchPendingDailyExchangeRateSeeds::class)->handle(),
-        )
-            ->name('daily-exchange-rate-seeds')
             ->withoutOverlapping();
 
         Schedule::call(

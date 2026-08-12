@@ -3,7 +3,6 @@
 namespace App\Actions\Integrations;
 
 use App\IntegrationWorkType;
-use App\Models\DailyExchangeRateSeedRequest;
 use App\Models\GmailMessageDiscovery;
 use App\Models\IntegrationIncident;
 use App\Models\User;
@@ -50,14 +49,6 @@ final class ReadActionableIntegrationIncidents
             )
             ->get(['id'])
             ->keyBy('id');
-        $dailyExchangeRateSeedRequests = DailyExchangeRateSeedRequest::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereIntegerInRaw(
-                'id',
-                $this->workIds($incidents, IntegrationWorkType::DailyExchangeRateSeed),
-            )
-            ->get(['id', 'applicable_on'])
-            ->keyBy('id');
 
         return array_values($incidents
             ->map(fn (IntegrationIncident $incident): array => [
@@ -76,7 +67,6 @@ final class ReadActionableIntegrationIncidents
                 'affected_url' => $this->affectedUrl(
                     $incident,
                     $gmailDiscoveries,
-                    $dailyExchangeRateSeedRequests,
                 ),
             ])
             ->all());
@@ -84,12 +74,10 @@ final class ReadActionableIntegrationIncidents
 
     /**
      * @param  Collection<int, GmailMessageDiscovery>  $gmailDiscoveries
-     * @param  Collection<int, DailyExchangeRateSeedRequest>  $dailyExchangeRateSeedRequests
      */
     private function affectedUrl(
         IntegrationIncident $incident,
         Collection $gmailDiscoveries,
-        Collection $dailyExchangeRateSeedRequests,
     ): string {
         return match ($incident->work_type) {
             IntegrationWorkType::GmailSynchronization => route(
@@ -99,10 +87,6 @@ final class ReadActionableIntegrationIncidents
             IntegrationWorkType::GmailMessage => $this->gmailMessageUrl(
                 $incident,
                 $gmailDiscoveries,
-            ),
-            IntegrationWorkType::DailyExchangeRateSeed => $this->dailyExchangeRateUrl(
-                $incident,
-                $dailyExchangeRateSeedRequests,
             ),
             IntegrationWorkType::ReminderDelivery => route(
                 'connections.edit',
@@ -124,20 +108,6 @@ final class ReadActionableIntegrationIncidents
         return $discovery === null
             ? route('parser_profiles.index')
             : route('parser_profiles.source_messages.show', $discovery);
-    }
-
-    /** @param Collection<int, DailyExchangeRateSeedRequest> $dailyExchangeRateSeedRequests */
-    private function dailyExchangeRateUrl(
-        IntegrationIncident $incident,
-        Collection $dailyExchangeRateSeedRequests,
-    ): string {
-        $request = $dailyExchangeRateSeedRequests->get((int) $incident->work_id);
-        $applicableOn = $request?->applicable_on->toDateString();
-
-        return route('daily_exchange_rates.index', [
-            'date' => $applicableOn,
-            'status' => 'attention',
-        ]).($applicableOn === null ? '' : '#rate-request-'.$applicableOn);
     }
 
     /**

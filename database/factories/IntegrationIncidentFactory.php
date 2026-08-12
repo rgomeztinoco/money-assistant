@@ -23,10 +23,10 @@ class IntegrationIncidentFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            'integration' => IntegrationService::Bcrp,
-            'work_type' => IntegrationWorkType::DailyExchangeRateSeed,
-            'work_id' => (string) fake()->unique()->randomNumber(),
-            'source_identity' => 'daily-exchange-rate:'.fake()->date(),
+            'integration' => IntegrationService::Gmail,
+            'work_type' => IntegrationWorkType::GmailSynchronization,
+            'work_id' => fake()->unique()->uuid().':incremental',
+            'source_identity' => 'gmail:synchronization:'.fake()->unique()->uuid(),
             'failure_kind' => IntegrationFailureKind::Transient,
             'last_error_code' => 'connection_failed',
             'attempt_count' => 1,
