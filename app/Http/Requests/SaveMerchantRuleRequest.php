@@ -32,7 +32,7 @@ class SaveMerchantRuleRequest extends FormRequest
                 'integer',
                 Rule::exists('categories', 'id')
                     ->where('user_id', $this->user()->id)
-                    ->whereNull('retired_at'),
+                    ->whereNull('archived_at'),
             ],
             'transaction_kind' => ['nullable', Rule::enum(TransactionKind::class)],
             'currency' => ['nullable', Rule::enum(Currency::class)],

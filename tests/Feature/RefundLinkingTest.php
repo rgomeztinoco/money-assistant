@@ -133,11 +133,11 @@ test('cumulative linked Refunds exceeding the purchase remain included and enter
         );
 });
 
-test('a linked Refund does not receive a Retired Category from its purchase', function () {
+test('a linked Refund does not receive an archived Category from its purchase', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create([
         'name' => 'Clothing',
-        'retired_at' => now(),
+        'archived_at' => now(),
     ]);
     $purchase = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
         'category_id' => $category->id,

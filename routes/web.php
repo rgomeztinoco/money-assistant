@@ -1,10 +1,9 @@
 <?php
 
+use App\Http\Controllers\CategoryArchivalController;
 use App\Http\Controllers\CategoryController;
-use App\Http\Controllers\CategoryRetirementController;
 use App\Http\Controllers\CategoryTargetController;
 use App\Http\Controllers\CategoryTargetRetirementController;
-use App\Http\Controllers\CategoryTrashRestorationController;
 use App\Http\Controllers\DailyExchangeRateController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InsightsController;
@@ -24,7 +23,6 @@ use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionFieldReviewController;
 use App\Http\Controllers\TransactionRefundLinkController;
 use App\Http\Controllers\TransactionVoidController;
-use App\Http\Middleware\RequirePasskeyConfirmation;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')
@@ -79,15 +77,10 @@ Route::middleware(['auth'])->group(function () {
         ->name('daily_exchange_rates.retry_seed');
     Route::put('reporting-currency', [ReportingCurrencyController::class, 'update'])
         ->name('reporting_currency.update');
-    Route::delete('categories/{category}', [CategoryController::class, 'destroy'])
-        ->middleware(RequirePasskeyConfirmation::class)
-        ->name('categories.destroy');
-    Route::post('trash/categories/{deletionId}/restoration', CategoryTrashRestorationController::class)
-        ->name('trash.categories.restoration.store');
-    Route::post('categories/{category}/retirement', [CategoryRetirementController::class, 'store'])
-        ->name('categories.retirement.store');
-    Route::delete('categories/{category}/retirement', [CategoryRetirementController::class, 'destroy'])
-        ->name('categories.retirement.destroy');
+    Route::post('categories/{category}/archival', [CategoryArchivalController::class, 'store'])
+        ->name('categories.archival.store');
+    Route::delete('categories/{category}/archival', [CategoryArchivalController::class, 'destroy'])
+        ->name('categories.archival.destroy');
     Route::post('transactions/{refund}/refund-link', [TransactionRefundLinkController::class, 'store'])
         ->name('transactions.refund_link.store');
     Route::post('transactions/{transaction}/void', [TransactionVoidController::class, 'store'])

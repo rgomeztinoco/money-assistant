@@ -55,7 +55,7 @@ class UpdateTransactionRequest extends FormRequest
                 'integer',
                 Rule::exists('categories', 'id')
                     ->where('user_id', $this->user()->getKey())
-                    ->whereNull('retired_at'),
+                    ->whereNull('archived_at'),
             ],
             'original_purchase_id' => [
                 'nullable',

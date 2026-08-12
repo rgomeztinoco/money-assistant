@@ -21,7 +21,13 @@ class CategoryFactory extends Factory
         return [
             'user_id' => User::factory(),
             'name' => fake()->unique()->words(2, true),
-            'revision' => 1,
         ];
+    }
+
+    public function archived(): static
+    {
+        return $this->state(fn (): array => [
+            'archived_at' => now(),
+        ]);
     }
 }

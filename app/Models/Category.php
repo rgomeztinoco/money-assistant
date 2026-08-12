@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Concerns\HasFinancialTrash;
 use Carbon\CarbonImmutable;
 use Database\Factories\CategoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -17,11 +16,7 @@ use Illuminate\Support\Carbon;
  * @property int $user_id
  * @property int|null $parent_id
  * @property string $name
- * @property int $revision
- * @property CarbonImmutable|null $retired_at
- * @property string|null $deletion_id
- * @property CarbonImmutable|null $purge_after
- * @property CarbonImmutable|null $deleted_at
+ * @property CarbonImmutable|null $archived_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -29,20 +24,12 @@ use Illuminate\Support\Carbon;
     'user_id',
     'parent_id',
     'name',
-    'revision',
-    'retired_at',
+    'archived_at',
 ])]
 class Category extends Model
 {
     /** @use HasFactory<CategoryFactory> */
     use HasFactory;
-
-    use HasFinancialTrash;
-
-    /** @var array<string, mixed> */
-    protected $attributes = [
-        'revision' => 1,
-    ];
 
     /**
      * @return BelongsTo<User, $this>
@@ -100,10 +87,7 @@ class Category extends Model
     protected function casts(): array
     {
         return [
-            'revision' => 'integer',
-            'retired_at' => 'immutable_datetime',
-            'purge_after' => 'immutable_datetime',
-            'deleted_at' => 'immutable_datetime',
+            'archived_at' => 'immutable_datetime',
         ];
     }
 }

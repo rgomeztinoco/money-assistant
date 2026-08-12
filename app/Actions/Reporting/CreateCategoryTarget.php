@@ -37,7 +37,7 @@ final class CreateCategoryTarget
                 $category = Category::query()
                     ->whereBelongsTo($owner, 'owner')
                     ->whereKey($categoryId)
-                    ->whereNull('retired_at')
+                    ->whereNull('archived_at')
                     ->lockForUpdate()
                     ->firstOrFail();
 

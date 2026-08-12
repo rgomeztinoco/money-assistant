@@ -1,16 +1,16 @@
 <?php
 
-use App\Actions\Reporting\ReadSpendingSummary;
 use App\CategoryAssignmentProvenance;
-use App\Http\Middleware\RequirePasskeyConfirmation;
 use App\Models\Category;
+use App\Models\CategoryTarget;
 use App\Models\MerchantRule;
 use App\Models\Transaction;
 use App\Models\User;
-use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('the owner can read create and edit the two-level taxonomy', function () {
+test('the owner can read create rename and move the two-level taxonomy directly', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     $transport = Category::factory()->for($owner, 'owner')->create(['name' => 'Transport']);
@@ -23,7 +23,9 @@ test('the owner can read create and edit the two-level taxonomy', function () {
             ->has('categories', 2)
             ->where('categories.0.name', 'Food')
             ->where('categories.0.children', [])
-            ->where('categories.0.revision', 1));
+            ->where('categories.0.archived_at', null)
+            ->missing('categories.0.revision')
+            ->missing('trashed_categories'));
 
     $this->post(route('categories.store'), [
         'name' => '  Local   Transport ',
@@ -35,7 +37,6 @@ test('the owner can read create and edit the two-level taxonomy', function () {
     expect($category->parent_id)->toBe($transport->id);
 
     $this->patch(route('categories.update', $category), [
-        'expected_revision' => 1,
         'name' => 'Local Transit',
         'parent_id' => $food->id,
     ])->assertRedirect(route('categories.index'));
@@ -43,15 +44,16 @@ test('the owner can read create and edit the two-level taxonomy', function () {
     expect($category->fresh())
         ->id->toBe($category->id)
         ->name->toBe('Local Transit')
-        ->parent_id->toBe($food->id)
-        ->revision->toBe(2);
+        ->parent_id->toBe($food->id);
 });
 
-test('active Category names are unique among siblings but reusable under another parent', function () {
+test('active Category names are case-insensitively unique among siblings and the hierarchy stops at two levels', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     $pets = Category::factory()->for($owner, 'owner')->create(['name' => 'Pets']);
-    Category::factory()->for($owner, 'owner')->for($food, 'parent')->create(['name' => 'Dining']);
+    $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
+        'name' => 'Dining',
+    ]);
 
     $this->actingAs($owner)
         ->post(route('categories.store'), [
@@ -65,10 +67,15 @@ test('active Category names are unique among siblings but reusable under another
         'parent_id' => $pets->id,
     ])->assertSessionHasNoErrors();
 
+    $this->post(route('categories.store'), [
+        'name' => 'Third level',
+        'parent_id' => $dining->id,
+    ])->assertSessionHasErrors('parent_id');
+
     expect(Category::query()->where('name', 'Dining')->count())->toBe(2);
 });
 
-test('renaming and moving a Category preserves its identity and updates historical reporting labels', function () {
+test('renaming and moving a Category preserves its identity on historical Transactions and reports', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     $travel = Category::factory()->for($owner, 'owner')->create(['name' => 'Travel']);
@@ -76,12 +83,12 @@ test('renaming and moving a Category preserves its identity and updates historic
         'name' => 'Cafes',
     ]);
     $transaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => today(),
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
     ]);
 
     $this->actingAs($owner)->patch(route('categories.update', $category), [
-        'expected_revision' => 1,
         'name' => 'Coffee Shops',
         'parent_id' => $travel->id,
     ])->assertSessionHasNoErrors();
@@ -90,134 +97,105 @@ test('renaming and moving a Category preserves its identity and updates historic
 
     $this->get(route('transactions.index', ['selected' => $transaction->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->missing('category_totals')
             ->loadDeferredProps(fn (Assert $inspector) => $inspector
                 ->where('selected_transaction.category.id', $category->id)
                 ->where('selected_transaction.category.name', 'Coffee Shops')));
 
-    $categoryTotals = collect(app(ReadSpendingSummary::class)->handle($owner)['category_totals']);
-
-    expect($categoryTotals->pluck('category.name')->all())->toContain('Coffee Shops', 'Travel');
+    $this->get(route('insights.index', ['date_from' => today()->startOfMonth()->toDateString()]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('period.spending.category_totals', fn ($totals) => collect($totals)
+                ->contains(fn (array $total): bool => $total['category']['name'] === 'Coffee Shops')));
 });
 
-test('retirement enforces blockers and referenced Categories cannot be permanently deleted', function () {
+test('archiving a Category preserves current assignments and reporting while preventing future assignments', function () {
     $owner = User::factory()->create();
     $parent = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     $child = Category::factory()->for($owner, 'owner')->for($parent, 'parent')->create([
         'name' => 'Dining',
     ]);
-    Transaction::factory()->for($owner, 'owner')->create([
+    $merchantRule = MerchantRule::factory()->for($owner, 'owner')->for($child)->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => today(),
         'category_id' => $child->id,
-        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::MerchantRule,
+        'merchant_rule_id' => $merchantRule->id,
     ]);
+    CategoryTarget::factory()->for($owner, 'owner')->for($child)->create();
 
     $this->actingAs($owner)
-        ->post(route('categories.retirement.store', $parent), ['expected_revision' => 1])
-        ->assertSessionHasErrors('category');
-
-    $this->post(route('categories.retirement.store', $child), ['expected_revision' => 1])
+        ->post(route('categories.archival.store', $parent))
+        ->assertRedirect(route('categories.index'))
         ->assertSessionHasNoErrors();
 
-    $this->post(route('categories.retirement.store', $parent), ['expected_revision' => 1])
-        ->assertSessionHasNoErrors();
+    expect($parent->fresh()->archived_at)->not->toBeNull()
+        ->and($child->fresh()->archived_at)->not->toBeNull()
+        ->and($merchantRule->fresh()->enabled)->toBeFalse()
+        ->and($transaction->fresh())
+        ->category_id->toBe($child->id)
+        ->merchant_rule_id->toBe($merchantRule->id);
 
-    expect($child->fresh()->retired_at)->not->toBeNull()
-        ->and($parent->fresh()->retired_at)->not->toBeNull();
+    $this->get(route('transactions.index', ['selected' => $transaction->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('category_options', [])
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.category.id', $child->id)
+                ->where('selected_transaction.category.name', 'Dining')));
 
-    $this->withSession([RequirePasskeyConfirmation::SESSION_KEY => Date::now()->unix()])
-        ->delete(route('categories.destroy', $child), ['expected_revision' => 2])
-        ->assertSessionHasErrors('category');
+    $this->get(route('insights.index', ['date_from' => today()->startOfMonth()->toDateString()]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('period.spending.category_totals', fn ($totals) => collect($totals)
+                ->contains(fn (array $total): bool => $total['category']['name'] === 'Dining')));
 
-    $this->assertModelExists($child);
+    $otherTransaction = Transaction::factory()->for($owner, 'owner')->create();
+
+    $this->put(route('transactions.category.update', $otherTransaction), [
+        'category_id' => $child->id,
+    ])->assertSessionHasErrors('category_id');
+
+    $this->post(route('merchant_rules.store'), [
+        'merchant' => 'Archived target',
+        'category_id' => $child->id,
+        'transaction_kind' => null,
+        'currency' => null,
+        'enabled' => true,
+    ])->assertSessionHasErrors('category_id');
 });
 
-test('a Category targeted by a disabled Merchant Rule cannot be retired', function () {
+test('an archived Category can be edited and unarchived without a revision contract', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create();
-
-    $this->actingAs($owner)
-        ->post(route('categories.retirement.store', $category), ['expected_revision' => 1])
-        ->assertSessionHasErrors('category');
-
-    expect($category->fresh()->retired_at)->toBeNull();
-});
-
-test('only a never-referenced Category can be deleted after fresh passkey authentication', function () {
-    $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-
-    $this->actingAs($owner)
-        ->delete(route('categories.destroy', $category), ['expected_revision' => 1])
-        ->assertRedirect(route('passkey.confirmation'));
-
-    $this->assertModelExists($category);
-
-    $this->withSession([RequirePasskeyConfirmation::SESSION_KEY => Date::now()->unix()])
-        ->delete(route('categories.destroy', $category), ['expected_revision' => 1])
-        ->assertRedirect(route('categories.index'));
-
-    expect(Category::find($category->id))->toBeNull()
-        ->and(Category::onlyTrashed()->find($category->id))->not->toBeNull();
-});
-
-test('a Category can be deleted after its current Transaction assignment is cleared', function () {
-    $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create();
-
-    $this->actingAs($owner)
-        ->put(route('transactions.category.update', $transaction), [
-            'category_id' => $category->id,
-        ])
-        ->assertSessionHasNoErrors();
-
-    $this->put(route('transactions.category.update', $transaction), [
-        'category_id' => null,
-    ])->assertSessionHasNoErrors();
-
-    $this->withSession([RequirePasskeyConfirmation::SESSION_KEY => Date::now()->unix()])
-        ->delete(route('categories.destroy', $category), ['expected_revision' => 1])
-        ->assertSessionHasNoErrors();
-
-    expect(Category::find($category->id))->toBeNull();
-});
-
-test('reactivation preserves identity and rejects active sibling conflicts', function () {
-    $owner = User::factory()->create();
-    $retired = Category::factory()->for($owner, 'owner')->create([
-        'name' => 'Food',
-        'retired_at' => now(),
-        'revision' => 2,
-    ]);
+    $archived = Category::factory()->for($owner, 'owner')->archived()->create(['name' => 'Food']);
     $active = Category::factory()->for($owner, 'owner')->create(['name' => 'food']);
 
     $this->actingAs($owner)
-        ->delete(route('categories.retirement.destroy', $retired), ['expected_revision' => 2])
+        ->delete(route('categories.archival.destroy', $archived))
         ->assertSessionHasErrors('category');
 
-    $active->forceDelete();
+    $this->patch(route('categories.update', $archived), [
+        'name' => 'Groceries',
+        'parent_id' => null,
+    ])->assertSessionHasNoErrors();
 
-    $this->delete(route('categories.retirement.destroy', $retired), ['expected_revision' => 2])
+    $this->delete(route('categories.archival.destroy', $archived))
         ->assertSessionHasNoErrors();
 
-    expect($retired->fresh())
-        ->id->toBe($retired->id)
-        ->retired_at->toBeNull()
-        ->revision->toBe(3);
+    expect($archived->fresh())
+        ->id->toBe($archived->id)
+        ->name->toBe('Groceries')
+        ->archived_at->toBeNull()
+        ->and($active->fresh())->not->toBeNull();
 });
 
-test('stale Category changes fail closed', function () {
-    $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create(['revision' => 2]);
+test('legacy Category revision deletion trash and restoration contracts are absent', function () {
+    foreach (['revision', 'deletion_id', 'purge_after', 'deleted_at'] as $column) {
+        expect(Schema::hasColumn('categories', $column))->toBeFalse();
+    }
 
-    $this->actingAs($owner)
-        ->patch(route('categories.update', $category), [
-            'expected_revision' => 1,
-            'name' => 'Changed',
-            'parent_id' => null,
-        ])
-        ->assertSessionHasErrors('expected_revision');
-
-    expect($category->fresh()->name)->not->toBe('Changed');
+    expect(Schema::hasColumn('categories', 'archived_at'))->toBeTrue()
+        ->and(Schema::hasTable('financial_data_tombstones'))->toBeFalse()
+        ->and(Route::has('categories.destroy'))->toBeFalse()
+        ->and(Route::has('categories.retirement.store'))->toBeFalse()
+        ->and(Route::has('categories.retirement.destroy'))->toBeFalse()
+        ->and(Route::has('trash.categories.restoration.store'))->toBeFalse()
+        ->and(Route::has('categories.archival.store'))->toBeTrue()
+        ->and(Route::has('categories.archival.destroy'))->toBeTrue();
 });

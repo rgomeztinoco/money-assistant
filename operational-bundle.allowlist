@@ -5,7 +5,6 @@ deploy-production 0755
 production-trust-gate 0755
 rehearse-production-crash 0755
 rehearse-production-reboot 0755
-rehearse-production-retention 0755
 rehearse-all-credential-rotations 0755
 rehearse-independent-alert 0755
 rehearse-production-upgrade 0755

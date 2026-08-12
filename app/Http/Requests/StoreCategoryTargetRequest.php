@@ -33,7 +33,7 @@ class StoreCategoryTargetRequest extends FormRequest
                 'integer',
                 Rule::exists('categories', 'id')
                     ->where('user_id', $this->user()->id)
-                    ->whereNull('retired_at'),
+                    ->whereNull('archived_at'),
             ],
             'amount_minor' => $this->categoryTargetAmountRules(),
             'currency' => ['required', Rule::enum(Currency::class)],

@@ -85,7 +85,7 @@ test('the owner can edit disable enable and delete a Merchant Rule', function ()
 test('a Merchant Rule requires an active Category owned by the owner', function () {
     $owner = User::factory()->create();
     $retiredCategory = Category::factory()->for($owner, 'owner')->create([
-        'retired_at' => now(),
+        'archived_at' => now(),
     ]);
     $this->actingAs($owner);
 
