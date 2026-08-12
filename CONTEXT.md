@@ -49,12 +49,12 @@ The visible source of a Transaction's current Category: an owner action, a linke
 _Avoid_: Classification log
 
 **Review Queue**:
-The collection of uncertain Transaction details awaiting the owner's approval or correction. A Transaction can enter the Review Queue without delaying its inclusion in spending records.
+The current set of Uncategorized Transactions, Uncategorized Line Items, and flagged Transaction details that need an owner edit. It is derived from current financial state rather than maintained as a separate approval workflow, and a Transaction remains included in spending while it needs review.
 _Avoid_: Pending transactions, approval queue
 
-**Correction**:
-An owner-provided replacement for the current value of an extracted or inferred Transaction detail. It takes effect immediately and remains authoritative for that Transaction; it neither creates nor changes a Merchant Rule, and later rule changes cannot replace it without another explicit owner action.
-_Avoid_: Override, edit
+**Transaction Edit**:
+An owner-provided change to a current Transaction value. It takes effect immediately without a separate Correction or revision contract; changing a flagged value clears that field's current review flag. A direct edit neither creates nor changes a Merchant Rule, and later rule changes cannot replace an owner-assigned Category without another explicit owner action.
+_Avoid_: Correction, override
 
 **Confirmation Grant**:
 A 30-minute, single-use authorization issued by Money Assistant after the owner reviews an exact proposed operation and explicitly approves it. Each owner conversation may have only one pending grant; preparing another operation cancels the previous one. A grant expires sooner if a referenced resource, the proposed inputs, or the capability schema version changes. It is bound to that operation, its complete inputs, the owner, and the immutable approval identity, so OpenClaw may carry out the confirmed change but cannot broaden or replay it. A grant may cover a finite, fully itemized bundle only when every change succeeds or none does; it cannot authorize an open-ended future scope. Ordinary single-resource changes may use an unambiguous affirmative response in a new message from the paired, allowlisted owner conversation, while changes affecting many Transactions require the owner to return an exact, short confirmation phrase generated for that operation. Export and permanent deletion instead require fresh passkey-authenticated approval in Money Assistant's web interface. A prior or inferred instruction is not confirmation. Read-only queries, reminder delivery, and submission of a Receipt Proposal do not require a Confirmation Grant because they do not alter confirmed financial state; approving, correcting, or reconciling that state does.

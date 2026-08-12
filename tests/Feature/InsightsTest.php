@@ -4,7 +4,6 @@ use App\Currency;
 use App\Models\Category;
 use App\Models\LineItem;
 use App\Models\ReceiptBreakdown;
-use App\Models\SuspectedDuplicate;
 use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
@@ -67,7 +66,7 @@ test('one or two complete months remain provisional history without a comparison
             ->where('comparison', null));
 });
 
-test('ended months remain incomplete for every kind of outstanding Review Queue work', function () {
+test('ended months remain incomplete for each retained kind of outstanding Review Queue work', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-18 15:00:00 UTC'));
     $owner = User::factory()->create(['reporting_currency' => Currency::Pen]);
     $category = Category::factory()->for($owner, 'owner')->create();
@@ -109,22 +108,6 @@ test('ended months remain incomplete for every kind of outstanding Review Queue 
         ],
     ]);
 
-    $firstDuplicate = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'occurred_on' => '2026-05-10',
-        'amount_minor' => 4_000,
-        'category_id' => $category->id,
-    ]);
-    $secondDuplicate = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'occurred_on' => '2026-05-11',
-        'amount_minor' => 4_000,
-        'category_id' => $category->id,
-    ]);
-    SuspectedDuplicate::factory()
-        ->for($owner, 'owner')
-        ->for($firstDuplicate, 'firstTransaction')
-        ->for($secondDuplicate, 'secondTransaction')
-        ->create();
-
     Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
         'occurred_on' => '2026-06-10',
         'amount_minor' => 5_000,
@@ -142,7 +125,7 @@ test('ended months remain incomplete for every kind of outstanding Review Queue 
             ->where('baseline.status', 'established')
             ->where('baseline.complete_month_count', 3)
             ->has('baseline.months', 3)
-            ->where('baseline.months.0.month', '2026-01')
+            ->where('baseline.months.0.month', '2026-05')
             ->where('baseline.months.1.month', '2026-06')
             ->where('baseline.months.2.month', '2026-07'));
 });

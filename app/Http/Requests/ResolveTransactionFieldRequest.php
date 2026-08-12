@@ -37,7 +37,6 @@ class ResolveTransactionFieldRequest extends FormRequest
             : ReviewableTransactionField::tryFrom((string) $field);
 
         return [
-            'expected_revision' => ['required', 'integer', 'min:1'],
             'resolution' => ['required', Rule::enum(TransactionFieldResolution::class)],
             'value' => [
                 'exclude_unless:resolution,'.TransactionFieldResolution::Correct->value,

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Ledger\LinkRefundToPurchase;
-use App\Exceptions\StaleTransactionRevision;
 use App\Http\Requests\LinkRefundToPurchaseRequest;
 use App\Models\Transaction;
 use Illuminate\Http\RedirectResponse;
@@ -30,9 +29,8 @@ class TransactionRefundLinkController extends Controller
                 owner: $request->user(),
                 refund: $refund,
                 purchase: $purchase,
-                expectedRevision: (int) $validated['expected_revision'],
             );
-        } catch (StaleTransactionRevision|InvalidArgumentException $exception) {
+        } catch (InvalidArgumentException $exception) {
             Inertia::flash('refund_link_error', $exception->getMessage());
 
             return back()->withErrors([

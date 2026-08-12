@@ -10,7 +10,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('the owner can record a confirmed manual purchase and see its exact total', function () {
+test('the owner can record a confirmed manual purchase in the ledger', function () {
     $owner = User::factory()->create();
 
     $this->actingAs($owner)
@@ -28,8 +28,7 @@ test('the owner can record a confirmed manual purchase and see its exact total',
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('transactions/index')
-            ->where('totals.USD', '12345')
-            ->where('totals.PEN', '0')
+            ->missing('totals')
             ->has('transactions', 1)
             ->where('transactions.0.occurred_on', '2026-07-24')
             ->where('transactions.0.amount_minor', '12345')
@@ -40,7 +39,7 @@ test('the owner can record a confirmed manual purchase and see its exact total',
         );
 });
 
-test('purchases and Refunds keep positive amounts and affect each currency total in opposite directions', function () {
+test('purchases and Refunds keep positive amounts and retain their kind in the ledger', function () {
     $owner = User::factory()->create();
     $this->actingAs($owner);
 
@@ -58,8 +57,7 @@ test('purchases and Refunds keep positive amounts and affect each currency total
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '10000')
-            ->where('totals.PEN', '9000')
+            ->missing('totals')
             ->has('transactions', 4)
             ->where('transactions.0.amount_minor', '876')
             ->where('transactions.0.kind', 'refund')
@@ -68,7 +66,7 @@ test('purchases and Refunds keep positive amounts and affect each currency total
         );
 });
 
-test('original currency totals remain exact beyond floating point safe integers', function () {
+test('ledger amounts remain exact beyond floating point safe integers', function () {
     $owner = User::factory()->create();
     $this->actingAs($owner);
 
@@ -85,8 +83,10 @@ test('original currency totals remain exact beyond floating point safe integers'
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '9007199254740991')
-            ->where('totals.PEN', '0'),
+            ->missing('totals')
+            ->has('transactions', 2)
+            ->where('transactions.0.amount_minor', '1')
+            ->where('transactions.1.amount_minor', '9007199254740992'),
         );
 });
 
@@ -148,7 +148,7 @@ test('the shared Ledger Action normalizes the merchant or description', function
     expect($transaction->merchant_description)->toBe('Neighborhood market');
 });
 
-test('the ledger read path returns only its documented latest 100 Transactions', function () {
+test('the ledger read path returns its first 25 Transactions with pagination metadata', function () {
     $owner = User::factory()->create();
 
     Transaction::factory()
@@ -159,7 +159,9 @@ test('the ledger read path returns only its documented latest 100 Transactions',
     $this->actingAs($owner)
         ->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->has('transactions', 100),
+            ->has('transactions', 25)
+            ->where('pagination.total', 101)
+            ->where('pagination.last_page', 5),
         );
 });
 
@@ -210,8 +212,7 @@ test('invalid manual Transaction input is rejected without affecting the ledger'
 
     $this->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totals.USD', '0')
-            ->where('totals.PEN', '0')
+            ->missing('totals')
             ->has('transactions', 0),
         );
 })->with([

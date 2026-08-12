@@ -14,14 +14,10 @@ export type ReviewField = {
 };
 
 export type CategoryAssignmentProvenance = {
-    source: 'owner' | 'linked_refund' | 'merchant_rule';
+    source: 'owner' | 'merchant_rule';
     owner: {
         id: number;
         name: string;
-    } | null;
-    linked_purchase: {
-        id: number;
-        merchant_description: string;
     } | null;
     merchant_rule: {
         id: number;
@@ -42,31 +38,6 @@ export type RelatedTransaction = {
     kind: TransactionKind;
     merchant_description: string;
     category_name: string | null;
-};
-
-export type DuplicateTransaction = RelatedTransaction & {
-    revision: number;
-    original_purchase_id: number | null;
-    has_linked_refunds: boolean;
-    has_receipt_breakdown: boolean;
-    protects_resolved_duplicate: boolean;
-    source_reference_count: number;
-    source_reference_fingerprint: string;
-    receipt_breakdown_fingerprint: string;
-};
-
-export type DuplicateRelationship = {
-    id: number;
-    revision: number;
-    status: 'suspected' | 'resolved';
-    resolved_at: string | null;
-    survivor_transaction_id: number | null;
-    voided_transaction_id: number | null;
-    resolution_idempotency_key: string;
-    reopen_idempotency_key: string;
-    other_transaction: RelatedTransaction;
-    first_transaction: DuplicateTransaction;
-    second_transaction: DuplicateTransaction;
 };
 
 export type ReceiptLineItem = {
@@ -94,8 +65,9 @@ export type SelectedTransaction = {
     currency: Currency;
     kind: TransactionKind;
     merchant_description: string;
+    payment_instrument_label: string | null;
+    payment_instrument_last_four: string | null;
     confirmed_at: string;
-    revision: number;
     voided_at: string | null;
     category: LedgerCategory | null;
     review: {
@@ -110,31 +82,19 @@ export type SelectedTransaction = {
     };
     original_purchase: RelatedTransaction | null;
     linked_refunds: RelatedTransaction[];
-    corrections: Array<{
-        id: number;
-        field: ReviewableFieldName;
-        field_label: string;
-        previous_value: string;
-        corrected_value: string;
-        transaction_revision: number;
-        created_at: string | null;
-    }>;
-    state_changes: Array<{
-        id: number;
-        operation: 'void' | 'restore';
-        result_revision: number;
-        result_voided_at: string | null;
-        created_at: string | null;
-    }>;
     source_reference_count: number;
     source_references: Array<{
         id: number;
         processing_outcome: string;
         created_at: string | null;
     }>;
-    duplicate_relationships: DuplicateRelationship[];
     receipt_breakdown: ReceiptBreakdown | null;
-    state_change_idempotency_key: string;
+    purchase_options: Array<{
+        id: number;
+        occurred_on: string;
+        merchant_description: string;
+        currency: Currency;
+    }>;
 };
 
 export type LedgerFilters = {
@@ -142,9 +102,10 @@ export type LedgerFilters = {
     date_from: string | null;
     date_to: string | null;
     currency: Currency | 'all';
+    kind: TransactionKind | 'all';
+    category_id: number | null;
     category_state: 'all' | 'categorized' | 'uncategorized';
     review_state: 'all' | 'outstanding' | 'clear';
     refund_relationship: 'all' | 'linked' | 'unlinked' | 'not_applicable';
     void_state: 'all' | 'active' | 'voided';
-    duplicate_status: 'all' | 'suspected' | 'resolved' | 'none';
 };

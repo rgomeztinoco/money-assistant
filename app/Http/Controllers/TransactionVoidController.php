@@ -3,8 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Ledger\ChangeTransactionVoidState;
-use App\Exceptions\IdempotencyKeyConflict;
-use App\Exceptions\StaleTransactionRevision;
 use App\Http\Requests\ChangeTransactionVoidStateRequest;
 use App\Models\Transaction;
 use App\TransactionVoidOperation;
@@ -38,20 +36,12 @@ class TransactionVoidController extends Controller
         Transaction $transaction,
         TransactionVoidOperation $operation,
     ): RedirectResponse {
-        $validated = $request->validated();
-
         try {
             $this->changeTransactionVoidState->handle(
                 owner: $request->user(),
                 transaction: $transaction,
                 operation: $operation,
-                expectedRevision: (int) $validated['expected_revision'],
-                idempotencyKey: $validated['idempotency_key'],
             );
-        } catch (StaleTransactionRevision $exception) {
-            return $this->stateErrorResponse('expected_revision', $exception);
-        } catch (IdempotencyKeyConflict $exception) {
-            return $this->stateErrorResponse('idempotency_key', $exception);
         } catch (InvalidArgumentException $exception) {
             return $this->stateErrorResponse('void_state', $exception);
         }

@@ -4,7 +4,6 @@ namespace App\Actions\Categorization;
 
 use App\CategoryAssignmentProvenance;
 use App\MerchantNormalizer;
-use App\Models\CategoryAssignment;
 use App\Models\MerchantRule;
 use App\Models\Transaction;
 use Illuminate\Database\Eloquent\Builder;
@@ -48,17 +47,8 @@ final class ApplyMerchantRuleToTransaction
             $matchingRule = $matchingRules->sole();
             $lockedTransaction->category_id = $matchingRule->category_id;
             $lockedTransaction->category_assignment_provenance = CategoryAssignmentProvenance::MerchantRule;
-            $lockedTransaction->revision++;
+            $lockedTransaction->merchant_rule_id = $matchingRule->id;
             $lockedTransaction->save();
-
-            CategoryAssignment::create([
-                'user_id' => $lockedTransaction->user_id,
-                'transaction_id' => $lockedTransaction->id,
-                'category_id' => $matchingRule->category_id,
-                'source' => CategoryAssignmentProvenance::MerchantRule,
-                'transaction_revision' => $lockedTransaction->revision,
-                'merchant_rule_id' => $matchingRule->id,
-            ]);
 
             return $lockedTransaction;
         }, 3);

@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Reporting\ReadSpendingSummary;
 use App\CategoryAssignmentProvenance;
 use App\Http\Middleware\RequirePasskeyConfirmation;
 use App\Models\Category;
@@ -89,10 +90,14 @@ test('renaming and moving a Category preserves its identity and updates historic
 
     $this->get(route('transactions.index', ['selected' => $transaction->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('selected_transaction.category.id', $category->id)
-            ->where('selected_transaction.category.name', 'Coffee Shops')
-            ->where('category_totals.0.category.name', 'Coffee Shops')
-            ->where('category_totals.1.category.name', 'Travel'));
+            ->missing('category_totals')
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.category.id', $category->id)
+                ->where('selected_transaction.category.name', 'Coffee Shops')));
+
+    $categoryTotals = collect(app(ReadSpendingSummary::class)->handle($owner)['category_totals']);
+
+    expect($categoryTotals->pluck('category.name')->all())->toContain('Coffee Shops', 'Travel');
 });
 
 test('retirement enforces blockers and referenced Categories cannot be permanently deleted', function () {
@@ -156,28 +161,26 @@ test('only a never-referenced Category can be deleted after fresh passkey authen
         ->and(Category::onlyTrashed()->find($category->id))->not->toBeNull();
 });
 
-test('a Category remains historically referenced after a Transaction returns to Uncategorized', function () {
+test('a Category can be deleted after its current Transaction assignment is cleared', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create();
 
     $this->actingAs($owner)
         ->put(route('transactions.category.update', $transaction), [
-            'expected_revision' => 1,
             'category_id' => $category->id,
         ])
         ->assertSessionHasNoErrors();
 
     $this->put(route('transactions.category.update', $transaction), [
-        'expected_revision' => 2,
         'category_id' => null,
     ])->assertSessionHasNoErrors();
 
     $this->withSession([RequirePasskeyConfirmation::SESSION_KEY => Date::now()->unix()])
         ->delete(route('categories.destroy', $category), ['expected_revision' => 1])
-        ->assertSessionHasErrors('category');
+        ->assertSessionHasNoErrors();
 
-    $this->assertModelExists($category);
+    expect(Category::find($category->id))->toBeNull();
 });
 
 test('reactivation preserves identity and rejects active sibling conflicts', function () {

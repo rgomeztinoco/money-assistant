@@ -3,7 +3,6 @@
 use App\Actions\Operations\RunCrashRecoveryFinancialRehearsal;
 use App\Jobs\CompleteDeploymentRehearsalProbe;
 use App\Models\Transaction;
-use App\Models\TransactionStateChange;
 use App\Models\User;
 use App\Operations\DeploymentRehearsal;
 use Illuminate\Console\Command;
@@ -132,8 +131,5 @@ test('a crash rehearsal exposes a durable in-flight probe and completes once aft
         ->where('kind', 'queued')
         ->value('completion_count'))->toBe(1)
         ->and($rehearsalTransaction->merchant_description)->toBe('Production trust crash rehearsal')
-        ->and($rehearsalTransaction->voided_at)->not->toBeNull()
-        ->and(TransactionStateChange::query()
-            ->whereBelongsTo($rehearsalTransaction, 'transaction')
-            ->count())->toBe(1);
+        ->and($rehearsalTransaction->voided_at)->not->toBeNull();
 });

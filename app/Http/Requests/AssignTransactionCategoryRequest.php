@@ -28,7 +28,6 @@ class AssignTransactionCategoryRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'expected_revision' => ['required', 'integer', 'min:1'],
             'category_id' => [
                 'nullable',
                 'integer',

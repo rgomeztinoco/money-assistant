@@ -32,11 +32,12 @@ test('the owner links a Refund and sees an excessive relationship in the Review 
     $page = visit('/transactions');
 
     $page
-        ->select('Original purchase for Store Refund', (string) $purchase->id)
-        ->press('Link Refund')
-        ->assertSee('Refund linked to its original purchase.')
-        ->assertSee('Linked to Original purchase')
-        ->click('Review Queue')
+        ->press('Inspect')
+        ->select('Edit original purchase', (string) $purchase->id)
+        ->press('Save Transaction')
+        ->assertSee('Transaction updated.');
+
+    visit('/review-queue')
         ->assertSee('Linked Refunds exceed the purchase')
         ->assertSee('The confirmed Refunds remain included.')
         ->assertNoJavaScriptErrors()

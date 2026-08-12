@@ -9,11 +9,8 @@ final class EnsureCategoryCanBeDeleted
 {
     public function handle(Category $category): void
     {
-        if ($category->transactions()->exists()
-            || $category->assignments()->exists()
-            || $category->previousAssignments()->exists()
-            || $category->lineItems()->exists()) {
-            throw new CategoryOperationBlocked('This Category has historical Transaction or Line Item assignments and must be retired instead.');
+        if ($category->transactions()->exists() || $category->lineItems()->exists()) {
+            throw new CategoryOperationBlocked('This Category is assigned to a Transaction or Line Item and must be retired instead.');
         }
 
         if ($category->merchantRules()->exists()) {

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Categorization\AssignCategoryToTransaction;
-use App\Exceptions\StaleTransactionRevision;
 use App\Http\Requests\AssignTransactionCategoryRequest;
 use App\Models\Transaction;
 use Illuminate\Http\RedirectResponse;
@@ -21,16 +20,11 @@ class TransactionCategoryController extends Controller
     ): RedirectResponse {
         $validated = $request->validated();
 
-        try {
-            $this->assignCategoryToTransaction->handle(
-                owner: $request->user(),
-                transactionId: $transaction->id,
-                expectedRevision: (int) $validated['expected_revision'],
-                categoryId: isset($validated['category_id']) ? (int) $validated['category_id'] : null,
-            );
-        } catch (StaleTransactionRevision $exception) {
-            return back()->withErrors(['expected_revision' => $exception->getMessage()]);
-        }
+        $this->assignCategoryToTransaction->handle(
+            owner: $request->user(),
+            transactionId: $transaction->id,
+            categoryId: isset($validated['category_id']) ? (int) $validated['category_id'] : null,
+        );
 
         Inertia::flash('toast', [
             'type' => 'success',

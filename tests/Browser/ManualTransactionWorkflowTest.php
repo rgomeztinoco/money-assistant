@@ -29,7 +29,7 @@ test('the owner records purchases and Refunds with exact USD and PEN totals', fu
         ->fill('Merchant or short description', 'USD Refund')
         ->select('Transaction kind', 'refund')
         ->press('Record Transaction')
-        ->assertSee('$ 100.00')
+        ->assertSee('$ 23.45')
         ->assertSee('USD Refund')
         ->fill('Amount in minor units', '9876')
         ->fill('Merchant or short description', 'PEN purchase')
@@ -42,7 +42,7 @@ test('the owner records purchases and Refunds with exact USD and PEN totals', fu
         ->fill('Merchant or short description', 'PEN Refund')
         ->select('Transaction kind', 'refund')
         ->press('Record Transaction')
-        ->assertSee('S/ 90.00')
+        ->assertSee('S/ 8.76')
         ->assertSee('PEN Refund')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
@@ -67,39 +67,12 @@ test('the owner can void and restore a Transaction explicitly from the ledger', 
         ->assertSee('$ 123.45')
         ->press('Void')
         ->assertSee('Transaction voided.')
-        ->assertSee('Voided Transactions')
+        ->assertSee('Voided')
         ->assertSee('Mistaken market entry')
-        ->assertSee('$ 0.00')
+        ->assertSee('$ 123.45')
         ->press('Restore')
         ->assertSee('Transaction restored.')
         ->assertSee('$ 123.45')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
-});
-
-test('the browser makes a stale void response explicit without changing the Transaction', function () {
-    $owner = User::factory()->create();
-    $transaction = Transaction::factory()
-        ->for($owner, 'owner')
-        ->create(['merchant_description' => 'Current market entry']);
-    $this->actingAs($owner);
-
-    $page = visit('/transactions');
-
-    $page
-        ->script(
-            "document.querySelector('input[name=\"expected_revision\"]').value = '2'",
-        );
-
-    $page
-        ->press('Void')
-        ->assertSee(
-            'This Transaction changed before its void state could be updated. Review the current ledger and try again.',
-        )
-        ->assertSee('Current market entry')
-        ->assertNoJavaScriptErrors()
-        ->assertNoConsoleLogs();
-
-    expect($transaction->refresh()->revision)->toBe(1)
-        ->and($transaction->voided_at)->toBeNull();
 });

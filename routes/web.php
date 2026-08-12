@@ -19,7 +19,6 @@ use App\Http\Controllers\ReportingCurrencyController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\SpendingNotificationRecoveryController;
 use App\Http\Controllers\SpendingNotificationRetryController;
-use App\Http\Controllers\SuspectedDuplicateResolutionController;
 use App\Http\Controllers\TransactionCategoryController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionFieldReviewController;
@@ -52,7 +51,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('category-targets/{category_target}/retirement', CategoryTargetRetirementController::class)
         ->name('category_targets.retirement.store');
     Route::resource('transactions', TransactionController::class)
-        ->only(['index', 'store']);
+        ->only(['index', 'store', 'update']);
     Route::resource('merchant-rules', MerchantRuleController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->names([
@@ -95,10 +94,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('transactions.void.store');
     Route::delete('transactions/{transaction}/void', [TransactionVoidController::class, 'destroy'])
         ->name('transactions.void.destroy');
-    Route::post('suspected-duplicates/{suspected_duplicate}/resolution', [SuspectedDuplicateResolutionController::class, 'store'])
-        ->name('suspected_duplicates.resolution.store');
-    Route::delete('suspected-duplicates/{suspected_duplicate}/resolution', [SuspectedDuplicateResolutionController::class, 'destroy'])
-        ->name('suspected_duplicates.resolution.destroy');
     Route::get('review-queue', ReviewQueueController::class)
         ->name('review_queue.index');
     Route::get(
