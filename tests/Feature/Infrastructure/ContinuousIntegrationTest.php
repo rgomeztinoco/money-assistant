@@ -45,7 +45,7 @@ test('CI keeps one focused infrastructure job without release publication or reh
         ->and(array_keys($workflow['jobs']))
         ->toBe($requiredContexts)
         ->and($productionStackSteps->get('Run focused infrastructure tests'))
-        ->toContain('ProductionStackTest.php')
+        ->toContain('ProductionStackTest.php', 'BackupRecoveryTest.php')
         ->and($workflowContents)
         ->not->toContain(
             'publish-release',

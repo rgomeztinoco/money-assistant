@@ -1,0 +1,22 @@
+#!/bin/sh
+
+set -eu
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+systemd_directory="${SYSTEMD_DIRECTORY:-/etc/systemd/system}"
+
+if [ "$(id -u)" -ne 0 ]; then
+    printf '%s\n' 'Run this installer as root.' >&2
+    exit 1
+fi
+
+install -d -m 0700 /var/backups/money-assistant
+install -m 0755 "${script_directory}/export-production-backup" /usr/local/sbin/export-production-backup
+install -m 0755 "${script_directory}/restore-production-backup" /usr/local/sbin/restore-production-backup
+install -m 0644 "${script_directory}/money-assistant-backup.service" "${systemd_directory}/money-assistant-backup.service"
+install -m 0644 "${script_directory}/money-assistant-backup.timer" "${systemd_directory}/money-assistant-backup.timer"
+
+systemctl daemon-reload
+systemctl enable --now money-assistant-backup.timer
+
+printf '%s\n' 'Encrypted daily database backups are enabled.'

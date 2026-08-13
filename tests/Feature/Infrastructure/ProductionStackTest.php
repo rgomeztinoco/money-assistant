@@ -82,7 +82,7 @@ test('deployment builds migrates and starts the healthy topology in order', func
 #!/bin/sh
 printf '%s\n' "$*" >> "$DEPLOYMENT_TEST_COMMAND_LOG"
 
-if [ "${DEPLOYMENT_TEST_FAIL_MIGRATION:-false}" = true ] && printf '%s' "$*" | grep -q 'run --rm migrate'; then
+if [ "${DEPLOYMENT_TEST_FAIL_MIGRATION:-false}" = true ] && printf '%s' "$*" | grep -q 'run --rm --no-deps migrate'; then
     exit 17
 fi
 SH);
@@ -108,8 +108,8 @@ SH);
             ->and($commands[0])->toContain('config --quiet')
             ->and($commands[1])->toContain('build --pull migrate')
             ->and($commands[2])->toContain('up --detach --wait postgres')
-            ->and($commands[3])->toContain('run --rm migrate')
-            ->and($commands[4])->toContain('up --detach --wait --remove-orphans web worker scheduler proxy');
+            ->and($commands[3])->toContain('run --rm --no-deps migrate')
+            ->and($commands[4])->toContain('up --detach --wait --remove-orphans --no-deps web worker scheduler proxy');
 
         file_put_contents($commandLog, '');
         $failedDeployment = new Process([base_path('deploy-production')], base_path(), [
@@ -119,6 +119,7 @@ SH);
         $failedDeployment->run();
 
         expect($failedDeployment->getExitCode())->toBe(17)
+            ->and($failedDeployment->getOutput())->not->toContain('completed successfully')
             ->and(file_get_contents($commandLog))->not->toContain('web worker scheduler proxy');
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
