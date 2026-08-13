@@ -4,7 +4,6 @@ namespace App\Actions\Ledger;
 
 use App\ExactInteger;
 use App\Models\Transaction;
-use App\Models\User;
 use App\RefundRelationshipReviewReason;
 use App\TransactionKind;
 use Illuminate\Support\Facades\DB;
@@ -13,24 +12,20 @@ use InvalidArgumentException;
 class LinkRefundToPurchase
 {
     public function handle(
-        User $owner,
         Transaction $refund,
         Transaction $purchase,
     ): Transaction {
         return DB::transaction(function () use (
-            $owner,
             $refund,
             $purchase,
         ): Transaction {
             $currentPurchase = Transaction::query()
                 ->whereKey($purchase->getKey())
-                ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
                 ->firstOrFail();
 
             $currentRefund = Transaction::query()
                 ->whereKey($refund->getKey())
-                ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
                 ->firstOrFail();
 

@@ -4,7 +4,6 @@ namespace App\Actions\Dashboard;
 
 use App\Actions\NotificationIngestion\ReadGmailConnectionStatus;
 use App\Models\ParserProfile;
-use App\Models\User;
 
 final class ReadOperatingStatus
 {
@@ -21,11 +20,10 @@ final class ReadOperatingStatus
      *     exceptions: list<array<string, bool|int|string|null>>
      * }
      */
-    public function handle(User $owner): array
+    public function handle(): array
     {
-        $gmail = $this->readGmailConnectionStatus->handle($owner);
+        $gmail = $this->readGmailConnectionStatus->handle();
         $enabledParserProfileCount = ParserProfile::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereNotNull('enabled_at')
             ->count();
         $exceptions = [];

@@ -4,7 +4,6 @@ namespace App\Actions\Monitoring;
 
 use App\Actions\NotificationIngestion\ReadGmailConnectionStatus;
 use App\Listeners\RecordOwnerLoginLockout;
-use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -36,10 +35,7 @@ final class ReadApplicationMonitoringSnapshot
     /** @return array{key: string, severity: 'warning', state: 'healthy'|'failed', grace_seconds: int, message: string} */
     private function gmailStatus(): array
     {
-        $owner = User::query()->oldest('id')->first();
-        $state = $owner === null
-            ? 'disconnected'
-            : $this->readGmailConnectionStatus->handle($owner)['state'];
+        $state = $this->readGmailConnectionStatus->handle()['state'];
         $isHealthy = $state === 'connected';
 
         return [

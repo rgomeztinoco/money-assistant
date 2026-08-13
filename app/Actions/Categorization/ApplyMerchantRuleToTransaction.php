@@ -27,7 +27,6 @@ final class ApplyMerchantRuleToTransaction
             }
 
             $matchingRules = MerchantRule::query()
-                ->where('user_id', $lockedTransaction->user_id)
                 ->where('merchant_key', $this->merchantNormalizer->normalize($lockedTransaction->merchant_description))
                 ->where('enabled', true)
                 ->whereHas('category', fn (Builder $query) => $query->whereNull('archived_at'))

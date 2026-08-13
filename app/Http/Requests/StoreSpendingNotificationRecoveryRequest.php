@@ -20,8 +20,7 @@ class StoreSpendingNotificationRecoveryRequest extends FormRequest
         $reference = $this->route('spending_notification_reference');
 
         return $this->user() !== null
-            && $reference instanceof SpendingNotificationReference
-            && $reference->user_id === $this->user()->getKey();
+            && $reference instanceof SpendingNotificationReference;
     }
 
     /**

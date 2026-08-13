@@ -6,7 +6,6 @@ use App\Currency;
 use App\ExactInteger;
 use App\Models\Category;
 use App\Models\Transaction;
-use App\Models\User;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
@@ -28,13 +27,11 @@ final class ReadCurrencyReport
      * }
      */
     public function handle(
-        User $owner,
         Currency $currency,
         CarbonImmutable $dateFrom,
         CarbonImmutable $dateTo,
     ): array {
         $categories = Category::query()
-            ->whereBelongsTo($owner, 'owner')
             ->orderBy('name')
             ->get(['id', 'parent_id', 'name', 'archived_at']);
         $categoriesById = $categories->keyBy('id');
@@ -44,7 +41,6 @@ final class ReadCurrencyReport
         $categoryAmounts = [];
 
         $transactions = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
             ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
@@ -92,7 +88,7 @@ final class ReadCurrencyReport
                 'date_to' => $dateTo->toDateString(),
                 'total_minor' => $periodTotal->value(),
             ],
-            'monthly_history' => $this->monthlyHistory($owner, $currency, $dateFrom, $dateTo),
+            'monthly_history' => $this->monthlyHistory($currency, $dateFrom, $dateTo),
             'category_groups' => $this->categoryGroups($categories, $categoryAmounts),
         ];
     }
@@ -136,13 +132,11 @@ final class ReadCurrencyReport
 
     /** @return list<ReportMonthData> */
     private function monthlyHistory(
-        User $owner,
         Currency $currency,
         CarbonImmutable $dateFrom,
         CarbonImmutable $dateTo,
     ): array {
         $earliestOccurredOn = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
             ->where('occurred_on', '<=', $dateTo->toDateString())
@@ -164,7 +158,6 @@ final class ReadCurrencyReport
         }
 
         $transactions = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
             ->whereBetween('occurred_on', [$historyStart->toDateString(), $dateTo->toDateString()])

@@ -14,8 +14,7 @@ final class UpdateReceiptBreakdownRequest extends FormRequest
     {
         $transaction = $this->route('transaction');
 
-        return $transaction instanceof Transaction
-            && $transaction->user_id === $this->user()->getKey();
+        return $this->user() !== null && $transaction instanceof Transaction;
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */
@@ -45,7 +44,6 @@ final class UpdateReceiptBreakdownRequest extends FormRequest
                 'nullable',
                 'integer',
                 Rule::exists('categories', 'id')
-                    ->where('user_id', $this->user()->getKey())
                     ->whereNull('archived_at'),
             ],
         ];

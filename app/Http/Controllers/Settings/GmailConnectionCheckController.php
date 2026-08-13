@@ -18,7 +18,7 @@ class GmailConnectionCheckController extends Controller
     public function __invoke(Request $request, CheckGmailConnection $checkConnection): RedirectResponse
     {
         try {
-            $connection = $checkConnection->handle($request->user());
+            $connection = $checkConnection->handle();
         } catch (GmailReauthorizationRequired) {
             Inertia::flash('toast', [
                 'type' => 'error',

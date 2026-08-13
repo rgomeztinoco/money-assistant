@@ -5,7 +5,6 @@ namespace App\Actions\NotificationIngestion;
 use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailRequestFailed;
 use App\Models\GmailMessageDiscovery;
-use App\Models\User;
 
 final class ReadParserProfileSourceMessages
 {
@@ -23,14 +22,10 @@ final class ReadParserProfileSourceMessages
      *     subject: string
      * }>
      */
-    public function handle(User $owner): array
+    public function handle(): array
     {
         $discoveries = GmailMessageDiscovery::query()
             ->whereNull('processed_at')
-            ->whereHas(
-                'gmailConnection',
-                fn ($query) => $query->whereBelongsTo($owner, 'owner'),
-            )
             ->with('gmailConnection')
             ->latest()
             ->limit(20)

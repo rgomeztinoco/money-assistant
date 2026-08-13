@@ -8,7 +8,6 @@ use App\Models\GmailMessageDiscovery;
 use App\Models\ParserProfile;
 use App\Models\SpendingNotificationFormat;
 use App\Models\SpendingNotificationReference;
-use App\Models\User;
 use App\SpendingNotificationExtraction;
 use App\SpendingNotificationParser;
 use App\SpendingNotificationProcessingOutcome;
@@ -23,13 +22,11 @@ final class ProcessSpendingNotification
     ) {}
 
     public function handle(
-        User $owner,
         GmailMessageDiscovery $discovery,
         GmailMessage $message,
         bool $retryUnsupported = false,
     ): SpendingNotificationReference {
         return DB::transaction(function () use (
-            $owner,
             $discovery,
             $message,
             $retryUnsupported,
@@ -40,7 +37,6 @@ final class ProcessSpendingNotification
                 ->findOrFail($discovery->id);
             $accountIdentity = $discovery->gmailConnection->gmail_account_identity;
             $existingReference = SpendingNotificationReference::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->where('gmail_account_identity', $accountIdentity)
                 ->where('message_id', $message->messageId)
                 ->first();
@@ -55,7 +51,7 @@ final class ProcessSpendingNotification
                 );
             }
 
-            $profiles = $this->enabledProfiles($owner);
+            $profiles = $this->enabledProfiles();
             $senderProfiles = array_values(array_filter(
                 $profiles,
                 fn (ParserProfile $profile): bool => $this->parser
@@ -64,7 +60,6 @@ final class ProcessSpendingNotification
 
             if ($senderProfiles === []) {
                 return $this->recordOutcome(
-                    owner: $owner,
                     discovery: $discovery,
                     accountIdentity: $accountIdentity,
                     messageId: $message->messageId,
@@ -80,7 +75,6 @@ final class ProcessSpendingNotification
 
             if ($trustedProfiles === []) {
                 return $this->recordOutcome(
-                    owner: $owner,
                     discovery: $discovery,
                     accountIdentity: $accountIdentity,
                     messageId: $message->messageId,
@@ -92,7 +86,6 @@ final class ProcessSpendingNotification
 
             if ($matches === []) {
                 return $this->recordOutcome(
-                    owner: $owner,
                     discovery: $discovery,
                     accountIdentity: $accountIdentity,
                     messageId: $message->messageId,
@@ -102,7 +95,6 @@ final class ProcessSpendingNotification
 
             if (count($matches) !== 1) {
                 return $this->recordOutcome(
-                    owner: $owner,
                     discovery: $discovery,
                     accountIdentity: $accountIdentity,
                     messageId: $message->messageId,
@@ -115,7 +107,6 @@ final class ProcessSpendingNotification
 
             if ($match['format']->purpose->isIgnored()) {
                 return $this->recordOutcome(
-                    owner: $owner,
                     discovery: $discovery,
                     accountIdentity: $accountIdentity,
                     messageId: $message->messageId,
@@ -126,7 +117,6 @@ final class ProcessSpendingNotification
 
             if ($match['extraction'] === null) {
                 return $this->recordOutcome(
-                    owner: $owner,
                     discovery: $discovery,
                     accountIdentity: $accountIdentity,
                     messageId: $message->messageId,
@@ -137,7 +127,6 @@ final class ProcessSpendingNotification
 
             $extraction = $match['extraction'];
             $transaction = $this->recordTransaction->handle(
-                owner: $owner,
                 occurredOn: $extraction->occurredOn,
                 amountMinor: $extraction->amountMinor,
                 currency: $extraction->currency,
@@ -147,7 +136,6 @@ final class ProcessSpendingNotification
             );
 
             return $this->recordOutcome(
-                owner: $owner,
                 discovery: $discovery,
                 accountIdentity: $accountIdentity,
                 messageId: $message->messageId,
@@ -206,10 +194,9 @@ final class ProcessSpendingNotification
     }
 
     /** @return list<ParserProfile> */
-    private function enabledProfiles(User $owner): array
+    private function enabledProfiles(): array
     {
         return array_values(ParserProfile::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereNotNull('enabled_at')
             ->with(['formats' => fn ($query) => $query
                 ->whereNotNull('enabled_at')
@@ -221,7 +208,6 @@ final class ProcessSpendingNotification
     }
 
     private function recordOutcome(
-        User $owner,
         GmailMessageDiscovery $discovery,
         string $accountIdentity,
         string $messageId,
@@ -230,7 +216,6 @@ final class ProcessSpendingNotification
         ?int $transactionId = null,
     ): SpendingNotificationReference {
         $reference = SpendingNotificationReference::query()
-            ->whereBelongsTo($owner, 'owner')
             ->where('gmail_account_identity', $accountIdentity)
             ->where('message_id', $messageId)
             ->first();
@@ -238,7 +223,6 @@ final class ProcessSpendingNotification
             ? 1
             : $reference->attempt_count + 1;
         $attributes = [
-            'user_id' => $owner->getKey(),
             'transaction_id' => $transactionId,
             'gmail_account_identity' => $accountIdentity,
             'message_id' => $messageId,

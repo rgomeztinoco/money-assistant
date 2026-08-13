@@ -9,7 +9,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 test('the owner can view and create an exact Merchant Rule', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $category = Category::factory()->create(['name' => 'Groceries']);
 
     $this->actingAs($owner)
         ->get(route('merchant_rules.index'))
@@ -32,7 +32,6 @@ test('the owner can view and create an exact Merchant Rule', function () {
     $rule = MerchantRule::query()->sole();
 
     expect($rule)
-        ->user_id->toBe($owner->id)
         ->category_id->toBe($category->id)
         ->merchant->toBe('CAFÉ—Central!!!')
         ->merchant_key->toBe('café central')
@@ -41,9 +40,9 @@ test('the owner can view and create an exact Merchant Rule', function () {
 
 test('the owner can edit disable enable and delete a Merchant Rule', function () {
     $owner = User::factory()->create();
-    $firstCategory = Category::factory()->for($owner, 'owner')->create();
-    $secondCategory = Category::factory()->for($owner, 'owner')->create();
-    $rule = MerchantRule::factory()->for($owner, 'owner')->for($firstCategory)->create([
+    $firstCategory = Category::factory()->create();
+    $secondCategory = Category::factory()->create();
+    $rule = MerchantRule::factory()->for($firstCategory)->create([
         'merchant' => 'Old Merchant',
         'merchant_key' => 'old merchant',
     ]);
@@ -82,9 +81,9 @@ test('the owner can edit disable enable and delete a Merchant Rule', function ()
     $this->assertSoftDeleted($rule);
 });
 
-test('a Merchant Rule requires an active Category owned by the owner', function () {
+test('a Merchant Rule requires an active Category', function () {
     $owner = User::factory()->create();
-    $retiredCategory = Category::factory()->for($owner, 'owner')->create([
+    $retiredCategory = Category::factory()->create([
         'archived_at' => now(),
     ]);
     $this->actingAs($owner);
@@ -104,7 +103,7 @@ test('a Merchant Rule requires an active Category owned by the owner', function 
 
 test('the complete normalized merchant kind and currency scope is unique', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
+    $category = Category::factory()->create();
     $this->actingAs($owner);
 
     $this->post(route('merchant_rules.store'), [
@@ -136,14 +135,14 @@ test('the complete normalized merchant kind and currency scope is unique', funct
 
 test('overlapping scopes cannot be enabled at the same time', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    MerchantRule::factory()->for($owner, 'owner')->for($category)->create([
+    $category = Category::factory()->create();
+    MerchantRule::factory()->for($category)->create([
         'merchant' => 'Overlap Merchant',
         'merchant_key' => 'overlap merchant',
         'transaction_kind' => null,
         'currency' => 'PEN',
     ]);
-    $scopedRule = MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create([
+    $scopedRule = MerchantRule::factory()->for($category)->disabled()->create([
         'merchant' => 'Overlap Merchant',
         'merchant_key' => 'overlap merchant',
         'transaction_kind' => 'purchase',

@@ -30,7 +30,7 @@ class ReviewQueueController extends Controller
         ];
         $ledger = $this->readLedger->handle($request->user(), $filters);
         $reviewQueue = Arr::except(
-            $this->readReviewQueue->handle($request->user()),
+            $this->readReviewQueue->handle(),
             ['transactions'],
         );
         $selectedTransactionId = isset($validated['selected']) ? (int) $validated['selected'] : null;
@@ -44,7 +44,7 @@ class ReviewQueueController extends Controller
             [
                 ...$ledger,
                 ...$reviewQueue,
-                'category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()),
+                'category_options' => $this->readCategoryTaxonomy->activeOptions(),
                 'workspace' => ['mode' => 'review_queue'],
                 'stale_transaction' => $request->session()->get('stale_transaction'),
                 'selected_transaction_id' => $selectedTransactionId,

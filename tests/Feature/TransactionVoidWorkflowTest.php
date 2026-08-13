@@ -30,7 +30,6 @@ test('legacy Transaction history and duplicate persistence surfaces are absent',
 test('the owner can void a Transaction without a revision or idempotency contract', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create(['amount_minor' => 12345]);
@@ -62,7 +61,6 @@ test('restoring the same Transaction returns exactly one contribution to the led
 ) {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
-        ->for($owner, 'owner')
         ->create([
             'amount_minor' => 12345,
             'kind' => $kind,
@@ -95,7 +93,7 @@ test('restoring the same Transaction returns exactly one contribution to the led
 
 test('void and restore reject operations that do not change current state', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+    $transaction = Transaction::factory()->create();
 
     $this->actingAs($owner)
         ->post(route('transactions.void.store', $transaction))

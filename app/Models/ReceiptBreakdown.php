@@ -12,27 +12,17 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
  * @property int $transaction_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable([
-    'user_id',
     'transaction_id',
 ])]
 final class ReceiptBreakdown extends Model
 {
     /** @use HasFactory<ReceiptBreakdownFactory> */
     use HasFactory;
-
-    /**
-     * @return BelongsTo<User, $this>
-     */
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
 
     /**
      * @return BelongsTo<Transaction, $this>

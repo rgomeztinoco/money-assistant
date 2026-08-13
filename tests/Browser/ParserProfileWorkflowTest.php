@@ -58,7 +58,7 @@ test('the owner creates a deterministic Parser Profile from a transient Gmail pr
 
 test('the owner manages current profiles and formats from the web interface', function () {
     $owner = User::factory()->create();
-    $profile = ParserProfile::factory()->for($owner, 'owner')->create([
+    $profile = ParserProfile::factory()->create([
         'name' => 'Bank card alerts',
     ]);
     SpendingNotificationFormat::factory()->for($profile, 'profile')->create([
@@ -89,7 +89,7 @@ test('the owner manages current profiles and formats from the web interface', fu
 function browserParserSource(): array
 {
     $owner = User::factory()->create();
-    $connection = GmailConnection::factory()->for($owner, 'owner')->create();
+    $connection = GmailConnection::factory()->create();
     $discovery = GmailMessageDiscovery::factory()
         ->for($connection, 'gmailConnection')
         ->create(['message_id' => 'browser-profile-source']);

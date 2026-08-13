@@ -21,8 +21,7 @@ class UpdateTransactionRequest extends FormRequest
     {
         $transaction = $this->route('transaction');
 
-        return $transaction instanceof Transaction
-            && $transaction->user_id === $this->user()?->getKey();
+        return $this->user() !== null && $transaction instanceof Transaction;
     }
 
     /**
@@ -54,14 +53,12 @@ class UpdateTransactionRequest extends FormRequest
                 'nullable',
                 'integer',
                 Rule::exists('categories', 'id')
-                    ->where('user_id', $this->user()->getKey())
                     ->whereNull('archived_at'),
             ],
             'original_purchase_id' => [
                 'nullable',
                 'integer',
                 Rule::exists('transactions', 'id')
-                    ->where('user_id', $this->user()->getKey())
                     ->where('kind', TransactionKind::Purchase->value)
                     ->whereNull('voided_at'),
             ],

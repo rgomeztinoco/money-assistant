@@ -5,21 +5,19 @@ namespace App\Actions\Reporting;
 use App\Currency;
 use App\ExactInteger;
 use App\Models\Transaction;
-use App\Models\User;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 
 final class ReadCurrencyTotals
 {
     /** @return array{USD: string, PEN: string} */
-    public function handle(User $owner, CarbonImmutable $dateFrom, CarbonImmutable $dateTo): array
+    public function handle(CarbonImmutable $dateFrom, CarbonImmutable $dateTo): array
     {
         $totals = [
             Currency::Usd->value => ExactInteger::from(0),
             Currency::Pen->value => ExactInteger::from(0),
         ];
         $transactions = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
             ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
             ->select(['id', 'amount_minor', 'currency', 'kind'])

@@ -12,8 +12,7 @@ final class DeleteReceiptBreakdownRequest extends FormRequest
     {
         $transaction = $this->route('transaction');
 
-        return $transaction instanceof Transaction
-            && $transaction->user_id === $this->user()->getKey();
+        return $this->user() !== null && $transaction instanceof Transaction;
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */

@@ -16,8 +16,7 @@ class AssignTransactionCategoryRequest extends FormRequest
     {
         $transaction = $this->route('transaction');
 
-        return $transaction instanceof Transaction
-            && $transaction->user_id === $this->user()->getKey();
+        return $this->user() !== null && $transaction instanceof Transaction;
     }
 
     /**
@@ -32,7 +31,6 @@ class AssignTransactionCategoryRequest extends FormRequest
                 'nullable',
                 'integer',
                 Rule::exists('categories', 'id')
-                    ->where('user_id', $this->user()->getKey())
                     ->whereNull('archived_at'),
             ],
         ];

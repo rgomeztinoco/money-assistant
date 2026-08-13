@@ -23,7 +23,6 @@ class TransactionFieldReviewController extends Controller
         $resolution = TransactionFieldResolution::from($validated['resolution']);
 
         $this->resolveTransactionField->handle(
-            owner: $request->user(),
             transaction: $transaction,
             field: $field,
             resolution: $resolution,

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Category;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
@@ -16,11 +17,11 @@ test('an operator can provision the Owner Account', function () {
     expect($owner->name)->toBe('Ricardo')
         ->and($owner->email)->toBe('owner@example.com')
         ->and(Hash::check('a-secure-recovery-password', $owner->password))->toBeTrue()
-        ->and($owner->categories()->count())->toBe(44)
-        ->and($owner->categories()->whereNull('parent_id')->count())->toBe(11)
-        ->and($owner->categories()->where('name', 'Other')->exists())->toBeFalse();
+        ->and(Category::query()->count())->toBe(44)
+        ->and(Category::query()->whereNull('parent_id')->count())->toBe(11)
+        ->and(Category::query()->where('name', 'Other')->exists())->toBeFalse();
 
-    $paths = $owner->categories()
+    $paths = Category::query()
         ->with('parent:id,name')
         ->get()
         ->map(fn ($category): string => $category->parent === null

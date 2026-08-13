@@ -3,7 +3,6 @@
 namespace App\Actions\Categorization;
 
 use App\Models\Category;
-use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -12,20 +11,18 @@ use Illuminate\Validation\ValidationException;
 final class CreateCategory
 {
     public function handle(
-        User $owner,
         string $name,
         ?int $parentId,
     ): Category {
         $name = Str::squish($name);
 
         try {
-            return DB::transaction(function () use ($owner, $name, $parentId): Category {
-                $parent = $this->activeParent($owner, $parentId);
+            return DB::transaction(function () use ($name, $parentId): Category {
+                $parent = $this->activeParent($parentId);
 
-                $this->ensureNameAvailable($owner, $name, $parent?->id);
+                $this->ensureNameAvailable($name, $parent?->id);
 
                 $category = Category::query()->create([
-                    'user_id' => $owner->getKey(),
                     'parent_id' => $parent?->id,
                     'name' => $name,
                 ]);
@@ -43,14 +40,13 @@ final class CreateCategory
         }
     }
 
-    private function activeParent(User $owner, ?int $parentId): ?Category
+    private function activeParent(?int $parentId): ?Category
     {
         if ($parentId === null) {
             return null;
         }
 
         $parent = Category::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereKey($parentId)
             ->whereNull('parent_id')
             ->whereNull('archived_at')
@@ -59,17 +55,16 @@ final class CreateCategory
 
         if ($parent === null) {
             throw ValidationException::withMessages([
-                'parent_id' => 'Choose an active top-level Category owned by you.',
+                'parent_id' => 'Choose an active top-level Category.',
             ]);
         }
 
         return $parent;
     }
 
-    private function ensureNameAvailable(User $owner, string $name, ?int $parentId): void
+    private function ensureNameAvailable(string $name, ?int $parentId): void
     {
         $exists = Category::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereNull('archived_at')
             ->whereRaw('lower(name) = lower(?)', [$name])
             ->when(

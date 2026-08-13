@@ -3,7 +3,6 @@
 namespace App\Actions\Categorization;
 
 use App\Models\Category;
-use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -12,7 +11,6 @@ use Illuminate\Validation\ValidationException;
 final class UpdateCategory
 {
     public function handle(
-        User $owner,
         int $categoryId,
         string $name,
         ?int $parentId,
@@ -20,9 +18,8 @@ final class UpdateCategory
         $name = Str::squish($name);
 
         try {
-            return DB::transaction(function () use ($owner, $categoryId, $name, $parentId): Category {
+            return DB::transaction(function () use ($categoryId, $name, $parentId): Category {
                 $category = Category::query()
-                    ->whereBelongsTo($owner, 'owner')
                     ->whereKey($categoryId)
                     ->lockForUpdate()
                     ->firstOrFail();
@@ -33,10 +30,10 @@ final class UpdateCategory
                     ]);
                 }
 
-                $parent = $this->activeParent($owner, $parentId, $category->id);
+                $parent = $this->activeParent($parentId, $category->id);
 
                 if ($category->archived_at === null) {
-                    $this->ensureNameAvailable($owner, $category, $name, $parent?->id);
+                    $this->ensureNameAvailable($category, $name, $parent?->id);
                 }
 
                 $category->fill([
@@ -57,14 +54,13 @@ final class UpdateCategory
         }
     }
 
-    private function activeParent(User $owner, ?int $parentId, int $categoryId): ?Category
+    private function activeParent(?int $parentId, int $categoryId): ?Category
     {
         if ($parentId === null) {
             return null;
         }
 
         $parent = Category::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereKey($parentId)
             ->whereKeyNot($categoryId)
             ->whereNull('parent_id')
@@ -74,17 +70,16 @@ final class UpdateCategory
 
         if ($parent === null) {
             throw ValidationException::withMessages([
-                'parent_id' => 'Choose an active top-level Category owned by you.',
+                'parent_id' => 'Choose an active top-level Category.',
             ]);
         }
 
         return $parent;
     }
 
-    private function ensureNameAvailable(User $owner, Category $category, string $name, ?int $parentId): void
+    private function ensureNameAvailable(Category $category, string $name, ?int $parentId): void
     {
         $exists = Category::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereKeyNot($category->id)
             ->whereNull('archived_at')
             ->whereRaw('lower(name) = lower(?)', [$name])

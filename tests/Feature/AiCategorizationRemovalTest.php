@@ -69,8 +69,8 @@ test('a Transaction without a deterministic rule stays Uncategorized in the Revi
 test('a deterministic Merchant Rule still categorizes a future Transaction', function () {
     Queue::fake();
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    $merchantRule = MerchantRule::factory()->for($owner, 'owner')->for($category)->create([
+    $category = Category::factory()->create();
+    $merchantRule = MerchantRule::factory()->for($category)->create([
         'category_id' => $category->id,
         'merchant' => 'Rule Merchant',
         'merchant_key' => app(MerchantNormalizer::class)->normalize('Rule Merchant'),
@@ -95,7 +95,6 @@ test('a deterministic Merchant Rule still categorizes a future Transaction', fun
 function recordTransactionWithoutAi(User $owner, string $merchantDescription): Transaction
 {
     return app(RecordManualTransaction::class)->handle(
-        owner: $owner,
         occurredOn: CarbonImmutable::parse('2026-08-10'),
         amountMinor: 1_250,
         currency: Currency::Pen,

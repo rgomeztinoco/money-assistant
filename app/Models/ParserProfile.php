@@ -7,13 +7,11 @@ use Database\Factories\ParserProfileFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
  * @property string $name
  * @property string $trusted_sender_address
  * @property string $trusted_sender_domain
@@ -24,7 +22,6 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  */
 #[Fillable([
-    'user_id',
     'name',
     'trusted_sender_address',
     'trusted_sender_domain',
@@ -36,12 +33,6 @@ class ParserProfile extends Model
 {
     /** @use HasFactory<ParserProfileFactory> */
     use HasFactory;
-
-    /** @return BelongsTo<User, $this> */
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
 
     /** @return HasMany<SpendingNotificationFormat, $this> */
     public function formats(): HasMany

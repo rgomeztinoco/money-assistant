@@ -60,7 +60,7 @@ class GmailAuthorizationController extends Controller
         abort_unless(is_string($code) && $code !== '', 419);
 
         try {
-            $completeAuthorization->handle($request->user(), $code);
+            $completeAuthorization->handle($code);
         } catch (GmailRequestFailed) {
             Inertia::flash('toast', [
                 'type' => 'error',

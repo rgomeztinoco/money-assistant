@@ -16,10 +16,7 @@ class ParserProfileSourceMessageController extends Controller
         GmailMessageDiscovery $gmailMessageDiscovery,
         ReadParserProfileSourceMessage $readSourceMessage,
     ): Response {
-        $source = $readSourceMessage->handle(
-            $request->user(),
-            $gmailMessageDiscovery,
-        );
+        $source = $readSourceMessage->handle($gmailMessageDiscovery);
 
         return Inertia::render('parser-profiles/create', [
             'source' => [
@@ -27,7 +24,6 @@ class ParserProfileSourceMessageController extends Controller
                 ...$source,
             ],
             'profiles' => ParserProfile::query()
-                ->whereBelongsTo($request->user(), 'owner')
                 ->with(['formats' => fn ($query) => $query->oldest('id')])
                 ->latest()
                 ->get(['id', 'name'])

@@ -3,7 +3,6 @@
 namespace App\Actions\Categorization;
 
 use App\Models\Category;
-use App\Models\User;
 
 final class ReadCategoryTaxonomy
 {
@@ -17,13 +16,11 @@ final class ReadCategoryTaxonomy
      *     children: list<array{id: int, parent_id: int|null, name: string, archived_at: string|null, transaction_count: int}>
      * }>
      */
-    public function handle(User $owner): array
+    public function handle(): array
     {
         $categories = Category::query()
-            ->whereBelongsTo($owner, 'owner')
             ->select([
                 'id',
-                'user_id',
                 'parent_id',
                 'name',
                 'archived_at',
@@ -50,15 +47,14 @@ final class ReadCategoryTaxonomy
     /**
      * @return list<array{id: int, path: string}>
      */
-    public function activeOptions(User $owner): array
+    public function activeOptions(): array
     {
         $categories = Category::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereNull('archived_at')
             ->where(fn ($query) => $query
                 ->whereNull('parent_id')
                 ->orWhereHas('parent', fn ($query) => $query->whereNull('archived_at')))
-            ->select(['id', 'user_id', 'parent_id', 'name'])
+            ->select(['id', 'parent_id', 'name'])
             ->with('parent:id,name')
             ->orderByRaw('lower(name)')
             ->get();

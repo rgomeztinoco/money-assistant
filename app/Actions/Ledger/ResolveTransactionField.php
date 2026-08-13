@@ -5,7 +5,6 @@ namespace App\Actions\Ledger;
 use App\ExactInteger;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
-use App\Models\User;
 use App\ReviewableTransactionField;
 use App\TransactionFieldResolution;
 use Illuminate\Support\Facades\DB;
@@ -14,14 +13,12 @@ use InvalidArgumentException;
 class ResolveTransactionField
 {
     public function handle(
-        User $owner,
         Transaction $transaction,
         ReviewableTransactionField $field,
         TransactionFieldResolution $resolution,
         mixed $correctedValue = null,
     ): Transaction {
         return DB::transaction(function () use (
-            $owner,
             $transaction,
             $field,
             $resolution,
@@ -29,7 +26,6 @@ class ResolveTransactionField
         ): Transaction {
             $currentTransaction = Transaction::query()
                 ->whereKey($transaction->getKey())
-                ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
                 ->firstOrFail();
 

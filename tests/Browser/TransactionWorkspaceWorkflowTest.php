@@ -12,9 +12,8 @@ beforeEach(function () {
 
 test('filters, selection, and scroll context persist while directly editing a Transaction in the inspector', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
+    $category = Category::factory()->create();
     Transaction::factory()
-        ->for($owner, 'owner')
         ->provisional([ReviewableTransactionField::MerchantDescription])
         ->create([
             'category_id' => $category->id,
@@ -22,7 +21,7 @@ test('filters, selection, and scroll context persist while directly editing a Tr
             'merchant_description' => 'Neighborhood market',
             'occurred_on' => '2026-07-20',
         ]);
-    Transaction::factory()->for($owner, 'owner')->create([
+    Transaction::factory()->create([
         'merchant_description' => 'Unrelated pharmacy',
         'occurred_on' => '2026-07-21',
     ]);
@@ -69,7 +68,6 @@ test('filters, selection, and scroll context persist while directly editing a Tr
 test('the Review Queue inspector can be dismissed without immediately reopening', function () {
     $owner = User::factory()->create();
     Transaction::factory()
-        ->for($owner, 'owner')
         ->provisional([ReviewableTransactionField::MerchantDescription])
         ->create(['merchant_description' => 'Review me']);
     $this->actingAs($owner);

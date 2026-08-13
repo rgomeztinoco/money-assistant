@@ -6,7 +6,6 @@ use App\ExactInteger;
 use App\Models\Category;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
-use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -16,11 +15,10 @@ final class SaveReceiptBreakdown
     /**
      * @param  list<array{description: string, quantity: string|null, unit_price_minor: int|null, line_total_minor: int, category_id: int|null}>  $lineItems
      */
-    public function handle(User $owner, Transaction $transaction, array $lineItems): ReceiptBreakdown
+    public function handle(Transaction $transaction, array $lineItems): ReceiptBreakdown
     {
-        return DB::transaction(function () use ($owner, $transaction, $lineItems): ReceiptBreakdown {
+        return DB::transaction(function () use ($transaction, $lineItems): ReceiptBreakdown {
             $currentTransaction = Transaction::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereKey($transaction->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -69,7 +67,6 @@ final class SaveReceiptBreakdown
                 ->sort()
                 ->values();
             $activeCategoryIds = Category::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereIn('id', $categoryIds)
                 ->whereNull('archived_at')
                 ->lockForUpdate()
@@ -79,18 +76,16 @@ final class SaveReceiptBreakdown
 
             if ($activeCategoryIds->all() !== $categoryIds->all()) {
                 throw ValidationException::withMessages([
-                    'line_items' => 'Every assigned Line Item Category must be active and owned by you.',
+                    'line_items' => 'Every assigned Line Item Category must be active.',
                 ]);
             }
 
             $breakdown = ReceiptBreakdown::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereBelongsTo($currentTransaction)
                 ->lockForUpdate()
                 ->first();
 
             $breakdown ??= ReceiptBreakdown::query()->create([
-                'user_id' => $owner->getKey(),
                 'transaction_id' => $currentTransaction->getKey(),
             ]);
 

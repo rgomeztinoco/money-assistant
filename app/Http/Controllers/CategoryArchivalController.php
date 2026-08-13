@@ -18,7 +18,7 @@ class CategoryArchivalController extends Controller
 
     public function store(ChangeCategoryArchivalRequest $request, Category $category): RedirectResponse
     {
-        $this->archiveCategory->handle($request->user(), $category->id);
+        $this->archiveCategory->handle($category->id);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Category archived.')]);
 
@@ -27,7 +27,7 @@ class CategoryArchivalController extends Controller
 
     public function destroy(ChangeCategoryArchivalRequest $request, Category $category): RedirectResponse
     {
-        $this->unarchiveCategory->handle($request->user(), $category->id);
+        $this->unarchiveCategory->handle($category->id);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Category unarchived.')]);
 

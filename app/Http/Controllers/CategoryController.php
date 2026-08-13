@@ -24,7 +24,7 @@ class CategoryController extends Controller
     public function index(Request $request): Response
     {
         return Inertia::render('categories/index', [
-            'categories' => $this->readCategoryTaxonomy->handle($request->user()),
+            'categories' => $this->readCategoryTaxonomy->handle(),
         ]);
     }
 
@@ -33,7 +33,6 @@ class CategoryController extends Controller
         $validated = $request->validated();
 
         $this->createCategory->handle(
-            owner: $request->user(),
             name: $validated['name'],
             parentId: isset($validated['parent_id']) ? (int) $validated['parent_id'] : null,
         );
@@ -48,7 +47,6 @@ class CategoryController extends Controller
         $validated = $request->validated();
 
         $this->updateCategory->handle(
-            owner: $request->user(),
             categoryId: $category->id,
             name: $validated['name'],
             parentId: isset($validated['parent_id']) ? (int) $validated['parent_id'] : null,

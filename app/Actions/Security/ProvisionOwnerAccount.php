@@ -32,7 +32,7 @@ class ProvisionOwnerAccount
                 'password' => $input['password'],
             ]);
 
-            $this->installStartingTaxonomy->handle($owner);
+            $this->installStartingTaxonomy->handle();
 
             return $owner;
         }, 3);

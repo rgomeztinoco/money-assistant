@@ -13,7 +13,6 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
  * @property int|null $parent_id
  * @property string $name
  * @property CarbonImmutable|null $archived_at
@@ -21,7 +20,6 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  */
 #[Fillable([
-    'user_id',
     'parent_id',
     'name',
     'archived_at',
@@ -30,14 +28,6 @@ class Category extends Model
 {
     /** @use HasFactory<CategoryFactory> */
     use HasFactory;
-
-    /**
-     * @return BelongsTo<User, $this>
-     */
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
 
     /**
      * @return HasMany<Transaction, $this>

@@ -13,8 +13,7 @@ class DeleteMerchantRuleRequest extends FormRequest
         $merchantRule = $this->route('merchant_rule');
 
         return $this->user() !== null
-            && $merchantRule instanceof MerchantRule
-            && $merchantRule->user_id === $this->user()->id;
+            && $merchantRule instanceof MerchantRule;
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */

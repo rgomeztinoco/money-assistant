@@ -64,7 +64,6 @@ class ReadTransactionInspector
         }
 
         $transaction = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->with([
                 'category:id,name',
                 'originalPurchase:id,occurred_on,amount_minor,currency,kind,merchant_description,category_id',
@@ -145,7 +144,6 @@ class ReadTransactionInspector
                 ->all()),
             'receipt_breakdown' => $receiptBreakdown,
             'purchase_options' => array_values(Transaction::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereNull('voided_at')
                 ->where('kind', 'purchase')
                 ->whereKeyNot($transaction->getKey())

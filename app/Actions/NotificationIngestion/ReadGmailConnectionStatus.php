@@ -5,7 +5,6 @@ namespace App\Actions\NotificationIngestion;
 use App\Contracts\Gmail;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
-use App\Models\User;
 
 final class ReadGmailConnectionStatus
 {
@@ -25,9 +24,9 @@ final class ReadGmailConnectionStatus
      *     reauthorization_required_at: string|null
      * }
      */
-    public function handle(User $owner): array
+    public function handle(): array
     {
-        $connection = GmailConnection::query()->whereBelongsTo($owner, 'owner')->first();
+        $connection = GmailConnection::query()->first();
         $latestSynchronizationAt = $connection === null
             ? null
             : ($connection->last_successful_sync_at ?? $connection->connected_at);

@@ -19,7 +19,6 @@ class GmailFailedMessageRetryController extends Controller
     ): RedirectResponse {
         try {
             $retryFailedGmailMessage->handle(
-                $request->user(),
                 $gmailMessageDiscovery->id,
             );
         } catch (InvalidArgumentException) {

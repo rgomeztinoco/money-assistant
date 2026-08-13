@@ -34,7 +34,7 @@ class IndexTransactionsRequest extends FormRequest
             'category_id' => [
                 'nullable',
                 'integer',
-                Rule::exists('categories', 'id')->where('user_id', $this->user()->getKey()),
+                Rule::exists('categories', 'id'),
             ],
             'category_state' => ['nullable', Rule::in(['categorized', 'uncategorized'])],
             'review_state' => ['nullable', Rule::in(['outstanding', 'clear'])],

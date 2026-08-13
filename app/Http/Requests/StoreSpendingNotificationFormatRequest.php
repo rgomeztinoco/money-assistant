@@ -22,7 +22,6 @@ class StoreSpendingNotificationFormatRequest extends StoreParserProfileRequest
         $profile = $this->route('parser_profile');
 
         return $this->user() !== null
-            && $profile instanceof ParserProfile
-            && $profile->user_id === $this->user()->getKey();
+            && $profile instanceof ParserProfile;
     }
 }

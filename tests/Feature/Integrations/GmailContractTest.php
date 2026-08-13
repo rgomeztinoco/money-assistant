@@ -30,7 +30,7 @@ test('notification ingestion uses a fake Gmail contract without live network acc
     );
     app()->instance(Gmail::class, $gmail);
 
-    $connection = app(CompleteGmailAuthorization::class)->handle($owner, 'fake-code');
+    $connection = app(CompleteGmailAuthorization::class)->handle('fake-code');
     $connection = app(RefreshGmailConnection::class)->handle($connection);
 
     expect($gmail->authorizationCodes)->toBe(['fake-code'])

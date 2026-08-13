@@ -16,7 +16,6 @@ use Inertia\Testing\AssertableInertia as Assert;
 test('a confirmed Transaction with provisional fields remains in totals and appears once in the Review Queue', function () {
     $owner = User::factory()->create();
     $transaction = app(RecordManualTransaction::class)->handle(
-        owner: $owner,
         occurredOn: CarbonImmutable::parse('2026-07-22'),
         amountMinor: 12345,
         currency: Currency::Usd,
@@ -54,12 +53,12 @@ test('a confirmed Transaction with provisional fields remains in totals and appe
 
 test('an Uncategorized Transaction remains in totals, reports in its system bucket, and enters the Review Queue', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
-    $uncategorized = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    $category = Category::factory()->create(['name' => 'Groceries']);
+    $uncategorized = Transaction::factory()->purchase()->usd()->create([
         'amount_minor' => 10_000,
         'merchant_description' => 'Needs a Category',
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->purchase()->usd()->create([
         'amount_minor' => 5_000,
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
@@ -97,7 +96,6 @@ test('an Uncategorized Transaction remains in totals, reports in its system buck
 test('the owner can accept one provisional field and correct another without a revision contract', function () {
     $owner = User::factory()->create();
     $transaction = app(RecordManualTransaction::class)->handle(
-        owner: $owner,
         occurredOn: CarbonImmutable::parse('2026-07-22'),
         amountMinor: 12345,
         currency: Currency::Usd,
@@ -145,7 +143,6 @@ test('Corrections replace the current value for every reviewable Transaction fie
 ) {
     $owner = User::factory()->create();
     $transaction = app(RecordManualTransaction::class)->handle(
-        owner: $owner,
         occurredOn: CarbonImmutable::parse('2026-07-22'),
         amountMinor: 12345,
         currency: Currency::Usd,
@@ -179,7 +176,6 @@ test('Corrections replace the current value for every reviewable Transaction fie
 test('Review Queue routes require an authenticated owner', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
-        ->for($owner, 'owner')
         ->provisional([ReviewableTransactionField::MerchantDescription])
         ->create();
 
@@ -197,7 +193,6 @@ test('invalid field review input leaves the confirmed Transaction unchanged', fu
 ) {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
-        ->for($owner, 'owner')
         ->provisional([$field])
         ->create();
 
@@ -229,7 +224,6 @@ test('the Review Queue exposes every unresolved Transaction field', function () 
     $owner = User::factory()->create();
     Transaction::factory()
         ->count(101)
-        ->for($owner, 'owner')
         ->provisional([ReviewableTransactionField::MerchantDescription])
         ->create();
 

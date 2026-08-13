@@ -3,7 +3,6 @@
 namespace App\Actions\Ledger;
 
 use App\Models\Transaction;
-use App\Models\User;
 use App\TransactionVoidOperation;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -11,14 +10,12 @@ use InvalidArgumentException;
 class ChangeTransactionVoidState
 {
     public function handle(
-        User $owner,
         Transaction $transaction,
         TransactionVoidOperation $operation,
     ): Transaction {
-        return DB::transaction(function () use ($owner, $transaction, $operation): Transaction {
+        return DB::transaction(function () use ($transaction, $operation): Transaction {
             $currentTransaction = Transaction::query()
                 ->whereKey($transaction->getKey())
-                ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
                 ->firstOrFail();
 

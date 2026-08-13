@@ -107,7 +107,6 @@ test('the shared Ledger Action rejects invalid minor units', function (mixed $am
     $owner = User::factory()->create();
 
     expect(fn () => app(RecordManualTransaction::class)->handle(
-        owner: $owner,
         occurredOn: CarbonImmutable::parse('2026-07-24'),
         amountMinor: $amountMinor,
         currency: Currency::Usd,
@@ -124,7 +123,6 @@ test('the shared Ledger Action rejects a blank merchant or description', functio
     $owner = User::factory()->create();
 
     expect(fn () => app(RecordManualTransaction::class)->handle(
-        owner: $owner,
         occurredOn: CarbonImmutable::parse('2026-07-24'),
         amountMinor: 1,
         currency: Currency::Usd,
@@ -137,7 +135,6 @@ test('the shared Ledger Action normalizes the merchant or description', function
     $owner = User::factory()->create();
 
     $transaction = app(RecordManualTransaction::class)->handle(
-        owner: $owner,
         occurredOn: CarbonImmutable::parse('2026-07-24'),
         amountMinor: 1,
         currency: Currency::Usd,
@@ -153,7 +150,6 @@ test('the ledger read path returns its first 25 Transactions with pagination met
 
     Transaction::factory()
         ->count(101)
-        ->for($owner, 'owner')
         ->create();
 
     $this->actingAs($owner)
@@ -171,7 +167,6 @@ test('PostgreSQL constraints reject invalid stored Transaction values', function
 ) {
     $owner = User::factory()->create();
     $attributes = [
-        'user_id' => $owner->getKey(),
         'occurred_on' => '2026-07-24',
         'amount_minor' => 1,
         'currency' => 'USD',

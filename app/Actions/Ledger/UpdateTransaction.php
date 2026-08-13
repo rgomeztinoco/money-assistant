@@ -6,7 +6,6 @@ use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\ExactInteger;
 use App\Models\Transaction;
-use App\Models\User;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
 use App\TransactionKind;
@@ -17,7 +16,6 @@ use Illuminate\Support\Str;
 class UpdateTransaction
 {
     public function handle(
-        User $owner,
         Transaction $transaction,
         CarbonImmutable $occurredOn,
         int $amountMinor,
@@ -30,9 +28,8 @@ class UpdateTransaction
         ?int $originalPurchaseId,
         bool $removeReceiptBreakdown,
     ): Transaction {
-        return DB::transaction(function () use ($owner, $transaction, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $paymentInstrumentLabel, $paymentInstrumentLastFour, $categoryId, $originalPurchaseId, $removeReceiptBreakdown): Transaction {
+        return DB::transaction(function () use ($transaction, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $paymentInstrumentLabel, $paymentInstrumentLastFour, $categoryId, $originalPurchaseId, $removeReceiptBreakdown): Transaction {
             $currentTransaction = Transaction::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereKey($transaction->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -86,7 +83,7 @@ class UpdateTransaction
             ]);
 
             foreach (array_unique($affectedPurchaseIds) as $purchaseId) {
-                $this->refreshLinkedRefundReviewReasons($owner, $purchaseId);
+                $this->refreshLinkedRefundReviewReasons($purchaseId);
             }
 
             return $currentTransaction->refresh();
@@ -131,10 +128,9 @@ class UpdateTransaction
         return $reviewReasons;
     }
 
-    private function refreshLinkedRefundReviewReasons(User $owner, int $purchaseId): void
+    private function refreshLinkedRefundReviewReasons(int $purchaseId): void
     {
         $purchase = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereKey($purchaseId)
             ->lockForUpdate()
             ->first();
@@ -144,7 +140,6 @@ class UpdateTransaction
         }
 
         $linkedRefunds = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->where('original_purchase_id', $purchaseId)
             ->lockForUpdate()
             ->get();

@@ -146,7 +146,7 @@ test('one current profile supports multiple formats without code changes', funct
 
 test('the owner directly edits toggles and deletes current profiles and formats', function () {
     $owner = User::factory()->create();
-    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $profile = ParserProfile::factory()->create();
     $format = SpendingNotificationFormat::factory()->for($profile, 'profile')->create();
 
     $this->actingAs($owner)
@@ -176,7 +176,7 @@ test('the owner directly edits toggles and deletes current profiles and formats'
 
 test('editing a format replaces its current definition only after transient validation', function () {
     [$owner, , $discovery, $gmail] = parserProfileSource();
-    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $profile = ParserProfile::factory()->create();
     $format = SpendingNotificationFormat::factory()->for($profile, 'profile')->create([
         'name' => 'Old format',
         'enabled_at' => null,
@@ -213,15 +213,15 @@ test('editing a format replaces its current definition only after transient vali
 
 test('disabled definitions are ignored and unsupported messages are marked processed', function () {
     $owner = User::factory()->create();
-    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $profile = ParserProfile::factory()->create();
     SpendingNotificationFormat::factory()->for($profile, 'profile')->create(['enabled_at' => null]);
-    $connection = GmailConnection::factory()->for($owner, 'owner')->create();
+    $connection = GmailConnection::factory()->create();
     $discovery = GmailMessageDiscovery::factory()
         ->for($connection, 'gmailConnection')
         ->create(['message_id' => 'unsupported-message']);
     $message = parserProfileMessage($discovery->message_id);
 
-    $reference = app(ProcessSpendingNotification::class)->handle($owner, $discovery, $message);
+    $reference = app(ProcessSpendingNotification::class)->handle($discovery, $message);
 
     expect($reference?->processing_outcome)->toBe('unsupported')
         ->and($reference?->transaction_id)->toBeNull()
@@ -231,15 +231,15 @@ test('disabled definitions are ignored and unsupported messages are marked proce
 
 test('authentication failures fail closed with only sanitized processing state', function () {
     $owner = User::factory()->create();
-    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $profile = ParserProfile::factory()->create();
     SpendingNotificationFormat::factory()->for($profile, 'profile')->create();
-    $connection = GmailConnection::factory()->for($owner, 'owner')->create();
+    $connection = GmailConnection::factory()->create();
     $discovery = GmailMessageDiscovery::factory()
         ->for($connection, 'gmailConnection')
         ->create(['message_id' => 'authentication-failure']);
     $message = parserProfileMessage($discovery->message_id, authenticationResult: 'fail');
 
-    $reference = app(ProcessSpendingNotification::class)->handle($owner, $discovery, $message);
+    $reference = app(ProcessSpendingNotification::class)->handle($discovery, $message);
 
     expect($reference?->processing_outcome)->toBe('authentication_failed')
         ->and($reference?->transaction_id)->toBeNull()
@@ -254,7 +254,7 @@ test('authentication failures fail closed with only sanitized processing state',
 function parserProfileSource(): array
 {
     $owner = User::factory()->create();
-    $connection = GmailConnection::factory()->for($owner, 'owner')->create();
+    $connection = GmailConnection::factory()->create();
     $discovery = GmailMessageDiscovery::factory()
         ->for($connection, 'gmailConnection')
         ->create(['message_id' => 'gmail-message-source']);

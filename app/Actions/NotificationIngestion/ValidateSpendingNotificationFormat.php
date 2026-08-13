@@ -5,7 +5,6 @@ namespace App\Actions\NotificationIngestion;
 use App\Models\GmailMessageDiscovery;
 use App\Models\ParserProfile;
 use App\Models\SpendingNotificationFormat;
-use App\Models\User;
 use App\SpendingNotificationFormatPurpose;
 use App\SpendingNotificationParser;
 use App\ValidatedSpendingNotificationFormat;
@@ -26,7 +25,6 @@ final class ValidateSpendingNotificationFormat
      * @throws JsonException
      */
     public function handle(
-        User $owner,
         array $attributes,
         ?ParserProfile $profile = null,
     ): ValidatedSpendingNotificationFormat {
@@ -34,8 +32,8 @@ final class ValidateSpendingNotificationFormat
             ->with('gmailConnection')
             ->whereKey($attributes['source_message_discovery_id'])
             ->sole();
-        $message = $this->readSourceMessage->sourceMessage($owner, $discovery);
-        $profile ??= $this->profileFromMessage($owner, $attributes, $message);
+        $message = $this->readSourceMessage->sourceMessage($discovery);
+        $profile ??= $this->profileFromMessage($attributes, $message);
 
         if (! $this->parser->trustMatches($message, $profile)) {
             throw new InvalidArgumentException(
@@ -75,7 +73,7 @@ final class ValidateSpendingNotificationFormat
     }
 
     /** @param array<string, mixed> $attributes */
-    private function profileFromMessage(User $owner, array $attributes, mixed $message): ParserProfile
+    private function profileFromMessage(array $attributes, mixed $message): ParserProfile
     {
         $fromAddress = Str::lower($message->fromAddress);
         $fromDomain = Str::lower(Str::afterLast($fromAddress, '@'));
@@ -92,7 +90,6 @@ final class ValidateSpendingNotificationFormat
         }
 
         return new ParserProfile([
-            'user_id' => $owner->getKey(),
             'name' => $attributes['profile_name'],
             'trusted_sender_address' => $fromAddress,
             'trusted_sender_domain' => $fromDomain,

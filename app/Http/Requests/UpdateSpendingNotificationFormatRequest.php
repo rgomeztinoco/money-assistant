@@ -15,7 +15,6 @@ class UpdateSpendingNotificationFormatRequest extends StoreParserProfileRequest
         return $this->user() !== null
             && $profile instanceof ParserProfile
             && $format instanceof SpendingNotificationFormat
-            && $profile->user_id === $this->user()->getKey()
             && $format->parser_profile_id === $profile->id;
     }
 }

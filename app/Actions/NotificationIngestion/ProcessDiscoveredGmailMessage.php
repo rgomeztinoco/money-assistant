@@ -15,14 +15,12 @@ final class ProcessDiscoveredGmailMessage
     public function handle(int $discoveryId): SpendingNotificationReference
     {
         $discovery = GmailMessageDiscovery::query()
-            ->with(['gmailConnection.owner'])
+            ->with('gmailConnection')
             ->findOrFail($discoveryId);
         $connection = $discovery->gmailConnection;
-        $owner = $connection->owner;
 
         if ($discovery->processed_at !== null) {
             $existingReference = SpendingNotificationReference::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->where('gmail_account_identity', $connection->gmail_account_identity)
                 ->where('message_id', $discovery->message_id)
                 ->first();
@@ -33,9 +31,8 @@ final class ProcessDiscoveredGmailMessage
         }
 
         $reference = $this->processSpendingNotification->handle(
-            owner: $owner,
             discovery: $discovery,
-            message: $this->readSourceMessage->sourceMessage($owner, $discovery),
+            message: $this->readSourceMessage->sourceMessage($discovery),
         );
 
         $discovery->forceFill([

@@ -3,7 +3,6 @@
 namespace App\Actions\Categorization;
 
 use App\Models\Category;
-use App\Models\User;
 
 final class InstallStartingTaxonomy
 {
@@ -24,21 +23,19 @@ final class InstallStartingTaxonomy
         'Pets' => ['Food', 'Veterinary', 'Medicine', 'Supplies & Care'],
     ];
 
-    public function handle(User $owner): void
+    public function handle(): void
     {
-        if (Category::query()->whereBelongsTo($owner, 'owner')->exists()) {
+        if (Category::query()->exists()) {
             return;
         }
 
         foreach (self::TAXONOMY as $parentName => $childNames) {
             $parent = Category::query()->create([
-                'user_id' => $owner->getKey(),
                 'name' => $parentName,
             ]);
 
             foreach ($childNames as $childName) {
                 Category::query()->create([
-                    'user_id' => $owner->getKey(),
                     'parent_id' => $parent->getKey(),
                     'name' => $childName,
                 ]);

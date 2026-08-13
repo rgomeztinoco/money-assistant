@@ -11,13 +11,13 @@ beforeEach(function () {
 
 test('the Dashboard directs attention into filtered owner workflows', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    $category = Category::factory()->create();
+    Transaction::factory()->purchase()->usd()->create([
         'occurred_on' => now()->toDateString(),
         'amount_minor' => 1_000,
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->provisional([
+    Transaction::factory()->purchase()->pen()->provisional([
         ReviewableTransactionField::MerchantDescription,
     ])->create([
         'occurred_on' => now()->toDateString(),

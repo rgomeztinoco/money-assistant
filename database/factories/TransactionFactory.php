@@ -4,7 +4,6 @@ namespace Database\Factories;
 
 use App\Currency;
 use App\Models\Transaction;
-use App\Models\User;
 use App\ReviewableTransactionField;
 use App\TransactionKind;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -22,7 +21,6 @@ class TransactionFactory extends Factory
     public function definition(): array
     {
         return [
-            'user_id' => User::factory(),
             'occurred_on' => fake()->dateTimeBetween('-1 year', 'now'),
             'amount_minor' => fake()->numberBetween(1, 100_000),
             'currency' => fake()->randomElement(Currency::cases()),

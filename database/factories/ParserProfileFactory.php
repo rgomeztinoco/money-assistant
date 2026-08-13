@@ -3,7 +3,6 @@
 namespace Database\Factories;
 
 use App\Models\ParserProfile;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -19,7 +18,6 @@ class ParserProfileFactory extends Factory
     public function definition(): array
     {
         return [
-            'user_id' => User::factory(),
             'name' => fake()->unique()->words(3, true),
             'trusted_sender_address' => 'alerts@bank.example',
             'trusted_sender_domain' => 'bank.example',

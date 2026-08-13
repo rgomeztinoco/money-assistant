@@ -29,7 +29,6 @@ class StoreCategoryRequest extends FormRequest
                 'nullable',
                 'integer',
                 Rule::exists('categories', 'id')
-                    ->where('user_id', $this->user()->getKey())
                     ->whereNull('parent_id')
                     ->whereNull('archived_at'),
             ],

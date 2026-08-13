@@ -6,7 +6,6 @@ use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailReauthorizationRequired;
 use App\Integrations\Gmail\GmailRequestFailed;
 use App\Models\GmailConnection;
-use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 final class CheckGmailConnection
@@ -16,9 +15,9 @@ final class CheckGmailConnection
         private Gmail $gmail,
     ) {}
 
-    public function handle(User $owner): ?GmailConnection
+    public function handle(): ?GmailConnection
     {
-        $connection = GmailConnection::query()->whereBelongsTo($owner, 'owner')->first();
+        $connection = GmailConnection::query()->first();
 
         if ($connection === null) {
             return null;

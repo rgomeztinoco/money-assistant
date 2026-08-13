@@ -19,7 +19,7 @@ class SaveMerchantRuleRequest extends FormRequest
         $merchantRule = $this->route('merchant_rule');
 
         return $this->user() !== null
-            && (! $merchantRule instanceof MerchantRule || $merchantRule->user_id === $this->user()->id);
+            && (! $merchantRule instanceof MerchantRule || $merchantRule->exists);
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */
@@ -31,7 +31,6 @@ class SaveMerchantRuleRequest extends FormRequest
                 'required',
                 'integer',
                 Rule::exists('categories', 'id')
-                    ->where('user_id', $this->user()->id)
                     ->whereNull('archived_at'),
             ],
             'transaction_kind' => ['nullable', Rule::enum(TransactionKind::class)],
@@ -58,7 +57,6 @@ class SaveMerchantRuleRequest extends FormRequest
 
             $merchantRule = $this->route('merchant_rule');
             $conflictingScopeQuery = MerchantRule::query()
-                ->whereBelongsTo($this->user(), 'owner')
                 ->where('merchant_key', $merchantKey)
                 ->where('transaction_kind', $this->input('transaction_kind'))
                 ->where('currency', $this->input('currency'));
@@ -78,7 +76,6 @@ class SaveMerchantRuleRequest extends FormRequest
             }
 
             $overlappingScopeQuery = MerchantRule::query()
-                ->whereBelongsTo($this->user(), 'owner')
                 ->where('merchant_key', $merchantKey)
                 ->where('enabled', true)
                 ->when(

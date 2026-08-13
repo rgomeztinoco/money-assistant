@@ -21,7 +21,6 @@ class TransactionCategoryController extends Controller
         $validated = $request->validated();
 
         $this->assignCategoryToTransaction->handle(
-            owner: $request->user(),
             transactionId: $transaction->id,
             categoryId: isset($validated['category_id']) ? (int) $validated['category_id'] : null,
         );

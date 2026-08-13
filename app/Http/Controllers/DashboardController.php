@@ -29,12 +29,11 @@ class DashboardController extends Controller
             ],
             'spending' => [
                 'totals' => $this->readCurrencyTotals->handle(
-                    owner: $request->user(),
                     dateFrom: $monthStart,
                     dateTo: $today,
                 ),
             ],
-            'operating' => $this->readOperatingStatus->handle($request->user()),
+            'operating' => $this->readOperatingStatus->handle(),
         ]);
     }
 }

@@ -49,7 +49,7 @@ class HandleInertiaRequests extends Middleware
             'review_queue' => fn (): array => [
                 'outstanding_count' => $request->user() === null
                     ? 0
-                    : $this->countOutstandingReviews->handle($request->user()),
+                    : $this->countOutstandingReviews->handle(),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

@@ -2,6 +2,7 @@
 
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
+use App\Models\User;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
@@ -16,7 +17,7 @@ test('the owner sees the latest failed Gmail message and its retry action', func
         'last_error_code' => 'gmail_message_processing_failed',
         'failed_job_uuid' => fake()->uuid(),
     ]);
-    $this->actingAs($connection->owner);
+    $this->actingAs(User::factory()->create());
 
     visit(route('connections.edit'))
         ->assertSee('Last successful synchronization')
@@ -33,7 +34,7 @@ test('the owner sees Gmail connection health without credentials reaching the pa
         'access_token' => 'browser-hidden-access-token',
         'refresh_token' => 'browser-hidden-refresh-token',
     ]);
-    $this->actingAs($connection->owner);
+    $this->actingAs(User::factory()->create());
 
     $page = visit(route('connections.edit'));
 

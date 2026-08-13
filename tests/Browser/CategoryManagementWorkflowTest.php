@@ -11,8 +11,8 @@ beforeEach(function () {
 
 test('the owner creates a child Category and assigns it from the Transaction inspector', function () {
     $owner = User::factory()->create();
-    Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
-    $transaction = Transaction::factory()->for($owner, 'owner')->create([
+    Category::factory()->create(['name' => 'Food']);
+    $transaction = Transaction::factory()->create([
         'merchant_description' => 'Neighborhood bistro',
     ]);
     $this->actingAs($owner);

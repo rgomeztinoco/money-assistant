@@ -18,7 +18,6 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
  * @property CarbonImmutable $occurred_on
  * @property int $amount_minor
  * @property Currency $currency
@@ -42,7 +41,6 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  */
 #[Fillable([
-    'user_id',
     'occurred_on',
     'amount_minor',
     'currency',
@@ -71,14 +69,6 @@ class Transaction extends Model
         'provisional_fields' => '[]',
         'refund_relationship_review_reasons' => '[]',
     ];
-
-    /**
-     * @return BelongsTo<User, $this>
-     */
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
 
     /**
      * @return HasMany<SpendingNotificationReference, $this>

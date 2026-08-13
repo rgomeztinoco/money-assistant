@@ -92,7 +92,7 @@ class ReadLedger
     ): array {
         $filters = $this->normalizeFilters($filters);
         $transactionQuery = $this->applyFilters(
-            Transaction::query()->whereBelongsTo($owner, 'owner'),
+            Transaction::query(),
             $filters,
         )
             ->when($filters['void_state'] === 'active', fn (Builder $query) => $query->whereNull('voided_at'))

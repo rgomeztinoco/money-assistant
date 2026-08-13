@@ -6,7 +6,6 @@ use App\Actions\Ledger\RecordManualTransaction;
 use App\Currency;
 use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
-use App\Models\User;
 use App\SpendingNotificationProcessingOutcome;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
@@ -18,7 +17,6 @@ final class RecoverSpendingNotification
     public function __construct(private RecordManualTransaction $recordManualTransaction) {}
 
     public function handle(
-        User $owner,
         SpendingNotificationReference $reference,
         CarbonImmutable $occurredOn,
         int $amountMinor,
@@ -26,9 +24,8 @@ final class RecoverSpendingNotification
         TransactionKind $kind,
         string $merchantDescription,
     ): Transaction {
-        return DB::transaction(function () use ($owner, $reference, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription): Transaction {
+        return DB::transaction(function () use ($reference, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription): Transaction {
             $reference = SpendingNotificationReference::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
                 ->findOrFail($reference->id);
 
@@ -39,7 +36,6 @@ final class RecoverSpendingNotification
             }
 
             $transaction = $this->recordManualTransaction->handle(
-                owner: $owner,
                 occurredOn: $occurredOn,
                 amountMinor: $amountMinor,
                 currency: $currency,

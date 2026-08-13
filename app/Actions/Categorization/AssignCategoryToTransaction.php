@@ -5,24 +5,21 @@ namespace App\Actions\Categorization;
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
 use App\Models\Transaction;
-use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 final class AssignCategoryToTransaction
 {
-    public function handle(User $owner, int $transactionId, ?int $categoryId): Transaction
+    public function handle(int $transactionId, ?int $categoryId): Transaction
     {
-        return DB::transaction(function () use ($owner, $transactionId, $categoryId): Transaction {
+        return DB::transaction(function () use ($transactionId, $categoryId): Transaction {
             $transaction = Transaction::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereKey($transactionId)
                 ->lockForUpdate()
                 ->firstOrFail();
             $category = $categoryId === null
                 ? null
                 : Category::query()
-                    ->whereBelongsTo($owner, 'owner')
                     ->whereKey($categoryId)
                     ->whereNull('archived_at')
                     ->lockForUpdate()
@@ -30,7 +27,7 @@ final class AssignCategoryToTransaction
 
             if ($categoryId !== null && $category === null) {
                 throw ValidationException::withMessages([
-                    'category_id' => 'Choose an active Category owned by you.',
+                    'category_id' => 'Choose an active Category.',
                 ]);
             }
 

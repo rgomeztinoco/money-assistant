@@ -3,7 +3,6 @@
 namespace Database\Factories;
 
 use App\Models\GmailConnection;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -19,7 +18,6 @@ class GmailConnectionFactory extends Factory
     public function definition(): array
     {
         return [
-            'user_id' => User::factory(),
             'gmail_account_identity' => fake()->unique()->safeEmail(),
             'access_token' => 'access-token-'.fake()->uuid(),
             'refresh_token' => 'refresh-token-'.fake()->uuid(),

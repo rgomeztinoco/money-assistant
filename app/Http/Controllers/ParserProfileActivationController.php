@@ -34,7 +34,6 @@ class ParserProfileActivationController extends Controller
     private function ownedProfile(Request $request, ParserProfile $parserProfile): ParserProfile
     {
         return ParserProfile::query()
-            ->whereBelongsTo($request->user(), 'owner')
             ->findOrFail($parserProfile->id);
     }
 }

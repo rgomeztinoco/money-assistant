@@ -17,7 +17,7 @@ final class ReceiptBreakdownController extends Controller
         Transaction $transaction,
         SaveReceiptBreakdown $saveReceiptBreakdown,
     ): RedirectResponse {
-        $saveReceiptBreakdown->handle($request->user(), $transaction, $request->lineItems());
+        $saveReceiptBreakdown->handle($transaction, $request->lineItems());
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -32,7 +32,7 @@ final class ReceiptBreakdownController extends Controller
         Transaction $transaction,
         RemoveReceiptBreakdown $removeReceiptBreakdown,
     ): RedirectResponse {
-        $removeReceiptBreakdown->handle($request->user(), $transaction);
+        $removeReceiptBreakdown->handle($transaction);
 
         Inertia::flash('toast', [
             'type' => 'success',

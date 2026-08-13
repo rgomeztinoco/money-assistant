@@ -12,7 +12,7 @@ beforeEach(function () {
 
 test('the owner creates a Merchant Rule that categorizes a future Transaction', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $category = Category::factory()->create(['name' => 'Groceries']);
     $this->actingAs($owner);
 
     visit('/merchant-rules')

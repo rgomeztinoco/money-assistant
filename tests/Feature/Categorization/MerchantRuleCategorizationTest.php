@@ -10,8 +10,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 test('an exact Merchant Rule categorizes only matching future Transactions after Unicode punctuation case and whitespace normalization', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    $historicalTransaction = Transaction::factory()->for($owner, 'owner')->create([
+    $category = Category::factory()->create();
+    $historicalTransaction = Transaction::factory()->create([
         'merchant_description' => 'Café Central',
         'kind' => 'purchase',
         'currency' => 'PEN',
@@ -52,9 +52,9 @@ test('an exact Merchant Rule categorizes only matching future Transactions after
 
 test('disabled and out-of-scope Merchant Rules leave new Transactions Uncategorized', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
+    $category = Category::factory()->create();
     $merchant = 'Scoped Merchant';
-    $rule = MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create([
+    $rule = MerchantRule::factory()->for($category)->disabled()->create([
         'merchant' => $merchant,
         'merchant_key' => app(MerchantNormalizer::class)->normalize($merchant),
         'transaction_kind' => 'refund',
@@ -91,9 +91,9 @@ test('disabled and out-of-scope Merchant Rules leave new Transactions Uncategori
 
 test('deleting a Merchant Rule preserves its truthful current Category provenance', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    $rule = MerchantRule::factory()->for($owner, 'owner')->for($category)->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create([
+    $category = Category::factory()->create();
+    $rule = MerchantRule::factory()->for($category)->create();
+    $transaction = Transaction::factory()->create([
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::MerchantRule,
         'merchant_rule_id' => $rule->id,

@@ -10,7 +10,6 @@ beforeEach(function () {
 test('the owner links a Refund and sees an excessive relationship in the Review Queue', function () {
     $owner = User::factory()->create();
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -19,7 +18,6 @@ test('the owner links a Refund and sees an excessive relationship in the Review 
             'merchant_description' => 'Original purchase',
         ]);
     Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([

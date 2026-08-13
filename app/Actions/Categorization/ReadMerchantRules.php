@@ -3,17 +3,15 @@
 namespace App\Actions\Categorization;
 
 use App\Models\MerchantRule;
-use App\Models\User;
 
 final class ReadMerchantRules
 {
     /**
      * @return list<array{id: int, category_id: int, category_name: string, merchant: string, merchant_key: string, transaction_kind: string|null, currency: string|null, enabled: bool}>
      */
-    public function handle(User $owner): array
+    public function handle(): array
     {
         return array_values(MerchantRule::query()
-            ->whereBelongsTo($owner, 'owner')
             ->select([
                 'id',
                 'category_id',

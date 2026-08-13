@@ -26,7 +26,6 @@ class TransactionRefundLinkController extends Controller
 
         try {
             $this->linkRefundToPurchase->handle(
-                owner: $request->user(),
                 refund: $refund,
                 purchase: $purchase,
             );

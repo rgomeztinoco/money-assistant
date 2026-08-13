@@ -5,14 +5,13 @@ namespace App\Actions\NotificationIngestion;
 use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailRequestFailed;
 use App\Models\GmailConnection;
-use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 final class CompleteGmailAuthorization
 {
     public function __construct(private Gmail $gmail) {}
 
-    public function handle(User $owner, string $code): GmailConnection
+    public function handle(string $code): GmailConnection
     {
         $authorization = $this->gmail->authorize($code);
 
@@ -20,11 +19,10 @@ final class CompleteGmailAuthorization
             throw GmailRequestFailed::authorization();
         }
 
-        return DB::transaction(function () use ($owner, $authorization): GmailConnection {
+        return DB::transaction(function () use ($authorization): GmailConnection {
             $connection = GmailConnection::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
-                ->first() ?? new GmailConnection(['user_id' => $owner->id]);
+                ->first() ?? new GmailConnection;
 
             if ($connection->exists
                 && $connection->gmail_account_identity !== $authorization->accountIdentity) {

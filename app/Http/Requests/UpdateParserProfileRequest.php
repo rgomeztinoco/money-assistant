@@ -29,7 +29,6 @@ class UpdateParserProfileRequest extends FormRequest
                 'string',
                 'max:255',
                 Rule::unique('parser_profiles')
-                    ->where('user_id', $this->user()->getKey())
                     ->ignore($this->route('parser_profile')),
             ],
         ];

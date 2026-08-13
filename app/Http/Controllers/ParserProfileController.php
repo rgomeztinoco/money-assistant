@@ -23,7 +23,6 @@ class ParserProfileController extends Controller
     ): Response {
         return Inertia::render('parser-profiles/index', [
             'profiles' => ParserProfile::query()
-                ->whereBelongsTo($request->user(), 'owner')
                 ->with(['formats' => fn ($query) => $query->oldest('id')])
                 ->latest('id')
                 ->get()
@@ -42,7 +41,7 @@ class ParserProfileController extends Controller
                         'enabled' => $format->enabled_at !== null,
                     ])->all(),
                 ])->all(),
-            'source_messages' => $readSourceMessages->handle($request->user()),
+            'source_messages' => $readSourceMessages->handle(),
         ]);
     }
 
@@ -52,7 +51,6 @@ class ParserProfileController extends Controller
     ): RedirectResponse {
         try {
             $createParserProfile->handle(
-                $request->user(),
                 $request->validated(),
             );
         } catch (InvalidArgumentException $exception) {
@@ -98,7 +96,6 @@ class ParserProfileController extends Controller
     private function ownedProfile(Request $request, ParserProfile $parserProfile): ParserProfile
     {
         return ParserProfile::query()
-            ->whereBelongsTo($request->user(), 'owner')
             ->findOrFail($parserProfile->id);
     }
 }

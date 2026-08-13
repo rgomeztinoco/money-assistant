@@ -3,7 +3,6 @@
 namespace App\Actions\NotificationIngestion;
 
 use App\Models\ParserProfile;
-use App\Models\User;
 use App\SpendingNotificationFormatPurpose;
 
 final class PreviewParserProfile
@@ -24,15 +23,14 @@ final class PreviewParserProfile
      *     provisional_fields: list<string>
      * }|array{purpose: 'ignore'}
      */
-    public function handle(User $owner, array $attributes): array
+    public function handle(array $attributes): array
     {
         $profile = isset($attributes['parser_profile_id'])
             ? ParserProfile::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereKey($attributes['parser_profile_id'])
                 ->sole()
             : null;
-        $validatedFormat = $this->validateFormat->handle($owner, $attributes, $profile);
+        $validatedFormat = $this->validateFormat->handle($attributes, $profile);
         $extraction = $validatedFormat->extraction;
 
         if ($extraction === null) {

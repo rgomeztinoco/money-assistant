@@ -11,8 +11,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 test('the owner can read create rename and move the two-level taxonomy directly', function () {
     $owner = User::factory()->create();
-    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
-    $transport = Category::factory()->for($owner, 'owner')->create(['name' => 'Transport']);
+    $food = Category::factory()->create(['name' => 'Food']);
+    $transport = Category::factory()->create(['name' => 'Transport']);
 
     $this->actingAs($owner)
         ->get(route('categories.index'))
@@ -48,9 +48,9 @@ test('the owner can read create rename and move the two-level taxonomy directly'
 
 test('active Category names are case-insensitively unique among siblings and the hierarchy stops at two levels', function () {
     $owner = User::factory()->create();
-    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
-    $pets = Category::factory()->for($owner, 'owner')->create(['name' => 'Pets']);
-    $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
+    $food = Category::factory()->create(['name' => 'Food']);
+    $pets = Category::factory()->create(['name' => 'Pets']);
+    $dining = Category::factory()->for($food, 'parent')->create([
         'name' => 'Dining',
     ]);
 
@@ -76,12 +76,12 @@ test('active Category names are case-insensitively unique among siblings and the
 
 test('renaming and moving a Category preserves its identity on historical Transactions and reports', function () {
     $owner = User::factory()->create();
-    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
-    $travel = Category::factory()->for($owner, 'owner')->create(['name' => 'Travel']);
-    $category = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
+    $food = Category::factory()->create(['name' => 'Food']);
+    $travel = Category::factory()->create(['name' => 'Travel']);
+    $category = Category::factory()->for($food, 'parent')->create([
         'name' => 'Cafes',
     ]);
-    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->create([
+    $transaction = Transaction::factory()->pen()->create([
         'occurred_on' => today(),
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
@@ -111,12 +111,12 @@ test('renaming and moving a Category preserves its identity on historical Transa
 
 test('archiving a Category preserves current assignments and reporting while preventing future assignments', function () {
     $owner = User::factory()->create();
-    $parent = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
-    $child = Category::factory()->for($owner, 'owner')->for($parent, 'parent')->create([
+    $parent = Category::factory()->create(['name' => 'Food']);
+    $child = Category::factory()->for($parent, 'parent')->create([
         'name' => 'Dining',
     ]);
-    $merchantRule = MerchantRule::factory()->for($owner, 'owner')->for($child)->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->create([
+    $merchantRule = MerchantRule::factory()->for($child)->create();
+    $transaction = Transaction::factory()->pen()->create([
         'occurred_on' => today(),
         'category_id' => $child->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::MerchantRule,
@@ -150,7 +150,7 @@ test('archiving a Category preserves current assignments and reporting while pre
             ->where('category_groups.0.children.0.category.name', 'Dining')
             ->where('category_groups.0.children.0.category.archived', true));
 
-    $otherTransaction = Transaction::factory()->for($owner, 'owner')->create();
+    $otherTransaction = Transaction::factory()->create();
 
     $this->put(route('transactions.category.update', $otherTransaction), [
         'category_id' => $child->id,
@@ -167,8 +167,8 @@ test('archiving a Category preserves current assignments and reporting while pre
 
 test('an archived Category can be edited and unarchived without a revision contract', function () {
     $owner = User::factory()->create();
-    $archived = Category::factory()->for($owner, 'owner')->archived()->create(['name' => 'Food']);
-    $active = Category::factory()->for($owner, 'owner')->create(['name' => 'food']);
+    $archived = Category::factory()->archived()->create(['name' => 'Food']);
+    $active = Category::factory()->create(['name' => 'food']);
 
     $this->actingAs($owner)
         ->delete(route('categories.archival.destroy', $archived))

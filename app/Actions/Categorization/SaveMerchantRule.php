@@ -5,7 +5,6 @@ namespace App\Actions\Categorization;
 use App\Currency;
 use App\MerchantNormalizer;
 use App\Models\MerchantRule;
-use App\Models\User;
 use App\TransactionKind;
 use Illuminate\Support\Str;
 
@@ -14,7 +13,6 @@ final class SaveMerchantRule
     public function __construct(private MerchantNormalizer $merchantNormalizer) {}
 
     public function handle(
-        User $owner,
         string $merchant,
         int $categoryId,
         ?TransactionKind $transactionKind,
@@ -25,7 +23,6 @@ final class SaveMerchantRule
         $merchant = Str::squish($merchant);
         $merchantRule ??= new MerchantRule;
         $merchantRule->fill([
-            'user_id' => $owner->id,
             'category_id' => $categoryId,
             'merchant' => $merchant,
             'merchant_key' => $this->merchantNormalizer->normalize($merchant),

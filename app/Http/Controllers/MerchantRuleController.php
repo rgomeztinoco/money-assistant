@@ -26,8 +26,8 @@ class MerchantRuleController extends Controller
     public function index(Request $request): Response
     {
         return Inertia::render('merchant-rules/index', [
-            'rules' => $this->readMerchantRules->handle($request->user()),
-            'category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()),
+            'rules' => $this->readMerchantRules->handle(),
+            'category_options' => $this->readCategoryTaxonomy->activeOptions(),
         ]);
     }
 
@@ -63,7 +63,6 @@ class MerchantRuleController extends Controller
         $validated = $request->validated();
 
         return $this->saveMerchantRule->handle(
-            owner: $request->user(),
             merchant: $validated['merchant'],
             categoryId: (int) $validated['category_id'],
             transactionKind: isset($validated['transaction_kind'])

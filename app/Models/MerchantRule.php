@@ -14,7 +14,6 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
  * @property int $category_id
  * @property string $merchant
  * @property string $merchant_key
@@ -24,11 +23,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
- * @property-read User $owner
  * @property-read Category $category
  */
 #[Fillable([
-    'user_id',
     'category_id',
     'merchant',
     'merchant_key',
@@ -43,12 +40,6 @@ class MerchantRule extends Model
 
     /** @var array<string, mixed> */
     protected $attributes = ['enabled' => true];
-
-    /** @return BelongsTo<User, $this> */
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
 
     /** @return BelongsTo<Category, $this> */
     public function category(): BelongsTo

@@ -36,7 +36,7 @@ class TransactionController extends Controller
             'transactions/index',
             [
                 ...$this->readLedger->handle($request->user(), $validated),
-                'category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()),
+                'category_options' => $this->readCategoryTaxonomy->activeOptions(),
                 'workspace' => ['mode' => 'transactions'],
                 'selected_transaction_id' => isset($validated['selected'])
                     ? (int) $validated['selected']
@@ -56,7 +56,6 @@ class TransactionController extends Controller
         $validated = $request->validated();
 
         $this->recordManualTransaction->handle(
-            owner: $request->user(),
             occurredOn: CarbonImmutable::parse($validated['occurred_on'], config('app.timezone')),
             amountMinor: (int) $validated['amount_minor'],
             currency: Currency::from($validated['currency']),
@@ -79,7 +78,6 @@ class TransactionController extends Controller
         $validated = $request->validated();
 
         $this->updateTransaction->handle(
-            owner: $request->user(),
             transaction: $transaction,
             occurredOn: CarbonImmutable::parse($validated['occurred_on'], config('app.timezone')),
             amountMinor: (int) $validated['amount_minor'],

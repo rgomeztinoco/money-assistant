@@ -21,11 +21,11 @@ test('PEN and USD reports expose independent currency-only datasets', function (
     $this->travelTo(CarbonImmutable::parse('2026-08-12 15:00:00 UTC'));
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->purchase()->pen()->create([
         'occurred_on' => '2026-08-02',
         'amount_minor' => 5_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->purchase()->usd()->create([
         'occurred_on' => '2026-08-03',
         'amount_minor' => 7_000,
     ]);
@@ -73,20 +73,20 @@ test('PEN and USD reports expose independent currency-only datasets', function (
 test('reports subtract Refunds and exclude Voided Transactions within their currency', function () {
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->purchase()->pen()->create([
         'occurred_on' => '2026-08-02',
         'amount_minor' => 5_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+    Transaction::factory()->refund()->pen()->create([
         'occurred_on' => '2026-08-03',
         'amount_minor' => 1_200,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->purchase()->pen()->create([
         'occurred_on' => '2026-08-04',
         'amount_minor' => 9_000,
         'voided_at' => now(),
     ]);
-    Transaction::factory()->for($owner, 'owner')->refund()->usd()->create([
+    Transaction::factory()->refund()->usd()->create([
         'occurred_on' => '2026-08-05',
         'amount_minor' => 3_000,
     ]);
@@ -105,19 +105,19 @@ test('reports subtract Refunds and exclude Voided Transactions within their curr
 test('reports provide continuous monthly history through the selected period', function () {
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->purchase()->usd()->create([
         'occurred_on' => '2026-01-10',
         'amount_minor' => 1_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->purchase()->usd()->create([
         'occurred_on' => '2026-03-05',
         'amount_minor' => 3_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->refund()->usd()->create([
+    Transaction::factory()->refund()->usd()->create([
         'occurred_on' => '2026-03-12',
         'amount_minor' => 500,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->purchase()->usd()->create([
         'occurred_on' => '2026-03-20',
         'amount_minor' => 8_000,
     ]);
@@ -142,35 +142,35 @@ test('reports provide continuous monthly history through the selected period', f
 
 test('Category groups roll children up once and current Receipt Breakdowns replace Transaction Categories', function () {
     $owner = User::factory()->create();
-    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
-    $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->archived()->create([
+    $food = Category::factory()->create(['name' => 'Food']);
+    $dining = Category::factory()->for($food, 'parent')->archived()->create([
         'name' => 'Dining',
     ]);
-    $shopping = Category::factory()->for($owner, 'owner')->create(['name' => 'Shopping']);
+    $shopping = Category::factory()->create(['name' => 'Shopping']);
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->purchase()->pen()->create([
         'occurred_on' => '2026-08-02',
         'amount_minor' => 2_000,
         'category_id' => $dining->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->purchase()->pen()->create([
         'occurred_on' => '2026-08-03',
         'amount_minor' => 1_000,
         'category_id' => $food->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+    Transaction::factory()->refund()->pen()->create([
         'occurred_on' => '2026-08-04',
         'amount_minor' => 500,
         'category_id' => $dining->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->purchase()->pen()->create([
         'occurred_on' => '2026-08-05',
         'amount_minor' => 9_000,
         'category_id' => $dining->id,
         'voided_at' => now(),
     ]);
 
-    $itemizedTransaction = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    $itemizedTransaction = Transaction::factory()->purchase()->pen()->create([
         'occurred_on' => '2026-08-06',
         'amount_minor' => 3_000,
         'category_id' => $shopping->id,

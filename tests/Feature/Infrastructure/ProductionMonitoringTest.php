@@ -263,7 +263,7 @@ SH);
 
 test('the application snapshot reports Gmail stalls and repeated Owner login lockouts', function () {
     $owner = User::factory()->create();
-    GmailConnection::factory()->for($owner, 'owner')->create([
+    GmailConnection::factory()->create([
         'last_successful_sync_at' => now()->subMinutes(16),
     ]);
 

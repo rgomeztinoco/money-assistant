@@ -24,7 +24,6 @@ class ReportController extends Controller
             : $dateTo->startOfMonth();
 
         return Inertia::render('reports/show', $this->readCurrencyReport->handle(
-            owner: $request->user(),
             currency: $currency,
             dateFrom: $dateFrom,
             dateTo: $dateTo,

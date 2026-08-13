@@ -18,7 +18,6 @@ test('the owner edits all current values and clears the Review Queue directly', 
     $this->actingAs($owner);
 
     $transaction = app(RecordManualTransaction::class)->handle(
-        owner: $owner,
         occurredOn: CarbonImmutable::parse('2026-07-22'),
         amountMinor: 12345,
         currency: Currency::Usd,
@@ -30,7 +29,7 @@ test('the owner edits all current values and clears the Review Queue directly', 
             ReviewableTransactionField::MerchantDescription,
         ],
     );
-    $category = Category::factory()->for($owner, 'owner')->create();
+    $category = Category::factory()->create();
     $transaction->update([
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,

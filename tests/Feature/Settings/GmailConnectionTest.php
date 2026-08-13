@@ -108,7 +108,6 @@ test('the state-bound callback stores hidden encrypted credentials for the Gmail
     $stored = DB::table($connection->getTable())->where('id', $connection->id)->sole();
 
     expect($gmail->authorizationCodes)->toBe(['authorization-code'])
-        ->and($connection->user_id)->toBe($owner->id)
         ->and($connection->gmail_account_identity)->toBe('receipts@example.test')
         ->and($connection->access_token)->toBe('sensitive-access-token')
         ->and($connection->refresh_token)->toBe('sensitive-refresh-token')
@@ -187,11 +186,11 @@ test('a broader fake Gmail grant is rejected without replacing retained credenti
     );
     app()->instance(Gmail::class, $gmail);
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->withSession([
             'gmail_oauth_state' => [
                 'state' => 'expected-state',
-                'user_id' => $connection->user_id,
+                'user_id' => User::query()->sole()->id,
             ],
         ])
         ->get(route('gmail.authorization.store', [
@@ -266,7 +265,7 @@ test('settings reports a token-free connected Gmail health projection', function
         'last_successful_check_at' => '2026-07-28 18:45:00 UTC',
     ]);
 
-    $response = $this->actingAs($connection->owner)
+    $response = $this->actingAs(User::factory()->create())
         ->get(route('connections.edit'));
 
     $response
@@ -308,7 +307,7 @@ test('settings reports disconnected and explicit reauthorization states', functi
             ->where('gmail.account_identity', null)
             ->where('gmail.last_successful_check_at', null));
 
-    GmailConnection::factory()->reauthorizationRequired()->for($owner, 'owner')->create([
+    GmailConnection::factory()->reauthorizationRequired()->create([
         'gmail_account_identity' => 'receipts@example.test',
     ]);
 
@@ -325,7 +324,7 @@ test('settings reports an established Gmail synchronization as stale after five 
         'last_successful_sync_at' => now()->subMinutes(6),
     ]);
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->get(route('connections.edit'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('gmail.state', 'stale')
@@ -347,7 +346,7 @@ test('an explicit health check refreshes access and records a successful Gmail p
     $gmail->profile = new GmailProfile('receipts@example.test', '300');
     app()->instance(Gmail::class, $gmail);
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->post(route('gmail.connection.check'))
         ->assertRedirect(route('connections.edit'));
 
@@ -369,7 +368,7 @@ test('a transient health-check failure remains visible without pausing ingestion
     $gmail->refreshFailure = GmailRequestFailed::refresh();
     app()->instance(Gmail::class, $gmail);
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->post(route('gmail.connection.check'))
         ->assertRedirect(route('connections.edit'));
 
@@ -400,7 +399,7 @@ test('a checked Gmail account identity mismatch pauses ingestion for owner reaut
     $gmail->profile = new GmailProfile('another-account@example.test', '300');
     app()->instance(Gmail::class, $gmail);
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->post(route('gmail.connection.check'))
         ->assertRedirect(route('connections.edit'));
 
@@ -434,11 +433,11 @@ test('explicit reauthorization updates the stable connection and resumes ingesti
     );
     app()->instance(Gmail::class, $gmail);
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->withSession([
             'gmail_oauth_state' => [
                 'state' => 'reauthorize-state',
-                'user_id' => $connection->user_id,
+                'user_id' => User::query()->sole()->id,
             ],
         ])
         ->get(route('gmail.authorization.store', [
@@ -473,11 +472,11 @@ test('reauthorization cannot silently replace the dedicated Gmail account identi
     );
     app()->instance(Gmail::class, $gmail);
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->withSession([
             'gmail_oauth_state' => [
                 'state' => 'reauthorize-state',
-                'user_id' => $connection->user_id,
+                'user_id' => User::query()->sole()->id,
             ],
         ])
         ->get(route('gmail.authorization.store', [
@@ -506,7 +505,7 @@ test('connection settings show focused Gmail success and latest failure state', 
         'failed_job_uuid' => fake()->uuid(),
     ]);
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->get(route('connections.edit'))
         ->assertInertia(fn (Assert $page) => $page
             ->where(
@@ -543,7 +542,7 @@ test('the owner can safely retry the matching retained failed Gmail message job'
         'failed_job_uuid' => $uuid,
     ]);
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->post(route('gmail.failed_messages.retry', $discovery))
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('connections.edit'));
@@ -568,7 +567,7 @@ test('a failed Gmail job requires the owner and a matching retained payload', fu
         ->post(route('gmail.failed_messages.retry', $discovery))
         ->assertRedirect(route('login'));
 
-    $this->actingAs($connection->owner)
+    $this->actingAs(User::factory()->create())
         ->post(route('gmail.failed_messages.retry', $discovery))
         ->assertRedirect(route('connections.edit'));
 

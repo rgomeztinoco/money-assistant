@@ -19,9 +19,7 @@ class ResolveTransactionFieldRequest extends FormRequest
     {
         $transaction = $this->route('transaction');
 
-        return $this->user() !== null
-            && $transaction instanceof Transaction
-            && $transaction->user_id === $this->user()->getKey();
+        return $this->user() !== null && $transaction instanceof Transaction;
     }
 
     /**

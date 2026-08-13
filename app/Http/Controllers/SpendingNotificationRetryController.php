@@ -19,7 +19,6 @@ class SpendingNotificationRetryController extends Controller
     ): RedirectResponse {
         try {
             $retrySpendingNotification->handle(
-                $request->user(),
                 $spendingNotificationReference,
             );
         } catch (InvalidArgumentException $exception) {

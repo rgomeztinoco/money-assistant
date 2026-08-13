@@ -30,7 +30,6 @@ function categoryTotalFor(
 test('multiple partial Refunds link to one purchase without rewriting any Transaction', function () {
     $owner = User::factory()->create();
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -38,7 +37,6 @@ test('multiple partial Refunds link to one purchase without rewriting any Transa
             'amount_minor' => 10_000,
         ]);
     $firstRefund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -46,7 +44,6 @@ test('multiple partial Refunds link to one purchase without rewriting any Transa
             'amount_minor' => 3_000,
         ]);
     $secondRefund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -88,7 +85,6 @@ test('multiple partial Refunds link to one purchase without rewriting any Transa
 test('cumulative linked Refunds exceeding the purchase remain included and enter the Review Queue', function () {
     $owner = User::factory()->create();
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -97,7 +93,6 @@ test('cumulative linked Refunds exceeding the purchase remain included and enter
             'merchant_description' => 'Original purchase',
         ]);
     $firstRefund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -106,7 +101,6 @@ test('cumulative linked Refunds exceeding the purchase remain included and enter
             'merchant_description' => 'First partial Refund',
         ]);
     $excessiveRefund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -147,15 +141,15 @@ test('cumulative linked Refunds exceeding the purchase remain included and enter
 
 test('a linked Refund does not receive an archived Category from its purchase', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create([
+    $category = Category::factory()->create([
         'name' => 'Clothing',
         'archived_at' => now(),
     ]);
-    $purchase = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    $purchase = Transaction::factory()->purchase()->usd()->create([
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
     ]);
-    $refund = Transaction::factory()->for($owner, 'owner')->refund()->usd()->create();
+    $refund = Transaction::factory()->refund()->usd()->create();
 
     $this->actingAs($owner)
         ->post(route('transactions.refund_link.store', $refund), [
@@ -172,13 +166,10 @@ test('a linked Refund does not receive an archived Category from its purchase', 
 test('a linked Refund retains its own Category and Receipt Breakdown', function () {
     $owner = User::factory()->create();
     $purchaseCategory = Category::factory()
-        ->for($owner, 'owner')
         ->create(['name' => 'Clothing']);
     $refundCategory = Category::factory()
-        ->for($owner, 'owner')
         ->create(['name' => 'Returns']);
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -186,7 +177,6 @@ test('a linked Refund retains its own Category and Receipt Breakdown', function 
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -194,7 +184,6 @@ test('a linked Refund retains its own Category and Receipt Breakdown', function 
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     $refundBreakdown = ReceiptBreakdown::factory()
-        ->for($owner, 'owner')
         ->for($refund)
         ->create();
 
@@ -214,10 +203,8 @@ test('a linked Refund retains its own Category and Receipt Breakdown', function 
 test('a Refund linked to a purchase with a Receipt Breakdown stays Uncategorized for later allocation review', function () {
     $owner = User::factory()->create();
     $category = Category::factory()
-        ->for($owner, 'owner')
         ->create(['name' => 'Groceries']);
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -227,11 +214,9 @@ test('a Refund linked to a purchase with a Receipt Breakdown stays Uncategorized
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     ReceiptBreakdown::factory()
-        ->for($owner, 'owner')
         ->for($purchase)
         ->create();
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -269,10 +254,8 @@ test('a Refund linked to a purchase with a Receipt Breakdown stays Uncategorized
 test('an unlinked Refund keeps its independent owner Category', function () {
     $owner = User::factory()->create();
     $category = Category::factory()
-        ->for($owner, 'owner')
         ->create(['name' => 'Returns']);
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->pen()
         ->create([
@@ -298,12 +281,10 @@ test('an unlinked Refund keeps its independent owner Category', function () {
 test('invalid or unauthenticated Refund relationships are rejected', function () {
     $owner = User::factory()->create();
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create();
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create();
@@ -333,7 +314,6 @@ test('invalid or unauthenticated Refund relationships are rejected', function ()
 test('PostgreSQL prevents a Transaction from linking to itself', function () {
     $owner = User::factory()->create();
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->create();
 
@@ -345,15 +325,12 @@ test('PostgreSQL prevents a Transaction from linking to itself', function () {
 test('PostgreSQL enforces a two-level Category hierarchy', function () {
     $owner = User::factory()->create();
     $parentCategory = Category::factory()
-        ->for($owner, 'owner')
         ->create();
     $childCategory = Category::factory()
-        ->for($owner, 'owner')
         ->for($parentCategory, 'parent')
         ->create();
 
     expect(fn () => Category::factory()
-        ->for($owner, 'owner')
         ->for($childCategory, 'parent')
         ->create())->toThrow(QueryException::class);
 });
@@ -361,7 +338,6 @@ test('PostgreSQL enforces a two-level Category hierarchy', function () {
 test('cumulative Refund review remains exact beyond the PHP integer range', function () {
     $owner = User::factory()->create();
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -369,7 +345,6 @@ test('cumulative Refund review remains exact beyond the PHP integer range', func
             'amount_minor' => PHP_INT_MAX,
         ]);
     $fullRefund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -377,7 +352,6 @@ test('cumulative Refund review remains exact beyond the PHP integer range', func
             'amount_minor' => PHP_INT_MAX,
         ]);
     $excessiveRefund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -406,12 +380,10 @@ test('cumulative Refund review remains exact beyond the PHP integer range', func
 test('Refunds cannot link across currencies', function () {
     $owner = User::factory()->create();
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create();
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->pen()
         ->create();
@@ -430,7 +402,6 @@ test('Refunds cannot link across currencies', function () {
 test('the owner can choose an original purchase older than the visible Transaction page', function () {
     $owner = User::factory()->create();
     $olderPurchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -439,12 +410,10 @@ test('the owner can choose an original purchase older than the visible Transacti
         ]);
     Transaction::factory()
         ->count(100)
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create(['occurred_on' => '2026-01-01']);
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create(['occurred_on' => '2026-07-24']);
@@ -473,13 +442,10 @@ test('the owner can choose an original purchase older than the visible Transacti
 test('Receipt Breakdown review describes an existing owner Category accurately', function () {
     $owner = User::factory()->create();
     $purchaseCategory = Category::factory()
-        ->for($owner, 'owner')
         ->create(['name' => 'Groceries']);
     $refundCategory = Category::factory()
-        ->for($owner, 'owner')
         ->create(['name' => 'Returns']);
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -487,11 +453,9 @@ test('Receipt Breakdown review describes an existing owner Category accurately',
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     ReceiptBreakdown::factory()
-        ->for($owner, 'owner')
         ->for($purchase)
         ->create();
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -520,14 +484,11 @@ test('Receipt Breakdown review describes an existing owner Category accurately',
 test('second-level Category totals roll up to their current parent and remain exact when negative', function () {
     $owner = User::factory()->create();
     $parentCategory = Category::factory()
-        ->for($owner, 'owner')
         ->create(['name' => 'Housing']);
     $childCategory = Category::factory()
-        ->for($owner, 'owner')
         ->for($parentCategory, 'parent')
         ->create(['name' => 'Utilities']);
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -537,7 +498,6 @@ test('second-level Category totals roll up to their current parent and remain ex
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -563,10 +523,8 @@ test('second-level Category totals roll up to their current parent and remain ex
 test('a Receipt Breakdown does not replace Category totals before reconciled Line Items exist', function () {
     $owner = User::factory()->create();
     $category = Category::factory()
-        ->for($owner, 'owner')
         ->create(['name' => 'Groceries']);
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -575,7 +533,6 @@ test('a Receipt Breakdown does not replace Category totals before reconciled Lin
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     ReceiptBreakdown::factory()
-        ->for($owner, 'owner')
         ->for($purchase)
         ->create();
 

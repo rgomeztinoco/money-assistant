@@ -415,7 +415,7 @@ test('recovered application verification checks counts decryption authentication
     $owner = User::factory()->create([
         'password' => Hash::make('correct horse battery staple'),
     ]);
-    GmailConnection::factory()->for($owner, 'owner')->create([
+    GmailConnection::factory()->create([
         'access_token' => 'encrypted-access-token',
         'refresh_token' => 'encrypted-refresh-token',
     ]);
@@ -464,7 +464,7 @@ test('recovered application verification rejects record drift and invalid Owner 
     $owner = User::factory()->create([
         'password' => Hash::make('correct horse battery staple'),
     ]);
-    GmailConnection::factory()->for($owner, 'owner')->create();
+    GmailConnection::factory()->create();
 
     Artisan::call('app:recovery:inventory');
     $temporaryDirectory = backupRecoveryTemporaryDirectory();

@@ -15,8 +15,7 @@ class ChangeCategoryArchivalRequest extends FormRequest
     {
         $category = $this->route('category');
 
-        return $category instanceof Category
-            && $category->user_id === $this->user()->getKey();
+        return $this->user() !== null && $category instanceof Category;
     }
 
     /**

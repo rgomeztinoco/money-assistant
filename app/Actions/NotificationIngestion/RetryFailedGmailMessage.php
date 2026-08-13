@@ -4,7 +4,6 @@ namespace App\Actions\NotificationIngestion;
 
 use App\Jobs\ProcessGmailMessage;
 use App\Models\GmailMessageDiscovery;
-use App\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -13,14 +12,10 @@ use Throwable;
 
 class RetryFailedGmailMessage
 {
-    public function handle(User $owner, int $discoveryId): GmailMessageDiscovery
+    public function handle(int $discoveryId): GmailMessageDiscovery
     {
-        $discovery = DB::transaction(function () use ($owner, $discoveryId): GmailMessageDiscovery {
+        $discovery = DB::transaction(function () use ($discoveryId): GmailMessageDiscovery {
             $discovery = GmailMessageDiscovery::query()
-                ->whereHas(
-                    'gmailConnection',
-                    fn ($query) => $query->whereBelongsTo($owner, 'owner'),
-                )
                 ->lockForUpdate()
                 ->find($discoveryId);
 

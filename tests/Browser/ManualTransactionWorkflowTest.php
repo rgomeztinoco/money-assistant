@@ -51,7 +51,6 @@ test('the owner records purchases and Refunds with exact USD and PEN totals', fu
 test('the owner can void and restore a Transaction explicitly from the ledger', function () {
     $owner = User::factory()->create();
     Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([

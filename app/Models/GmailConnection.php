@@ -8,13 +8,11 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
  * @property string $gmail_account_identity
  * @property string $access_token
  * @property string $refresh_token
@@ -34,7 +32,6 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  */
 #[Fillable([
-    'user_id',
     'gmail_account_identity',
     'access_token',
     'refresh_token',
@@ -62,12 +59,6 @@ class GmailConnection extends Model
 
     /** @use HasFactory<GmailConnectionFactory> */
     use HasFactory;
-
-    /** @return BelongsTo<User, $this> */
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
 
     /** @return HasMany<GmailMessageDiscovery, $this> */
     public function messageDiscoveries(): HasMany

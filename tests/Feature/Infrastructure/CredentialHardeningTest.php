@@ -235,8 +235,8 @@ test('the credential rotation rehearsal rejects an unchanged candidate without p
 
 test('the rotation fingerprint ignores credentials and covers the complete financial export', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create(['amount_minor' => 12_345]);
-    $connection = GmailConnection::factory()->for($owner, 'owner')->create();
+    $transaction = Transaction::factory()->create(['amount_minor' => 12_345]);
+    $connection = GmailConnection::factory()->create();
 
     Artisan::call('app:financial-state:fingerprint');
     $beforeCredentialRotation = trim(Artisan::output());
@@ -250,7 +250,7 @@ test('the rotation fingerprint ignores credentials and covers the complete finan
     Artisan::call('app:financial-state:fingerprint');
     $afterCredentialRotation = trim(Artisan::output());
 
-    Transaction::factory()->for($owner, 'owner')->create([
+    Transaction::factory()->create([
         'merchant_description' => 'Financial state change',
     ]);
 

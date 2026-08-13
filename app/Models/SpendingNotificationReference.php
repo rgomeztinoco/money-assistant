@@ -12,7 +12,6 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
  * @property int|null $transaction_id
  * @property int|null $spending_notification_format_id
  * @property int|null $gmail_message_discovery_id
@@ -25,7 +24,6 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  */
 #[Fillable([
-    'user_id',
     'transaction_id',
     'gmail_account_identity',
     'message_id',
@@ -39,14 +37,6 @@ class SpendingNotificationReference extends Model
 {
     /** @use HasFactory<SpendingNotificationReferenceFactory> */
     use HasFactory;
-
-    /**
-     * @return BelongsTo<User, $this>
-     */
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
 
     /**
      * @return BelongsTo<Transaction, $this>

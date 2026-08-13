@@ -5,7 +5,6 @@ namespace App\Actions\Ledger;
 use App\ExactInteger;
 use App\Models\LineItem;
 use App\Models\Transaction;
-use App\Models\User;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
 
@@ -36,21 +35,18 @@ class ReadReviewQueue
      *     }>
      * }
      */
-    public function handle(User $owner): array
+    public function handle(): array
     {
         $unresolvedCategoryCount = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
             ->whereCategoryRequiresReview()
             ->count();
         $unresolvedCategoryCount += LineItem::query()
             ->whereNull('category_id')
             ->whereHas('receiptBreakdown', fn ($query) => $query
-                ->whereBelongsTo($owner, 'owner')
                 ->whereHas('transaction', fn ($query) => $query->whereNull('voided_at')))
             ->count();
         $reviewQuery = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
             ->whereJsonLength('provisional_fields', '>', 0);
 
@@ -100,7 +96,6 @@ class ReadReviewQueue
         }
 
         $relationshipReviewQuery = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
             ->whereJsonLength('refund_relationship_review_reasons', '>', 0);
         $unresolvedRefundRelationshipCount = (int) (clone $relationshipReviewQuery)

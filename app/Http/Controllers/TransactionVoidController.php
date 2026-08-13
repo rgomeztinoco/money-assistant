@@ -38,7 +38,6 @@ class TransactionVoidController extends Controller
     ): RedirectResponse {
         try {
             $this->changeTransactionVoidState->handle(
-                owner: $request->user(),
                 transaction: $transaction,
                 operation: $operation,
             );

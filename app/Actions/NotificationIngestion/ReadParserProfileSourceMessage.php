@@ -5,7 +5,6 @@ namespace App\Actions\NotificationIngestion;
 use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailMessage;
 use App\Models\GmailMessageDiscovery;
-use App\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
 
@@ -26,20 +25,14 @@ final class ReadParserProfileSourceMessage
      *     mime_parts: array{text_plain: string|null, text_html: string|null}
      * }
      */
-    public function handle(User $owner, GmailMessageDiscovery $discovery): array
+    public function handle(GmailMessageDiscovery $discovery): array
     {
-        return $this->sourceData($this->sourceMessage($owner, $discovery));
+        return $this->sourceData($this->sourceMessage($discovery));
     }
 
-    public function sourceMessage(
-        User $owner,
-        GmailMessageDiscovery $discovery,
-    ): GmailMessage {
+    public function sourceMessage(GmailMessageDiscovery $discovery): GmailMessage
+    {
         $discovery->loadMissing('gmailConnection');
-
-        if ($discovery->gmailConnection->user_id !== $owner->getKey()) {
-            throw (new ModelNotFoundException)->setModel(GmailMessageDiscovery::class);
-        }
 
         $connection = $discovery->gmailConnection;
 

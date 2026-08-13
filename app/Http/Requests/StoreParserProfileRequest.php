@@ -2,12 +2,10 @@
 
 namespace App\Http\Requests;
 
-use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\ParserProfile;
 use App\SpendingNotificationFormatPurpose;
 use Illuminate\Contracts\Validation\ValidationRule;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -48,40 +46,23 @@ class StoreParserProfileRequest extends FormRequest
      */
     public function rules(): array
     {
-        $ownerId = (int) $this->user()->getKey();
-        $ownedGmailConnectionIds = GmailConnection::query()
-            ->where('user_id', $ownerId)
-            ->select('id');
-
         return [
             'source_message_discovery_id' => [
                 'required',
                 'integer',
-                Rule::exists(GmailMessageDiscovery::class, 'id')
-                    ->where(
-                        fn (Builder $query): Builder => $query->whereIn(
-                            'gmail_connection_id',
-                            $ownedGmailConnectionIds,
-                        ),
-                    ),
+                Rule::exists(GmailMessageDiscovery::class, 'id'),
             ],
             'parser_profile_id' => [
                 'nullable',
                 'integer',
-                Rule::exists(ParserProfile::class, 'id')
-                    ->where(
-                        fn (Builder $query): Builder => $query->where(
-                            'user_id',
-                            $ownerId,
-                        ),
-                    ),
+                Rule::exists(ParserProfile::class, 'id'),
             ],
             'profile_name' => [
                 'nullable',
                 'required_without:parser_profile_id',
                 'string',
                 'max:255',
-                Rule::unique(ParserProfile::class, 'name')->where('user_id', $ownerId),
+                Rule::unique(ParserProfile::class, 'name'),
             ],
             'format_name' => ['required', 'string', 'max:255'],
             'format_purpose' => ['required', Rule::enum(SpendingNotificationFormatPurpose::class)],

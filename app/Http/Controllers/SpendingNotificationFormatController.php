@@ -69,7 +69,7 @@ class SpendingNotificationFormatController extends Controller
         ValidateSpendingNotificationFormat $validateFormat,
     ): ValidatedSpendingNotificationFormat {
         try {
-            return $validateFormat->handle($request->user(), $request->validated(), $profile);
+            return $validateFormat->handle($request->validated(), $profile);
         } catch (InvalidArgumentException $exception) {
             throw ValidationException::withMessages(['profile' => $exception->getMessage()]);
         }
@@ -85,7 +85,6 @@ class SpendingNotificationFormatController extends Controller
     private function ownedProfile(Request $request, ParserProfile $profile): ParserProfile
     {
         return ParserProfile::query()
-            ->whereBelongsTo($request->user(), 'owner')
             ->findOrFail($profile->id);
     }
 }

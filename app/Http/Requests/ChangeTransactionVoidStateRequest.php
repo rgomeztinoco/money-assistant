@@ -11,9 +11,7 @@ class ChangeTransactionVoidStateRequest extends FormRequest
     {
         $transaction = $this->route('transaction');
 
-        return $this->user() !== null
-            && $transaction instanceof Transaction
-            && $transaction->user_id === $this->user()->getKey();
+        return $this->user() !== null && $transaction instanceof Transaction;
     }
 
     /** @return array<string, array<mixed>|string> */

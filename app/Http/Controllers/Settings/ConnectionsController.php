@@ -13,7 +13,7 @@ class ConnectionsController extends Controller
     public function edit(Request $request, ReadGmailConnectionStatus $readStatus): Response
     {
         return Inertia::render('settings/connections', [
-            'gmail' => $readStatus->handle($request->user()),
+            'gmail' => $readStatus->handle(),
         ]);
     }
 }

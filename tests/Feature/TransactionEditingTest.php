@@ -12,14 +12,12 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 test('the owner directly edits the current Transaction and clears reviewed fields', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
+    $category = Category::factory()->create();
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->pen()
         ->create(['merchant_description' => 'Original purchase']);
     $transaction = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->provisional([
@@ -69,7 +67,6 @@ test('the ledger is paginated and loads the selected inspector separately', func
     $owner = User::factory()->create();
     $transactions = Transaction::factory()
         ->count(26)
-        ->for($owner, 'owner')
         ->create();
 
     $this->actingAs($owner)
@@ -101,9 +98,8 @@ test('the ledger is paginated and loads the selected inspector separately', func
 
 test('editing a purchase recalculates its Refund review state from current amounts', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
+    $category = Category::factory()->create();
     $purchase = Transaction::factory()
-        ->for($owner, 'owner')
         ->purchase()
         ->usd()
         ->create([
@@ -112,7 +108,6 @@ test('editing a purchase recalculates its Refund review state from current amoun
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     $refund = Transaction::factory()
-        ->for($owner, 'owner')
         ->refund()
         ->usd()
         ->create([
@@ -142,7 +137,6 @@ test('editing a purchase recalculates its Refund review state from current amoun
 test('editing one uncertain field preserves unrelated current review flags', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
-        ->for($owner, 'owner')
         ->provisional([
             ReviewableTransactionField::AmountMinor,
             ReviewableTransactionField::MerchantDescription,
@@ -170,7 +164,6 @@ test('editing one uncertain field preserves unrelated current review flags', fun
 test('an amount edit cannot silently invalidate an existing Receipt Breakdown', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
-        ->for($owner, 'owner')
         ->create(['amount_minor' => 1_000]);
     $breakdown = ReceiptBreakdown::factory()->for($transaction)->create();
     LineItem::factory()->for($breakdown)->create(['line_total_minor' => 1_000]);

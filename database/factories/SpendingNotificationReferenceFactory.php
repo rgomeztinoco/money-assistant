@@ -21,10 +21,6 @@ class SpendingNotificationReferenceFactory extends Factory
     {
         return [
             'transaction_id' => Transaction::factory(),
-            'user_id' => fn (array $attributes): int => Transaction::query()
-                ->whereKey($attributes['transaction_id'])
-                ->firstOrFail()
-                ->user_id,
             'gmail_account_identity' => fake()->unique()->safeEmail(),
             'message_id' => (string) Str::uuid(),
             'processing_outcome' => 'created',

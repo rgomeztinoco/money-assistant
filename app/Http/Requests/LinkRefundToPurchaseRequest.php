@@ -13,9 +13,7 @@ class LinkRefundToPurchaseRequest extends FormRequest
     {
         $refund = $this->route('refund');
 
-        return $this->user() !== null
-            && $refund instanceof Transaction
-            && $refund->user_id === $this->user()->getKey();
+        return $this->user() !== null && $refund instanceof Transaction;
     }
 
     /**
@@ -32,7 +30,6 @@ class LinkRefundToPurchaseRequest extends FormRequest
                 'required',
                 'integer',
                 Rule::exists((new Transaction)->getTable(), 'id')
-                    ->where('user_id', $this->user()?->getKey())
                     ->where('kind', 'purchase')
                     ->where(
                         'currency',

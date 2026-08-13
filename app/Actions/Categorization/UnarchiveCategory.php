@@ -3,19 +3,17 @@
 namespace App\Actions\Categorization;
 
 use App\Models\Category;
-use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class UnarchiveCategory
 {
-    public function handle(User $owner, int $categoryId): Category
+    public function handle(int $categoryId): Category
     {
         try {
-            return DB::transaction(function () use ($owner, $categoryId): Category {
+            return DB::transaction(function () use ($categoryId): Category {
                 $category = Category::query()
-                    ->whereBelongsTo($owner, 'owner')
                     ->whereKey($categoryId)
                     ->lockForUpdate()
                     ->firstOrFail();
@@ -26,7 +24,6 @@ class UnarchiveCategory
 
                 if ($category->parent_id !== null) {
                     $parentIsActive = Category::query()
-                        ->whereBelongsTo($owner, 'owner')
                         ->whereKey($category->parent_id)
                         ->whereNull('archived_at')
                         ->lockForUpdate()
@@ -40,7 +37,6 @@ class UnarchiveCategory
                 }
 
                 $nameConflictExists = Category::query()
-                    ->whereBelongsTo($owner, 'owner')
                     ->whereKeyNot($category->id)
                     ->whereNull('archived_at')
                     ->whereRaw('lower(name) = lower(?)', [$category->name])

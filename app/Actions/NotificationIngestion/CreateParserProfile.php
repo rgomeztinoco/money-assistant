@@ -3,7 +3,6 @@
 namespace App\Actions\NotificationIngestion;
 
 use App\Models\ParserProfile;
-use App\Models\User;
 use App\SpendingNotificationProcessingOutcome;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -18,28 +17,25 @@ final class CreateParserProfile
     /**
      * @param  array<string, mixed>  $attributes
      */
-    public function handle(User $owner, array $attributes): ParserProfile
+    public function handle(array $attributes): ParserProfile
     {
         $existingProfile = isset($attributes['parser_profile_id'])
             ? ParserProfile::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereKey($attributes['parser_profile_id'])
                 ->sole()
             : null;
         $validatedFormat = $this->validateFormat->handle(
-            $owner,
             $attributes,
             $existingProfile,
         );
 
-        return DB::transaction(function () use ($owner, $existingProfile, $validatedFormat): ParserProfile {
+        return DB::transaction(function () use ($existingProfile, $validatedFormat): ParserProfile {
             $profile = $existingProfile === null
                 ? ParserProfile::create([
                     ...$validatedFormat->profile->getAttributes(),
                     'enabled_at' => now(),
                 ])
                 : ParserProfile::query()
-                    ->whereBelongsTo($owner, 'owner')
                     ->lockForUpdate()
                     ->findOrFail($existingProfile->id);
 
@@ -49,7 +45,6 @@ final class CreateParserProfile
             ])->save();
 
             $reference = $this->processSpendingNotification->handle(
-                owner: $owner,
                 discovery: $validatedFormat->discovery,
                 message: $validatedFormat->message,
                 retryUnsupported: true,

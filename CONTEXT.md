@@ -4,6 +4,10 @@ Money Assistant records personal spending and helps its owner understand and imp
 
 ## Language
 
+**Owner Account**:
+The single private authentication identity through which the owner accesses Money Assistant. Financial records and configuration belong to the application as a whole because no second owner can exist.
+_Avoid_: User account, tenant
+
 **Transaction**:
 A confirmed personal money movement that immediately affects spending totals as either a purchase or a Refund, even when some details remain uncertain and require review. A saved manual entry, supported Spending Notification, or owner-confirmed Receipt Proposal is sufficient confirmation.
 _Avoid_: Expense, purchase

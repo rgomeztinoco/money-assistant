@@ -4,16 +4,14 @@ namespace App\Actions\Categorization;
 
 use App\Models\Category;
 use App\Models\MerchantRule;
-use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class ArchiveCategory
 {
-    public function handle(User $owner, int $categoryId): Category
+    public function handle(int $categoryId): Category
     {
-        return DB::transaction(function () use ($owner, $categoryId): Category {
+        return DB::transaction(function () use ($categoryId): Category {
             $category = Category::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereKey($categoryId)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -42,7 +40,6 @@ class ArchiveCategory
                 ->update(['archived_at' => $archivedAt]);
 
             MerchantRule::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereIn('category_id', $categoryIds)
                 ->where('enabled', true)
                 ->update(['enabled' => false]);

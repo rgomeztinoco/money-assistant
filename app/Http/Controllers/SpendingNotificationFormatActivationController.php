@@ -44,7 +44,6 @@ class SpendingNotificationFormatActivationController extends Controller
         SpendingNotificationFormat $format,
     ): SpendingNotificationFormat {
         ParserProfile::query()
-            ->whereBelongsTo($request->user(), 'owner')
             ->findOrFail($profile->id);
 
         return SpendingNotificationFormat::query()

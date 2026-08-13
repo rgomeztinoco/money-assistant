@@ -18,10 +18,7 @@ class ParserProfilePreviewController extends Controller
         try {
             Inertia::flash(
                 'parser_profile_preview',
-                $previewParserProfile->handle(
-                    $request->user(),
-                    $request->validated(),
-                ),
+                $previewParserProfile->handle($request->validated()),
             );
         } catch (InvalidArgumentException $exception) {
             throw ValidationException::withMessages([

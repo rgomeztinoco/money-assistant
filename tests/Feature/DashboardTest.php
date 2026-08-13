@@ -25,25 +25,25 @@ test('authenticated users can visit the dashboard', function () {
 test('the Dashboard shows current-month spending and Review Queue workload', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-18 15:00:00 UTC'));
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    $category = Category::factory()->create();
+    Transaction::factory()->purchase()->usd()->create([
         'occurred_on' => '2026-08-04',
         'amount_minor' => 100,
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->provisional([
+    Transaction::factory()->purchase()->pen()->provisional([
         ReviewableTransactionField::MerchantDescription,
     ])->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 500,
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+    Transaction::factory()->refund()->pen()->create([
         'occurred_on' => '2026-08-12',
         'amount_minor' => 100,
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->purchase()->pen()->create([
         'occurred_on' => '2026-07-31',
         'amount_minor' => 9_000,
         'category_id' => $category->id,
@@ -64,11 +64,11 @@ test('the Dashboard shows current-month spending and Review Queue workload', fun
 
 test('the Dashboard summarizes enabled Parser Profiles without drift or security aggregation', function () {
     $owner = User::factory()->create();
-    GmailConnection::factory()->for($owner, 'owner')->create();
-    ParserProfile::factory()->for($owner, 'owner')->create([
+    GmailConnection::factory()->create();
+    ParserProfile::factory()->create([
         'name' => 'Healthy bank alerts',
     ]);
-    ParserProfile::factory()->for($owner, 'owner')->create([
+    ParserProfile::factory()->create([
         'name' => 'Card alerts',
     ]);
     $this->actingAs($owner)
@@ -84,7 +84,7 @@ test('the Dashboard summarizes enabled Parser Profiles without drift or security
 test('the Dashboard promotes stale Gmail synchronization instead of reporting it healthy', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-18 15:00:00 UTC'));
     $owner = User::factory()->create();
-    GmailConnection::factory()->for($owner, 'owner')->create([
+    GmailConnection::factory()->create([
         'last_successful_sync_at' => now()->subMinutes(6),
     ]);
 

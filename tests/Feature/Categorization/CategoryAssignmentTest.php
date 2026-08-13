@@ -9,8 +9,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 test('the owner can assign an active Category and return a Transaction to Uncategorized', function () {
     $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
-    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+    $category = Category::factory()->create(['name' => 'Groceries']);
+    $transaction = Transaction::factory()->create();
 
     $this->actingAs($owner)
         ->put(route('transactions.category.update', $transaction), [
@@ -44,13 +44,12 @@ test('the owner can assign an active Category and return a Transaction to Uncate
 
 test('an owner Category assignment replaces the current Merchant Rule source', function () {
     $owner = User::factory()->create();
-    $ownerCategory = Category::factory()->for($owner, 'owner')->create(['name' => 'Owner choice']);
-    $automatedCategory = Category::factory()->for($owner, 'owner')->create(['name' => 'Earlier choice']);
+    $ownerCategory = Category::factory()->create(['name' => 'Owner choice']);
+    $automatedCategory = Category::factory()->create(['name' => 'Earlier choice']);
     $merchantRule = MerchantRule::factory()
-        ->for($owner, 'owner')
         ->for($automatedCategory)
         ->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create([
+    $transaction = Transaction::factory()->create([
         'category_id' => $automatedCategory->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::MerchantRule,
         'merchant_rule_id' => $merchantRule->id,
@@ -70,8 +69,8 @@ test('an owner Category assignment replaces the current Merchant Rule source', f
 
 test('Category assignment rejects archived Categories', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create();
-    $archived = Category::factory()->for($owner, 'owner')->archived()->create();
+    $transaction = Transaction::factory()->create();
+    $archived = Category::factory()->archived()->create();
 
     $this->actingAs($owner)
         ->put(route('transactions.category.update', $transaction), [
@@ -83,10 +82,10 @@ test('Category assignment rejects archived Categories', function () {
 
 test('the Transaction workspace exposes active Category paths and not a customizable Uncategorized Category', function () {
     $owner = User::factory()->create();
-    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
-    Category::factory()->for($owner, 'owner')->for($food, 'parent')->create(['name' => 'Groceries']);
-    Category::factory()->for($owner, 'owner')->create(['name' => 'Old', 'archived_at' => now()]);
-    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+    $food = Category::factory()->create(['name' => 'Food']);
+    Category::factory()->for($food, 'parent')->create(['name' => 'Groceries']);
+    Category::factory()->create(['name' => 'Old', 'archived_at' => now()]);
+    $transaction = Transaction::factory()->create();
 
     $this->actingAs($owner)
         ->get(route('transactions.index', ['selected' => $transaction->id]))

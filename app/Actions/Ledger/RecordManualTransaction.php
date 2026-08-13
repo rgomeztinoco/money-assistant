@@ -5,7 +5,6 @@ namespace App\Actions\Ledger;
 use App\Actions\Categorization\ApplyMerchantRuleToTransaction;
 use App\Currency;
 use App\Models\Transaction;
-use App\Models\User;
 use App\ReviewableTransactionField;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
@@ -23,7 +22,6 @@ class RecordManualTransaction
      * @param  list<ReviewableTransactionField>  $provisionalFields
      */
     public function handle(
-        User $owner,
         CarbonImmutable $occurredOn,
         mixed $amountMinor,
         Currency $currency,
@@ -43,9 +41,8 @@ class RecordManualTransaction
             throw new InvalidArgumentException('A merchant or short description is required.');
         }
 
-        return DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $provisionalFields, $paymentInstrumentLabel, $paymentInstrumentLastFour): Transaction {
+        return DB::transaction(function () use ($occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $provisionalFields, $paymentInstrumentLabel, $paymentInstrumentLastFour): Transaction {
             $transaction = Transaction::create([
-                'user_id' => $owner->getKey(),
                 'occurred_on' => $occurredOn,
                 'amount_minor' => $amountMinor,
                 'currency' => $currency,

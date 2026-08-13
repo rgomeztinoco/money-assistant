@@ -24,7 +24,6 @@ class SpendingNotificationRecoveryController extends Controller
 
         try {
             $recoverSpendingNotification->handle(
-                owner: $request->user(),
                 reference: $spendingNotificationReference,
                 occurredOn: CarbonImmutable::parse(
                     $validated['occurred_on'],

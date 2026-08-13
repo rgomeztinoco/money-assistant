@@ -16,8 +16,7 @@ class UpdateCategoryRequest extends FormRequest
     {
         $category = $this->route('category');
 
-        return $category instanceof Category
-            && $category->user_id === $this->user()->getKey();
+        return $this->user() !== null && $category instanceof Category;
     }
 
     /**
@@ -36,7 +35,6 @@ class UpdateCategoryRequest extends FormRequest
                 'nullable',
                 'integer',
                 Rule::exists('categories', 'id')
-                    ->where('user_id', $this->user()->getKey())
                     ->whereNull('parent_id')
                     ->whereNull('archived_at'),
                 Rule::notIn([$categoryId]),
