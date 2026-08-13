@@ -1,8 +1,6 @@
 <?php
 
 use App\Actions\NotificationIngestion\DispatchGmailSynchronizations;
-use App\Actions\Reminders\DispatchPendingReminderDeliveries;
-use App\Actions\Reminders\EnqueueDueReminderDeliveries;
 use App\GmailSynchronizationType;
 use App\Operations\DeploymentRehearsal;
 use App\Operations\RuntimeHealth;
@@ -44,17 +42,6 @@ Schedule::everyMinute()
             ->name('gmail-history-synchronization')
             ->withoutOverlapping();
 
-        Schedule::call(
-            fn () => app(EnqueueDueReminderDeliveries::class)->handle(),
-        )
-            ->name('reminder-outbox')
-            ->withoutOverlapping();
-
-        Schedule::call(
-            fn () => app(DispatchPendingReminderDeliveries::class)->handle(),
-        )
-            ->name('reminder-deliveries')
-            ->withoutOverlapping();
     });
 
 Artisan::command('inspire', function () {

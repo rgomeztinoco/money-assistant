@@ -33,6 +33,8 @@ class GmailConnectionFactory extends Factory
             'history_id' => (string) fake()->numberBetween(100_000, 999_999),
             'initial_sync_completed_at' => now()->subDay(),
             'last_successful_sync_at' => now()->subMinute(),
+            'last_synchronization_failed_at' => null,
+            'last_synchronization_error_code' => null,
         ];
     }
 

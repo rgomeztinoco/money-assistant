@@ -93,7 +93,7 @@ SH,
             'MONITOR_NOW_EPOCH' => (string) (1900 + 86_400),
         ], $failed);
         expect(file_get_contents($deliveryLog))
-            ->toContain('[Money Assistant][reminder][warning]')
+            ->toContain('[Money Assistant][repeat][warning]')
             ->and(substr_count(file_get_contents($deliveryLog), "\n"))->toBe(2);
 
         runMonitoringScript('evaluate-monitoring-incidents', [

@@ -12,21 +12,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::table('integration_incidents')
-            ->where('integration', 'bcrp')
-            ->orWhere('work_type', 'daily_exchange_rate_seed')
-            ->delete();
         DB::table('jobs')
             ->where('payload', 'like', '%SeedDailyExchangeRate%')
             ->delete();
         DB::table('failed_jobs')
             ->where('payload', 'like', '%SeedDailyExchangeRate%')
             ->delete();
-
-        DB::statement('ALTER TABLE integration_incidents DROP CONSTRAINT IF EXISTS integration_incidents_integration_supported');
-        DB::statement('ALTER TABLE integration_incidents DROP CONSTRAINT IF EXISTS integration_incidents_work_type_supported');
-        DB::statement("ALTER TABLE integration_incidents ADD CONSTRAINT integration_incidents_integration_supported CHECK (integration IN ('gmail', 'openclaw'))");
-        DB::statement("ALTER TABLE integration_incidents ADD CONSTRAINT integration_incidents_work_type_supported CHECK (work_type IN ('gmail_synchronization', 'gmail_message', 'reminder_delivery'))");
 
         Schema::dropIfExists('daily_exchange_rate_seed_requests');
         Schema::dropIfExists('daily_exchange_rates');

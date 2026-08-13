@@ -1,4 +1,4 @@
-import { Form, Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import {
     ArrowRight,
     BarChart3,
@@ -9,8 +9,6 @@ import {
     TriangleAlert,
     WalletCards,
 } from 'lucide-react';
-import IntegrationIncidentAcknowledgementController from '@/actions/App/Http/Controllers/IntegrationIncidentAcknowledgementController';
-import IntegrationIncidentReplayController from '@/actions/App/Http/Controllers/IntegrationIncidentReplayController';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,17 +39,7 @@ type DashboardSpending = {
 };
 
 type OperatingException = {
-    type:
-        | 'parser_security'
-        | 'parser_drift'
-        | 'gmail_connection'
-        | 'integration_incident';
-    incident_id?: number;
-    integration?: 'gmail';
-    failure_kind?: string;
-    error_code?: string;
-    replayable?: boolean;
-    affected_url?: string;
+    type: 'parser_security' | 'parser_drift' | 'gmail_connection';
     profile_id?: number;
     profile_name?: string | null;
     count?: number;
@@ -114,17 +102,6 @@ function exceptionPresentation(exception: OperatingException) {
                           : 'Review the Gmail connection and its latest check.',
                 href: `${connectionsEdit.url({ query: { integration: 'gmail' } })}#gmail`,
             };
-        case 'integration_incident': {
-            return {
-                icon: TriangleAlert,
-                title: `Gmail work ${exception.state === 'parked' ? 'is parked' : 'is retrying'}`,
-                description:
-                    exception.state === 'parked'
-                        ? 'Automatic retries stopped. Review the affected item or replay the original work.'
-                        : 'The failure has persisted for at least fifteen minutes and automatic recovery is continuing.',
-                href: exception.affected_url ?? dashboard.url(),
-            };
-        }
     }
 }
 
@@ -314,7 +291,7 @@ export default function Dashboard({
 
                                 return (
                                     <Card
-                                        key={`${exception.type}-${exception.incident_id ?? exception.profile_id ?? index}`}
+                                        key={`${exception.type}-${exception.profile_id ?? index}`}
                                         className="border-amber-300 py-4 dark:border-amber-800"
                                     >
                                         <CardHeader className="flex-row items-start gap-3">
@@ -343,62 +320,6 @@ export default function Dashboard({
                                                         <ArrowRight />
                                                     </Link>
                                                 </Button>
-
-                                                {exception.type ===
-                                                    'integration_incident' &&
-                                                    exception.incident_id !==
-                                                        undefined && (
-                                                        <>
-                                                            {exception.replayable && (
-                                                                <Form
-                                                                    {...IntegrationIncidentReplayController.form(
-                                                                        exception.incident_id,
-                                                                    )}
-                                                                    options={{
-                                                                        preserveScroll: true,
-                                                                    }}
-                                                                >
-                                                                    {({
-                                                                        processing,
-                                                                    }) => (
-                                                                        <Button
-                                                                            type="submit"
-                                                                            size="sm"
-                                                                            disabled={
-                                                                                processing
-                                                                            }
-                                                                        >
-                                                                            Replay
-                                                                        </Button>
-                                                                    )}
-                                                                </Form>
-                                                            )}
-
-                                                            <Form
-                                                                {...IntegrationIncidentAcknowledgementController.form(
-                                                                    exception.incident_id,
-                                                                )}
-                                                                options={{
-                                                                    preserveScroll: true,
-                                                                }}
-                                                            >
-                                                                {({
-                                                                    processing,
-                                                                }) => (
-                                                                    <Button
-                                                                        type="submit"
-                                                                        size="sm"
-                                                                        variant="ghost"
-                                                                        disabled={
-                                                                            processing
-                                                                        }
-                                                                    >
-                                                                        Acknowledge
-                                                                    </Button>
-                                                                )}
-                                                            </Form>
-                                                        </>
-                                                    )}
                                             </div>
                                         </CardHeader>
                                     </Card>

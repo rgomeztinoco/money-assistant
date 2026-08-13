@@ -3,9 +3,7 @@
 namespace App\Providers;
 
 use App\Contracts\Gmail;
-use App\Contracts\OpenClawHook;
 use App\Integrations\Gmail\GoogleGmail;
-use App\Integrations\OpenClaw\HttpOpenClawHook;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Date;
@@ -30,13 +28,6 @@ class AppServiceProvider extends ServiceProvider
             ),
         );
 
-        $this->app->singleton(
-            OpenClawHook::class,
-            fn (): HttpOpenClawHook => new HttpOpenClawHook(
-                url: (string) config('services.openclaw.hook.url'),
-                token: (string) config('services.openclaw.hook.token'),
-            ),
-        );
     }
 
     /**

@@ -1,8 +1,6 @@
 <?php
 
-use App\Actions\Integrations\ClassifyIntegrationFailure;
 use App\Contracts\Gmail;
-use App\IntegrationFailureKind;
 use App\Integrations\Gmail\GmailHistoryExpired;
 use App\Integrations\Gmail\GmailReauthorizationRequired;
 use App\Integrations\Gmail\GmailRequestFailed;
@@ -528,7 +526,6 @@ test('the Google adapter sanitizes message discovery failures', function () {
 
 test('the Google adapter preserves sanitized HTTP failure semantics', function (
     int $status,
-    IntegrationFailureKind $expectedKind,
 ) {
     $mockHandler = new MockHandler([
         new Response($status, ['Content-Type' => 'application/json'], json_encode([
@@ -548,13 +545,12 @@ test('the Google adapter preserves sanitized HTTP failure semantics', function (
     } catch (GmailRequestFailed $exception) {
         expect($exception->getMessage())->not->toContain('sensitive')
             ->and($exception->getPrevious())->toBeNull()
-            ->and($exception->httpStatus())->toBe($status)
-            ->and(app(ClassifyIntegrationFailure::class)->handle($exception))->toBe($expectedKind);
+            ->and($exception->httpStatus())->toBe($status);
     }
 })->with([
-    'authentication' => [401, IntegrationFailureKind::Authentication],
-    'authorization' => [403, IntegrationFailureKind::Authorization],
-    'schema' => [404, IntegrationFailureKind::Schema],
+    'authentication' => [401],
+    'authorization' => [403],
+    'schema' => [404],
 ]);
 
 function gmailBase64Url(string $value): string

@@ -8,7 +8,7 @@ umask 077
 : "${MONITOR_STATE_DIRECTORY:?Set MONITOR_STATE_DIRECTORY}"
 
 now_epoch="${MONITOR_NOW_EPOCH:-$(date +%s)}"
-reminder_seconds=86400
+repeat_seconds=86400
 tab="$(printf '\t')"
 failed_deliveries=0
 healthy_count=0
@@ -95,8 +95,8 @@ while IFS="$tab" read -r check_key severity state grace_seconds message; do
             notification="[Money Assistant][${severity}] ${message}"
         elif [ "$previous_severity" = warning ] && [ "$severity" = critical ]; then
             notification="[Money Assistant][${severity}] ${message}"
-        elif [ $((now_epoch - last_sent_at)) -ge "$reminder_seconds" ]; then
-            notification="[Money Assistant][reminder][${severity}] ${message}"
+        elif [ $((now_epoch - last_sent_at)) -ge "$repeat_seconds" ]; then
+            notification="[Money Assistant][repeat][${severity}] ${message}"
         fi
     fi
 

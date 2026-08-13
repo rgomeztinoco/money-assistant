@@ -46,22 +46,6 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
-     * @return HasMany<Reminder, $this>
-     */
-    public function reminders(): HasMany
-    {
-        return $this->hasMany(Reminder::class);
-    }
-
-    /**
-     * @return HasMany<IntegrationIncident, $this>
-     */
-    public function integrationIncidents(): HasMany
-    {
-        return $this->hasMany(IntegrationIncident::class);
-    }
-
-    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

@@ -64,12 +64,6 @@ return new class extends Migration
                     'updated_at' => now(),
                 ]);
 
-            DB::table('integration_incidents')
-                ->where(fn ($query) => $query
-                    ->where('integration', 'ai')
-                    ->orWhere('work_type', 'ai_classification'))
-                ->delete();
-
             DB::table('category_assignments')
                 ->where('source', 'ai')
                 ->delete();

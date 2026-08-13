@@ -56,14 +56,6 @@ _Avoid_: Pending transactions, approval queue
 An owner-provided change to a current Transaction value. It takes effect immediately without a separate Correction or revision contract; changing a flagged value clears that field's current review flag. A direct edit neither creates nor changes a Merchant Rule, and later rule changes cannot replace an owner-assigned Category without another explicit owner action.
 _Avoid_: Correction, override
 
-**Confirmation Grant**:
-A 30-minute, single-use authorization issued by Money Assistant after the owner reviews an exact proposed operation and explicitly approves it. Each owner conversation may have only one pending grant; preparing another operation cancels the previous one. A grant expires sooner if a referenced resource, the proposed inputs, or the capability schema version changes. It is bound to that operation, its complete inputs, the owner, and the immutable approval identity, so OpenClaw may carry out the confirmed change but cannot broaden or replay it. A grant may cover a finite, fully itemized bundle only when every change succeeds or none does; it cannot authorize an open-ended future scope. Ordinary single-resource changes may use an unambiguous affirmative response in a new message from the paired, allowlisted owner conversation, while changes affecting many Transactions require the owner to return an exact, short confirmation phrase generated for that operation. Export and permanent deletion instead require fresh passkey-authenticated approval in Money Assistant's web interface. A prior or inferred instruction is not confirmation. Read-only queries, reminder delivery, and submission of a Receipt Proposal do not require a Confirmation Grant because they do not alter confirmed financial state; approving, correcting, or reconciling that state does.
-_Avoid_: Blanket approval, confirmation token
-
-**OpenClaw Access**:
-OpenClaw's authenticated authority within Money Assistant's application boundary. It includes task-shaped capabilities plus generic query and domain-action mutation access to Money Assistant's financial resources and owner-facing settings, including Categories, Merchant Rules, Parser Profile enablement, Reminders, and manual replay of failed processing. Every call is bound for at most 30 minutes to either a distinct message from the paired, allowlisted owner conversation or a Money Assistant-issued Reminder or event; OpenClaw has no background or self-initiated access. Money Assistant continues to enforce every domain invariant, Confirmation Grant, and audit requirement. Owner-visible financial values returned through OpenClaw Access may enter its configured cloud model context, so every query is field-minimized and bounded; raw Gmail content, receipt images, credentials, private audit identifiers, and server data are excluded, while full exports are delivered only through a freshly authenticated web flow. Audit events are readable but never mutable through OpenClaw Access. OpenClaw may prepare exports and permanent deletion, but their Confirmation Grants require fresh passkey-authenticated web approval. OpenClaw Access never includes direct database, filesystem, shell, server configuration, OAuth connections, credentials, channel bindings, backups, networking, recovery codes, deployment, or framework-operator access.
-_Avoid_: Full access, direct database access
-
 **Merchant Rule**:
 An owner-created exact merchant-to-active-Category mapping for whole Transactions, optionally scoped by Transaction kind or currency. Its deterministic merchant key normalizes case, Unicode, punctuation, and whitespace; when enabled, it categorizes only future Uncategorized Transactions, and its complete scope cannot conflict with another enabled Merchant Rule.
 _Avoid_: Learned Rule, model training, hidden preference
@@ -76,20 +68,12 @@ _Avoid_: Nested transactions, child transactions
 An unconfirmed initial or replacement itemization attached to a Transaction. Its Line Items do not affect reporting until their signed amounts reconcile exactly to the Transaction and the owner explicitly confirms them; meanwhile, reporting continues through the current confirmed Receipt Breakdown or, when none exists, the Transaction's Category.
 _Avoid_: Partial allocation, balancing item
 
-**Receipt Proposal**:
-A structured, image-free set of proposed Transaction and Receipt Breakdown details that OpenClaw derives from a deliberately submitted owner receipt photo for Money Assistant to validate and review. Money Assistant accepts it without a Confirmation Grant only when OpenClaw attests a distinct photo message from the paired, allowlisted owner conversation. The message identity belongs to the protected request audit rather than Receipt Proposal provenance; the image never crosses into Money Assistant.
-_Avoid_: Receipt extraction result, stored receipt
-
-**Reminder**:
-A Money Assistant-owned prompt about a current financial task or condition that OpenClaw delivers to the owner. Acknowledging it records that the owner saw it, snoozing defers the same Reminder until an owner-selected time, and dismissing closes that occurrence without changing financial state or preventing a later qualifying occurrence. Completing its offered domain action resolves it automatically. OpenClaw neither owns its schedule or recurrence nor treats delivery as resolution.
-_Avoid_: OpenClaw cron, notification state
-
 **Line Item**:
 A single purchased item or explicitly shown adjustment within a Receipt Breakdown, with its own authoritative signed line total and Category. Positive adjustments increase the reconciled amount; negative adjustments reduce it. Quantity and unit price may provide review context but do not determine its line total.
 _Avoid_: Sub-transaction
 
 **Unidentified Line Item**:
-An owner-confirmed, Uncategorized Line Item representing a known amount whose receipt detail is unavailable. It may reconcile a partial receipt and remains in the Review Queue; neither Money Assistant nor OpenClaw may invent it from an arithmetic remainder.
+An owner-confirmed, Uncategorized Line Item representing a known amount whose receipt detail is unavailable. It may reconcile a partial receipt and remains in the Review Queue; Money Assistant may not invent it from an arithmetic remainder.
 _Avoid_: Balancing item, miscellaneous item
 
 **Refund**:

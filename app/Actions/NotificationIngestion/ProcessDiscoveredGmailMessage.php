@@ -32,10 +32,18 @@ final class ProcessDiscoveredGmailMessage
             }
         }
 
-        return $this->processSpendingNotification->handle(
+        $reference = $this->processSpendingNotification->handle(
             owner: $owner,
             discovery: $discovery,
             message: $this->readSourceMessage->sourceMessage($owner, $discovery),
         );
+
+        $discovery->forceFill([
+            'processing_failed_at' => null,
+            'last_error_code' => null,
+            'failed_job_uuid' => null,
+        ])->save();
+
+        return $reference;
     }
 }

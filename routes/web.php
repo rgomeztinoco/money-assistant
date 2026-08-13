@@ -3,8 +3,6 @@
 use App\Http\Controllers\CategoryArchivalController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\IntegrationIncidentAcknowledgementController;
-use App\Http\Controllers\IntegrationIncidentReplayController;
 use App\Http\Controllers\MerchantRuleController;
 use App\Http\Controllers\ParserProfileActivationController;
 use App\Http\Controllers\ParserProfileController;
@@ -30,14 +28,6 @@ Route::redirect('/', '/dashboard')
 
 Route::middleware(['auth'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
-    Route::post(
-        'integration-incidents/{integrationIncident}/acknowledgement',
-        IntegrationIncidentAcknowledgementController::class,
-    )->name('integration_incidents.acknowledgement.store');
-    Route::post(
-        'integration-incidents/{integrationIncident}/replay',
-        IntegrationIncidentReplayController::class,
-    )->name('integration_incidents.replay.store');
     Route::get('reports/{currency}', ReportController::class)->name('reports.show');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store', 'update']);
