@@ -12,13 +12,11 @@ final class CredentialRotation
     private const array NON_FINANCIAL_TABLES = [
         'cache',
         'cache_locks',
-        'deployment_rehearsal_probes',
         'failed_jobs',
         'job_batches',
         'jobs',
         'migrations',
         'passkeys',
-        'runtime_health_checks',
         'sessions',
     ];
 

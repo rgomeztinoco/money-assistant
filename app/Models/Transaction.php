@@ -29,7 +29,6 @@ use Illuminate\Support\Carbon;
  * @property CarbonImmutable $confirmed_at
  * @property list<string> $provisional_fields
  * @property CarbonImmutable|null $voided_at
- * @property string|null $deployment_rehearsal_id
  * @property int|null $original_purchase_id
  * @property list<string> $refund_relationship_review_reasons
  * @property int|null $category_id

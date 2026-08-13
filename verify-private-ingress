@@ -76,16 +76,7 @@ printf '%s' "$compose_status" | jq -e '
         published: "8443",
         target: 8080
     }]
-    and .services.postgres.ports == [{
-        host_ip: "127.0.0.1",
-        mode: "ingress",
-        protocol: "tcp",
-        published: "5432",
-        target: 5432
-    }]
-    and ([.services | to_entries[] | select(.key != "proxy" and .key != "postgres") | .value.ports // []] | all(length == 0))
-    and .services.worker.network_mode == "host"
-    and .services.worker.environment.DB_HOST == "127.0.0.1"
+    and ([.services | to_entries[] | select(.key != "proxy") | .value.ports // []] | all(length == 0))
 ' >/dev/null || fail 'Compose publishes an application port outside loopback'
 
 listeners="$(ss -H -lnt)"
@@ -96,12 +87,10 @@ if [ -z "$tailnet_ip" ]; then
 fi
 
 printf '%s\n' "$listeners" | awk -v tailnet_ip="$tailnet_ip" '
-    $4 == "127.0.0.1:5432" { database = 1 }
-    $4 ~ /:5432$/ && $4 != "127.0.0.1:5432" { exit 1 }
+    $4 ~ /:5432$/ { exit 1 }
     $4 ~ /:80$/ { exit 1 }
     $4 ~ /:8080$/ { exit 1 }
     $4 ~ /:8443$/ && $4 != "127.0.0.1:8443" { exit 1 }
-    END { exit !database }
 ' || fail 'an application listener is reachable outside its approved private interface'
 
 curl \

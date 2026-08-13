@@ -7,11 +7,10 @@ Before=money-assistant-tailnet.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/var/lib/money-assistant/operational-bundles/active
+WorkingDirectory=/opt/money-assistant
 TimeoutStartSec=10min
-ExecStart=/usr/bin/docker compose --project-name money-assistant-production --env-file /etc/money-assistant/production.env --file /var/lib/money-assistant/operational-bundles/active/compose.production.yaml up --detach --wait --pull never
-ExecStartPost=/var/lib/money-assistant/operational-bundles/active/verify-active-production-release
-ExecStop=/usr/bin/docker compose --project-name money-assistant-production --env-file /etc/money-assistant/production.env --file /var/lib/money-assistant/operational-bundles/active/compose.production.yaml stop
+ExecStart=/opt/money-assistant/deploy-production
+ExecStop=/usr/bin/docker compose --project-name money-assistant-production --env-file /etc/money-assistant/production.env --file /opt/money-assistant/compose.production.yaml stop
 
 [Install]
 WantedBy=multi-user.target

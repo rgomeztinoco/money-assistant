@@ -15,8 +15,8 @@ if [ "$(id -u)" -ne 0 ]; then
     fail 'run this installer as root'
 fi
 
-if [ ! -x /var/lib/money-assistant/operational-bundles/active/deploy-production ]; then
-    fail 'an active operational bundle is not installed'
+if [ ! -x /opt/money-assistant/deploy-production ]; then
+    fail 'the production deployment is not installed'
 fi
 
 if [ ! -r /etc/money-assistant/production.env ]; then
