@@ -9,41 +9,33 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
  * @property int $user_id
  * @property string $name
- * @property int $current_version
+ * @property string $trusted_sender_address
+ * @property string $trusted_sender_domain
+ * @property string $authentication_mechanism
+ * @property string $authenticated_domain
  * @property CarbonImmutable|null $enabled_at
- * @property int|null $security_alert_reminder_id
- * @property string|null $security_alert_resolution_idempotency_key
- * @property int|null $drift_alert_reminder_id
- * @property string|null $drift_alert_resolution_idempotency_key
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable([
     'user_id',
     'name',
-    'current_version',
+    'trusted_sender_address',
+    'trusted_sender_domain',
+    'authentication_mechanism',
+    'authenticated_domain',
     'enabled_at',
-    'security_alert_reminder_id',
-    'security_alert_resolution_idempotency_key',
-    'drift_alert_reminder_id',
-    'drift_alert_resolution_idempotency_key',
 ])]
 class ParserProfile extends Model
 {
     /** @use HasFactory<ParserProfileFactory> */
     use HasFactory;
-
-    /** @var array<string, mixed> */
-    protected $attributes = [
-        'current_version' => 1,
-    ];
 
     /** @return BelongsTo<User, $this> */
     public function owner(): BelongsTo
@@ -51,26 +43,27 @@ class ParserProfile extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    /** @return HasMany<ParserProfileVersion, $this> */
-    public function versions(): HasMany
+    /** @return HasMany<SpendingNotificationFormat, $this> */
+    public function formats(): HasMany
     {
-        return $this->hasMany(ParserProfileVersion::class);
+        return $this->hasMany(SpendingNotificationFormat::class);
     }
 
-    /** @return HasManyThrough<SpendingNotificationReference, ParserProfileVersion, $this> */
-    public function references(): HasManyThrough
+    /** @return HasMany<SpendingNotificationFormat, $this> */
+    public function spendingNotificationFormats(): HasMany
     {
-        return $this->hasManyThrough(
-            SpendingNotificationReference::class,
-            ParserProfileVersion::class,
-        );
+        return $this->formats();
+    }
+
+    public function isEnabled(): bool
+    {
+        return $this->enabled_at !== null;
     }
 
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
-            'current_version' => 'integer',
             'enabled_at' => 'immutable_datetime',
         ];
     }

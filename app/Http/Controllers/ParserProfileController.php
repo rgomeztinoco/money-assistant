@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\NotificationIngestion\ApproveParserProfileVersion;
-use App\Actions\NotificationIngestion\ReadParserProfileHealth;
+use App\Actions\NotificationIngestion\CreateParserProfile;
 use App\Actions\NotificationIngestion\ReadParserProfileSourceMessages;
 use App\Http\Requests\StoreParserProfileRequest;
+use App\Http\Requests\UpdateParserProfileRequest;
+use App\Models\ParserProfile;
+use App\Models\SpendingNotificationFormat;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -17,23 +19,39 @@ class ParserProfileController extends Controller
 {
     public function index(
         Request $request,
-        ReadParserProfileHealth $readParserProfileHealth,
         ReadParserProfileSourceMessages $readSourceMessages,
     ): Response {
-        $profileHealth = $readParserProfileHealth->handle($request->user());
-
         return Inertia::render('parser-profiles/index', [
-            ...$profileHealth,
+            'profiles' => ParserProfile::query()
+                ->whereBelongsTo($request->user(), 'owner')
+                ->with(['formats' => fn ($query) => $query->oldest('id')])
+                ->latest('id')
+                ->get()
+                ->map(fn (ParserProfile $profile): array => [
+                    'id' => $profile->id,
+                    'name' => $profile->name,
+                    'trusted_sender_address' => $profile->trusted_sender_address,
+                    'authentication_mechanism' => $profile->authentication_mechanism,
+                    'authenticated_domain' => $profile->authenticated_domain,
+                    'enabled' => $profile->isEnabled(),
+                    'formats' => $profile->formats->map(fn (SpendingNotificationFormat $format): array => [
+                        'id' => $format->id,
+                        'name' => $format->name,
+                        'purpose' => $format->purpose->value,
+                        'mime_source' => $format->mime_source,
+                        'enabled' => $format->enabled_at !== null,
+                    ])->all(),
+                ])->all(),
             'source_messages' => $readSourceMessages->handle($request->user()),
         ]);
     }
 
     public function store(
         StoreParserProfileRequest $request,
-        ApproveParserProfileVersion $approveParserProfileVersion,
+        CreateParserProfile $createParserProfile,
     ): RedirectResponse {
         try {
-            $approveParserProfileVersion->handle(
+            $createParserProfile->handle(
                 $request->user(),
                 $request->validated(),
             );
@@ -49,5 +67,38 @@ class ParserProfileController extends Controller
         ]);
 
         return to_route('parser_profiles.index');
+    }
+
+    public function update(
+        UpdateParserProfileRequest $request,
+        ParserProfile $parserProfile,
+    ): RedirectResponse {
+        $this->ownedProfile($request, $parserProfile)->update($request->validated());
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Parser Profile updated.'),
+        ]);
+
+        return to_route('parser_profiles.index');
+    }
+
+    public function destroy(Request $request, ParserProfile $parserProfile): RedirectResponse
+    {
+        $this->ownedProfile($request, $parserProfile)->delete();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Parser Profile deleted.'),
+        ]);
+
+        return to_route('parser_profiles.index');
+    }
+
+    private function ownedProfile(Request $request, ParserProfile $parserProfile): ParserProfile
+    {
+        return ParserProfile::query()
+            ->whereBelongsTo($request->user(), 'owner')
+            ->findOrFail($parserProfile->id);
     }
 }

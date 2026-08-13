@@ -6,12 +6,15 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\IntegrationIncidentAcknowledgementController;
 use App\Http\Controllers\IntegrationIncidentReplayController;
 use App\Http\Controllers\MerchantRuleController;
+use App\Http\Controllers\ParserProfileActivationController;
 use App\Http\Controllers\ParserProfileController;
 use App\Http\Controllers\ParserProfilePreviewController;
 use App\Http\Controllers\ParserProfileSourceMessageController;
 use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReviewQueueController;
+use App\Http\Controllers\SpendingNotificationFormatActivationController;
+use App\Http\Controllers\SpendingNotificationFormatController;
 use App\Http\Controllers\SpendingNotificationRecoveryController;
 use App\Http\Controllers\SpendingNotificationRetryController;
 use App\Http\Controllers\TransactionCategoryController;
@@ -71,11 +74,32 @@ Route::middleware(['auth'])->group(function () {
         [ParserProfileSourceMessageController::class, 'show'],
     )->name('parser_profiles.source_messages.show');
     Route::resource('parser-profiles', ParserProfileController::class)
-        ->only(['index', 'store'])
+        ->only(['index', 'store', 'update', 'destroy'])
         ->names([
             'index' => 'parser_profiles.index',
             'store' => 'parser_profiles.store',
+            'update' => 'parser_profiles.update',
+            'destroy' => 'parser_profiles.destroy',
         ]);
+    Route::post('parser-profiles/{parser_profile}/activation', [ParserProfileActivationController::class, 'store'])
+        ->name('parser_profiles.activation.store');
+    Route::delete('parser-profiles/{parser_profile}/activation', [ParserProfileActivationController::class, 'destroy'])
+        ->name('parser_profiles.activation.destroy');
+    Route::resource('parser-profiles.spending-notification-formats', SpendingNotificationFormatController::class)
+        ->only(['store', 'update', 'destroy'])
+        ->names([
+            'store' => 'parser_profiles.formats.store',
+            'update' => 'parser_profiles.formats.update',
+            'destroy' => 'parser_profiles.formats.destroy',
+        ]);
+    Route::post(
+        'parser-profiles/{parser_profile}/spending-notification-formats/{spending_notification_format}/activation',
+        [SpendingNotificationFormatActivationController::class, 'store'],
+    )->name('parser_profiles.formats.activation.store');
+    Route::delete(
+        'parser-profiles/{parser_profile}/spending-notification-formats/{spending_notification_format}/activation',
+        [SpendingNotificationFormatActivationController::class, 'destroy'],
+    )->name('parser_profiles.formats.activation.destroy');
     Route::post('parser-profile-previews', [ParserProfilePreviewController::class, 'store'])
         ->name('parser_profile_previews.store');
     Route::post(

@@ -2,7 +2,7 @@
 
 namespace Database\Factories;
 
-use App\Models\ParserProfileVersion;
+use App\Models\ParserProfile;
 use App\Models\SpendingNotificationFormat;
 use App\SpendingNotificationFormatPurpose;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -20,10 +20,11 @@ class SpendingNotificationFormatFactory extends Factory
     public function definition(): array
     {
         return [
-            'parser_profile_version_id' => ParserProfileVersion::factory(),
+            'parser_profile_id' => ParserProfile::factory(),
             'name' => fake()->words(2, true),
             'mime_source' => 'text_plain',
             'purpose' => SpendingNotificationFormatPurpose::Spending,
+            'enabled_at' => now(),
             'rule_identifier' => hash('sha256', fake()->uuid()),
             'definition' => [
                 'subject_marker' => 'Purchase approved',

@@ -21,7 +21,10 @@ class ParserProfileFactory extends Factory
         return [
             'user_id' => User::factory(),
             'name' => fake()->unique()->words(3, true),
-            'current_version' => 1,
+            'trusted_sender_address' => 'alerts@bank.example',
+            'trusted_sender_domain' => 'bank.example',
+            'authentication_mechanism' => 'dmarc',
+            'authenticated_domain' => 'bank.example',
             'enabled_at' => now(),
         ];
     }

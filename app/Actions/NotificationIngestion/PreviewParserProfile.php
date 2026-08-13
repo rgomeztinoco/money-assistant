@@ -2,13 +2,14 @@
 
 namespace App\Actions\NotificationIngestion;
 
+use App\Models\ParserProfile;
 use App\Models\User;
 use App\SpendingNotificationFormatPurpose;
 
 final class PreviewParserProfile
 {
     public function __construct(
-        private BuildParserProfileProposal $buildProposal,
+        private ValidateSpendingNotificationFormat $validateFormat,
     ) {}
 
     /**
@@ -25,8 +26,14 @@ final class PreviewParserProfile
      */
     public function handle(User $owner, array $attributes): array
     {
-        $proposal = $this->buildProposal->handle($owner, $attributes);
-        $extraction = $proposal->extraction;
+        $profile = isset($attributes['parser_profile_id'])
+            ? ParserProfile::query()
+                ->whereBelongsTo($owner, 'owner')
+                ->whereKey($attributes['parser_profile_id'])
+                ->sole()
+            : null;
+        $validatedFormat = $this->validateFormat->handle($owner, $attributes, $profile);
+        $extraction = $validatedFormat->extraction;
 
         if ($extraction === null) {
             return ['purpose' => SpendingNotificationFormatPurpose::Ignore->value];

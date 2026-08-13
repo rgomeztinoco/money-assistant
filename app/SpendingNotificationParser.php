@@ -3,7 +3,7 @@
 namespace App;
 
 use App\Integrations\Gmail\GmailMessage;
-use App\Models\ParserProfileVersion;
+use App\Models\ParserProfile;
 use App\Models\SpendingNotificationFormat;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Str;
@@ -18,10 +18,10 @@ final class SpendingNotificationParser
      */
     public function extract(
         GmailMessage $message,
-        ParserProfileVersion $profileVersion,
+        ParserProfile $profile,
         SpendingNotificationFormat $format,
     ): ?SpendingNotificationExtraction {
-        if (! $this->trustMatches($message, $profileVersion)) {
+        if (! $this->trustMatches($message, $profile)) {
             return null;
         }
 
@@ -75,13 +75,13 @@ final class SpendingNotificationParser
 
     public function senderMatches(
         GmailMessage $message,
-        ParserProfileVersion $profileVersion,
+        ParserProfile $profile,
     ): bool {
         return hash_equals(
-            $profileVersion->trusted_sender_address,
+            $profile->trusted_sender_address,
             Str::lower($message->fromAddress),
         ) && hash_equals(
-            $profileVersion->trusted_sender_domain,
+            $profile->trusted_sender_domain,
             Str::lower(Str::afterLast($message->fromAddress, '@')),
         );
     }
@@ -106,20 +106,20 @@ final class SpendingNotificationParser
 
     public function trustMatches(
         GmailMessage $message,
-        ParserProfileVersion $profileVersion,
+        ParserProfile $profile,
     ): bool {
-        if (! $this->senderMatches($message, $profileVersion)) {
+        if (! $this->senderMatches($message, $profile)) {
             return false;
         }
 
-        $authentication = $message->authentication[$profileVersion->authentication_mechanism]
+        $authentication = $message->authentication[$profile->authentication_mechanism]
             ?? null;
 
         return is_array($authentication)
             && ($authentication['result'] ?? null) === 'pass'
             && is_string($authentication['domain'] ?? null)
             && hash_equals(
-                $profileVersion->authenticated_domain,
+                $profile->authenticated_domain,
                 Str::lower($authentication['domain']),
             );
     }

@@ -7,8 +7,6 @@ use App\Models\Category;
 use App\Models\GmailConnection;
 use App\Models\IntegrationIncident;
 use App\Models\ParserProfile;
-use App\Models\ParserProfileVersion;
-use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -68,36 +66,23 @@ test('the Dashboard shows current-month spending and Review Queue workload', fun
             ->where('review_queue.outstanding_count', 1));
 });
 
-test('the Dashboard promotes only actionable integration and parser exceptions', function () {
+test('the Dashboard summarizes enabled Parser Profiles without drift or security aggregation', function () {
     $owner = User::factory()->create();
     GmailConnection::factory()->for($owner, 'owner')->create();
     ParserProfile::factory()->for($owner, 'owner')->create([
         'name' => 'Healthy bank alerts',
     ]);
-    $degradedProfile = ParserProfile::factory()->for($owner, 'owner')->create([
+    ParserProfile::factory()->for($owner, 'owner')->create([
         'name' => 'Card alerts',
     ]);
-    $degradedVersion = ParserProfileVersion::factory()
-        ->for($degradedProfile, 'profile')
-        ->create();
-    SpendingNotificationReference::factory()
-        ->for($owner, 'owner')
-        ->for($degradedVersion, 'profileVersion')
-        ->create([
-            'transaction_id' => null,
-            'processing_outcome' => 'authentication_failed',
-        ]);
     $this->actingAs($owner)
         ->get(route('dashboard'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('operating.summary.gmail', 'connected')
-            ->where('operating.summary.parser_profiles.healthy_count', 1)
-            ->where('operating.summary.parser_profiles.degraded_count', 1)
+            ->where('operating.summary.parser_profiles.healthy_count', 2)
+            ->where('operating.summary.parser_profiles.degraded_count', 0)
             ->missing('operating.summary.daily_exchange_rates')
-            ->has('operating.exceptions', 1)
-            ->where('operating.exceptions.0.type', 'parser_security')
-            ->where('operating.exceptions.0.profile_id', $degradedProfile->id)
-            ->where('operating.exceptions.0.count', 1));
+            ->has('operating.exceptions', 0));
 });
 
 test('the Dashboard promotes stale Gmail synchronization instead of reporting it healthy', function () {

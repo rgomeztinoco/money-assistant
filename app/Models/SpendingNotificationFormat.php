@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\SpendingNotificationFormatPurpose;
+use Carbon\CarbonImmutable;
 use Database\Factories\SpendingNotificationFormatFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,22 +14,24 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $parser_profile_version_id
+ * @property int $parser_profile_id
  * @property string $name
  * @property string $mime_source
  * @property string $rule_identifier
  * @property SpendingNotificationFormatPurpose $purpose
  * @property array<string, mixed> $definition
+ * @property CarbonImmutable|null $enabled_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable([
-    'parser_profile_version_id',
+    'parser_profile_id',
     'name',
     'mime_source',
     'rule_identifier',
     'purpose',
     'definition',
+    'enabled_at',
 ])]
 class SpendingNotificationFormat extends Model
 {
@@ -40,10 +43,16 @@ class SpendingNotificationFormat extends Model
         'purpose' => SpendingNotificationFormatPurpose::Spending->value,
     ];
 
-    /** @return BelongsTo<ParserProfileVersion, $this> */
-    public function profileVersion(): BelongsTo
+    /** @return BelongsTo<ParserProfile, $this> */
+    public function profile(): BelongsTo
     {
-        return $this->belongsTo(ParserProfileVersion::class, 'parser_profile_version_id');
+        return $this->belongsTo(ParserProfile::class, 'parser_profile_id');
+    }
+
+    /** @return BelongsTo<ParserProfile, $this> */
+    public function parserProfile(): BelongsTo
+    {
+        return $this->profile();
     }
 
     /** @return HasMany<SpendingNotificationReference, $this> */
@@ -58,6 +67,7 @@ class SpendingNotificationFormat extends Model
         return [
             'definition' => 'array',
             'purpose' => SpendingNotificationFormatPurpose::class,
+            'enabled_at' => 'immutable_datetime',
         ];
     }
 }
