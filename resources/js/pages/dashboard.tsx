@@ -1,12 +1,14 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import {
+    ArrowDownLeft,
     ArrowRight,
-    BarChart3,
+    ArrowUpRight,
     CircleCheck,
+    Clock3,
     ListChecks,
-    MailWarning,
-    ShieldAlert,
-    TriangleAlert,
+    Mail,
+    ReceiptText,
+    RefreshCw,
     WalletCards,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -22,11 +24,9 @@ import {
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { dashboard } from '@/routes';
 import { edit as connectionsEdit } from '@/routes/connections';
-import { index as parserProfilesIndex } from '@/routes/parser_profiles';
-import { show as reportShow } from '@/routes/reports';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
-import type { Currency } from '@/types';
+import type { Currency, TransactionKind } from '@/types';
 
 type DashboardPeriod = {
     label: string;
@@ -38,23 +38,55 @@ type DashboardSpending = {
     totals: Record<Currency, string>;
 };
 
-type OperatingException = {
-    type: 'parser_security' | 'parser_drift' | 'gmail_connection';
-    profile_id?: number;
-    profile_name?: string | null;
-    count?: number;
-    state?: string;
+type RecentTransaction = {
+    id: number;
+    occurred_on: string;
+    amount_minor: string;
+    currency: Currency;
+    kind: TransactionKind;
+    merchant_description: string;
 };
 
-type OperatingStatus = {
-    summary: {
-        gmail: string;
-        parser_profiles: {
-            healthy_count: number;
-            degraded_count: number;
-        };
-    };
-    exceptions: OperatingException[];
+type GmailStatus = {
+    state:
+        | 'disconnected'
+        | 'connected'
+        | 'stale'
+        | 'check_failed'
+        | 'reauthorization_required';
+    account_identity: string | null;
+    last_successful_sync_at: string | null;
+};
+
+const gmailStatePresentation: Record<
+    GmailStatus['state'],
+    { label: string; description: string; icon: typeof Mail }
+> = {
+    disconnected: {
+        label: 'Not connected',
+        description: 'Connect Gmail to import Spending Notifications.',
+        icon: Mail,
+    },
+    connected: {
+        label: 'Connected',
+        description: 'Gmail is ready to synchronize Spending Notifications.',
+        icon: CircleCheck,
+    },
+    stale: {
+        label: 'Sync delayed',
+        description: 'The latest Gmail synchronization is delayed.',
+        icon: Clock3,
+    },
+    check_failed: {
+        label: 'Check failed',
+        description: 'The latest Gmail connection check did not succeed.',
+        icon: RefreshCw,
+    },
+    reauthorization_required: {
+        label: 'Reconnect required',
+        description: 'Reconnect Gmail to resume synchronization.',
+        icon: RefreshCw,
+    },
 };
 
 function periodQuery(period: DashboardPeriod) {
@@ -64,284 +96,263 @@ function periodQuery(period: DashboardPeriod) {
     };
 }
 
-function exceptionPresentation(exception: OperatingException) {
-    switch (exception.type) {
-        case 'parser_security':
-            return {
-                icon: ShieldAlert,
-                title: `${exception.profile_name ?? 'Parser Profile'} security alert`,
-                description: `${exception.count ?? 0} sender authentication ${exception.count === 1 ? 'failure needs' : 'failures need'} review.`,
-                href: `${parserProfilesIndex.url({
-                    query: {
-                        profile: exception.profile_id,
-                        alert: 'security',
-                    },
-                })}#parser-alert-${exception.profile_id}-security`,
-            };
-        case 'parser_drift':
-            return {
-                icon: TriangleAlert,
-                title: `${exception.profile_name ?? 'Parser Profile'} format drift`,
-                description: `${exception.count ?? 0} unsupported or failed ${exception.count === 1 ? 'message needs' : 'messages need'} review.`,
-                href: `${parserProfilesIndex.url({
-                    query: {
-                        profile: exception.profile_id,
-                        alert: 'drift',
-                    },
-                })}#parser-alert-${exception.profile_id}-drift`,
-            };
-        case 'gmail_connection':
-            return {
-                icon: MailWarning,
-                title: 'Gmail connection needs attention',
-                description:
-                    exception.state === 'reauthorization_required'
-                        ? 'Spending Notification ingestion is paused until Gmail is reauthorized.'
-                        : exception.state === 'stale'
-                          ? 'The scheduled Gmail synchronization has not completed in the last five minutes.'
-                          : 'Review the Gmail connection and its latest check.',
-                href: `${connectionsEdit.url({ query: { integration: 'gmail' } })}#gmail`,
-            };
+function formatDate(date: string) {
+    return new Intl.DateTimeFormat('en', {
+        month: 'short',
+        day: 'numeric',
+    }).format(new Date(`${date}T00:00:00`));
+}
+
+function formatSyncTimestamp(timestamp: string | null) {
+    if (timestamp === null) {
+        return 'No successful sync yet';
     }
+
+    return `Last synced ${new Intl.DateTimeFormat('en', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    }).format(new Date(timestamp))}`;
+}
+
+function transactionAmount(transaction: RecentTransaction) {
+    const amount =
+        transaction.kind === 'refund'
+            ? `-${transaction.amount_minor}`
+            : transaction.amount_minor;
+
+    return formatMinorUnits(amount, transaction.currency);
 }
 
 export default function Dashboard({
     period,
     spending,
-    operating,
+    review_queue,
+    recent_transactions,
+    gmail,
 }: {
     period: DashboardPeriod;
     spending: DashboardSpending;
-    operating: OperatingStatus;
+    review_queue: { outstanding_count: number };
+    recent_transactions: RecentTransaction[];
+    gmail: GmailStatus;
 }) {
-    const { review_queue } = usePage().props;
-    const healthySystems = [
-        operating.summary.gmail === 'connected' ? 'Gmail' : null,
-        operating.summary.parser_profiles.healthy_count > 0
-            ? `${operating.summary.parser_profiles.healthy_count} healthy Parser ${operating.summary.parser_profiles.healthy_count === 1 ? 'Profile' : 'Profiles'}`
-            : null,
-    ].filter((system): system is string => system !== null);
+    const gmailPresentation = gmailStatePresentation[gmail.state];
+    const GmailIcon = gmailPresentation.icon;
 
     return (
         <>
             <Head title="Dashboard" />
 
-            <div className="flex flex-1 flex-col gap-8 p-4 md:p-6">
+            <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <div className="flex flex-col gap-1">
                     <h1 className="text-2xl font-semibold tracking-tight">
                         Dashboard
                     </h1>
                     <p className="text-sm text-muted-foreground">
-                        What needs attention and where spending stands in{' '}
-                        {period.label}.
+                        Your spending and recent activity for {period.label}.
                     </p>
                 </div>
 
-                <section className="grid gap-4 lg:grid-cols-3">
+                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {(['PEN', 'USD'] as const).map((currency) => (
+                        <Link
+                            key={currency}
+                            href={transactionsIndex({
+                                query: {
+                                    ...periodQuery(period),
+                                    currency,
+                                },
+                            })}
+                            data-test={`dashboard-spending-${currency.toLowerCase()}`}
+                            className="group rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                        >
+                            <Card className="h-full transition-colors group-hover:border-primary/40 group-hover:bg-muted/20">
+                                <CardHeader>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <WalletCards className="size-5 text-muted-foreground" />
+                                        <Badge variant="secondary">
+                                            {period.label}
+                                        </Badge>
+                                    </div>
+                                    <CardDescription>
+                                        {currency} current-period total
+                                    </CardDescription>
+                                    <CardTitle className="text-3xl tabular-nums">
+                                        {formatMinorUnits(
+                                            spending.totals[currency],
+                                            currency,
+                                        )}
+                                    </CardTitle>
+                                </CardHeader>
+                            </Card>
+                        </Link>
+                    ))}
+
                     <Card
                         className={
                             review_queue.outstanding_count > 0
-                                ? 'border-amber-300 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/10'
-                                : undefined
+                                ? 'border-amber-300 bg-amber-50/40 md:col-span-2 xl:col-span-1 dark:border-amber-800 dark:bg-amber-950/10'
+                                : 'md:col-span-2 xl:col-span-1'
                         }
                     >
                         <CardHeader>
                             <div className="flex items-center justify-between gap-3">
                                 <ListChecks className="size-5 text-muted-foreground" />
-                                <Badge variant="outline">
-                                    Current workload
-                                </Badge>
+                                <Badge variant="outline">Review Queue</Badge>
                             </div>
-                            <CardTitle>Review Queue</CardTitle>
                             <CardDescription>
-                                Uncertain details remain included in spending
-                                while they wait for your decision.
+                                Details waiting for your review
                             </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="text-4xl font-semibold tabular-nums">
+                            <CardTitle className="text-3xl tabular-nums">
                                 {review_queue.outstanding_count}
-                            </p>
-                        </CardContent>
+                            </CardTitle>
+                        </CardHeader>
                         <CardFooter>
-                            <Button asChild className="w-full">
+                            <Button
+                                asChild
+                                variant="outline"
+                                className="w-full"
+                            >
                                 <Link
                                     href={reviewQueueIndex()}
                                     data-test="dashboard-review-link"
                                 >
-                                    Review outstanding work
+                                    Open Review Queue
                                     <ArrowRight />
                                 </Link>
                             </Button>
                         </CardFooter>
                     </Card>
+                </section>
 
-                    <Card className="lg:col-span-2">
-                        <CardHeader>
-                            <div className="flex items-center justify-between gap-3">
-                                <WalletCards className="size-5 text-muted-foreground" />
-                                <Badge variant="secondary">
-                                    {period.label}
-                                </Badge>
+                <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+                    <Card>
+                        <CardHeader className="flex-row items-start justify-between gap-4">
+                            <div className="grid gap-1.5">
+                                <CardTitle>Recent Transactions</CardTitle>
+                                <CardDescription>
+                                    Your latest confirmed money movements.
+                                </CardDescription>
                             </div>
-                            <CardTitle>Current spending</CardTitle>
-                            <CardDescription>
-                                Net purchases and Refunds kept separate in their
-                                original currencies.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-3 sm:grid-cols-2">
-                            {(['USD', 'PEN'] as const).map((currency) => (
-                                <Link
-                                    key={currency}
-                                    href={transactionsIndex({
-                                        query: {
-                                            ...periodQuery(period),
-                                            currency,
-                                        },
-                                    })}
-                                    data-test={`dashboard-spending-${currency.toLowerCase()}`}
-                                    className="rounded-lg border bg-muted/20 p-4 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-                                >
-                                    <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                                        {currency}
-                                    </span>
-                                    <span className="mt-2 block text-2xl font-semibold tabular-nums">
-                                        {formatMinorUnits(
-                                            spending.totals[currency],
-                                            currency,
-                                        )}
-                                    </span>
+                            <Button asChild size="sm" variant="ghost">
+                                <Link href={transactionsIndex()}>
+                                    View all
+                                    <ArrowRight />
                                 </Link>
-                            ))}
+                            </Button>
+                        </CardHeader>
+                        <CardContent>
+                            {recent_transactions.length === 0 ? (
+                                <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-6 text-center">
+                                    <ReceiptText className="size-8 text-muted-foreground" />
+                                    <div className="grid gap-1">
+                                        <p className="font-medium">
+                                            No Transactions yet
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                            Record one from the Transactions
+                                            page or connect Gmail.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="divide-y">
+                                    {recent_transactions.map((transaction) => {
+                                        const KindIcon =
+                                            transaction.kind === 'refund'
+                                                ? ArrowDownLeft
+                                                : ArrowUpRight;
+
+                                        return (
+                                            <Link
+                                                key={transaction.id}
+                                                href={transactionsIndex({
+                                                    query: {
+                                                        selected:
+                                                            transaction.id,
+                                                    },
+                                                })}
+                                                className="flex items-center gap-3 py-3 first:pt-0 last:pb-0 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                            >
+                                                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                                                    <KindIcon className="size-4" />
+                                                </span>
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block truncate text-sm font-medium">
+                                                        {
+                                                            transaction.merchant_description
+                                                        }
+                                                    </span>
+                                                    <span className="block text-xs text-muted-foreground">
+                                                        {formatDate(
+                                                            transaction.occurred_on,
+                                                        )}
+                                                    </span>
+                                                </span>
+                                                <span
+                                                    className={`text-sm font-semibold tabular-nums ${transaction.kind === 'refund' ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
+                                                >
+                                                    {transactionAmount(
+                                                        transaction,
+                                                    )}
+                                                </span>
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
-                </section>
 
-                <section>
                     <Card>
                         <CardHeader>
-                            <BarChart3 className="size-5 text-muted-foreground" />
-                            <CardTitle>Currency reports</CardTitle>
+                            <div className="flex items-center justify-between gap-3">
+                                <GmailIcon className="size-5 text-muted-foreground" />
+                                <Badge
+                                    variant={
+                                        gmail.state === 'connected'
+                                            ? 'secondary'
+                                            : 'outline'
+                                    }
+                                >
+                                    {gmailPresentation.label}
+                                </Badge>
+                            </div>
+                            <CardTitle>Gmail</CardTitle>
                             <CardDescription>
-                                Inspect selected periods, monthly history, and
-                                Category groups without combining currencies.
+                                {gmailPresentation.description}
                             </CardDescription>
                         </CardHeader>
-                        <CardFooter className="flex-wrap gap-2">
-                            <Button asChild variant="outline">
+                        <CardContent className="grid gap-2 text-sm">
+                            {gmail.account_identity !== null && (
+                                <p className="truncate font-medium">
+                                    {gmail.account_identity}
+                                </p>
+                            )}
+                            <p className="text-muted-foreground">
+                                {formatSyncTimestamp(
+                                    gmail.last_successful_sync_at,
+                                )}
+                            </p>
+                        </CardContent>
+                        <CardFooter>
+                            <Button
+                                asChild
+                                variant="outline"
+                                className="w-full"
+                            >
                                 <Link
-                                    href={reportShow('PEN', {
-                                        query: periodQuery(period),
-                                    })}
+                                    href={connectionsEdit()}
+                                    data-test="dashboard-gmail-link"
                                 >
-                                    Open PEN report
-                                    <ArrowRight />
-                                </Link>
-                            </Button>
-                            <Button asChild variant="outline">
-                                <Link
-                                    href={reportShow('USD', {
-                                        query: periodQuery(period),
-                                    })}
-                                >
-                                    Open USD report
+                                    Manage connection
                                     <ArrowRight />
                                 </Link>
                             </Button>
                         </CardFooter>
                     </Card>
-                </section>
-
-                <section className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                        <div>
-                            <h2 className="text-lg font-semibold">
-                                Operating attention
-                            </h2>
-                            <p className="text-sm text-muted-foreground">
-                                Only conditions with a next action are expanded.
-                            </p>
-                        </div>
-                        <Badge
-                            variant={
-                                operating.exceptions.length > 0
-                                    ? 'destructive'
-                                    : 'secondary'
-                            }
-                        >
-                            {operating.exceptions.length > 0 ? (
-                                <TriangleAlert />
-                            ) : (
-                                <CircleCheck />
-                            )}
-                            {operating.exceptions.length}{' '}
-                            {operating.exceptions.length === 1
-                                ? 'exception'
-                                : 'exceptions'}
-                        </Badge>
-                    </div>
-
-                    {operating.exceptions.length > 0 ? (
-                        <div className="grid gap-3 lg:grid-cols-2">
-                            {operating.exceptions.map((exception, index) => {
-                                const presentation =
-                                    exceptionPresentation(exception);
-                                const Icon = presentation.icon;
-
-                                return (
-                                    <Card
-                                        key={`${exception.type}-${exception.profile_id ?? index}`}
-                                        className="border-amber-300 py-4 dark:border-amber-800"
-                                    >
-                                        <CardHeader className="flex-row items-start gap-3">
-                                            <div className="rounded-lg bg-amber-100 p-2 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                                                <Icon className="size-4" />
-                                            </div>
-                                            <div className="flex flex-1 flex-col gap-1">
-                                                <CardTitle className="text-base">
-                                                    {presentation.title}
-                                                </CardTitle>
-                                                <CardDescription>
-                                                    {presentation.description}
-                                                </CardDescription>
-                                            </div>
-                                            <div className="flex flex-wrap items-center justify-end gap-2">
-                                                <Button
-                                                    asChild
-                                                    size="sm"
-                                                    variant="outline"
-                                                >
-                                                    <Link
-                                                        href={presentation.href}
-                                                        data-test={`dashboard-exception-${exception.type}`}
-                                                    >
-                                                        Review
-                                                        <ArrowRight />
-                                                    </Link>
-                                                </Button>
-                                            </div>
-                                        </CardHeader>
-                                    </Card>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <Card className="border-emerald-200 bg-emerald-50/50 py-4 dark:border-emerald-900 dark:bg-emerald-950/10">
-                            <CardContent className="flex items-center gap-3">
-                                <CircleCheck className="size-5 text-emerald-700 dark:text-emerald-400" />
-                                <p className="text-sm font-medium">
-                                    No operating exceptions need attention.
-                                </p>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {healthySystems.length > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                            Healthy summary: {healthySystems.join(' · ')}
-                        </p>
-                    )}
                 </section>
             </div>
         </>
