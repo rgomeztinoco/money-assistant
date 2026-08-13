@@ -2,6 +2,7 @@ import { Form, Head } from '@inertiajs/react';
 import { CircleCheck, Mail, RefreshCw, TriangleAlert } from 'lucide-react';
 import { create as createGmailAuthorization } from '@/actions/App/Http/Controllers/Settings/GmailAuthorizationController';
 import GmailConnectionCheckController from '@/actions/App/Http/Controllers/Settings/GmailConnectionCheckController';
+import GmailFailedMessageRetryController from '@/actions/App/Http/Controllers/Settings/GmailFailedMessageRetryController';
 import Heading from '@/components/heading';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +32,14 @@ type GmailStatus = {
     last_successful_sync_at: string | null;
     last_check_failed_at: string | null;
     reauthorization_required_at: string | null;
+    latest_failure: {
+        type: 'synchronization' | 'message';
+        occurred_at: string;
+        error_code: string;
+        discovery_id: number | null;
+        message_id: string | null;
+        retryable: boolean;
+    } | null;
 };
 
 const statusLabels = {
@@ -41,9 +50,12 @@ const statusLabels = {
     reauthorization_required: 'Reauthorization required',
 } as const;
 
-function formatTimestamp(timestamp: string | null): string {
+function formatTimestamp(
+    timestamp: string | null,
+    missingLabel = 'Not yet',
+): string {
     if (timestamp === null) {
-        return 'No successful check yet';
+        return missingLabel;
     }
 
     return new Intl.DateTimeFormat(undefined, {
@@ -181,8 +193,90 @@ export default function Connections({ gmail }: { gmail: GmailStatus }) {
                             <span>
                                 {formatTimestamp(
                                     gmail.last_successful_check_at,
+                                    'No successful check yet',
                                 )}
                             </span>
+                        </div>
+                        <div className="grid gap-1">
+                            <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                                Last successful synchronization
+                            </span>
+                            <span>
+                                {formatTimestamp(
+                                    gmail.last_successful_sync_at,
+                                    'No successful synchronization yet',
+                                )}
+                            </span>
+                        </div>
+                        <div className="grid gap-2 border-t pt-5">
+                            <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                                Latest processing failure
+                            </span>
+                            {gmail.latest_failure === null ? (
+                                <span className="text-muted-foreground">
+                                    No retained Gmail processing failure
+                                </span>
+                            ) : (
+                                <div className="grid gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="grid gap-1">
+                                            <span className="font-medium">
+                                                {gmail.latest_failure.type ===
+                                                'message'
+                                                    ? 'Message processing failed'
+                                                    : 'Synchronization failed'}
+                                            </span>
+                                            <span className="text-muted-foreground">
+                                                {formatTimestamp(
+                                                    gmail.latest_failure
+                                                        .occurred_at,
+                                                )}
+                                            </span>
+                                            <code className="text-xs text-muted-foreground">
+                                                {
+                                                    gmail.latest_failure
+                                                        .error_code
+                                                }
+                                            </code>
+                                        </div>
+
+                                        {gmail.latest_failure.retryable &&
+                                            gmail.latest_failure
+                                                .discovery_id !== null && (
+                                                <Form
+                                                    {...GmailFailedMessageRetryController.form(
+                                                        gmail.latest_failure
+                                                            .discovery_id,
+                                                    )}
+                                                    options={{
+                                                        preserveScroll: true,
+                                                    }}
+                                                >
+                                                    {({ processing }) => (
+                                                        <Button
+                                                            type="submit"
+                                                            size="sm"
+                                                            disabled={
+                                                                processing
+                                                            }
+                                                        >
+                                                            <RefreshCw
+                                                                className={
+                                                                    processing
+                                                                        ? 'animate-spin'
+                                                                        : ''
+                                                                }
+                                                            />
+                                                            {processing
+                                                                ? 'Retrying...'
+                                                                : 'Retry message'}
+                                                        </Button>
+                                                    )}
+                                                </Form>
+                                            )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </CardContent>
 

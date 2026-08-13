@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -66,6 +67,12 @@ class GmailConnection extends Model
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /** @return HasMany<GmailMessageDiscovery, $this> */
+    public function messageDiscoveries(): HasMany
+    {
+        return $this->hasMany(GmailMessageDiscovery::class);
     }
 
     public function ingestionIsPaused(): bool

@@ -259,6 +259,8 @@ final class SynchronizeGmailConnection
                     ? $timestamp
                     : $current->initial_sync_completed_at,
                 'last_successful_sync_at' => $timestamp,
+                'last_synchronization_failed_at' => null,
+                'last_synchronization_error_code' => null,
             ])->save();
         });
 

@@ -7,11 +7,14 @@ use App\Integrations\Gmail\GmailAuthorization;
 use App\Integrations\Gmail\GmailProfile;
 use App\Integrations\Gmail\GmailReauthorizationRequired;
 use App\Integrations\Gmail\GmailRequestFailed;
+use App\Jobs\ProcessGmailMessage;
 use App\Models\GmailConnection;
+use App\Models\GmailMessageDiscovery;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Fakes\FakeGmail;
 
@@ -488,4 +491,87 @@ test('reauthorization cannot silently replace the dedicated Gmail account identi
     expect($connection->gmail_account_identity)->toBe('receipts@example.test')
         ->and($connection->refresh_token)->toBe('retained-refresh-token')
         ->and($connection->ingestionIsPaused())->toBeTrue();
+});
+
+test('connection settings show focused Gmail success and latest failure state', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-13 12:00:00 UTC'));
+    $connection = GmailConnection::factory()->create([
+        'last_successful_sync_at' => now()->subMinutes(2),
+        'last_synchronization_failed_at' => now()->subMinute(),
+        'last_synchronization_error_code' => 'gmail_synchronization_failed',
+    ]);
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
+        'processing_failed_at' => now(),
+        'last_error_code' => 'gmail_message_processing_failed',
+        'failed_job_uuid' => fake()->uuid(),
+    ]);
+
+    $this->actingAs($connection->owner)
+        ->get(route('connections.edit'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where(
+                'gmail.last_successful_sync_at',
+                $connection->last_successful_sync_at?->toIso8601String(),
+            )
+            ->where('gmail.latest_failure.type', 'message')
+            ->where('gmail.latest_failure.discovery_id', $discovery->id)
+            ->where('gmail.latest_failure.message_id', $discovery->message_id)
+            ->where('gmail.latest_failure.retryable', true));
+});
+
+test('the owner can safely retry the matching retained failed Gmail message job', function () {
+    $connection = GmailConnection::factory()->create();
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create();
+    $payload = json_encode([
+        'uuid' => (string) Str::uuid(),
+        'displayName' => ProcessGmailMessage::class,
+        'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
+        'data' => [
+            'commandName' => ProcessGmailMessage::class,
+            'command' => serialize(new ProcessGmailMessage($discovery->id)),
+        ],
+    ], JSON_THROW_ON_ERROR);
+    $uuid = app('queue.failer')->log(
+        config('queue.default'),
+        'default',
+        $payload,
+        GmailRequestFailed::messageIdentity(),
+    );
+    $discovery->update([
+        'processing_failed_at' => now(),
+        'last_error_code' => 'gmail_message_processing_failed',
+        'failed_job_uuid' => $uuid,
+    ]);
+
+    $this->actingAs($connection->owner)
+        ->post(route('gmail.failed_messages.retry', $discovery))
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('connections.edit'));
+
+    $discovery->refresh();
+
+    expect($discovery->processing_failed_at)->toBeNull()
+        ->and($discovery->last_error_code)->toBeNull()
+        ->and($discovery->failed_job_uuid)->toBeNull()
+        ->and(app('queue.failer')->find($uuid))->toBeNull()
+        ->and(DB::table('jobs')->count())->toBe(1);
+});
+
+test('a failed Gmail job requires the owner and a matching retained payload', function () {
+    $connection = GmailConnection::factory()->create();
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
+        'processing_failed_at' => now(),
+        'last_error_code' => 'gmail_message_processing_failed',
+        'failed_job_uuid' => fake()->uuid(),
+    ]);
+    $this
+        ->post(route('gmail.failed_messages.retry', $discovery))
+        ->assertRedirect(route('login'));
+
+    $this->actingAs($connection->owner)
+        ->post(route('gmail.failed_messages.retry', $discovery))
+        ->assertRedirect(route('connections.edit'));
+
+    expect($discovery->fresh()->processing_failed_at)->not->toBeNull()
+        ->and(DB::table('jobs')->count())->toBe(0);
 });
