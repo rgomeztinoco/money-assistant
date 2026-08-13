@@ -3,6 +3,7 @@ import { BadgeCheck, FileText, ScanSearch, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/ParserProfileController';
 import { store as previewStore } from '@/actions/App/Http/Controllers/ParserProfilePreviewController';
+import { store as storeFormat } from '@/actions/App/Http/Controllers/SpendingNotificationFormatController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -42,7 +43,6 @@ type SourceMessage = {
 type ExistingProfile = {
     id: number;
     name: string;
-    current_version: number;
 };
 
 type ParserProfileTransactionPreview = {
@@ -90,6 +90,7 @@ export default function CreateParserProfile({
     const initialPreview = flash.parser_profile_preview as
         ParserProfilePreview | undefined;
     const [preview, setPreview] = useState(initialPreview);
+    const [selectedProfileId, setSelectedProfileId] = useState('');
     const [formatPurpose, setFormatPurpose] = useState<'spending' | 'ignore'>(
         initialPreview?.purpose ?? 'spending',
     );
@@ -188,12 +189,21 @@ export default function CreateParserProfile({
                 <Form
                     {...(preview === undefined
                         ? previewStore.form()
-                        : store.form())}
+                        : selectedProfileId === ''
+                          ? store.form()
+                          : storeFormat.form(Number(selectedProfileId)))}
                     className="grid gap-6"
                     onChange={(event) => {
                         setPreview(undefined);
 
                         const target = event.nativeEvent.target;
+
+                        if (
+                            target instanceof HTMLSelectElement &&
+                            target.name === 'parser_profile_id'
+                        ) {
+                            setSelectedProfileId(target.value);
+                        }
 
                         if (
                             target instanceof HTMLSelectElement &&
@@ -232,9 +242,8 @@ export default function CreateParserProfile({
                                         Profile and trust boundary
                                     </CardTitle>
                                     <CardDescription>
-                                        Name this profile and explicitly choose
-                                        which aligned Gmail authentication
-                                        result it must require.
+                                        Create a sender trust boundary or add a
+                                        current format to an existing profile.
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="grid gap-5 md:grid-cols-2">
@@ -248,7 +257,7 @@ export default function CreateParserProfile({
                                             },
                                             ...profiles.map((profile) => ({
                                                 value: String(profile.id),
-                                                label: `${profile.name} — create version ${profile.current_version + 1}`,
+                                                label: `${profile.name} — add a format`,
                                             })),
                                         ]}
                                         error={errors.parser_profile_id}
@@ -256,6 +265,7 @@ export default function CreateParserProfile({
                                     <FormField
                                         label="New profile name"
                                         name="profile_name"
+                                        disabled={selectedProfileId !== ''}
                                         error={errors.profile_name}
                                     />
                                     <FormField
@@ -592,10 +602,12 @@ export default function CreateParserProfile({
                                     <Button type="submit" disabled={processing}>
                                         <ShieldCheck />
                                         {processing
-                                            ? 'Confirming profile...'
+                                            ? 'Saving format...'
                                             : preview.purpose === 'ignore'
-                                              ? 'Approve ignored format'
-                                              : 'Enable profile and create Transaction'}
+                                              ? 'Save ignored format'
+                                              : selectedProfileId === ''
+                                                ? 'Enable profile and create Transaction'
+                                                : 'Add format and create Transaction'}
                                     </Button>
                                 )}
                             </div>
@@ -635,12 +647,14 @@ function FormField({
     error,
     placeholder,
     defaultValue,
+    disabled = false,
 }: {
     label: string;
     name: string;
     error?: string;
     placeholder?: string;
     defaultValue?: string;
+    disabled?: boolean;
 }) {
     return (
         <div className="grid gap-2">
@@ -650,6 +664,7 @@ function FormField({
                 name={name}
                 placeholder={placeholder}
                 defaultValue={defaultValue}
+                disabled={disabled}
                 aria-invalid={error ? true : undefined}
             />
             <InputError message={error} />

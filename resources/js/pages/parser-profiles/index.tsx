@@ -1,17 +1,28 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import {
-    Activity,
     FileSearch,
-    RefreshCw,
-    ShieldAlert,
+    Pencil,
+    Power,
+    PowerOff,
     ShieldCheck,
+    Trash2,
 } from 'lucide-react';
+import {
+    destroy as disableProfile,
+    store as enableProfile,
+} from '@/actions/App/Http/Controllers/ParserProfileActivationController';
+import {
+    destroy as deleteProfile,
+    update as updateProfile,
+} from '@/actions/App/Http/Controllers/ParserProfileController';
 import { show as showSourceMessage } from '@/actions/App/Http/Controllers/ParserProfileSourceMessageController';
-import { store as recoverNotification } from '@/actions/App/Http/Controllers/SpendingNotificationRecoveryController';
-import { store as retryNotification } from '@/actions/App/Http/Controllers/SpendingNotificationRetryController';
+import {
+    destroy as disableFormat,
+    store as enableFormat,
+} from '@/actions/App/Http/Controllers/SpendingNotificationFormatActivationController';
+import { destroy as deleteFormat } from '@/actions/App/Http/Controllers/SpendingNotificationFormatController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,282 +33,215 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
-import { Spinner } from '@/components/ui/spinner';
 import { index } from '@/routes/parser_profiles';
 
-type ProfileHealth = {
-    state: 'healthy' | 'degraded';
-    counts: {
-        created: number;
-        created_with_review: number;
-        unsupported: number;
-        failed: number;
-        ignored: number;
-    };
-    last_success: string | null;
-    oldest_unresolved_failure: string | null;
+type Format = {
+    id: number;
+    name: string;
+    purpose: 'spending' | 'ignore';
+    mime_source: 'text_plain' | 'text_html';
+    enabled: boolean;
 };
 
 type Profile = {
     id: number;
     name: string;
-    current_version: number;
-    enabled_at: string | null;
-    health: ProfileHealth;
-};
-
-type AlertReference = {
-    id: number;
-    discovery_id: number | null;
-    outcome: 'authentication_failed' | 'unsupported' | 'failed';
-    created_at: string | null;
-};
-
-type ParserAlert = {
-    profile_id: number;
-    profile_name: string;
-    kind: 'security' | 'drift';
-    count: number;
-    oldest_failure: string | null;
-    references: AlertReference[];
+    trusted_sender_address: string;
+    authentication_mechanism: string;
+    authenticated_domain: string;
+    enabled: boolean;
+    formats: Format[];
 };
 
 type SourceMessage = {
     id: number;
-    message_id: string;
     received_at: string;
     from_address: string;
     subject: string;
 };
 
-function HealthCounts({ health }: { health: ProfileHealth }) {
-    const counts = [
-        ['created', health.counts.created],
-        ['created with review', health.counts.created_with_review],
-        ['unsupported', health.counts.unsupported],
-        ['failed', health.counts.failed],
-        ['ignored', health.counts.ignored],
-    ] as const;
+function FormatRow({ profile, format }: { profile: Profile; format: Format }) {
+    const activation = format.enabled ? disableFormat : enableFormat;
 
     return (
-        <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-            {counts.map(([label, count]) => (
-                <span key={label} className="rounded-md bg-muted px-2 py-1">
-                    {count} {label}
+        <div className="grid gap-3 rounded-lg border bg-background p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div className="grid gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">{format.name}</span>
+                    <Badge variant={format.enabled ? 'secondary' : 'outline'}>
+                        {format.enabled ? 'Enabled' : 'Disabled'}
+                    </Badge>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                    {format.purpose === 'spending'
+                        ? 'Creates Transactions'
+                        : 'Known non-spending message'}{' '}
+                    ·{' '}
+                    {format.mime_source === 'text_plain'
+                        ? 'Plain text'
+                        : 'HTML'}
                 </span>
-            ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+                <Form
+                    {...activation.form([profile.id, format.id])}
+                    options={{ preserveScroll: true }}
+                >
+                    {({ processing }) => (
+                        <Button
+                            type="submit"
+                            size="sm"
+                            variant="outline"
+                            disabled={processing}
+                        >
+                            {format.enabled ? <PowerOff /> : <Power />}
+                            {processing
+                                ? 'Saving...'
+                                : format.enabled
+                                  ? 'Disable'
+                                  : 'Enable'}
+                        </Button>
+                    )}
+                </Form>
+                <Form
+                    {...deleteFormat.form([profile.id, format.id])}
+                    options={{ preserveScroll: true }}
+                >
+                    {({ processing }) => (
+                        <Button
+                            type="submit"
+                            size="sm"
+                            variant="destructive"
+                            disabled={processing}
+                        >
+                            <Trash2 /> {processing ? 'Deleting...' : 'Delete'}
+                        </Button>
+                    )}
+                </Form>
+            </div>
         </div>
     );
 }
 
-function ManualRecoveryForm({ reference }: { reference: AlertReference }) {
-    return (
-        <Form
-            {...recoverNotification.form(reference.id)}
-            options={{ preserveScroll: true }}
-            className="grid gap-3 rounded-lg border bg-background p-3"
-        >
-            {({ errors, processing }) => (
-                <>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                        <div className="grid gap-1.5">
-                            <Label
-                                htmlFor={`recovery-${reference.id}-occurred-on`}
-                            >
-                                Date
-                            </Label>
-                            <Input
-                                id={`recovery-${reference.id}-occurred-on`}
-                                name="occurred_on"
-                                type="date"
-                                required
-                            />
-                        </div>
-                        <div className="grid gap-1.5">
-                            <Label htmlFor={`recovery-${reference.id}-amount`}>
-                                Amount (minor units)
-                            </Label>
-                            <Input
-                                id={`recovery-${reference.id}-amount`}
-                                name="amount_minor"
-                                type="number"
-                                min="1"
-                                required
-                            />
-                        </div>
-                        <div className="grid gap-1.5">
-                            <Label
-                                htmlFor={`recovery-${reference.id}-currency`}
-                            >
-                                Currency
-                            </Label>
-                            <NativeSelect
-                                id={`recovery-${reference.id}-currency`}
-                                name="currency"
-                                defaultValue="PEN"
-                                options={[
-                                    { value: 'PEN', label: 'PEN' },
-                                    { value: 'USD', label: 'USD' },
-                                ]}
-                            />
-                        </div>
-                        <div className="grid gap-1.5">
-                            <Label htmlFor={`recovery-${reference.id}-kind`}>
-                                Kind
-                            </Label>
-                            <NativeSelect
-                                id={`recovery-${reference.id}-kind`}
-                                name="kind"
-                                defaultValue="purchase"
-                                options={[
-                                    { value: 'purchase', label: 'Purchase' },
-                                    { value: 'refund', label: 'Refund' },
-                                ]}
-                            />
-                        </div>
-                        <div className="grid gap-1.5">
-                            <Label
-                                htmlFor={`recovery-${reference.id}-merchant`}
-                            >
-                                Merchant or description
-                            </Label>
-                            <Input
-                                id={`recovery-${reference.id}-merchant`}
-                                name="merchant_description"
-                                required
-                            />
-                        </div>
-                    </div>
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                        <InputError
-                            message={
-                                errors.recovery ??
-                                errors.occurred_on ??
-                                errors.amount_minor ??
-                                errors.currency ??
-                                errors.kind ??
-                                errors.merchant_description
-                            }
-                        />
-                        <Button type="submit" size="sm" disabled={processing}>
-                            {processing && <Spinner />}
-                            Record and link Transaction
-                        </Button>
-                    </div>
-                </>
-            )}
-        </Form>
-    );
-}
+function ProfileCard({ profile }: { profile: Profile }) {
+    const activation = profile.enabled ? disableProfile : enableProfile;
 
-function DriftReferenceActions({ reference }: { reference: AlertReference }) {
     return (
-        <div className="grid gap-3 rounded-lg border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm">
-                    <span className="font-medium">
-                        Message reference #{reference.id}
-                    </span>{' '}
-                    <span className="text-muted-foreground">
-                        · {reference.outcome.replaceAll('_', ' ')}
-                    </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    {reference.discovery_id !== null && (
-                        <Button asChild variant="outline" size="sm">
-                            <Link
-                                href={showSourceMessage(reference.discovery_id)}
+        <Card>
+            <CardHeader className="gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="grid gap-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <CardTitle>{profile.name}</CardTitle>
+                            <Badge
+                                variant={
+                                    profile.enabled ? 'secondary' : 'outline'
+                                }
                             >
-                                <FileSearch />
-                                Review or ignore format
-                            </Link>
-                        </Button>
-                    )}
-                    {reference.outcome === 'unsupported' && (
+                                {profile.enabled ? 'Enabled' : 'Disabled'}
+                            </Badge>
+                        </div>
+                        <CardDescription>
+                            {profile.trusted_sender_address} ·{' '}
+                            {profile.authentication_mechanism.toUpperCase()} for{' '}
+                            {profile.authenticated_domain}
+                        </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
                         <Form
-                            {...retryNotification.form(reference.id)}
+                            {...activation.form(profile.id)}
                             options={{ preserveScroll: true }}
                         >
-                            {({ errors, processing }) => (
-                                <div className="grid gap-1">
-                                    <Button
-                                        type="submit"
-                                        variant="secondary"
-                                        size="sm"
-                                        disabled={processing}
-                                    >
-                                        {processing ? (
-                                            <Spinner />
-                                        ) : (
-                                            <RefreshCw />
-                                        )}
-                                        Retry current profile
-                                    </Button>
-                                    <InputError message={errors.retry} />
-                                </div>
+                            {({ processing }) => (
+                                <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={processing}
+                                >
+                                    {profile.enabled ? <PowerOff /> : <Power />}
+                                    {processing
+                                        ? 'Saving...'
+                                        : profile.enabled
+                                          ? 'Disable profile'
+                                          : 'Enable profile'}
+                                </Button>
                             )}
                         </Form>
-                    )}
+                        <Form
+                            {...deleteProfile.form(profile.id)}
+                            options={{ preserveScroll: true }}
+                        >
+                            {({ processing }) => (
+                                <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={processing}
+                                >
+                                    <Trash2 />
+                                    {processing
+                                        ? 'Deleting...'
+                                        : 'Delete profile'}
+                                </Button>
+                            )}
+                        </Form>
+                    </div>
                 </div>
-            </div>
-            <ManualRecoveryForm reference={reference} />
-        </div>
-    );
-}
-
-function GroupedAlert({ alert }: { alert: ParserAlert }) {
-    const isSecurity = alert.kind === 'security';
-
-    return (
-        <Alert
-            id={`parser-alert-${alert.profile_id}-${alert.kind}`}
-            variant="destructive"
-            className="target:ring-2 target:ring-ring"
-        >
-            {isSecurity ? <ShieldAlert /> : <Activity />}
-            <AlertTitle>
-                {isSecurity
-                    ? 'Spending Notification security failure'
-                    : 'Parser drift detected'}
-            </AlertTitle>
-            <AlertDescription className="grid gap-3">
-                <p>
-                    {alert.profile_name} has {alert.count}{' '}
-                    {isSecurity
-                        ? 'authentication failure'
-                        : 'unresolved format failure'}
-                    {alert.count === 1 ? '' : 's'}. Messages are grouped here
-                    without retaining their subject or body.
-                </p>
-                {isSecurity ? (
-                    <p>
-                        No Transaction was created. Review the sender directly
-                        in Gmail before approving any broader trust boundary.
+                <Form
+                    {...updateProfile.form(profile.id)}
+                    options={{ preserveScroll: true }}
+                    className="flex flex-col gap-2 sm:flex-row"
+                >
+                    {({ errors, processing }) => (
+                        <>
+                            <div className="grow">
+                                <Input
+                                    name="name"
+                                    defaultValue={profile.name}
+                                    aria-label={`Rename ${profile.name}`}
+                                    aria-invalid={
+                                        errors.name ? true : undefined
+                                    }
+                                />
+                                <InputError message={errors.name} />
+                            </div>
+                            <Button
+                                type="submit"
+                                variant="secondary"
+                                disabled={processing}
+                            >
+                                <Pencil />
+                                Rename
+                            </Button>
+                        </>
+                    )}
+                </Form>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+                {profile.formats.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                        This profile has no current formats.
                     </p>
                 ) : (
-                    <div className="grid gap-3">
-                        {alert.references.map((reference) => (
-                            <DriftReferenceActions
-                                key={reference.id}
-                                reference={reference}
-                            />
-                        ))}
-                    </div>
+                    profile.formats.map((format) => (
+                        <FormatRow
+                            key={format.id}
+                            profile={profile}
+                            format={format}
+                        />
+                    ))
                 )}
-            </AlertDescription>
-        </Alert>
+            </CardContent>
+        </Card>
     );
 }
 
 export default function ParserProfilesIndex({
     profiles,
-    alerts,
     source_messages: sourceMessages,
 }: {
     profiles: Profile[];
-    alerts: ParserAlert[];
     source_messages: SourceMessage[];
 }) {
     return (
@@ -307,143 +251,86 @@ export default function ParserProfilesIndex({
             <div className="flex flex-col gap-6">
                 <Heading
                     title="Parser Profiles"
-                    description="Create deterministic Spending Notification support and recover visible parser failures without silently broadening trust."
+                    description="Manage the current sender trust and deterministic formats used for Gmail imports."
                 />
 
-                {alerts.map((alert) => (
-                    <GroupedAlert
-                        key={`${alert.profile_id}-${alert.kind}`}
-                        alert={alert}
-                    />
-                ))}
-
-                <div className="grid gap-6 lg:grid-cols-2">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Profile health</CardTitle>
-                            <CardDescription>
-                                Each profile reports decided outcomes and
-                                unresolved failures across its approved
-                                versions.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-3">
-                            {profiles.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">
-                                    No Parser Profiles have been created.
-                                </p>
-                            ) : (
-                                profiles.map((profile) => (
-                                    <div
-                                        key={profile.id}
-                                        className="grid gap-3 rounded-lg border p-3"
-                                    >
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="grid gap-1">
-                                                <span className="font-medium">
-                                                    {profile.name}
-                                                </span>
-                                                <span className="text-xs text-muted-foreground">
-                                                    Version{' '}
-                                                    {profile.current_version}
-                                                </span>
-                                            </div>
-                                            <Badge
-                                                variant={
-                                                    profile.health.state ===
-                                                    'healthy'
-                                                        ? 'secondary'
-                                                        : 'destructive'
-                                                }
-                                            >
-                                                {profile.health.state ===
-                                                'healthy' ? (
-                                                    <ShieldCheck />
-                                                ) : (
-                                                    <ShieldAlert />
-                                                )}
-                                                {profile.health.state ===
-                                                'healthy'
-                                                    ? 'Healthy'
-                                                    : 'Degraded'}
-                                            </Badge>
-                                        </div>
-                                        <HealthCounts health={profile.health} />
-                                        <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                                            <span>
-                                                Last success:{' '}
-                                                {profile.health.last_success?.slice(
-                                                    0,
-                                                    10,
-                                                ) ?? 'None yet'}
-                                            </span>
-                                            <span>
-                                                Oldest unresolved failure:{' '}
-                                                {profile.health.oldest_unresolved_failure?.slice(
-                                                    0,
-                                                    10,
-                                                ) ?? 'None'}
-                                            </span>
-                                        </div>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Validate a format from Gmail</CardTitle>
+                        <CardDescription>
+                            Choose a message to create a profile or add a
+                            format. Subject, body, and MIME content are fetched
+                            only for this validation.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-3">
+                        {sourceMessages.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                                No unprocessed Gmail messages are available for
+                                validation.
+                            </p>
+                        ) : (
+                            sourceMessages.map((source) => (
+                                <div
+                                    key={source.id}
+                                    className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <div className="min-w-0">
+                                        <p className="truncate text-sm font-medium">
+                                            {source.subject}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {source.from_address} ·{' '}
+                                            {source.received_at.slice(0, 10)}
+                                        </p>
                                     </div>
-                                ))
-                            )}
-                        </CardContent>
-                    </Card>
+                                    <Button asChild size="sm">
+                                        <Link
+                                            href={showSourceMessage(source.id)}
+                                        >
+                                            <FileSearch /> Validate format
+                                        </Link>
+                                    </Button>
+                                </div>
+                            ))
+                        )}
+                    </CardContent>
+                </Card>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Choose a source message</CardTitle>
-                            <CardDescription>
-                                Message content is fetched from Gmail only while
-                                you review and confirm a profile.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-3">
-                            {sourceMessages.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">
-                                    No unprocessed Gmail messages are available.
-                                </p>
-                            ) : (
-                                sourceMessages.map((source) => (
-                                    <div
-                                        key={source.id}
-                                        className="flex items-center justify-between gap-3 rounded-lg border p-3"
-                                    >
-                                        <div className="min-w-0">
-                                            <p className="truncate text-sm font-medium">
-                                                {source.subject}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {source.from_address}
-                                            </p>
-                                        </div>
-                                        <Button asChild size="sm">
-                                            <Link
-                                                href={showSourceMessage(
-                                                    source.id,
-                                                )}
-                                            >
-                                                <FileSearch />
-                                                Review
-                                            </Link>
-                                        </Button>
-                                    </div>
-                                ))
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
+                <section
+                    className="grid gap-4"
+                    aria-labelledby="current-profiles"
+                >
+                    <div>
+                        <h2
+                            id="current-profiles"
+                            className="text-lg font-semibold"
+                        >
+                            Current profiles
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Enabled definitions are evaluated deterministically
+                            in creation order.
+                        </p>
+                    </div>
+                    {profiles.length === 0 ? (
+                        <Card>
+                            <CardContent className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
+                                <ShieldCheck className="size-5" /> No Parser
+                                Profiles have been created.
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        profiles.map((profile) => (
+                            <ProfileCard key={profile.id} profile={profile} />
+                        ))
+                    )}
+                </section>
             </div>
         </>
     );
 }
 
 ParserProfilesIndex.layout = {
-    breadcrumbs: [
-        {
-            title: 'Parser Profiles',
-            href: index(),
-        },
-    ],
+    breadcrumbs: [{ title: 'Parser Profiles', href: index() }],
 };
