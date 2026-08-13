@@ -6,7 +6,6 @@ use App\Actions\Ledger\RecordManualTransaction;
 use App\Integrations\Gmail\GmailMessage;
 use App\Models\GmailMessageDiscovery;
 use App\Models\ParserProfile;
-use App\Models\ParserProfileVersion;
 use App\Models\SpendingNotificationFormat;
 use App\Models\SpendingNotificationReference;
 use App\Models\User;
@@ -21,7 +20,6 @@ final class ProcessSpendingNotification
     public function __construct(
         private SpendingNotificationParser $parser,
         private RecordManualTransaction $recordTransaction,
-        private SynchronizeParserProfileAlerts $synchronizeParserProfileAlerts,
     ) {}
 
     public function handle(
@@ -29,22 +27,13 @@ final class ProcessSpendingNotification
         GmailMessageDiscovery $discovery,
         GmailMessage $message,
         bool $retryUnsupported = false,
-    ): ?SpendingNotificationReference {
-        $discovery->loadMissing('gmailConnection');
-        $previousProfileId = SpendingNotificationReference::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->where('gmail_account_identity', $discovery->gmailConnection->gmail_account_identity)
-            ->where('message_id', $message->messageId)
-            ->with('profileVersion:id,parser_profile_id')
-            ->first()
-            ?->profileVersion
-            ?->parser_profile_id;
-        $reference = DB::transaction(function () use (
+    ): SpendingNotificationReference {
+        return DB::transaction(function () use (
             $owner,
             $discovery,
             $message,
             $retryUnsupported,
-        ): ?SpendingNotificationReference {
+        ): SpendingNotificationReference {
             $discovery = GmailMessageDiscovery::query()
                 ->with('gmailConnection')
                 ->lockForUpdate()
@@ -66,35 +55,40 @@ final class ProcessSpendingNotification
                 );
             }
 
-            $versions = $this->currentProfileVersions($owner);
-            $senderVersions = array_values(array_filter(
-                $versions,
-                fn (ParserProfileVersion $version): bool => $this->parser
-                    ->senderMatches($message, $version),
+            $profiles = $this->enabledProfiles($owner);
+            $senderProfiles = array_values(array_filter(
+                $profiles,
+                fn (ParserProfile $profile): bool => $this->parser
+                    ->senderMatches($message, $profile),
             ));
 
-            if ($senderVersions === []) {
-                return null;
+            if ($senderProfiles === []) {
+                return $this->recordOutcome(
+                    owner: $owner,
+                    discovery: $discovery,
+                    accountIdentity: $accountIdentity,
+                    messageId: $message->messageId,
+                    outcome: SpendingNotificationProcessingOutcome::Unsupported,
+                );
             }
 
-            $trustedVersions = array_values(array_filter(
-                $senderVersions,
-                fn (ParserProfileVersion $version): bool => $this->parser
-                    ->trustMatches($message, $version),
+            $trustedProfiles = array_values(array_filter(
+                $senderProfiles,
+                fn (ParserProfile $profile): bool => $this->parser
+                    ->trustMatches($message, $profile),
             ));
 
-            if ($trustedVersions === []) {
+            if ($trustedProfiles === []) {
                 return $this->recordOutcome(
                     owner: $owner,
                     discovery: $discovery,
                     accountIdentity: $accountIdentity,
                     messageId: $message->messageId,
                     outcome: SpendingNotificationProcessingOutcome::AuthenticationFailed,
-                    profileVersion: $senderVersions[0],
                 );
             }
 
-            $matches = $this->matchingFormats($trustedVersions, $message);
+            $matches = $this->matchingFormats($trustedProfiles, $message);
 
             if ($matches === []) {
                 return $this->recordOutcome(
@@ -103,7 +97,6 @@ final class ProcessSpendingNotification
                     accountIdentity: $accountIdentity,
                     messageId: $message->messageId,
                     outcome: SpendingNotificationProcessingOutcome::Unsupported,
-                    profileVersion: $trustedVersions[0],
                 );
             }
 
@@ -115,7 +108,6 @@ final class ProcessSpendingNotification
                     messageId: $message->messageId,
                     outcome: SpendingNotificationProcessingOutcome::Failed,
                     format: $matches[0]['format'],
-                    profileVersion: $matches[0]['version'],
                 );
             }
 
@@ -129,7 +121,6 @@ final class ProcessSpendingNotification
                     messageId: $message->messageId,
                     outcome: SpendingNotificationProcessingOutcome::Ignored,
                     format: $match['format'],
-                    profileVersion: $match['version'],
                 );
             }
 
@@ -141,7 +132,6 @@ final class ProcessSpendingNotification
                     messageId: $message->messageId,
                     outcome: SpendingNotificationProcessingOutcome::Failed,
                     format: $match['format'],
-                    profileVersion: $match['version'],
                 );
             }
 
@@ -165,38 +155,27 @@ final class ProcessSpendingNotification
                     ? SpendingNotificationProcessingOutcome::Created
                     : SpendingNotificationProcessingOutcome::CreatedWithReview,
                 format: $match['format'],
-                profileVersion: $match['version'],
                 transactionId: $transaction->id,
             );
         }, 3);
-        $profileIds = array_filter([
-            $previousProfileId,
-            $reference?->profileVersion()->value('parser_profile_id'),
-        ], is_int(...));
-
-        foreach (array_unique($profileIds) as $profileId) {
-            $this->synchronizeParserProfileAlerts->handle($owner, $profileId);
-        }
-
-        return $reference;
     }
 
     /**
-     * @param  list<ParserProfileVersion>  $versions
+     * @param  list<ParserProfile>  $profiles
      * @return list<array{
-     *     version: ParserProfileVersion,
+     *     profile: ParserProfile,
      *     format: SpendingNotificationFormat,
      *     extraction: SpendingNotificationExtraction|null
      * }>
      */
     private function matchingFormats(
-        array $versions,
+        array $profiles,
         GmailMessage $message,
     ): array {
         $matches = [];
 
-        foreach ($versions as $version) {
-            foreach ($version->formats as $format) {
+        foreach ($profiles as $profile) {
+            foreach ($profile->formats as $format) {
                 if (! $this->parser->formatMatches($message, $format)) {
                     continue;
                 }
@@ -207,7 +186,7 @@ final class ProcessSpendingNotification
                     try {
                         $extraction = $this->parser->extract(
                             $message,
-                            $version,
+                            $profile,
                             $format,
                         );
                     } catch (InvalidArgumentException) {
@@ -216,7 +195,7 @@ final class ProcessSpendingNotification
                 }
 
                 $matches[] = [
-                    'version' => $version,
+                    'profile' => $profile,
                     'format' => $format,
                     'extraction' => $extraction,
                 ];
@@ -226,19 +205,17 @@ final class ProcessSpendingNotification
         return $matches;
     }
 
-    /** @return list<ParserProfileVersion> */
-    private function currentProfileVersions(User $owner): array
+    /** @return list<ParserProfile> */
+    private function enabledProfiles(User $owner): array
     {
         return array_values(ParserProfile::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereNotNull('enabled_at')
-            ->with('versions.formats')
+            ->with(['formats' => fn ($query) => $query
+                ->whereNotNull('enabled_at')
+                ->oldest('id')])
             ->oldest('id')
             ->get()
-            ->map(fn (ParserProfile $profile): ?ParserProfileVersion => $profile
-                ->versions
-                ->firstWhere('version', $profile->current_version))
-            ->filter()
             ->values()
             ->all());
     }
@@ -250,7 +227,6 @@ final class ProcessSpendingNotification
         string $messageId,
         SpendingNotificationProcessingOutcome $outcome,
         ?SpendingNotificationFormat $format = null,
-        ?ParserProfileVersion $profileVersion = null,
         ?int $transactionId = null,
     ): SpendingNotificationReference {
         $reference = SpendingNotificationReference::query()
@@ -268,7 +244,6 @@ final class ProcessSpendingNotification
             'message_id' => $messageId,
             'processing_outcome' => $outcome->value,
             'spending_notification_format_id' => $format?->id,
-            'parser_profile_version_id' => $profileVersion?->id,
             'gmail_message_discovery_id' => $discovery->id,
             'attempt_count' => $attemptCount,
             'last_attempted_at' => now(),

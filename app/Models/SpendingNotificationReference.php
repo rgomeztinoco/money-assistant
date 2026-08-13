@@ -16,7 +16,6 @@ use Illuminate\Support\Carbon;
  * @property int|null $transaction_id
  * @property int|null $spending_notification_format_id
  * @property int|null $gmail_message_discovery_id
- * @property int|null $parser_profile_version_id
  * @property string $gmail_account_identity
  * @property string $message_id
  * @property string $processing_outcome
@@ -33,7 +32,6 @@ use Illuminate\Support\Carbon;
     'processing_outcome',
     'spending_notification_format_id',
     'gmail_message_discovery_id',
-    'parser_profile_version_id',
     'attempt_count',
     'last_attempted_at',
 ])]
@@ -68,12 +66,6 @@ class SpendingNotificationReference extends Model
     public function discovery(): BelongsTo
     {
         return $this->belongsTo(GmailMessageDiscovery::class, 'gmail_message_discovery_id');
-    }
-
-    /** @return BelongsTo<ParserProfileVersion, $this> */
-    public function profileVersion(): BelongsTo
-    {
-        return $this->belongsTo(ParserProfileVersion::class, 'parser_profile_version_id');
     }
 
     public function isRetryable(): bool

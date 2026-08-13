@@ -15,10 +15,7 @@ use InvalidArgumentException;
 
 final class RecoverSpendingNotification
 {
-    public function __construct(
-        private RecordManualTransaction $recordManualTransaction,
-        private SynchronizeParserProfileAlerts $synchronizeParserProfileAlerts,
-    ) {}
+    public function __construct(private RecordManualTransaction $recordManualTransaction) {}
 
     public function handle(
         User $owner,
@@ -29,7 +26,7 @@ final class RecoverSpendingNotification
         TransactionKind $kind,
         string $merchantDescription,
     ): Transaction {
-        $transaction = DB::transaction(function () use ($owner, $reference, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription): Transaction {
+        return DB::transaction(function () use ($owner, $reference, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription): Transaction {
             $reference = SpendingNotificationReference::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
@@ -57,12 +54,5 @@ final class RecoverSpendingNotification
 
             return $transaction;
         }, 3);
-        $profileId = $reference->fresh()?->profileVersion()->value('parser_profile_id');
-
-        if (is_int($profileId)) {
-            $this->synchronizeParserProfileAlerts->handle($owner, $profileId);
-        }
-
-        return $transaction;
     }
 }

@@ -4,17 +4,16 @@ namespace App\Actions\NotificationIngestion;
 
 use App\Models\GmailMessageDiscovery;
 use App\Models\ParserProfile;
-use App\Models\ParserProfileVersion;
 use App\Models\SpendingNotificationFormat;
 use App\Models\User;
-use App\ParserProfileProposal;
 use App\SpendingNotificationFormatPurpose;
 use App\SpendingNotificationParser;
+use App\ValidatedSpendingNotificationFormat;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use JsonException;
 
-final class BuildParserProfileProposal
+final class ValidateSpendingNotificationFormat
 {
     public function __construct(
         private ReadParserProfileSourceMessage $readSourceMessage,
@@ -26,37 +25,58 @@ final class BuildParserProfileProposal
      *
      * @throws JsonException
      */
-    public function handle(User $owner, array $attributes): ParserProfileProposal
-    {
-        $parserProfileId = $attributes['parser_profile_id'] ?? null;
-        $existingProfile = null;
-
-        if ($parserProfileId !== null && ! is_int($parserProfileId)) {
-            throw new InvalidArgumentException('The Parser Profile identifier is invalid.');
-        }
-
-        if (is_int($parserProfileId)) {
-            $existingProfile = ParserProfile::query()
-                ->whereBelongsTo($owner, 'owner')
-                ->whereKey($parserProfileId)
-                ->sole();
-        } elseif (ParserProfile::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereRaw('lower(name) = lower(?)', [$attributes['profile_name']])
-            ->exists()) {
-            throw new InvalidArgumentException('A Parser Profile with this name already exists.');
-        }
-
-        $discoveryId = $attributes['source_message_discovery_id'] ?? null;
-
-        if (! is_int($discoveryId)) {
-            throw new InvalidArgumentException('The source Gmail message identifier is invalid.');
-        }
-
+    public function handle(
+        User $owner,
+        array $attributes,
+        ?ParserProfile $profile = null,
+    ): ValidatedSpendingNotificationFormat {
         $discovery = GmailMessageDiscovery::query()
-            ->whereKey($discoveryId)
+            ->with('gmailConnection')
+            ->whereKey($attributes['source_message_discovery_id'])
             ->sole();
         $message = $this->readSourceMessage->sourceMessage($owner, $discovery);
+        $profile ??= $this->profileFromMessage($owner, $attributes, $message);
+
+        if (! $this->parser->trustMatches($message, $profile)) {
+            throw new InvalidArgumentException(
+                'The selected Gmail message does not satisfy this profile sender authentication.',
+            );
+        }
+
+        $definition = $this->definition($attributes);
+        $format = new SpendingNotificationFormat([
+            'name' => $attributes['format_name'],
+            'mime_source' => $attributes['mime_source'],
+            'purpose' => $attributes['format_purpose'],
+            'definition' => $definition,
+            'rule_identifier' => $this->ruleIdentifier(
+                $attributes['mime_source'],
+                $definition,
+            ),
+        ]);
+        $extraction = $format->purpose->isIgnored()
+            ? null
+            : $this->parser->extract($message, $profile, $format);
+
+        if (! $this->parser->formatMatches($message, $format)
+            || (! $format->purpose->isIgnored() && $extraction === null)) {
+            throw new InvalidArgumentException(
+                'The format does not match and extract from the selected Gmail message.',
+            );
+        }
+
+        return new ValidatedSpendingNotificationFormat(
+            profile: $profile,
+            format: $format,
+            discovery: $discovery,
+            message: $message,
+            extraction: $extraction,
+        );
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function profileFromMessage(User $owner, array $attributes, mixed $message): ParserProfile
+    {
         $fromAddress = Str::lower($message->fromAddress);
         $fromDomain = Str::lower(Str::afterLast($fromAddress, '@'));
         $authenticationMechanism = $attributes['authentication_mechanism'];
@@ -71,49 +91,14 @@ final class BuildParserProfileProposal
             );
         }
 
-        $definition = $this->definition($attributes);
-        $profileVersion = new ParserProfileVersion([
-            'version' => $existingProfile instanceof ParserProfile
-                ? $existingProfile->current_version + 1
-                : 1,
+        return new ParserProfile([
+            'user_id' => $owner->getKey(),
+            'name' => $attributes['profile_name'],
             'trusted_sender_address' => $fromAddress,
             'trusted_sender_domain' => $fromDomain,
             'authentication_mechanism' => $authenticationMechanism,
             'authenticated_domain' => Str::lower($authentication['domain']),
-            'source_gmail_account_identity' => $discovery->gmailConnection->gmail_account_identity,
-            'source_message_id' => $message->messageId,
-            'approved_at' => now(),
         ]);
-        $format = new SpendingNotificationFormat([
-            'name' => $attributes['format_name'],
-            'mime_source' => $attributes['mime_source'],
-            'purpose' => $attributes['format_purpose'],
-            'definition' => $definition,
-            'rule_identifier' => $this->ruleIdentifier(
-                $attributes['mime_source'],
-                $definition,
-            ),
-        ]);
-        $extraction = $format->purpose->isIgnored()
-            ? null
-            : $this->parser->extract($message, $profileVersion, $format);
-
-        if (! $this->parser->formatMatches($message, $format)
-            || (! $format->purpose->isIgnored() && $extraction === null)) {
-            throw new InvalidArgumentException(
-                'The exact sender and format markers do not match the selected message.',
-            );
-        }
-
-        return new ParserProfileProposal(
-            existingProfile: $existingProfile,
-            profileName: (string) ($attributes['profile_name'] ?? $existingProfile?->name),
-            discovery: $discovery,
-            message: $message,
-            profileVersion: $profileVersion,
-            format: $format,
-            extraction: $extraction,
-        );
     }
 
     /**
@@ -171,18 +156,10 @@ final class BuildParserProfileProposal
 
     private function decodeBoundary(string $boundary): string
     {
-        return str_replace(
-            ['\\r', '\\n', '\\t'],
-            ["\r", "\n", "\t"],
-            $boundary,
-        );
+        return str_replace(['\\r', '\\n', '\\t'], ["\r", "\n", "\t"], $boundary);
     }
 
-    /**
-     * @param  array<string, mixed>  $definition
-     *
-     * @throws JsonException
-     */
+    /** @param array<string, mixed> $definition */
     private function ruleIdentifier(string $mimeSource, array $definition): string
     {
         return hash('sha256', json_encode([

@@ -4,14 +4,13 @@ namespace App\Actions\Dashboard;
 
 use App\Actions\Integrations\ReadActionableIntegrationIncidents;
 use App\Actions\NotificationIngestion\ReadGmailConnectionStatus;
-use App\Actions\NotificationIngestion\ReadParserProfileHealthSummary;
+use App\Models\ParserProfile;
 use App\Models\User;
 
 final class ReadOperatingStatus
 {
     public function __construct(
         private ReadGmailConnectionStatus $readGmailConnectionStatus,
-        private ReadParserProfileHealthSummary $readParserProfileHealthSummary,
         private ReadActionableIntegrationIncidents $readActionableIntegrationIncidents,
     ) {}
 
@@ -27,23 +26,15 @@ final class ReadOperatingStatus
     public function handle(User $owner): array
     {
         $gmail = $this->readGmailConnectionStatus->handle($owner);
-        $parserProfiles = $this->readParserProfileHealthSummary->handle($owner);
+        $enabledParserProfileCount = ParserProfile::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->whereNotNull('enabled_at')
+            ->count();
         $integrationIncidents = collect($this->readActionableIntegrationIncidents->handle($owner))
             ->reject(fn (array $incident): bool => $incident['integration'] === 'openclaw')
             ->values()
             ->all();
         $exceptions = [];
-
-        foreach ($parserProfiles['alerts'] as $alert) {
-            $exceptions[] = [
-                'type' => $alert['kind'] === 'security'
-                    ? 'parser_security'
-                    : 'parser_drift',
-                'profile_id' => $alert['profile_id'],
-                'profile_name' => $alert['profile_name'],
-                'count' => $alert['count'],
-            ];
-        }
 
         if ($gmail['state'] !== 'connected') {
             $exceptions[] = [
@@ -60,8 +51,8 @@ final class ReadOperatingStatus
             'summary' => [
                 'gmail' => $gmail['state'],
                 'parser_profiles' => [
-                    'healthy_count' => $parserProfiles['healthy_count'],
-                    'degraded_count' => $parserProfiles['degraded_count'],
+                    'healthy_count' => $enabledParserProfileCount,
+                    'degraded_count' => 0,
                 ],
             ],
             'exceptions' => $exceptions,

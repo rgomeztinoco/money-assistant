@@ -12,7 +12,7 @@ final class ProcessDiscoveredGmailMessage
         private ProcessSpendingNotification $processSpendingNotification,
     ) {}
 
-    public function handle(int $discoveryId): ?SpendingNotificationReference
+    public function handle(int $discoveryId): SpendingNotificationReference
     {
         $discovery = GmailMessageDiscovery::query()
             ->with(['gmailConnection.owner'])

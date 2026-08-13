@@ -38,8 +38,6 @@ final class RetrySpendingNotification
             discovery: $reference->discovery,
             message: $message,
             retryUnsupported: true,
-        ) ?? throw new InvalidArgumentException(
-            'The message no longer matches an enabled Parser Profile.',
         );
     }
 }
