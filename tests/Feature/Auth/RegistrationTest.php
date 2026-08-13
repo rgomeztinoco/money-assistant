@@ -1,16 +1,16 @@
 <?php
 
 use App\Models\User;
-use Illuminate\Database\QueryException;
 
 test('public registration is unavailable', function () {
     $this->get('/register')->assertNotFound();
     $this->post('/register', [])->assertNotFound();
 });
 
-test('only one Owner Account can exist', function () {
+test('a second Owner Account cannot be provisioned', function () {
     User::factory()->create();
 
-    expect(fn () => User::factory()->create())
-        ->toThrow(QueryException::class);
+    $this->artisan('owner:create')
+        ->expectsOutput('An Owner Account already exists.')
+        ->assertFailed();
 });

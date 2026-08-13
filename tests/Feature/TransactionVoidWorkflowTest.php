@@ -4,7 +4,6 @@ use App\Currency;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -115,30 +114,15 @@ test('void and restore reject operations that do not change current state', func
         ->assertSessionHasErrors('void_state');
 });
 
-test('PostgreSQL exposes the active ledger, voided ledger, and review indexes', function () {
-    $indexes = collect(DB::select(
-        <<<'SQL'
-            SELECT indexname, indexdef
-            FROM pg_indexes
-            WHERE schemaname = current_schema()
-                AND tablename = 'transactions'
-                AND indexname IN (
-                    'transactions_active_ledger_index',
-                    'transactions_voided_ledger_index',
-                    'transactions_review_queue_index'
-                )
-            SQL,
-    ))->keyBy('indexname');
+test('the Transaction table exposes portable ledger indexes', function () {
+    $indexes = collect(Schema::getIndexes('transactions'))->keyBy('name');
 
     expect($indexes)->toHaveKeys([
-        'transactions_active_ledger_index',
-        'transactions_voided_ledger_index',
-        'transactions_review_queue_index',
+        'transactions_user_id_occurred_on_id_index',
+        'transactions_ledger_state_index',
     ])
-        ->and($indexes['transactions_active_ledger_index']->indexdef)
-        ->toContain('WHERE (voided_at IS NULL)')
-        ->and($indexes['transactions_voided_ledger_index']->indexdef)
-        ->toContain('WHERE (voided_at IS NOT NULL)')
-        ->and($indexes['transactions_review_queue_index']->indexdef)
-        ->toContain('AND (voided_at IS NULL)');
+        ->and($indexes['transactions_user_id_occurred_on_id_index']['columns'])
+        ->toBe(['user_id', 'occurred_on', 'id'])
+        ->and($indexes['transactions_ledger_state_index']['columns'])
+        ->toBe(['user_id', 'voided_at', 'occurred_on', 'id']);
 });

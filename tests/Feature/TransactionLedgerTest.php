@@ -6,8 +6,6 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\QueryException;
-use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('the owner can record a confirmed manual purchase in the ledger', function () {
@@ -165,24 +163,26 @@ test('the ledger read path returns its first 25 Transactions with pagination met
         );
 });
 
-test('PostgreSQL constraints reject invalid stored Transaction values', function (
+test('the Transaction workflow rejects invalid values before persistence', function (
     string $invalidField,
     int|string $invalidValue,
 ) {
     $owner = User::factory()->create();
-    $attributes = [
-        'user_id' => $owner->getKey(),
+
+    $payload = [
         'occurred_on' => '2026-07-24',
         'amount_minor' => 1,
         'currency' => 'USD',
         'kind' => 'purchase',
         'merchant_description' => 'Neighborhood market',
-        'confirmed_at' => now(),
     ];
-    $attributes[$invalidField] = $invalidValue;
+    $payload[$invalidField] = $invalidValue;
 
-    expect(fn () => DB::table((new Transaction)->getTable())->insert($attributes))
-        ->toThrow(QueryException::class);
+    $this->actingAs($owner)
+        ->post(route('transactions.store'), $payload)
+        ->assertSessionHasErrors($invalidField);
+
+    expect(Transaction::query()->doesntExist())->toBeTrue();
 })->with([
     'non-positive amount' => ['amount_minor', 0],
     'unsupported currency' => ['currency', 'EUR'],

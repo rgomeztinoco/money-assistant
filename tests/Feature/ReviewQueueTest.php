@@ -9,8 +9,6 @@ use App\Models\User;
 use App\ReviewableTransactionField;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\QueryException;
-use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('a confirmed Transaction with provisional fields remains in totals and appears once in the Review Queue', function () {
@@ -240,11 +238,15 @@ test('the Review Queue exposes every unresolved Transaction field', function () 
             ->where('pagination.total', 101));
 });
 
-test('PostgreSQL rejects non-reviewable provisional Transaction fields', function () {
+test('the Review Queue rejects non-reviewable Transaction fields', function () {
     $transaction = Transaction::factory()->create();
 
-    expect(fn () => DB::table($transaction->getTable())
-        ->where('id', $transaction->id)
-        ->update(['provisional_fields' => json_encode(['unreviewable'])]))
-        ->toThrow(QueryException::class);
+    $this->actingAs($transaction->owner)
+        ->patch(route('review_queue.fields.update', [
+            'transaction' => $transaction,
+            'field' => 'unreviewable',
+        ]), [
+            'resolution' => 'accept',
+        ])
+        ->assertNotFound();
 });
