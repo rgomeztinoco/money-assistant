@@ -224,7 +224,6 @@ test('Uncategorized Line Items remain visible in the Review Queue', function () 
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('unresolved_category_count', 1)
-            ->where('review_queue.outstanding_count', 1)
             ->where('transactions.0.id', $transaction->id));
 });
 

@@ -157,7 +157,7 @@ test('the selected Transaction inspector exposes only current state and relation
                 ->missing('selected_transaction.state_change_idempotency_key')));
 });
 
-test('the Review Queue is the outstanding ledger preset and shares its navigation count', function () {
+test('the Review Queue is the outstanding ledger preset', function () {
     $owner = User::factory()->create();
     $reviewTransaction = Transaction::factory()
         ->for($owner, 'owner')
@@ -182,7 +182,6 @@ test('the Review Queue is the outstanding ledger preset and shares its navigatio
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('review-queue/index')
-            ->where('review_queue.outstanding_count', 5)
             ->where('workspace.mode', 'review_queue')
             ->where('filters.review_state', 'outstanding')
             ->missing('filters.duplicate_status')

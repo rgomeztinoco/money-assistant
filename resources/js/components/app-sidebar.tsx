@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import {
     BarChart3,
     LayoutGrid,
@@ -30,7 +30,6 @@ import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
-    const { review_queue } = usePage().props;
     const mainNavItems: NavItem[] = [
         {
             title: 'Dashboard',
@@ -46,7 +45,6 @@ export function AppSidebar() {
             title: 'Review Queue',
             href: reviewQueueIndex(),
             icon: ListChecks,
-            badgeCount: review_queue.outstanding_count,
         },
         {
             title: 'Reports',

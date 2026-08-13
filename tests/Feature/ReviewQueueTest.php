@@ -87,7 +87,6 @@ test('an Uncategorized Transaction remains in totals, reports in its system buck
     $this->get(route('review_queue.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('unresolved_category_count', 1)
-            ->where('review_queue.outstanding_count', 1)
             ->has('transactions', 1)
             ->where('transactions.0.id', $uncategorized->id)
             ->loadDeferredProps(fn (Assert $inspector) => $inspector

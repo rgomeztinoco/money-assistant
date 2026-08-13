@@ -2,11 +2,11 @@
 
 use App\Models\Category;
 use App\Models\GmailConnection;
-use App\Models\ParserProfile;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests are redirected to the login page', function () {
@@ -22,31 +22,55 @@ test('authenticated users can visit the dashboard', function () {
     $response->assertOk();
 });
 
-test('the Dashboard shows current-month spending and Review Queue workload', function () {
+test('the Dashboard shows current-period totals, Review Queue workload, recent Transactions, and Gmail status', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-18 15:00:00 UTC'));
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    $usdTransaction = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
         'occurred_on' => '2026-08-04',
         'amount_minor' => 100,
+        'merchant_description' => 'Corner shop',
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->provisional([
+    $penTransaction = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->provisional([
         ReviewableTransactionField::MerchantDescription,
     ])->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 500,
+        'merchant_description' => 'Neighborhood market',
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
         'occurred_on' => '2026-08-12',
         'amount_minor' => 100,
+        'merchant_description' => 'Market Refund',
         'category_id' => $category->id,
     ]);
     Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
         'occurred_on' => '2026-07-31',
         'amount_minor' => 9_000,
         'category_id' => $category->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-06-30',
+        'amount_minor' => 7_000,
+        'category_id' => $category->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-05-31',
+        'amount_minor' => 6_000,
+        'category_id' => $category->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-15',
+        'amount_minor' => 8_000,
+        'merchant_description' => 'Voided transfer',
+        'category_id' => $category->id,
+        'voided_at' => now(),
+    ]);
+    GmailConnection::factory()->for($owner, 'owner')->create([
+        'gmail_account_identity' => 'owner@example.com',
+        'last_successful_sync_at' => now()->subMinute(),
     ]);
 
     $this->actingAs($owner)
@@ -59,26 +83,31 @@ test('the Dashboard shows current-month spending and Review Queue workload', fun
             ->where('spending.totals.USD', '100')
             ->where('spending.totals.PEN', '400')
             ->missing('spending.combined_total')
-            ->where('review_queue.outstanding_count', 1));
+            ->where('review_queue.outstanding_count', 1)
+            ->has('recent_transactions', 5)
+            ->where('recent_transactions.0.id', $refund->id)
+            ->where('recent_transactions.1.id', $penTransaction->id)
+            ->where('recent_transactions.2.id', $usdTransaction->id)
+            ->where('gmail.state', 'connected')
+            ->where('gmail.account_identity', 'owner@example.com')
+            ->where('gmail.last_successful_sync_at', fn (mixed $timestamp) => is_string($timestamp))
+            ->missing('operating')
+            ->missing('gmail.latest_failure')
+            ->missing('gmail.scope'));
 });
 
-test('the Dashboard summarizes enabled Parser Profiles without drift or security aggregation', function () {
+test('the Dashboard contains no removed operations projections', function () {
     $owner = User::factory()->create();
-    GmailConnection::factory()->for($owner, 'owner')->create();
-    ParserProfile::factory()->for($owner, 'owner')->create([
-        'name' => 'Healthy bank alerts',
-    ]);
-    ParserProfile::factory()->for($owner, 'owner')->create([
-        'name' => 'Card alerts',
-    ]);
+
     $this->actingAs($owner)
         ->get(route('dashboard'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('operating.summary.gmail', 'connected')
-            ->where('operating.summary.parser_profiles.healthy_count', 2)
-            ->where('operating.summary.parser_profiles.degraded_count', 0)
-            ->missing('operating.summary.daily_exchange_rates')
-            ->has('operating.exceptions', 0));
+            ->missing('operating')
+            ->missing('parser_profiles')
+            ->missing('daily_exchange_rates')
+            ->missing('reminders')
+            ->missing('incidents')
+            ->missing('infrastructure'));
 });
 
 test('the Dashboard promotes stale Gmail synchronization instead of reporting it healthy', function () {
@@ -91,8 +120,24 @@ test('the Dashboard promotes stale Gmail synchronization instead of reporting it
     $this->actingAs($owner)
         ->get(route('dashboard'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('operating.summary.gmail', 'stale')
-            ->has('operating.exceptions', 1)
-            ->where('operating.exceptions.0.type', 'gmail_connection')
-            ->where('operating.exceptions.0.state', 'stale'));
+            ->where('gmail.state', 'stale'));
+});
+
+test('shared Inertia data does not query or expose Dashboard integration status and workload', function () {
+    $owner = User::factory()->create();
+    DB::enableQueryLog();
+
+    $response = $this->actingAs($owner)
+        ->get(route('transactions.index'));
+    $queries = collect(DB::getQueryLog())->pluck('query')->implode(' ');
+    DB::disableQueryLog();
+
+    $response
+        ->assertInertia(fn (Assert $page) => $page
+            ->missing('gmail')
+            ->missing('review_queue'));
+
+    expect($queries)
+        ->not->toContain('gmail_connections')
+        ->not->toContain('gmail_message_discoveries');
 });
