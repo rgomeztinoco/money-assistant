@@ -49,9 +49,7 @@ class ProcessGmailMessage implements ShouldBeUnique, ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        $failedJobUuid = $this->job !== null && method_exists($this->job, 'uuid')
-            ? $this->job->uuid()
-            : null;
+        $failedJobUuid = $this->job?->uuid();
 
         GmailMessageDiscovery::query()
             ->whereKey($this->discoveryId)
