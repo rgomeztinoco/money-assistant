@@ -4,7 +4,6 @@ use App\Actions\NotificationIngestion\DispatchGmailSynchronizations;
 use App\Actions\NotificationIngestion\SynchronizeGmailConnection;
 use App\Contracts\Gmail;
 use App\GmailSynchronizationType;
-use App\IntegrationFailureKind;
 use App\Integrations\Gmail\GmailHistoryExpired;
 use App\Integrations\Gmail\GmailHistoryPage;
 use App\Integrations\Gmail\GmailMessageIdentity;
@@ -411,7 +410,7 @@ test('the scheduler queues minute polling and daily seven-day reconciliation', f
     );
 });
 
-test('a transient Gmail synchronization failure follows the shared retry window', function () {
+test('Gmail jobs use bounded Laravel queue retries and backoff', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-01 10:00:00 UTC'));
     $connection = GmailConnection::factory()->create([
         'access_token_expires_at' => now()->addDays(2),
@@ -421,25 +420,35 @@ test('a transient Gmail synchronization failure follows the shared retry window'
     $gmail = new FakeGmail;
     $gmail->historyFailure = GmailRequestFailed::history();
     app()->instance(Gmail::class, $gmail);
-    $job = (new SynchronizeGmail(
+    $job = new SynchronizeGmail(
         $connection->id,
         GmailSynchronizationType::Incremental,
-    ))->withFakeQueueInteractions();
+    );
 
-    expect($job->tries)->toBe(0)
-        ->and((new ProcessGmailMessage(42))->tries)->toBe(0);
+    expect($job->tries)->toBe(5)
+        ->and($job->backoff())->toBe([60, 300, 900])
+        ->and((new ProcessGmailMessage(42))->tries)->toBe(5)
+        ->and((new ProcessGmailMessage(42))->backoff())->toBe([60, 300, 900]);
 
-    app()->call([$job, 'handle']);
+    expect(fn () => app()->call([$job, 'handle']))
+        ->toThrow(GmailRequestFailed::class);
+});
 
-    $incident = $connection->owner->integrationIncidents()->sole();
-    expect($incident->failure_kind)->toBe(IntegrationFailureKind::Transient)
-        ->and($incident->next_attempt_at)->not->toBeNull();
-    $job->assertReleased();
+test('failed Gmail jobs retain focused failure state', function () {
+    $connection = GmailConnection::factory()->create();
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create();
 
-    $this->travelTo($incident->retry_until);
-    $gmail->historyFailure = GmailRequestFailed::history();
-    app()->call([$job, 'handle']);
+    (new SynchronizeGmail(
+        $connection->id,
+        GmailSynchronizationType::Incremental,
+    ))->failed(GmailRequestFailed::history());
+    (new ProcessGmailMessage($discovery->id))->failed(GmailRequestFailed::messageIdentity());
 
-    expect($incident->fresh()->parked_at?->toIso8601String())->toBe(now()->toIso8601String());
-    $job->assertFailedWith(GmailRequestFailed::class);
+    $connection->refresh();
+    $discovery->refresh();
+
+    expect($connection->last_synchronization_failed_at)->not->toBeNull()
+        ->and($connection->last_synchronization_error_code)->toBe('gmail_synchronization_failed')
+        ->and($discovery->processing_failed_at)->not->toBeNull()
+        ->and($discovery->last_error_code)->toBe('gmail_message_processing_failed');
 });

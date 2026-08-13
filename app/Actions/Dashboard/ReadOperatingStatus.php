@@ -2,7 +2,6 @@
 
 namespace App\Actions\Dashboard;
 
-use App\Actions\Integrations\ReadActionableIntegrationIncidents;
 use App\Actions\NotificationIngestion\ReadGmailConnectionStatus;
 use App\Models\ParserProfile;
 use App\Models\User;
@@ -11,7 +10,6 @@ final class ReadOperatingStatus
 {
     public function __construct(
         private ReadGmailConnectionStatus $readGmailConnectionStatus,
-        private ReadActionableIntegrationIncidents $readActionableIntegrationIncidents,
     ) {}
 
     /**
@@ -30,10 +28,6 @@ final class ReadOperatingStatus
             ->whereBelongsTo($owner, 'owner')
             ->whereNotNull('enabled_at')
             ->count();
-        $integrationIncidents = collect($this->readActionableIntegrationIncidents->handle($owner))
-            ->reject(fn (array $incident): bool => $incident['integration'] === 'openclaw')
-            ->values()
-            ->all();
         $exceptions = [];
 
         if ($gmail['state'] !== 'connected') {
@@ -41,10 +35,6 @@ final class ReadOperatingStatus
                 'type' => 'gmail_connection',
                 'state' => $gmail['state'],
             ];
-        }
-
-        foreach ($integrationIncidents as $integrationIncident) {
-            $exceptions[] = $integrationIncident;
         }
 
         return [

@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\GmailConnection;
-use App\Models\Reminder;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Encryption\Encrypter;
@@ -251,8 +250,8 @@ test('the rotation fingerprint ignores credentials and covers the complete finan
     Artisan::call('app:financial-state:fingerprint');
     $afterCredentialRotation = trim(Artisan::output());
 
-    Reminder::factory()->for($owner, 'owner')->create([
-        'subject' => 'Review the monthly financial plan',
+    Transaction::factory()->for($owner, 'owner')->create([
+        'merchant_description' => 'Financial state change',
     ]);
 
     Artisan::call('app:financial-state:fingerprint');

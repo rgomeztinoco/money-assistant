@@ -2,13 +2,8 @@
 
 namespace App\Jobs;
 
-use App\Actions\Integrations\ClassifyIntegrationFailure;
-use App\Actions\Integrations\RecordIntegrationFailure;
-use App\Actions\Integrations\RecordIntegrationRecovery;
 use App\Actions\NotificationIngestion\SynchronizeGmailConnection;
 use App\GmailSynchronizationType;
-use App\IntegrationService;
-use App\IntegrationWorkType;
 use App\Models\GmailConnection;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -21,7 +16,7 @@ class SynchronizeGmail implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 0;
+    public int $tries = 5;
 
     public int $timeout = 60;
 
@@ -48,48 +43,26 @@ class SynchronizeGmail implements ShouldBeUnique, ShouldQueue
         ];
     }
 
-    public function handle(
-        SynchronizeGmailConnection $synchronize,
-        ClassifyIntegrationFailure $classifyIntegrationFailure,
-        RecordIntegrationFailure $recordIntegrationFailure,
-        RecordIntegrationRecovery $recordIntegrationRecovery,
-    ): void {
-        $connection = GmailConnection::query()->findOrFail($this->connectionId);
-        $workId = $this->uniqueId();
+    /** @return list<int> */
+    public function backoff(): array
+    {
+        return [60, 300, 900];
+    }
 
-        try {
-            $synchronize->handle($this->connectionId, $this->type);
-        } catch (Throwable $exception) {
-            $decision = $recordIntegrationFailure->handle(
-                owner: $connection->owner,
-                integration: IntegrationService::Gmail,
-                workType: IntegrationWorkType::GmailSynchronization,
-                workId: $workId,
-                sourceIdentity: 'gmail:'.$connection->gmail_account_identity
-                    .':synchronization:'.$this->type->value,
-                failureKind: $classifyIntegrationFailure->handle($exception),
-                errorCode: 'gmail_synchronization_failed',
-            );
-
-            if ($decision->shouldRetry) {
-                $this->release($decision->nextAttemptAt);
-            } else {
-                $this->fail($exception);
-            }
-
-            return;
-        }
-
-        $recordIntegrationRecovery->handle(
-            owner: $connection->owner,
-            integration: IntegrationService::Gmail,
-            workType: IntegrationWorkType::GmailSynchronization,
-            workId: $workId,
-        );
+    public function handle(SynchronizeGmailConnection $synchronize): void
+    {
+        $synchronize->handle($this->connectionId, $this->type);
     }
 
     public function failed(?Throwable $exception): void
     {
+        GmailConnection::query()
+            ->whereKey($this->connectionId)
+            ->update([
+                'last_synchronization_failed_at' => now(),
+                'last_synchronization_error_code' => 'gmail_synchronization_failed',
+            ]);
+
         Log::error('A Gmail synchronization job failed.', [
             'gmail_connection_id' => $this->connectionId,
             'synchronization_type' => $this->type->value,

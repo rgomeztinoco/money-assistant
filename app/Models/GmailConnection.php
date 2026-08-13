@@ -27,6 +27,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $history_id
  * @property CarbonImmutable|null $initial_sync_completed_at
  * @property CarbonImmutable|null $last_successful_sync_at
+ * @property CarbonImmutable|null $last_synchronization_failed_at
+ * @property string|null $last_synchronization_error_code
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -45,6 +47,8 @@ use Illuminate\Support\Carbon;
     'history_id',
     'initial_sync_completed_at',
     'last_successful_sync_at',
+    'last_synchronization_failed_at',
+    'last_synchronization_error_code',
 ])]
 #[Hidden(['access_token', 'refresh_token'])]
 class GmailConnection extends Model
@@ -83,6 +87,7 @@ class GmailConnection extends Model
             'reauthorization_required_at' => 'immutable_datetime',
             'initial_sync_completed_at' => 'immutable_datetime',
             'last_successful_sync_at' => 'immutable_datetime',
+            'last_synchronization_failed_at' => 'immutable_datetime',
         ];
     }
 }

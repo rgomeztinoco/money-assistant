@@ -1,8 +1,6 @@
 <?php
 
 use App\Currency;
-use App\IntegrationService;
-use App\IntegrationWorkType;
 use App\Models\Category;
 use App\Models\LineItem;
 use App\Models\ReceiptBreakdown;
@@ -251,9 +249,5 @@ test('exchange-rate acquisition and Reporting Currency contracts are absent', fu
         ->and(Schema::hasTable('daily_exchange_rates'))->toBeFalse()
         ->and(Schema::hasTable('daily_exchange_rate_seed_requests'))->toBeFalse()
         ->and(Schema::hasColumn('users', 'reporting_currency'))->toBeFalse()
-        ->and(collect(IntegrationService::cases())->pluck('value')->all())
-        ->not->toContain('bcrp')
-        ->and(collect(IntegrationWorkType::cases())->pluck('value')->all())
-        ->not->toContain('daily_exchange_rate_seed')
         ->and(Artisan::output())->not->toContain('daily-exchange-rate');
 });

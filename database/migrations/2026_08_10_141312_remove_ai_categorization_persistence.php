@@ -21,8 +21,6 @@ return new class extends Migration
         DB::statement('ALTER TABLE category_assignments DROP CONSTRAINT category_assignments_source_supported');
         DB::statement('ALTER TABLE category_assignments DROP CONSTRAINT category_assignments_ai_confidence_valid');
         DB::statement('ALTER TABLE categories DROP CONSTRAINT categories_examples_array');
-        DB::statement('ALTER TABLE integration_incidents DROP CONSTRAINT integration_incidents_integration_supported');
-        DB::statement('ALTER TABLE integration_incidents DROP CONSTRAINT integration_incidents_work_type_supported');
 
         Schema::table('category_assignments', function (Blueprint $table) {
             $table->dropIndex('category_assignments_ai_context_review_index');
@@ -51,8 +49,6 @@ return new class extends Migration
             OR (source = 'linked_refund' AND category_id IS NOT NULL AND linked_purchase_id IS NOT NULL AND learned_rule_id IS NULL AND learned_rule_revision IS NULL AND learned_rule_bulk_action_id IS NULL)
             OR (source = 'learned_rule' AND category_id IS NOT NULL AND linked_purchase_id IS NULL AND learned_rule_id IS NOT NULL AND learned_rule_revision IS NOT NULL AND learned_rule_bulk_action_id IS NULL)
         )");
-        DB::statement("ALTER TABLE integration_incidents ADD CONSTRAINT integration_incidents_integration_supported CHECK (integration IN ('gmail', 'openclaw'))");
-        DB::statement("ALTER TABLE integration_incidents ADD CONSTRAINT integration_incidents_work_type_supported CHECK (work_type IN ('gmail_synchronization', 'gmail_message', 'reminder_delivery'))");
     }
 
     /**

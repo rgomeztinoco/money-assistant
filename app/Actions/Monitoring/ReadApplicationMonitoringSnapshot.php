@@ -3,9 +3,7 @@
 namespace App\Actions\Monitoring;
 
 use App\Actions\NotificationIngestion\ReadGmailConnectionStatus;
-use App\IntegrationService;
 use App\Listeners\RecordOwnerLoginLockout;
-use App\Models\IntegrationIncident;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Cache;
@@ -42,23 +40,16 @@ final class ReadApplicationMonitoringSnapshot
         $state = $owner === null
             ? 'disconnected'
             : $this->readGmailConnectionStatus->handle($owner)['state'];
-        $hasVisibleFailure = IntegrationIncident::query()
-            ->where('integration', IntegrationService::Gmail)
-            ->where('visible_at', '<=', now())
-            ->whereNull('recovered_at')
-            ->exists();
-        $isHealthy = $state === 'connected' && ! $hasVisibleFailure;
+        $isHealthy = $state === 'connected';
 
         return [
             'key' => 'gmail',
             'severity' => 'warning',
             'state' => $isHealthy ? 'healthy' : 'failed',
-            'grace_seconds' => $hasVisibleFailure ? 0 : 900,
-            'message' => match (true) {
-                $isHealthy => 'Gmail synchronization is healthy.',
-                $hasVisibleFailure => 'Gmail synchronization or message processing has failed for 15 minutes. Inspect the Dashboard incident before replaying parked work.',
-                default => 'Gmail synchronization has been unhealthy for 15 minutes. Open Settings > Connections to reconnect or inspect the failure.',
-            },
+            'grace_seconds' => 900,
+            'message' => $isHealthy
+                ? 'Gmail synchronization is healthy.'
+                : 'Gmail synchronization has been unhealthy for 15 minutes. Open Settings > Connections to reconnect or inspect the failure.',
         ];
     }
 
@@ -85,7 +76,7 @@ final class ReadApplicationMonitoringSnapshot
             'state' => $isStalled ? 'failed' : 'healthy',
             'grace_seconds' => 0,
             'message' => $isStalled
-                ? 'The oldest processing item has been stalled for 15 minutes. Inspect the worker and the Dashboard incident before replaying work.'
+                ? 'The oldest processing item has been stalled for 15 minutes. Inspect the worker and failed jobs.'
                 : 'Queued processing is current.',
         ];
     }

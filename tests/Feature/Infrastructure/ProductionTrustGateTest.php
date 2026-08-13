@@ -400,7 +400,6 @@ test('the forced crash drill kills in-flight processing and verifies catch-up wi
         ->toContain('Crash start marker:')
         ->toContain('docker kill --signal KILL')
         ->toContain('app:deployment-rehearsal:verify')
-        ->toContain('app:rehearse-manual-replay')
         ->toContain('one voided rehearsal Transaction')
         ->toContain('completed each durable probe exactly once')
         ->toContain('PRODUCTION_TRUST_EVIDENCE gate=forced-crash outcome=passed');

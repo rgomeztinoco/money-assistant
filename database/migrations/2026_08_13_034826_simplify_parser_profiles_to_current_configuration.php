@@ -78,13 +78,9 @@ return new class extends Migration
         Schema::dropIfExists('parser_profile_versions');
 
         Schema::table('parser_profiles', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('security_alert_reminder_id');
             $table->dropColumn([
                 'current_version',
-                'security_alert_resolution_idempotency_key',
-                'drift_alert_resolution_idempotency_key',
             ]);
-            $table->dropConstrainedForeignId('drift_alert_reminder_id');
         });
     }
 

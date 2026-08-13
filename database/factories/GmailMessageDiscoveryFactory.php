@@ -23,6 +23,9 @@ class GmailMessageDiscoveryFactory extends Factory
             'gmail_connection_id' => GmailConnection::factory(),
             'message_id' => (string) Str::uuid(),
             'processed_at' => null,
+            'processing_failed_at' => null,
+            'last_error_code' => null,
+            'failed_job_uuid' => null,
         ];
     }
 }
