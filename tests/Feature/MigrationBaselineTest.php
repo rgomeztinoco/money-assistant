@@ -46,6 +46,20 @@ test('fresh PostgreSQL migrations contain only the lean v1 baseline', function (
         ]);
 });
 
+test('baseline migrations use the Laravel schema builder without custom SQL', function (): void {
+    $migrationPaths = glob(database_path('migrations/*_baseline.php'));
+
+    expect($migrationPaths)->toHaveCount(6);
+
+    foreach ($migrationPaths as $migrationPath) {
+        expect(file_get_contents($migrationPath))
+            ->not->toContain('Illuminate\\Support\\Facades\\DB')
+            ->not->toContain('DB::')
+            ->not->toContain('statement(')
+            ->not->toContain('unprepared(');
+    }
+});
+
 test('baseline tables expose the retained application columns', function (string $table, array $columns): void {
     expect(Schema::getColumnListing($table))->toBe($columns);
 })->with([

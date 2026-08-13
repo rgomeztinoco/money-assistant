@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -19,13 +18,9 @@ return new class extends Migration
             $table->string('authenticated_domain');
             $table->timestampTz('enabled_at')->nullable()->index();
             $table->timestamps();
-        });
 
-        DB::statement('CREATE UNIQUE INDEX parser_profiles_owner_name_unique ON parser_profiles (user_id, lower(name))');
-        DB::statement("ALTER TABLE parser_profiles ADD CONSTRAINT parser_profiles_authentication_mechanism_supported CHECK (authentication_mechanism IN ('spf', 'dkim', 'dmarc'))");
-        DB::statement('ALTER TABLE parser_profiles ADD CONSTRAINT parser_profiles_sender_address_lowercase CHECK (trusted_sender_address = lower(trusted_sender_address))');
-        DB::statement('ALTER TABLE parser_profiles ADD CONSTRAINT parser_profiles_sender_domain_lowercase CHECK (trusted_sender_domain = lower(trusted_sender_domain))');
-        DB::statement('ALTER TABLE parser_profiles ADD CONSTRAINT parser_profiles_authenticated_domain_lowercase CHECK (authenticated_domain = lower(authenticated_domain))');
+            $table->unique(['user_id', 'name']);
+        });
 
         Schema::create('spending_notification_formats', function (Blueprint $table): void {
             $table->id();
@@ -43,10 +38,6 @@ return new class extends Migration
                 'spending_notification_formats_rule_unique',
             );
         });
-
-        DB::statement("ALTER TABLE spending_notification_formats ADD CONSTRAINT spending_notification_formats_mime_source_supported CHECK (mime_source IN ('text_plain', 'text_html'))");
-        DB::statement("ALTER TABLE spending_notification_formats ADD CONSTRAINT spending_notification_formats_purpose_supported CHECK (purpose IN ('spending', 'ignore'))");
-        DB::statement("ALTER TABLE spending_notification_formats ADD CONSTRAINT spending_notification_formats_definition_object CHECK (jsonb_typeof(definition) = 'object')");
     }
 
     public function down(): void

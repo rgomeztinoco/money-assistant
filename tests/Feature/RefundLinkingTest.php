@@ -6,7 +6,6 @@ use App\Models\Category;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
-use Illuminate\Database\QueryException;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -330,19 +329,30 @@ test('invalid or unauthenticated Refund relationships are rejected', function ()
     expect($refund->refresh()->original_purchase_id)->toBeNull();
 });
 
-test('PostgreSQL prevents a Transaction from linking to itself', function () {
+test('the Transaction workflow prevents a Refund from linking to itself', function () {
     $owner = User::factory()->create();
     $refund = Transaction::factory()
         ->for($owner, 'owner')
         ->refund()
         ->create();
 
-    expect(fn () => $refund->update([
-        'original_purchase_id' => $refund->id,
-    ]))->toThrow(QueryException::class);
+    $this->actingAs($owner)
+        ->from(route('transactions.index'))
+        ->put(route('transactions.update', $refund), [
+            'occurred_on' => $refund->occurred_on->toDateString(),
+            'amount_minor' => $refund->amount_minor,
+            'currency' => $refund->currency->value,
+            'kind' => $refund->kind->value,
+            'merchant_description' => $refund->merchant_description,
+            'original_purchase_id' => $refund->id,
+        ])
+        ->assertRedirect(route('transactions.index'))
+        ->assertSessionHasErrors('original_purchase_id');
+
+    expect($refund->refresh()->original_purchase_id)->toBeNull();
 });
 
-test('PostgreSQL enforces a two-level Category hierarchy', function () {
+test('the Category workflow enforces a two-level hierarchy', function () {
     $owner = User::factory()->create();
     $parentCategory = Category::factory()
         ->for($owner, 'owner')
@@ -352,10 +362,16 @@ test('PostgreSQL enforces a two-level Category hierarchy', function () {
         ->for($parentCategory, 'parent')
         ->create();
 
-    expect(fn () => Category::factory()
-        ->for($owner, 'owner')
-        ->for($childCategory, 'parent')
-        ->create())->toThrow(QueryException::class);
+    $this->actingAs($owner)
+        ->from(route('categories.index'))
+        ->post(route('categories.store'), [
+            'name' => 'Third level',
+            'parent_id' => $childCategory->id,
+        ])
+        ->assertRedirect(route('categories.index'))
+        ->assertSessionHasErrors('parent_id');
+
+    expect(Category::query()->where('name', 'Third level')->doesntExist())->toBeTrue();
 });
 
 test('cumulative Refund review remains exact beyond the PHP integer range', function () {
