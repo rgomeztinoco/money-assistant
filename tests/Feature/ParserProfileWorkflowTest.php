@@ -174,6 +174,43 @@ test('the owner directly edits toggles and deletes current profiles and formats'
     expect(ParserProfile::query()->count())->toBe(0);
 });
 
+test('editing a format replaces its current definition only after transient validation', function () {
+    [$owner, , $discovery, $gmail] = parserProfileSource();
+    $profile = ParserProfile::factory()->for($owner, 'owner')->create();
+    $format = SpendingNotificationFormat::factory()->for($profile, 'profile')->create([
+        'name' => 'Old format',
+        'enabled_at' => null,
+    ]);
+    app()->instance(Gmail::class, $gmail);
+
+    $this->actingAs($owner)
+        ->put(
+            route('parser_profiles.formats.update', [$profile, $format]),
+            parserProfilePayload($discovery, [
+                'parser_profile_id' => $profile->id,
+                'profile_name' => null,
+                'format_name' => 'Current card purchase',
+            ]),
+        )
+        ->assertSessionHasNoErrors();
+
+    expect($format->fresh()->name)->toBe('Current card purchase')
+        ->and($format->fresh()->enabled_at)->not->toBeNull()
+        ->and($profile->formats()->count())->toBe(1);
+
+    $this->put(
+        route('parser_profiles.formats.update', [$profile, $format]),
+        parserProfilePayload($discovery, [
+            'parser_profile_id' => $profile->id,
+            'profile_name' => null,
+            'format_name' => 'Invalid replacement',
+            'body_marker' => 'Does not match',
+        ]),
+    )->assertSessionHasErrors('profile');
+
+    expect($format->fresh()->name)->toBe('Current card purchase');
+});
+
 test('disabled definitions are ignored and unsupported messages are marked processed', function () {
     $owner = User::factory()->create();
     $profile = ParserProfile::factory()->for($owner, 'owner')->create();

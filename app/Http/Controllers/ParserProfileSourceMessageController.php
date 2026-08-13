@@ -28,11 +28,16 @@ class ParserProfileSourceMessageController extends Controller
             ],
             'profiles' => ParserProfile::query()
                 ->whereBelongsTo($request->user(), 'owner')
+                ->with(['formats' => fn ($query) => $query->oldest('id')])
                 ->latest()
                 ->get(['id', 'name'])
                 ->map(fn (ParserProfile $profile): array => [
                     'id' => $profile->id,
                     'name' => $profile->name,
+                    'formats' => $profile->formats->map(fn ($format): array => [
+                        'id' => $format->id,
+                        'name' => $format->name,
+                    ])->all(),
                 ])
                 ->all(),
         ]);

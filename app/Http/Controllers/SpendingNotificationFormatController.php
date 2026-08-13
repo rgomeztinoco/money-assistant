@@ -39,8 +39,12 @@ class SpendingNotificationFormatController extends Controller
     ): RedirectResponse {
         $validated = $this->validatedFormat($request, $parserProfile, $validateFormat);
         $spendingNotificationFormat->forceFill([
-            ...$validated->format->getAttributes(),
             'parser_profile_id' => $parserProfile->id,
+            'name' => $validated->format->name,
+            'mime_source' => $validated->format->mime_source,
+            'purpose' => $validated->format->purpose,
+            'rule_identifier' => $validated->format->rule_identifier,
+            'definition' => $validated->format->definition,
             'enabled_at' => now(),
         ])->save();
 

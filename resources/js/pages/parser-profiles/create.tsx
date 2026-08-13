@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/ParserProfileController';
 import { store as previewStore } from '@/actions/App/Http/Controllers/ParserProfilePreviewController';
 import { store as storeFormat } from '@/actions/App/Http/Controllers/SpendingNotificationFormatController';
+import { update as updateFormat } from '@/actions/App/Http/Controllers/SpendingNotificationFormatController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -43,6 +44,7 @@ type SourceMessage = {
 type ExistingProfile = {
     id: number;
     name: string;
+    formats: Array<{ id: number; name: string }>;
 };
 
 type ParserProfileTransactionPreview = {
@@ -91,6 +93,10 @@ export default function CreateParserProfile({
         ParserProfilePreview | undefined;
     const [preview, setPreview] = useState(initialPreview);
     const [selectedProfileId, setSelectedProfileId] = useState('');
+    const [selectedFormatId, setSelectedFormatId] = useState('');
+    const selectedProfile = profiles.find(
+        (profile) => String(profile.id) === selectedProfileId,
+    );
     const [formatPurpose, setFormatPurpose] = useState<'spending' | 'ignore'>(
         initialPreview?.purpose ?? 'spending',
     );
@@ -191,7 +197,12 @@ export default function CreateParserProfile({
                         ? previewStore.form()
                         : selectedProfileId === ''
                           ? store.form()
-                          : storeFormat.form(Number(selectedProfileId)))}
+                          : selectedFormatId === ''
+                            ? storeFormat.form(Number(selectedProfileId))
+                            : updateFormat.form([
+                                  Number(selectedProfileId),
+                                  Number(selectedFormatId),
+                              ]))}
                     className="grid gap-6"
                     onChange={(event) => {
                         setPreview(undefined);
@@ -203,6 +214,7 @@ export default function CreateParserProfile({
                             target.name === 'parser_profile_id'
                         ) {
                             setSelectedProfileId(target.value);
+                            setSelectedFormatId('');
                         }
 
                         if (
@@ -262,6 +274,27 @@ export default function CreateParserProfile({
                                         ]}
                                         error={errors.parser_profile_id}
                                     />
+                                    {selectedProfile !== undefined && (
+                                        <SelectField
+                                            label="Format destination"
+                                            name="format_destination"
+                                            options={[
+                                                {
+                                                    value: '',
+                                                    label: 'Add a new format',
+                                                },
+                                                ...selectedProfile.formats.map(
+                                                    (format) => ({
+                                                        value: String(
+                                                            format.id,
+                                                        ),
+                                                        label: `Replace ${format.name}`,
+                                                    }),
+                                                ),
+                                            ]}
+                                            onChange={setSelectedFormatId}
+                                        />
+                                    )}
                                     <FormField
                                         label="New profile name"
                                         name="profile_name"
@@ -607,7 +640,9 @@ export default function CreateParserProfile({
                                               ? 'Save ignored format'
                                               : selectedProfileId === ''
                                                 ? 'Enable profile and create Transaction'
-                                                : 'Add format and create Transaction'}
+                                                : selectedFormatId === ''
+                                                  ? 'Add format and create Transaction'
+                                                  : 'Replace validated format'}
                                     </Button>
                                 )}
                             </div>
@@ -645,6 +680,7 @@ function FormField({
     label,
     name,
     error,
+    onChange,
     placeholder,
     defaultValue,
     disabled = false,
@@ -652,6 +688,7 @@ function FormField({
     label: string;
     name: string;
     error?: string;
+    onChange?: (value: string) => void;
     placeholder?: string;
     defaultValue?: string;
     disabled?: boolean;
@@ -666,6 +703,7 @@ function FormField({
                 defaultValue={defaultValue}
                 disabled={disabled}
                 aria-invalid={error ? true : undefined}
+                onChange={(event) => onChange?.(event.target.value)}
             />
             <InputError message={error} />
         </div>
@@ -710,11 +748,13 @@ function SelectField({
     name,
     options,
     error,
+    onChange,
 }: {
     label: string;
     name: string;
     options: ReadonlyArray<{ value: string; label: string }>;
     error?: string;
+    onChange?: (value: string) => void;
 }) {
     return (
         <div className="grid gap-2">
@@ -724,6 +764,7 @@ function SelectField({
                 name={name}
                 options={options}
                 aria-invalid={error ? true : undefined}
+                onChange={(event) => onChange?.(event.target.value)}
             />
             <InputError message={error} />
         </div>
