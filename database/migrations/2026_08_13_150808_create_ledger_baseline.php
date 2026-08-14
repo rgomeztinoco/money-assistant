@@ -61,7 +61,6 @@ return new class extends Migration
             $table->foreignId('category_id')->nullable()->constrained()->restrictOnDelete();
             $table->string('category_assignment_provenance', 32)->nullable();
             $table->foreignId('merchant_rule_id')->nullable()->constrained()->nullOnDelete();
-            $table->uuid('deployment_rehearsal_id')->nullable()->unique();
             $table->timestamps();
 
             $table->index(['user_id', 'occurred_on', 'id']);

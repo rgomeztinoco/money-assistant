@@ -43,30 +43,10 @@ return new class extends Migration
             $table->index(['connection', 'queue', 'failed_at']);
         });
 
-        Schema::create('runtime_health_checks', function (Blueprint $table): void {
-            $table->string('service')->primary();
-            $table->timestampTz('last_seen_at');
-        });
-
-        Schema::create('deployment_rehearsal_probes', function (Blueprint $table): void {
-            $table->uuid('id')->primary();
-            $table->uuid('rehearsal_id')->index();
-            $table->enum('kind', ['queued', 'scheduled']);
-            $table->timestampTz('due_at');
-            $table->timestampTz('completed_at')->nullable();
-            $table->unsignedTinyInteger('completion_count')->default(0);
-            $table->timestampsTz();
-            $table->boolean('requires_financial_effect')->default(false);
-
-            $table->unique(['rehearsal_id', 'kind']);
-            $table->index(['kind', 'completed_at', 'due_at']);
-        });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('deployment_rehearsal_probes');
-        Schema::dropIfExists('runtime_health_checks');
         Schema::dropIfExists('failed_jobs');
         Schema::dropIfExists('job_batches');
         Schema::dropIfExists('jobs');

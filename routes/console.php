@@ -2,8 +2,6 @@
 
 use App\Actions\NotificationIngestion\DispatchGmailSynchronizations;
 use App\GmailSynchronizationType;
-use App\Operations\DeploymentRehearsal;
-use App\Operations\RuntimeHealth;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -19,30 +17,14 @@ Schedule::call(
     ->onOneServer()
     ->withoutOverlapping();
 
-Schedule::everyMinute()
-    ->name('money-assistant-minute')
+Schedule::call(
+    fn () => app(DispatchGmailSynchronizations::class)
+        ->handle(GmailSynchronizationType::Incremental),
+)
+    ->everyFiveMinutes()
+    ->name('gmail-history-synchronization')
     ->onOneServer()
-    ->group(function () {
-        Schedule::call(
-            fn () => app(RuntimeHealth::class)->dispatchProbe(),
-        )
-            ->name('runtime-health-probe')
-            ->withoutOverlapping();
-
-        Schedule::call(
-            fn () => app(DeploymentRehearsal::class)->dispatchDueScheduledProbes(),
-        )
-            ->name('deployment-rehearsal-probes')
-            ->withoutOverlapping();
-
-        Schedule::call(
-            fn () => app(DispatchGmailSynchronizations::class)
-                ->handle(GmailSynchronizationType::Incremental),
-        )
-            ->name('gmail-history-synchronization')
-            ->withoutOverlapping();
-
-    });
+    ->withoutOverlapping();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

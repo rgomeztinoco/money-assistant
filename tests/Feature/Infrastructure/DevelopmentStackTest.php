@@ -59,7 +59,6 @@ test('development and production lifecycle commands target isolated Compose reso
     $developmentVolumes = $projectResourceNames($this->developmentCompose, 'volumes');
     $productionVolumes = $projectResourceNames($this->productionCompose, 'volumes');
     $productionService = file_get_contents(base_path('money-assistant-production.service'));
-    $credentialRehearsal = file_get_contents(base_path('rehearse-credential-rotation'));
 
     expect($developmentProject)->toBe('money-assistant-development')
         ->and($productionProject)->toBe('money-assistant-production')
@@ -67,12 +66,8 @@ test('development and production lifecycle commands target isolated Compose reso
         ->and(array_intersect($developmentVolumes, $productionVolumes))->toBe([])
         ->and($this->developmentCompose['services'])->not->toHaveKey('migrate')
         ->and($this->productionCompose['services'])->toHaveKey('migrate')
-        ->and(substr_count($productionService, '--project-name money-assistant-production'))->toBe(2)
-        ->and($productionService)->toContain('--env-file /etc/money-assistant/production.env')
-        ->and($credentialRehearsal)
-        ->toContain('project_name="${COMPOSE_PROJECT_NAME:-money-assistant-production}"')
-        ->toContain('--project-name "$project_name"')
-        ->toContain('--env-file "$environment_file"');
+        ->and(substr_count($productionService, '--project-name money-assistant-production'))->toBe(1)
+        ->and($productionService)->toContain('--env-file /etc/money-assistant/production.env');
 });
 
 test('development and production integrations retain Gmail configuration', function (): void {
@@ -102,17 +97,4 @@ test('development and production integrations retain Gmail configuration', funct
         ->not->toContain('OPENCLAW_')
         ->and(base_path('openclaw'))
         ->not->toBeDirectory();
-});
-
-test('continuous integration proves live development and production command isolation', function (): void {
-    $workflow = file_get_contents(base_path('.github/workflows/tests.yml'));
-
-    expect($workflow)
-        ->toContain('Rehearse development and production coexistence')
-        ->toContain('COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail up -d --wait')
-        ->toContain('COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail artisan migrate --force')
-        ->toContain('COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail stop')
-        ->toContain('COMPOSE_PROJECT_NAME=money-assistant-development vendor/bin/sail down --volumes --remove-orphans')
-        ->toContain('production_migrations_before')
-        ->toContain('production_container_ids_before');
 });

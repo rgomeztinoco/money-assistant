@@ -1,8 +1,10 @@
 name: money-assistant-production
 
 x-application: &application
-    image: '${APP_IMAGE_REPOSITORY:?Set APP_IMAGE_REPOSITORY}@${APP_IMAGE_DIGEST:?Set APP_IMAGE_DIGEST}'
-    pull_policy: '${APP_IMAGE_PULL_POLICY:-always}'
+    image: '${APP_IMAGE:-money-assistant:production}'
+    build:
+        context: .
+        target: production
     init: true
     read_only: true
     environment: &application-environment
@@ -21,7 +23,6 @@ x-application: &application
         DB_PORT: 5432
         DB_QUEUE_CONNECTION: pgsql
         DB_USERNAME: '${DB_USERNAME:-money_assistant}'
-        DEPLOYMENT_REQUESTS_ENABLED: '${DEPLOYMENT_REQUESTS_ENABLED:-true}'
         GOOGLE_GMAIL_CLIENT_ID: '${GOOGLE_GMAIL_CLIENT_ID:?Set GOOGLE_GMAIL_CLIENT_ID}'
         GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS: production
         GOOGLE_GMAIL_REDIRECT_URI: 'https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}:8443/settings/connections/gmail/callback'
@@ -73,12 +74,6 @@ services:
               target: /var/lib/postgresql
         networks:
             - application
-            - database-host
-        ports:
-            - target: 5432
-              published: 5432
-              host_ip: 127.0.0.1
-              protocol: tcp
         healthcheck:
             test:
                 - CMD-SHELL
@@ -155,13 +150,12 @@ services:
         stop_grace_period: 2m
         environment:
             <<: *application-environment
-            DB_HOST: 127.0.0.1
+            GOOGLE_GMAIL_CLIENT_SECRET_FILE: /run/secrets/google_gmail_client_secret
         secrets:
             - application_key
             - application_previous_keys
             - database_password
-        networks: []
-        network_mode: host
+            - google_gmail_client_secret
         command:
             - php
             - artisan
@@ -186,8 +180,9 @@ services:
                 - /usr/local/bin/with-production-secrets
                 - php
                 - artisan
-                - app:health-check
-                - worker
+                - queue:monitor
+                - database:default
+                - --max=100
                 - --no-interaction
             interval: 15s
             timeout: 10s
@@ -216,8 +211,7 @@ services:
                 - /usr/local/bin/with-production-secrets
                 - php
                 - artisan
-                - app:health-check
-                - scheduler
+                - schedule:list
                 - --no-interaction
             interval: 15s
             timeout: 10s
@@ -284,8 +278,6 @@ services:
 
 networks:
     application:
-        internal: true
-    database-host:
         driver: bridge
     edge:
         driver: bridge

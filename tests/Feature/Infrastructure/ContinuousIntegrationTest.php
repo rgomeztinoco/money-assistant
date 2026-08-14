@@ -2,145 +2,56 @@
 
 use Symfony\Component\Yaml\Yaml;
 
-beforeEach(function (): void {
-    $this->workflow = Yaml::parseFile(base_path('.github/workflows/tests.yml'));
-    $this->productionSteps = collect($this->workflow['jobs']['production-stack']['steps']);
-    $this->productionScripts = $this->productionSteps->pluck('run', 'name');
-});
+test('CI runs the retained quality gates against fresh PostgreSQL', function (): void {
+    $workflow = Yaml::parseFile(base_path('.github/workflows/tests.yml'));
+    $ciSteps = collect($workflow['jobs']['ci']['steps']);
+    $steps = $ciSteps->pluck('run', 'name');
+    $frontendBuildPosition = $ciSteps->search(fn (array $step): bool => $step['name'] === 'Build frontend assets');
+    $pestPosition = $ciSteps->search(fn (array $step): bool => $step['name'] === 'Run targeted Pest suites');
 
-test('CI installs the locked browser runtime before running the complete application checks', function (): void {
-    $steps = collect($this->workflow['jobs']['ci']['steps']);
-
-    $browserDependencyInstallation = $steps->search(
-        fn (array $step): bool => ($step['run'] ?? null)
-            === "vendor/bin/sail root-shell -c 'npx playwright install-deps chromium'",
-    );
-    $browserInstallation = $steps->search(
-        fn (array $step): bool => ($step['run'] ?? null)
-            === 'vendor/bin/sail npx playwright install chromium',
-    );
-    $ciChecks = $steps->search(
-        fn (array $step): bool => ($step['run'] ?? null) === 'vendor/bin/sail composer ci:check',
-    );
-
-    expect($browserDependencyInstallation)
+    expect($steps->get('Generate application key'))
+        ->toBe('vendor/bin/sail artisan key:generate --force --no-interaction')
+        ->and($steps->get('Run fresh PostgreSQL migrations'))
+        ->toBe('vendor/bin/sail artisan migrate:fresh --force --no-interaction')
+        ->and($steps->get('Run targeted Pest suites'))
+        ->toContain('vendor/bin/sail artisan test --compact')
+        ->and($steps->get('Run Pint'))
+        ->toContain('vendor/bin/sail bin pint')
+        ->and($steps->get('Run Larastan'))
+        ->toContain('vendor/bin/sail bin phpstan analyse')
+        ->and($steps->get('Run TypeScript checks'))
+        ->toBe('vendor/bin/sail npm run types:check')
+        ->and($steps->get('Run ESLint'))
+        ->toBe('vendor/bin/sail npm run lint:check')
+        ->and($steps->get('Run Prettier'))
+        ->toBe('vendor/bin/sail npm run format:check')
+        ->and($steps->get('Build frontend assets'))
+        ->toBe('vendor/bin/sail npm run build')
+        ->and($frontendBuildPosition)
         ->toBeInt()
-        ->toBeLessThan($browserInstallation)
-        ->and($browserInstallation)
-        ->toBeInt()
-        ->toBeLessThan($ciChecks);
+        ->toBeLessThan($pestPosition);
 });
 
-test('the rollback rehearsal lets each candidate environment select its application image', function (): void {
-    $imageConfiguration = $this->productionScripts->get('Build rehearsal application images');
-    $rehearsalConfiguration = $this->productionScripts->get('Create isolated rehearsal configuration');
+test('CI keeps one focused infrastructure job without release publication or rehearsals', function (): void {
+    $workflow = Yaml::parseFile(base_path('.github/workflows/tests.yml'));
+    $workflowContents = file_get_contents(base_path('.github/workflows/tests.yml'));
+    $productionStackSteps = collect($workflow['jobs']['production-stack']['steps'])->pluck('run', 'name');
+    $ruleset = json_decode(file_get_contents(base_path('.github/rulesets/protect-main.json')), true, flags: JSON_THROW_ON_ERROR);
+    $requiredStatusChecks = collect($ruleset['rules'])
+        ->firstWhere('type', 'required_status_checks')['parameters']['required_status_checks'];
+    $requiredContexts = collect($requiredStatusChecks)->pluck('context')->all();
 
-    expect($imageConfiguration)
-        ->not->toContain('echo "APP_IMAGE_REPOSITORY=')
-        ->not->toContain('echo "APP_IMAGE_DIGEST=')
-        ->and($rehearsalConfiguration)
-        ->toContain('healthy_repository="${GOOD_APP_IMAGE%@*}"')
-        ->toContain('healthy_digest="${GOOD_APP_IMAGE##*@}"');
-});
-
-test('the production rehearsal supplies isolated values for retained integration boundaries', function (): void {
-    $imageConfiguration = $this->productionScripts->get('Build rehearsal application images');
-    $rehearsalConfiguration = $this->productionScripts->get('Create isolated rehearsal configuration');
-
-    expect($imageConfiguration)
-        ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE=')
-        ->and($rehearsalConfiguration)
-        ->toContain('GOOGLE_GMAIL_CLIENT_ID=')
-        ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE=');
-});
-
-test('production rehearsal failures report masked diagnostics', function (): void {
-    $rehearsalConfiguration = $this->productionScripts->get('Create isolated rehearsal configuration');
-    $rollbackRehearsal = $this->productionScripts->get('Rehearse failed migration restoration');
-    $secretIsolation = $this->productionScripts->get('Verify production rehearsal secret isolation');
-    $diagnostics = $this->productionSteps->firstWhere('name', 'Report production rehearsal failure');
-
-    expect($rehearsalConfiguration)
-        ->toContain('::add-mask::')
-        ->toContain('sudo chown root:root')
-        ->toContain('$GOOGLE_GMAIL_CLIENT_SECRET_FILE')
-        ->and($rollbackRehearsal)
-        ->toContain('app:financial-state:fingerprint')
-        ->and($secretIsolation)
-        ->toContain('$GOOGLE_GMAIL_CLIENT_SECRET_FILE')
-        ->and($diagnostics['if'])
-        ->toBe('failure()')
-        ->and($diagnostics['run'])
-        ->toContain('sanitized_diagnostics')
-        ->toContain('sed --in-place')
-        ->toContain('APP_KEY_FILE')
-        ->toContain('DB_PASSWORD_FILE')
-        ->toContain('GOOGLE_GMAIL_CLIENT_SECRET_FILE')
-        ->toContain('sudo cat "$secret_file"')
-        ->not->toContain('cat "$REHEARSAL_OUTPUT"')
-        ->toContain('ps --all')
-        ->toContain('logs --no-color');
-});
-
-test('production CI rehearses the transactional release outcomes as black boxes', function (): void {
-    $transactionalRehearsalSteps = [
-        'Rehearse successful transactional deployment',
-        'Rehearse failed migration restoration',
-        'Rehearse failed health restoration',
-        'Rehearse concurrent deployment exclusion',
-        'Rehearse interrupted bundle activation convergence',
-    ];
-
-    expect($this->productionScripts->keys()->all())
-        ->toContain(...$transactionalRehearsalSteps);
-
-    foreach ($transactionalRehearsalSteps as $stepName) {
-        expect((string) $this->productionScripts->get($stepName))
-            ->toContain('./activate-production-release deploy')
-            ->toContain('--source-revision "$GITHUB_SHA"')
-            ->toContain('--bundle-checksum "$OPERATIONAL_BUNDLE_CHECKSUM"');
-    }
-
-    expect((string) $this->productionScripts->get('Deploy healthy production stack'))
-        ->toContain('activate-production-release validate')
-        ->toContain('mismatched operational bundle checksum')
-        ->and((string) $this->productionScripts->get('Rehearse interrupted bundle activation convergence'))
-        ->toContain('setsid ./activate-production-release deploy')
-        ->toContain('phase_deadline=$((SECONDS + 60))')
-        ->toContain('phase_observed=true')
-        ->toContain('kill -KILL -- "-$interrupted_pid"')
-        ->not->toContain('sleep 0.05')
-        ->toContain('transaction.state');
-});
-
-test('rollback rehearsals compare domain fingerprints and durable work after restoration', function (): void {
-    foreach ([
-        'Rehearse failed migration restoration',
-        'Rehearse failed health restoration',
-    ] as $stepName) {
-        expect((string) $this->productionScripts->get($stepName))
-            ->toContain('app:financial-state:fingerprint')
-            ->toContain('app:deployment-rehearsal:verify')
-            ->toContain('rolled_back');
-    }
-});
-
-test('production rehearsal proves maintenance timing alerts and secret isolation', function (): void {
-    $successfulDeployment = (string) $this->productionScripts->get('Rehearse successful transactional deployment');
-    $failedMigration = (string) $this->productionScripts->get('Rehearse failed migration restoration');
-    $failedHealth = (string) $this->productionScripts->get('Rehearse failed health restoration');
-
-    expect($successfulDeployment)
-        ->toContain('maintenance_seconds')
-        ->toContain('-lt 300')
-        ->and($failedMigration)
-        ->toContain('Production deployment failed')
-        ->toContain('Production deployment recovered')
-        ->and($failedHealth)
-        ->toContain('Production deployment failed')
-        ->toContain('Production deployment recovered');
-
-    foreach ($this->productionScripts as $script) {
-        expect((string) $script)->not->toContain('set -x');
-    }
+    expect(array_keys($workflow['jobs']))->toBe(['ci', 'production-stack'])
+        ->and(array_keys($workflow['jobs']))
+        ->toBe($requiredContexts)
+        ->and($productionStackSteps->get('Run focused infrastructure tests'))
+        ->toContain('ProductionStackTest.php', 'BackupRecoveryTest.php')
+        ->and($workflowContents)
+        ->not->toContain(
+            'publish-release',
+            'record-release',
+            'operational-bundle',
+            'rehearsal',
+            'activate-production-release',
+        );
 });

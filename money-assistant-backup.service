@@ -1,0 +1,12 @@
+[Unit]
+Description=Money Assistant encrypted PostgreSQL backup
+Requires=money-assistant-production.service
+After=money-assistant-production.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/export-production-backup
+User=root
+Group=root
+PrivateTmp=true
+NoNewPrivileges=true
