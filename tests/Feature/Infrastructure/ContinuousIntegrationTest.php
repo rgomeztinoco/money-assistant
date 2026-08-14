@@ -17,7 +17,7 @@ test('CI runs the retained quality gates against fresh PostgreSQL', function ():
         ->and($steps->get('Run feature Pest suite'))
         ->toBe('vendor/bin/sail artisan test --compact tests/Feature')
         ->and($steps->get('Install Playwright browser'))
-        ->toBe('vendor/bin/sail npx playwright install --with-deps chromium')
+        ->toBe("vendor/bin/sail root-shell -c 'npx playwright install --with-deps chromium'")
         ->and($steps->get('Run browser Pest suite'))
         ->toBe('vendor/bin/sail artisan test --compact tests/Browser')
         ->and($steps->get('Run Pint'))

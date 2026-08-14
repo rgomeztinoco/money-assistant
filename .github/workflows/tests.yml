@@ -54,7 +54,7 @@ jobs:
         run: vendor/bin/sail artisan test --compact tests/Feature
 
       - name: Install Playwright browser
-        run: vendor/bin/sail npx playwright install --with-deps chromium
+        run: vendor/bin/sail root-shell -c 'npx playwright install --with-deps chromium'
 
       - name: Run browser Pest suite
         run: vendor/bin/sail artisan test --compact tests/Browser
