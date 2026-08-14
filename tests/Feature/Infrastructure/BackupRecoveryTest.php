@@ -48,6 +48,11 @@ printf '%s' 'postgresql-custom-dump'
 SH);
     installBackupCommand($binaryDirectory, 'age', <<<'SH'
 printf 'age %s\n' "$*" >> "$BACKUP_TEST_COMMAND_LOG"
+[ "${1:-}" = --encrypt ] || exit 2
+[ "${2:-}" = --recipients-file ] || {
+    printf '%s\n' 'Age requires --recipients-file for a recipient file.' >&2
+    exit 2
+}
 while [ "$#" -gt 0 ]; do
     if [ "$1" = --output ]; then
         output="$2"
@@ -78,7 +83,7 @@ SH);
             ->and(file_get_contents($commandLog))
             ->toContain('--file '.$applicationDirectory.'/compose.production.yaml')
             ->toContain('pg_dump --username money_assistant --dbname money_assistant --format=custom --no-owner --no-privileges')
-            ->toContain('age --encrypt --recipient-file '.$recipientFile)
+            ->toContain('age --encrypt --recipients-file '.$recipientFile)
             ->not->toContain('application_key', 'database_password');
 
         $failedBackup = runBackupCommand('export-production-backup', [], [

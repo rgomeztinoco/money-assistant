@@ -60,7 +60,7 @@ docker compose \
         --format=custom \
         --no-owner \
         --no-privileges \
-    | age --encrypt --recipient-file "$recipient_file" --output "$temporary_backup"
+    | age --encrypt --recipients-file "$recipient_file" --output "$temporary_backup"
 
 chmod 0600 "$temporary_backup"
 mv -- "$temporary_backup" "$backup_path"
