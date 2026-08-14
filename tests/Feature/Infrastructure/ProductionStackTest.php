@@ -71,6 +71,103 @@ test('only the private proxy publishes a loopback port', function (): void {
         ->toContain('tailscale funnel status --json');
 });
 
+test('private ingress accepts declared tailnet listeners and rejects ordinary LAN listeners', function (): void {
+    $temporaryDirectory = sys_get_temp_dir().'/money-assistant-private-ingress-'.str()->uuid();
+    $binaryDirectory = $temporaryDirectory.'/bin';
+    $environmentFile = $temporaryDirectory.'/production.env';
+    mkdir($binaryDirectory, 0700, true);
+    file_put_contents($environmentFile, "PRIVATE_HOSTNAME=money-assistant.example.ts.net\n");
+    file_put_contents($binaryDirectory.'/tailscale', <<<'SH'
+#!/bin/sh
+case "$1 $2" in
+    'status --json')
+        printf '%s\n' '{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.0.10","fd7a:115c:a1e0::10"]}}'
+        ;;
+    'serve status')
+        printf '%s\n' '{"TCP":{"8443":{"HTTPS":true}},"Web":{"money-assistant.example.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8443"}}}}}'
+        ;;
+    'funnel status')
+        printf '%s\n' '{"AllowFunnel":{"money-assistant.example.ts.net:8443":false}}'
+        ;;
+esac
+SH);
+    file_put_contents($binaryDirectory.'/ufw', <<<'SH'
+#!/bin/sh
+case "$1 $2" in
+    'status verbose')
+        printf '%s\n' 'Status: active' 'Default: deny (incoming), allow (outgoing), disabled (routed)'
+        ;;
+    'show added')
+        printf '%s\n' 'ufw allow in on tailscale0'
+        ;;
+esac
+SH);
+    file_put_contents($binaryDirectory.'/docker', <<<'SH'
+#!/bin/sh
+printf '%s\n' '{"services":{"postgres":{},"migrate":{},"web":{},"worker":{},"scheduler":{},"proxy":{"ports":[{"host_ip":"127.0.0.1","mode":"ingress","protocol":"tcp","published":"8443","target":8080}]}}}'
+SH);
+    file_put_contents($binaryDirectory.'/ss', <<<'SH'
+#!/bin/sh
+printf '%s\n' "$PRIVATE_INGRESS_TEST_LISTENERS"
+SH);
+    file_put_contents($binaryDirectory.'/curl', <<<'SH'
+#!/bin/sh
+exit 0
+SH);
+    file_put_contents($binaryDirectory.'/id', <<<'SH'
+#!/bin/sh
+printf '%s\n' '0'
+SH);
+    file_put_contents($binaryDirectory.'/jq', <<<'SH'
+#!/bin/sh
+filter=''
+for argument in "$@"; do
+    filter="$argument"
+done
+case "$filter" in
+    *TailscaleIPs*) printf '%s\n' '100.64.0.10 fd7a:115c:a1e0::10' ;;
+esac
+SH);
+
+    foreach (['tailscale', 'ufw', 'docker', 'ss', 'curl', 'id', 'jq'] as $command) {
+        chmod($binaryDirectory.'/'.$command, 0700);
+    }
+
+    try {
+        $environment = [
+            'PATH' => $binaryDirectory.':'.getenv('PATH'),
+            'PRIVATE_INGRESS_TEST_LISTENERS' => implode("\n", [
+                'LISTEN 0 4096 127.0.0.1:8443 0.0.0.0:*',
+                'LISTEN 0 4096 100.64.0.10:8443 0.0.0.0:*',
+                'LISTEN 0 4096 [fd7a:115c:a1e0::10]:8443 [::]:*',
+            ]),
+        ];
+        $approvedIngress = new Process([
+            base_path('verify-private-ingress'),
+            $environmentFile,
+        ], base_path(), $environment);
+        $approvedIngress->run();
+
+        expect($approvedIngress->getExitCode())->toBe(0, $approvedIngress->getErrorOutput())
+            ->and($approvedIngress->getOutput())->toContain('Private ingress verification passed.');
+
+        $lanIngress = new Process([
+            base_path('verify-private-ingress'),
+            $environmentFile,
+        ], base_path(), [
+            ...$environment,
+            'PRIVATE_INGRESS_TEST_LISTENERS' => 'LISTEN 0 4096 192.168.1.50:8443 0.0.0.0:*',
+        ]);
+        $lanIngress->run();
+
+        expect($lanIngress->getExitCode())->toBe(1)
+            ->and($lanIngress->getErrorOutput())
+            ->toContain('an application listener is reachable outside its approved private interface');
+    } finally {
+        (new Filesystem)->deleteDirectory($temporaryDirectory);
+    }
+});
+
 test('deployment builds migrates and starts the healthy topology in order', function (): void {
     $temporaryDirectory = sys_get_temp_dir().'/money-assistant-deploy-'.str()->uuid();
     $binaryDirectory = $temporaryDirectory.'/bin';
@@ -121,6 +218,40 @@ SH);
         expect($failedDeployment->getExitCode())->toBe(17)
             ->and($failedDeployment->getOutput())->not->toContain('completed successfully')
             ->and(file_get_contents($commandLog))->not->toContain('web worker scheduler proxy');
+    } finally {
+        (new Filesystem)->deleteDirectory($temporaryDirectory);
+    }
+});
+
+test('deployment reads its environment from the host-managed configuration directory', function (): void {
+    $temporaryDirectory = sys_get_temp_dir().'/money-assistant-deploy-environment-'.str()->uuid();
+    $binaryDirectory = $temporaryDirectory.'/bin';
+    $commandLog = $temporaryDirectory.'/commands.log';
+    $configurationDirectory = $temporaryDirectory.'/configuration';
+    $environmentFile = $configurationDirectory.'/production.env';
+
+    mkdir($binaryDirectory, 0700, true);
+    mkdir($configurationDirectory, 0700, true);
+    file_put_contents($environmentFile, "PRIVATE_HOSTNAME=money-assistant.example.ts.net\n");
+    file_put_contents($binaryDirectory.'/docker', <<<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$DEPLOYMENT_TEST_COMMAND_LOG"
+SH);
+    chmod($binaryDirectory.'/docker', 0700);
+
+    try {
+        $deployment = new Process([base_path('deploy-production')], base_path(), [
+            'COMPOSE_FILE' => base_path('compose.production.yaml'),
+            'DEPLOYMENT_LOCK_FILE' => $temporaryDirectory.'/deployment.lock',
+            'DEPLOYMENT_TEST_COMMAND_LOG' => $commandLog,
+            'MONEY_ASSISTANT_CONFIGURATION_DIRECTORY' => $configurationDirectory,
+            'PATH' => $binaryDirectory.':'.getenv('PATH'),
+        ]);
+        $deployment->run();
+
+        expect($deployment->getExitCode())->toBe(0, $deployment->getErrorOutput())
+            ->and(file_get_contents($commandLog))
+            ->toContain('--env-file '.$environmentFile);
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
     }

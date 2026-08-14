@@ -4,8 +4,8 @@ set -Eeuo pipefail
 
 umask 077
 
-script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-compose_file="${COMPOSE_FILE:-${script_directory}/compose.production.yaml}"
+application_directory="${MONEY_ASSISTANT_APPLICATION_DIRECTORY:-/opt/money-assistant}"
+compose_file="${COMPOSE_FILE:-${application_directory}/compose.production.yaml}"
 environment_file="${ENVIRONMENT_FILE:-/etc/money-assistant/production.env}"
 recipient_file="${BACKUP_AGE_RECIPIENT_FILE:-/etc/money-assistant/backup-recipient.txt}"
 backup_directory="${BACKUP_DIRECTORY:-/var/backups/money-assistant}"

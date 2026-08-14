@@ -6,7 +6,8 @@ umask 077
 
 script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 compose_file="${COMPOSE_FILE:-${script_directory}/compose.production.yaml}"
-environment_file="${ENVIRONMENT_FILE:-${script_directory}/.env.production}"
+configuration_directory="${MONEY_ASSISTANT_CONFIGURATION_DIRECTORY:-/etc/money-assistant}"
+environment_file="${ENVIRONMENT_FILE:-${configuration_directory}/production.env}"
 project_name="${COMPOSE_PROJECT_NAME:-money-assistant-production}"
 lock_file="${DEPLOYMENT_LOCK_FILE:-/tmp/money-assistant-production-deployment.lock}"
 
