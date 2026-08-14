@@ -37,6 +37,7 @@ test('the scheduled backup streams a PostgreSQL custom dump into Age encryption'
     $commandLog = $temporaryDirectory.'/commands.log';
     $environmentFile = $temporaryDirectory.'/production.env';
     $recipientFile = $temporaryDirectory.'/recipient.txt';
+    $applicationDirectory = $temporaryDirectory.'/application';
     mkdir($binaryDirectory, 0700, true);
     file_put_contents($environmentFile, "DB_DATABASE=money_assistant\nDB_USERNAME=money_assistant\n");
     file_put_contents($recipientFile, "age1recipient\n");
@@ -64,8 +65,8 @@ SH);
             'BACKUP_DIRECTORY' => $backupDirectory,
             'BACKUP_LOCK_FILE' => $temporaryDirectory.'/backup.lock',
             'BACKUP_TEST_COMMAND_LOG' => $commandLog,
-            'COMPOSE_FILE' => base_path('compose.production.yaml'),
             'ENVIRONMENT_FILE' => $environmentFile,
+            'MONEY_ASSISTANT_APPLICATION_DIRECTORY' => $applicationDirectory,
             'PATH' => $binaryDirectory.':'.getenv('PATH'),
         ]);
         $backups = glob($backupDirectory.'/*.dump.age');
@@ -75,6 +76,7 @@ SH);
             ->and(file_get_contents($backups[0]))->toBe('postgresql-custom-dump')
             ->and(substr(sprintf('%o', fileperms($backups[0])), -4))->toBe('0600')
             ->and(file_get_contents($commandLog))
+            ->toContain('--file '.$applicationDirectory.'/compose.production.yaml')
             ->toContain('pg_dump --username money_assistant --dbname money_assistant --format=custom --no-owner --no-privileges')
             ->toContain('age --encrypt --recipient-file '.$recipientFile)
             ->not->toContain('application_key', 'database_password');
@@ -85,8 +87,8 @@ SH);
             'BACKUP_LOCK_FILE' => $temporaryDirectory.'/backup.lock',
             'BACKUP_TEST_COMMAND_LOG' => $commandLog,
             'BACKUP_TEST_DUMP_FAILURE' => 'true',
-            'COMPOSE_FILE' => base_path('compose.production.yaml'),
             'ENVIRONMENT_FILE' => $environmentFile,
+            'MONEY_ASSISTANT_APPLICATION_DIRECTORY' => $applicationDirectory,
             'PATH' => $binaryDirectory.':'.getenv('PATH'),
         ]);
 
@@ -104,6 +106,7 @@ test('restore decrypts into a non-production database and verifies migrations', 
     $environmentFile = $temporaryDirectory.'/production.env';
     $identityFile = $temporaryDirectory.'/identity.txt';
     $backupFile = $temporaryDirectory.'/backup.dump.age';
+    $applicationDirectory = $temporaryDirectory.'/application';
     mkdir($binaryDirectory, 0700, true);
     file_put_contents($environmentFile, "DB_DATABASE=money_assistant\nDB_USERNAME=money_assistant\n");
     file_put_contents($identityFile, "AGE-SECRET-KEY-test\n");
@@ -129,8 +132,8 @@ SH);
             'BACKUP_AGE_IDENTITY_FILE' => $identityFile,
             'BACKUP_TEST_COMMAND_LOG' => $commandLog,
             'BACKUP_TEST_RESTORE_INPUT' => $temporaryDirectory.'/restored.dump',
-            'COMPOSE_FILE' => base_path('compose.production.yaml'),
             'ENVIRONMENT_FILE' => $environmentFile,
+            'MONEY_ASSISTANT_APPLICATION_DIRECTORY' => $applicationDirectory,
             'PATH' => $binaryDirectory.':'.getenv('PATH'),
         ]);
 
@@ -138,6 +141,7 @@ SH);
             ->and($restore->getOutput())->toContain('Encrypted database restore verified')
             ->and(file_get_contents($temporaryDirectory.'/restored.dump'))->toBe('decrypted-postgresql-dump')
             ->and(file_get_contents($commandLog))
+            ->toContain('--file '.$applicationDirectory.'/compose.production.yaml')
             ->toContain('createdb --username money_assistant money_assistant_restore_20260813')
             ->toContain('pg_restore --username money_assistant --dbname money_assistant_restore_20260813 --exit-on-error --no-owner --no-privileges')
             ->toContain('SELECT count(*) FROM migrations')
@@ -149,8 +153,8 @@ SH);
         ], [
             'BACKUP_AGE_IDENTITY_FILE' => $identityFile,
             'BACKUP_TEST_COMMAND_LOG' => $commandLog,
-            'COMPOSE_FILE' => base_path('compose.production.yaml'),
             'ENVIRONMENT_FILE' => $environmentFile,
+            'MONEY_ASSISTANT_APPLICATION_DIRECTORY' => $applicationDirectory,
             'PATH' => $binaryDirectory.':'.getenv('PATH'),
         ]);
 

@@ -80,17 +80,26 @@ printf '%s' "$compose_status" | jq -e '
 ' >/dev/null || fail 'Compose publishes an application port outside loopback'
 
 listeners="$(ss -H -lnt)"
-tailnet_ip="$(printf '%s' "$tailscale_status" | jq -r 'first(.TailscaleIPs[] | select(contains(":") | not)) // empty')"
+tailnet_ips="$(printf '%s' "$tailscale_status" | jq -r '.TailscaleIPs | join(" ")')"
 
-if [ -z "$tailnet_ip" ]; then
-    fail 'the host has no tailnet IPv4 address'
+if [ -z "$tailnet_ips" ]; then
+    fail 'the host has no tailnet IP address'
 fi
 
-printf '%s\n' "$listeners" | awk -v tailnet_ip="$tailnet_ip" '
+printf '%s\n' "$listeners" | awk -v tailnet_ips="$tailnet_ips" '
+    BEGIN {
+        allowed["127.0.0.1:8443"] = 1
+
+        address_count = split(tailnet_ips, addresses, " ")
+        for (address_index = 1; address_index <= address_count; address_index++) {
+            allowed[addresses[address_index] ":8443"] = 1
+            allowed["[" addresses[address_index] "]:8443"] = 1
+        }
+    }
     $4 ~ /:5432$/ { exit 1 }
     $4 ~ /:80$/ { exit 1 }
     $4 ~ /:8080$/ { exit 1 }
-    $4 ~ /:8443$/ && $4 != "127.0.0.1:8443" { exit 1 }
+    $4 ~ /:8443$/ && !($4 in allowed) { exit 1 }
 ' || fail 'an application listener is reachable outside its approved private interface'
 
 curl \
