@@ -64,14 +64,16 @@ test('only the private proxy publishes a loopback port', function (): void {
     }
 
     expect($this->productionCompose['networks']['application']['driver'])->toBe('bridge')
-        ->and(file_get_contents(base_path('Caddyfile.production')))->toContain('reverse_proxy web:8080')
+        ->and(file_get_contents(base_path('Caddyfile.production')))
+        ->toContain('reverse_proxy web:8080')
+        ->toContain('header_up X-Forwarded-Proto https')
         ->and(file_get_contents(base_path('money-assistant-tailnet.service')))
         ->toContain('tailscale serve --bg --https=8443 http://127.0.0.1:8443')
         ->and(file_get_contents(base_path('verify-private-ingress')))
         ->toContain('tailscale funnel status --json');
 });
 
-test('private ingress accepts declared tailnet listeners and rejects ordinary LAN listeners', function (): void {
+test('private ingress accepts tailnet and localhost listeners and rejects ordinary LAN listeners', function (): void {
     $temporaryDirectory = sys_get_temp_dir().'/money-assistant-private-ingress-'.str()->uuid();
     $binaryDirectory = $temporaryDirectory.'/bin';
     $environmentFile = $temporaryDirectory.'/production.env';
@@ -138,6 +140,7 @@ SH);
             'PATH' => $binaryDirectory.':'.getenv('PATH'),
             'PRIVATE_INGRESS_TEST_LISTENERS' => implode("\n", [
                 'LISTEN 0 4096 127.0.0.1:8443 0.0.0.0:*',
+                'LISTEN 0 4096 127.0.0.1:8080 0.0.0.0:*',
                 'LISTEN 0 4096 100.64.0.10:8443 0.0.0.0:*',
                 'LISTEN 0 4096 [fd7a:115c:a1e0::10]:8443 [::]:*',
             ]),
@@ -162,6 +165,19 @@ SH);
 
         expect($lanIngress->getExitCode())->toBe(1)
             ->and($lanIngress->getErrorOutput())
+            ->toContain('an application listener is reachable outside its approved private interface');
+
+        $publicDevelopmentIngress = new Process([
+            base_path('verify-private-ingress'),
+            $environmentFile,
+        ], base_path(), [
+            ...$environment,
+            'PRIVATE_INGRESS_TEST_LISTENERS' => 'LISTEN 0 4096 0.0.0.0:8080 0.0.0.0:*',
+        ]);
+        $publicDevelopmentIngress->run();
+
+        expect($publicDevelopmentIngress->getExitCode())->toBe(1)
+            ->and($publicDevelopmentIngress->getErrorOutput())
             ->toContain('an application listener is reachable outside its approved private interface');
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
@@ -268,4 +284,18 @@ test('systemd restores the deployment path before private ingress', function ():
         ->and($tailnetService)
         ->toContain('Requires=money-assistant-production.service')
         ->toContain('After=money-assistant-production.service tailscale-online.target');
+});
+
+test('production deployment runbook promotes a tracked release and verifies the retained paths', function (): void {
+    $runbook = file_get_contents(base_path('docs/production-deployment.md'));
+
+    expect($runbook)
+        ->toContain('vendor/bin/sail artisan test --compact')
+        ->toContain('systemctl start money-assistant-backup.service')
+        ->toContain('git archive --format=tar HEAD')
+        ->toContain('rsync --archive --delete --chown=root:root')
+        ->toContain('sudo /opt/money-assistant/deploy-production')
+        ->toContain('sudo /opt/money-assistant/verify-private-ingress')
+        ->toContain('BACKUP_AGE_IDENTITY_FILE')
+        ->toContain('money_assistant_restore_YYYYMMDD');
 });
