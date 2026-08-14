@@ -41,7 +41,7 @@ class ResolveTransactionFieldRequest extends FormRequest
             'value' => [
                 'exclude_unless:resolution,'.TransactionFieldResolution::Correct->value,
                 'required',
-                ...$this->correctedValueRules($field),
+                ...$this->replacementValueRules($field),
             ],
         ];
     }
@@ -49,7 +49,7 @@ class ResolveTransactionFieldRequest extends FormRequest
     /**
      * @return list<ValidationRule|Closure|string>
      */
-    private function correctedValueRules(?ReviewableTransactionField $field): array
+    private function replacementValueRules(?ReviewableTransactionField $field): array
     {
         return match ($field) {
             ReviewableTransactionField::OccurredOn,
@@ -59,7 +59,7 @@ class ResolveTransactionFieldRequest extends FormRequest
             ReviewableTransactionField::MerchantDescription => [
                 function (string $attribute, mixed $value, Closure $fail) use ($field): void {
                     try {
-                        $field->normalizeCorrection($value);
+                        $field->normalizeReplacement($value);
                     } catch (\InvalidArgumentException $exception) {
                         $fail($exception->getMessage());
                     }

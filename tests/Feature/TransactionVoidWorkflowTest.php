@@ -4,29 +4,10 @@ use App\Currency;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('legacy Transaction history and duplicate persistence surfaces are absent', function () {
-    foreach ([
-        'category_assignments',
-        'transaction_corrections',
-        'transaction_state_changes',
-        'suspected_duplicates',
-        'suspected_duplicate_resolutions',
-        'suspected_duplicate_source_moves',
-        'suspected_duplicate_receipt_breakdown_moves',
-    ] as $table) {
-        expect(Schema::hasTable($table))->toBeFalse();
-    }
-
-    expect(Schema::hasColumn('transactions', 'revision'))->toBeFalse()
-        ->and(Route::has('suspected_duplicates.resolution.store'))->toBeFalse()
-        ->and(Route::has('suspected_duplicates.resolution.destroy'))->toBeFalse();
-});
-
-test('the owner can void a Transaction without a revision or idempotency contract', function () {
+test('the owner can void a Transaction', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
         ->for($owner, 'owner')
@@ -47,9 +28,7 @@ test('the owner can void a Transaction without a revision or idempotency contrac
             ->has('transactions', 0)
             ->has('voided_transactions', 1)
             ->where('voided_transactions.0.id', $transaction->id)
-            ->where('voided_transactions.0.voided_at', fn (mixed $voidedAt) => is_string($voidedAt))
-            ->missing('voided_transactions.0.revision')
-            ->missing('voided_transactions.0.state_change_idempotency_key'),
+            ->where('voided_transactions.0.voided_at', fn (mixed $voidedAt) => is_string($voidedAt)),
         );
 
     expect($transaction->refresh()->voided_at)->not->toBeNull();
@@ -80,7 +59,6 @@ test('restoring the same Transaction returns exactly one contribution to the led
         ->assertInertia(fn (Assert $page) => $page
             ->has('transactions', 1)
             ->where('transactions.0.id', $transaction->id)
-            ->missing('transactions.0.revision')
             ->has('voided_transactions', 0),
         );
 

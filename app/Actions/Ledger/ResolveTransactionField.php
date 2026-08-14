@@ -18,14 +18,14 @@ class ResolveTransactionField
         Transaction $transaction,
         ReviewableTransactionField $field,
         TransactionFieldResolution $resolution,
-        mixed $correctedValue = null,
+        mixed $replacementValue = null,
     ): Transaction {
         return DB::transaction(function () use (
             $owner,
             $transaction,
             $field,
             $resolution,
-            $correctedValue,
+            $replacementValue,
         ): Transaction {
             $currentTransaction = Transaction::query()
                 ->whereKey($transaction->getKey())
@@ -38,7 +38,7 @@ class ResolveTransactionField
             }
 
             if ($resolution === TransactionFieldResolution::Correct) {
-                $normalizedValue = $field->normalizeCorrection($correctedValue);
+                $normalizedValue = $field->normalizeReplacement($replacementValue);
                 $currentTransaction->setAttribute($field->value, $normalizedValue);
                 $this->removeInvalidatedReceiptBreakdown($currentTransaction, $field);
             }

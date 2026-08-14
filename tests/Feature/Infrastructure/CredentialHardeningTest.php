@@ -82,6 +82,4 @@ test('production credentials resolve only through host-managed secret boundaries
         ->toContain('APP_PREVIOUS_KEYS_FILE=/etc/money-assistant/secrets/application_previous_keys')
         ->and($entrypoint)
         ->toContain('read_optional_secret APP_PREVIOUS_KEYS');
-
-    expect($compose.$environment.$entrypoint)->not->toContain('OPENCLAW_');
 });

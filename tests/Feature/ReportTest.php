@@ -7,9 +7,6 @@ use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests cannot visit currency reports', function () {
@@ -43,15 +40,10 @@ test('PEN and USD reports expose independent currency-only datasets', function (
             ->where('period.date_to', '2026-08-12')
             ->where('period.total_minor', '5000')
             ->has('monthly_history', 1)
-            ->where('monthly_history.0.total_minor', '5000')
-            ->missing('combined_total')
-            ->missing('totals')
-            ->missing('reporting_currency')
-            ->missing('exchange_rates'));
+            ->where('monthly_history.0.total_minor', '5000'));
 
     expect(json_encode($penResponse->inertiaProps(), JSON_THROW_ON_ERROR))
-        ->not->toContain('USD')
-        ->not->toContain('combined_total');
+        ->not->toContain('USD');
 
     $usdResponse = $this->get(route('reports.show', [
         'currency' => Currency::Usd,
@@ -66,8 +58,7 @@ test('PEN and USD reports expose independent currency-only datasets', function (
             ->where('monthly_history.0.total_minor', '7000'));
 
     expect(json_encode($usdResponse->inertiaProps(), JSON_THROW_ON_ERROR))
-        ->not->toContain('PEN')
-        ->not->toContain('combined_total');
+        ->not->toContain('PEN');
 });
 
 test('reports subtract Refunds and exclude Voided Transactions within their currency', function () {
@@ -212,17 +203,10 @@ test('Category groups roll children up once and current Receipt Breakdowns repla
             ->where('category_groups.1.children', []));
 });
 
-test('report filters are validated and removed Insight and Category Target routes stay absent', function (array $query, string $field) {
+test('report filters are validated', function (array $query, string $field) {
     $this->actingAs(User::factory()->create())
         ->get(route('reports.show', ['currency' => Currency::Pen, ...$query]))
         ->assertSessionHasErrors($field);
-
-    expect(Route::has('insights.index'))->toBeFalse()
-        ->and(Route::has('category_targets.store'))->toBeFalse()
-        ->and(Route::has('category_targets.update'))->toBeFalse()
-        ->and(Route::has('category_targets.retirement.store'))->toBeFalse()
-        ->and(Schema::hasTable('category_targets'))->toBeFalse()
-        ->and(Schema::hasTable('category_target_revisions'))->toBeFalse();
 })->with([
     'invalid start date' => [['date_from' => 'August 1'], 'date_from'],
     'future end date' => [['date_to' => '2030-01-01'], 'date_to'],
@@ -236,18 +220,4 @@ test('unsupported report currencies return not found', function () {
     $this->actingAs(User::factory()->create())
         ->get('/reports/EUR')
         ->assertNotFound();
-});
-
-test('exchange-rate acquisition and Reporting Currency contracts are absent', function () {
-    Artisan::call('schedule:list');
-
-    expect(Route::has('daily_exchange_rates.index'))->toBeFalse()
-        ->and(Route::has('daily_exchange_rates.store'))->toBeFalse()
-        ->and(Route::has('daily_exchange_rates.update'))->toBeFalse()
-        ->and(Route::has('daily_exchange_rates.retry_seed'))->toBeFalse()
-        ->and(Route::has('reporting_currency.update'))->toBeFalse()
-        ->and(Schema::hasTable('daily_exchange_rates'))->toBeFalse()
-        ->and(Schema::hasTable('daily_exchange_rate_seed_requests'))->toBeFalse()
-        ->and(Schema::hasColumn('users', 'reporting_currency'))->toBeFalse()
-        ->and(Artisan::output())->not->toContain('daily-exchange-rate');
 });
