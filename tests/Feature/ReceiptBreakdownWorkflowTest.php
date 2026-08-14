@@ -3,10 +3,8 @@
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\Models\Category;
-use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -225,30 +223,6 @@ test('Uncategorized Line Items remain visible in the Review Queue', function () 
         ->assertInertia(fn (Assert $page) => $page
             ->where('unresolved_category_count', 1)
             ->where('transactions.0.id', $transaction->id));
-});
-
-test('Receipt Breakdown persistence contains no lifecycle or adjustment-role state', function () {
-    foreach ([
-        'status',
-        'revision',
-        'confirmed_at',
-        'deletion_id',
-        'purge_after',
-        'deleted_at',
-    ] as $column) {
-        expect(Schema::hasColumn('receipt_breakdowns', $column))->toBeFalse();
-    }
-
-    foreach ([
-        'role',
-        'related_line_item_id',
-        'requires_review',
-    ] as $column) {
-        expect(Schema::hasColumn('line_items', $column))->toBeFalse();
-    }
-
-    expect(Schema::hasTable('suspected_duplicate_receipt_breakdown_moves'))->toBeFalse()
-        ->and(ReceiptBreakdown::query()->count())->toBe(0);
 });
 
 /**

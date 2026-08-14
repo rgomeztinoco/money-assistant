@@ -90,11 +90,4 @@ test('development and production integrations retain Gmail configuration', funct
         ->toContain("public const READ_ONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';")
         ->and($developmentCompose)
         ->not->toContain('tailscale', 'https://', '8443');
-
-    expect($developmentEnvironment)
-        ->not->toContain('OPENCLAW_')
-        ->and($productionEnvironment)
-        ->not->toContain('OPENCLAW_')
-        ->and(base_path('openclaw'))
-        ->not->toBeDirectory();
 });

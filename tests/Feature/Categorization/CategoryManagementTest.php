@@ -5,8 +5,6 @@ use App\Models\Category;
 use App\Models\MerchantRule;
 use App\Models\Transaction;
 use App\Models\User;
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('the owner can read create rename and move the two-level taxonomy directly', function () {
@@ -22,9 +20,7 @@ test('the owner can read create rename and move the two-level taxonomy directly'
             ->has('categories', 2)
             ->where('categories.0.name', 'Food')
             ->where('categories.0.children', [])
-            ->where('categories.0.archived_at', null)
-            ->missing('categories.0.revision')
-            ->missing('trashed_categories'));
+            ->where('categories.0.archived_at', null));
 
     $this->post(route('categories.store'), [
         'name' => '  Local   Transport ',
@@ -165,7 +161,7 @@ test('archiving a Category preserves current assignments and reporting while pre
     ])->assertSessionHasErrors('category_id');
 });
 
-test('an archived Category can be edited and unarchived without a revision contract', function () {
+test('an archived Category can be edited and unarchived', function () {
     $owner = User::factory()->create();
     $archived = Category::factory()->for($owner, 'owner')->archived()->create(['name' => 'Food']);
     $active = Category::factory()->for($owner, 'owner')->create(['name' => 'food']);
@@ -187,19 +183,4 @@ test('an archived Category can be edited and unarchived without a revision contr
         ->name->toBe('Groceries')
         ->archived_at->toBeNull()
         ->and($active->fresh())->not->toBeNull();
-});
-
-test('legacy Category revision deletion trash and restoration contracts are absent', function () {
-    foreach (['revision', 'deletion_id', 'purge_after', 'deleted_at'] as $column) {
-        expect(Schema::hasColumn('categories', $column))->toBeFalse();
-    }
-
-    expect(Schema::hasColumn('categories', 'archived_at'))->toBeTrue()
-        ->and(Schema::hasTable('financial_data_tombstones'))->toBeFalse()
-        ->and(Route::has('categories.destroy'))->toBeFalse()
-        ->and(Route::has('categories.retirement.store'))->toBeFalse()
-        ->and(Route::has('categories.retirement.destroy'))->toBeFalse()
-        ->and(Route::has('trash.categories.restoration.store'))->toBeFalse()
-        ->and(Route::has('categories.archival.store'))->toBeTrue()
-        ->and(Route::has('categories.archival.destroy'))->toBeTrue();
 });

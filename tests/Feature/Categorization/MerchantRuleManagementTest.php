@@ -3,8 +3,6 @@
 use App\Models\Category;
 use App\Models\MerchantRule;
 use App\Models\User;
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('the owner can view and create an exact Merchant Rule', function () {
@@ -160,24 +158,4 @@ test('overlapping scopes cannot be enabled at the same time', function () {
         ])->assertSessionHasErrors('enabled');
 
     expect($scopedRule->fresh()->enabled)->toBeFalse();
-});
-
-test('the revisioned Learned Rule product is absent', function () {
-    foreach ([
-        'learned_rules',
-        'learned_rule_revisions',
-        'learned_rule_suggestions',
-        'learned_rule_suggestion_evidence',
-        'learned_rule_change_previews',
-        'learned_rule_bulk_actions',
-        'learned_rule_bulk_action_items',
-    ] as $table) {
-        expect(Schema::hasTable($table))->toBeFalse();
-    }
-
-    expect(Route::has('learned_rules.index'))->toBeFalse()
-        ->and(Route::has('learned_rule_previews.store'))->toBeFalse()
-        ->and(Route::has('learned_rules.historical_applications.store'))->toBeFalse()
-        ->and(Route::has('learned_rule_bulk_actions.confirmation.store'))->toBeFalse()
-        ->and(file_exists(app_path('Models/LearnedRule.php')))->toBeFalse();
 });

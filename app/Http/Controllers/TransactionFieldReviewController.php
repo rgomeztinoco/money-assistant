@@ -27,14 +27,14 @@ class TransactionFieldReviewController extends Controller
             transaction: $transaction,
             field: $field,
             resolution: $resolution,
-            correctedValue: $validated['value'] ?? null,
+            replacementValue: $validated['value'] ?? null,
         );
 
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => $resolution === TransactionFieldResolution::Accept
                 ? __('Transaction detail accepted.')
-                : __('Correction saved.'),
+                : __('Transaction updated.'),
         ]);
 
         return $this->redirectToWorkspace('review_queue.index');

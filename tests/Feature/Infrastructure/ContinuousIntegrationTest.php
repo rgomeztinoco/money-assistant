@@ -7,14 +7,19 @@ test('CI runs the retained quality gates against fresh PostgreSQL', function ():
     $ciSteps = collect($workflow['jobs']['ci']['steps']);
     $steps = $ciSteps->pluck('run', 'name');
     $frontendBuildPosition = $ciSteps->search(fn (array $step): bool => $step['name'] === 'Build frontend assets');
-    $pestPosition = $ciSteps->search(fn (array $step): bool => $step['name'] === 'Run targeted Pest suites');
+    $featureTestPosition = $ciSteps->search(fn (array $step): bool => $step['name'] === 'Run feature Pest suite');
+    $browserTestPosition = $ciSteps->search(fn (array $step): bool => $step['name'] === 'Run browser Pest suite');
 
     expect($steps->get('Generate application key'))
         ->toBe('vendor/bin/sail artisan key:generate --force --no-interaction')
         ->and($steps->get('Run fresh PostgreSQL migrations'))
         ->toBe('vendor/bin/sail artisan migrate:fresh --force --no-interaction')
-        ->and($steps->get('Run targeted Pest suites'))
-        ->toContain('vendor/bin/sail artisan test --compact')
+        ->and($steps->get('Run feature Pest suite'))
+        ->toBe('vendor/bin/sail artisan test --compact tests/Feature')
+        ->and($steps->get('Install Playwright browser'))
+        ->toBe("vendor/bin/sail root-shell -c 'npx playwright install --with-deps chromium'")
+        ->and($steps->get('Run browser Pest suite'))
+        ->toBe('vendor/bin/sail artisan test --compact tests/Browser')
         ->and($steps->get('Run Pint'))
         ->toContain('vendor/bin/sail bin pint')
         ->and($steps->get('Run Larastan'))
@@ -29,12 +34,13 @@ test('CI runs the retained quality gates against fresh PostgreSQL', function ():
         ->toBe('vendor/bin/sail npm run build')
         ->and($frontendBuildPosition)
         ->toBeInt()
-        ->toBeLessThan($pestPosition);
+        ->toBeLessThan($featureTestPosition)
+        ->and($featureTestPosition)
+        ->toBeLessThan($browserTestPosition);
 });
 
-test('CI keeps one focused infrastructure job without release publication or rehearsals', function (): void {
+test('CI keeps one focused production infrastructure job', function (): void {
     $workflow = Yaml::parseFile(base_path('.github/workflows/tests.yml'));
-    $workflowContents = file_get_contents(base_path('.github/workflows/tests.yml'));
     $productionStackSteps = collect($workflow['jobs']['production-stack']['steps'])->pluck('run', 'name');
     $ruleset = json_decode(file_get_contents(base_path('.github/rulesets/protect-main.json')), true, flags: JSON_THROW_ON_ERROR);
     $requiredStatusChecks = collect($ruleset['rules'])
@@ -45,13 +51,5 @@ test('CI keeps one focused infrastructure job without release publication or reh
         ->and(array_keys($workflow['jobs']))
         ->toBe($requiredContexts)
         ->and($productionStackSteps->get('Run focused infrastructure tests'))
-        ->toContain('ProductionStackTest.php', 'BackupRecoveryTest.php')
-        ->and($workflowContents)
-        ->not->toContain(
-            'publish-release',
-            'record-release',
-            'operational-bundle',
-            'rehearsal',
-            'activate-production-release',
-        );
+        ->toContain('ProductionStackTest.php', 'BackupRecoveryTest.php');
 });

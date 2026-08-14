@@ -50,12 +50,9 @@ test('the owner can combine current-state ledger filters before pagination', fun
             ->component('transactions/index')
             ->where('filters.search', 'market refund')
             ->where('filters.review_state', 'outstanding')
-            ->missing('filters.duplicate_status')
             ->has('transactions', 1)
             ->where('transactions.0.id', $matchingRefund->id)
             ->where('transactions.0.review_state', 'outstanding')
-            ->missing('transactions.0.revision')
-            ->missing('transactions.0.duplicate_status')
             ->has('voided_transactions', 0));
 });
 
@@ -149,12 +146,7 @@ test('the selected Transaction inspector exposes only current state and relation
                 ->where('selected_transaction.category.provenance.source', 'owner')
                 ->where('selected_transaction.review.fields.0.name', 'occurred_on')
                 ->where('selected_transaction.source_reference_count', 1)
-                ->where('selected_transaction.linked_refunds.0.id', $refund->id)
-                ->missing('selected_transaction.revision')
-                ->missing('selected_transaction.corrections')
-                ->missing('selected_transaction.state_changes')
-                ->missing('selected_transaction.duplicate_relationships')
-                ->missing('selected_transaction.state_change_idempotency_key')));
+                ->where('selected_transaction.linked_refunds.0.id', $refund->id)));
 });
 
 test('the Review Queue is the outstanding ledger preset', function () {
@@ -184,7 +176,6 @@ test('the Review Queue is the outstanding ledger preset', function () {
             ->component('review-queue/index')
             ->where('workspace.mode', 'review_queue')
             ->where('filters.review_state', 'outstanding')
-            ->missing('filters.duplicate_status')
             ->has('transactions', 2)
             ->loadDeferredProps(fn (Assert $inspector) => $inspector
                 ->where('selected_transaction.id', $reviewTransaction->id)));

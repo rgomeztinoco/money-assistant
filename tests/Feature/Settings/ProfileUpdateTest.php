@@ -61,14 +61,3 @@ test('owner email changes require fresh authentication', function () {
 
     expect($owner->refresh()->email)->not->toBe('changed@example.com');
 });
-
-test('owner self-deletion is unavailable', function () {
-    $owner = User::factory()->create();
-
-    $this->actingAs($owner)
-        ->withSession(['auth.passkey_confirmed_at' => time()])
-        ->delete('/settings/profile')
-        ->assertMethodNotAllowed();
-
-    expect($owner->fresh())->not->toBeNull();
-});

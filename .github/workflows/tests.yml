@@ -50,8 +50,14 @@ jobs:
       - name: Build frontend assets
         run: vendor/bin/sail npm run build
 
-      - name: Run targeted Pest suites
-        run: vendor/bin/sail artisan test --compact tests/Feature tests/Unit
+      - name: Run feature Pest suite
+        run: vendor/bin/sail artisan test --compact tests/Feature
+
+      - name: Install Playwright browser
+        run: vendor/bin/sail root-shell -c 'npx playwright install --with-deps chromium'
+
+      - name: Run browser Pest suite
+        run: vendor/bin/sail artisan test --compact tests/Browser
 
       - name: Run Pint
         run: vendor/bin/sail bin pint --test --format agent

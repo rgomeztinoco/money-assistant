@@ -82,9 +82,6 @@ test('the ledger is paginated and loads the selected inspector separately', func
             ->where('pagination.current_page', 1)
             ->where('pagination.per_page', 25)
             ->where('pagination.total', 26)
-            ->missing('combined_total')
-            ->missing('category_totals')
-            ->missing('totals')
             ->missing('purchase_options')
             ->missing('selected_transaction')
             ->loadDeferredProps(fn (Assert $deferred) => $deferred

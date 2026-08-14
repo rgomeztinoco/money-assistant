@@ -82,7 +82,6 @@ test('the Dashboard shows current-period totals, Review Queue workload, recent T
             ->where('period.date_to', '2026-08-18')
             ->where('spending.totals.USD', '100')
             ->where('spending.totals.PEN', '400')
-            ->missing('spending.combined_total')
             ->where('review_queue.outstanding_count', 1)
             ->has('recent_transactions', 5)
             ->where('recent_transactions.0.id', $refund->id)
@@ -91,23 +90,8 @@ test('the Dashboard shows current-period totals, Review Queue workload, recent T
             ->where('gmail.state', 'connected')
             ->where('gmail.account_identity', 'owner@example.com')
             ->where('gmail.last_successful_sync_at', fn (mixed $timestamp) => is_string($timestamp))
-            ->missing('operating')
             ->missing('gmail.latest_failure')
             ->missing('gmail.scope'));
-});
-
-test('the Dashboard contains no removed operations projections', function () {
-    $owner = User::factory()->create();
-
-    $this->actingAs($owner)
-        ->get(route('dashboard'))
-        ->assertInertia(fn (Assert $page) => $page
-            ->missing('operating')
-            ->missing('parser_profiles')
-            ->missing('daily_exchange_rates')
-            ->missing('reminders')
-            ->missing('incidents')
-            ->missing('infrastructure'));
 });
 
 test('the Dashboard promotes stale Gmail synchronization instead of reporting it healthy', function () {

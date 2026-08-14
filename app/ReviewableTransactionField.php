@@ -37,7 +37,7 @@ enum ReviewableTransactionField: string
         };
     }
 
-    public function normalizeCorrection(
+    public function normalizeReplacement(
         mixed $value,
     ): CarbonImmutable|Currency|TransactionKind|int|string {
         return match ($this) {
@@ -52,17 +52,17 @@ enum ReviewableTransactionField: string
     private function normalizeOccurrenceDate(mixed $value): CarbonImmutable
     {
         if (! is_string($value)) {
-            throw new InvalidArgumentException('The corrected occurrence date must use YYYY-MM-DD.');
+            throw new InvalidArgumentException('The replacement occurrence date must use YYYY-MM-DD.');
         }
 
         try {
             $occurredOn = CarbonImmutable::createFromFormat('!Y-m-d', $value, config('app.timezone'));
         } catch (\Throwable) {
-            throw new InvalidArgumentException('The corrected occurrence date must use YYYY-MM-DD.');
+            throw new InvalidArgumentException('The replacement occurrence date must use YYYY-MM-DD.');
         }
 
         if ($occurredOn->toDateString() !== $value) {
-            throw new InvalidArgumentException('The corrected occurrence date must use YYYY-MM-DD.');
+            throw new InvalidArgumentException('The replacement occurrence date must use YYYY-MM-DD.');
         }
 
         return $occurredOn;
@@ -71,7 +71,7 @@ enum ReviewableTransactionField: string
     private function normalizeAmountMinor(mixed $value): int
     {
         if (! is_int($value) && (! is_string($value) || ! ctype_digit($value))) {
-            throw new InvalidArgumentException('The corrected amount must be a positive integer.');
+            throw new InvalidArgumentException('The replacement amount must be a positive integer.');
         }
 
         $amountMinor = (int) $value;
@@ -79,7 +79,7 @@ enum ReviewableTransactionField: string
         $normalizedDigits = $normalizedDigits === '' ? '0' : $normalizedDigits;
 
         if ($amountMinor < 1 || (string) $amountMinor !== $normalizedDigits) {
-            throw new InvalidArgumentException('The corrected amount must be a positive integer.');
+            throw new InvalidArgumentException('The replacement amount must be a positive integer.');
         }
 
         return $amountMinor;
@@ -89,14 +89,14 @@ enum ReviewableTransactionField: string
     {
         $currency = is_string($value) ? Currency::tryFrom($value) : null;
 
-        return $currency ?? throw new InvalidArgumentException('The corrected currency is not supported.');
+        return $currency ?? throw new InvalidArgumentException('The replacement currency is not supported.');
     }
 
     private function normalizeKind(mixed $value): TransactionKind
     {
         $kind = is_string($value) ? TransactionKind::tryFrom($value) : null;
 
-        return $kind ?? throw new InvalidArgumentException('The corrected Transaction kind is not supported.');
+        return $kind ?? throw new InvalidArgumentException('The replacement Transaction kind is not supported.');
     }
 
     private function normalizeMerchantDescription(mixed $value): string
@@ -104,7 +104,7 @@ enum ReviewableTransactionField: string
         $merchantDescription = is_string($value) ? Str::squish($value) : '';
 
         if ($merchantDescription === '' || Str::length($merchantDescription) > 255) {
-            throw new InvalidArgumentException('A corrected merchant or short description is required.');
+            throw new InvalidArgumentException('A replacement merchant or short description is required.');
         }
 
         return $merchantDescription;

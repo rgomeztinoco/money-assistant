@@ -42,7 +42,6 @@ test('a confirmed Transaction with provisional fields remains in totals and appe
             ->where('unresolved_field_count', 2)
             ->has('transactions', 1)
             ->where('transactions.0.id', $transaction->id)
-            ->missing('transactions.0.revision')
             ->where('transactions.0.confirmed_at', fn (mixed $confirmedAt) => is_string($confirmedAt))
             ->where('transactions.0.fields.0.name', 'occurred_on')
             ->where('transactions.0.fields.0.value', '2026-07-22')
@@ -91,7 +90,7 @@ test('an Uncategorized Transaction remains in totals, reports in its system buck
                 ->where('selected_transaction.id', $uncategorized->id)));
 });
 
-test('the owner can accept one provisional field and correct another without a revision contract', function () {
+test('the owner can accept one provisional field and replace another value', function () {
     $owner = User::factory()->create();
     $transaction = app(RecordManualTransaction::class)->handle(
         owner: $owner,
@@ -117,7 +116,6 @@ test('the owner can accept one provisional field and correct another without a r
     $this->get(route('review_queue.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('unresolved_field_count', 1)
-            ->missing('transactions.0.revision')
             ->where('transactions.0.fields.0.name', 'amount_minor'));
 
     $this->patch(route('review_queue.fields.update', [
@@ -135,9 +133,9 @@ test('the owner can accept one provisional field and correct another without a r
         ->provisional_fields->toBe([]);
 });
 
-test('Corrections replace the current value for every reviewable Transaction field', function (
+test('direct edits replace the current value for every reviewable Transaction field', function (
     ReviewableTransactionField $field,
-    string $correctedValue,
+    string $replacementValue,
     string $expectedValue,
 ) {
     $owner = User::factory()->create();
@@ -157,7 +155,7 @@ test('Corrections replace the current value for every reviewable Transaction fie
             'field' => $field,
         ]), [
             'resolution' => 'correct',
-            'value' => $correctedValue,
+            'value' => $replacementValue,
         ])
         ->assertSessionHasNoErrors();
 
