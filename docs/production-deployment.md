@@ -43,10 +43,12 @@ Build a temporary archive from Git-tracked files only, then synchronize that exa
 ```bash
 release_directory="$(mktemp -d /tmp/money-assistant-release.XXXXXX)"
 trap 'rm -rf -- "$release_directory"' EXIT
+chmod 0755 "$release_directory"
 
 git archive --format=tar HEAD | tar -xf - -C "$release_directory"
 sudo install -d -o root -g root -m 0755 /opt/money-assistant
 sudo rsync --archive --delete --chown=root:root "$release_directory"/ /opt/money-assistant/
+sudo chmod 0755 /opt/money-assistant
 ```
 
 `rsync --delete` is intentionally scoped to the fixed `/opt/money-assistant/` code directory. Production state is stored in Docker volumes, while host-managed configuration and secrets are under `/etc/money-assistant`.

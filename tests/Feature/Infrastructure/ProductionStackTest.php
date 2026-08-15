@@ -222,7 +222,8 @@ SH);
             ->and($commands[1])->toContain('build --pull migrate')
             ->and($commands[2])->toContain('up --detach --wait postgres')
             ->and($commands[3])->toContain('run --rm --no-deps migrate')
-            ->and($commands[4])->toContain('up --detach --wait --remove-orphans --no-deps web worker scheduler proxy');
+            ->and($commands[4])
+            ->toContain('up --detach --wait --remove-orphans --force-recreate --no-deps web worker scheduler proxy');
 
         file_put_contents($commandLog, '');
         $failedDeployment = new Process([base_path('deploy-production')], base_path(), [
@@ -293,7 +294,9 @@ test('production deployment runbook promotes a tracked release and verifies the 
         ->toContain('vendor/bin/sail artisan test --compact')
         ->toContain('systemctl start money-assistant-backup.service')
         ->toContain('git archive --format=tar HEAD')
+        ->toContain('chmod 0755 "$release_directory"')
         ->toContain('rsync --archive --delete --chown=root:root')
+        ->toContain('sudo chmod 0755 /opt/money-assistant')
         ->toContain('sudo /opt/money-assistant/deploy-production')
         ->toContain('sudo /opt/money-assistant/verify-private-ingress')
         ->toContain('BACKUP_AGE_IDENTITY_FILE')
