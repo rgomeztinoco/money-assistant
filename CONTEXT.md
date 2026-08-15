@@ -20,6 +20,30 @@ _Avoid_: Receipt, candidate transaction
 The minimal Gmail identity and processing outcome retained for a Gmail message evaluated as a possible Spending Notification without storing its content. It may remain unlinked or support exactly one Transaction.
 _Avoid_: Stored notification, raw email
 
+**Statement Import**:
+An owner-initiated conversion of every posted Statement Movement from a supported Financial Statement Format. Movements that contribute to spending also create linked Transactions, while other movements remain visible only within the Statement Import.
+_Avoid_: Transaction Import, statement synchronization
+
+**Financial Statement Format**:
+An independently identifiable provider PDF layout supported by Statement Import through deterministic extraction rules.
+_Avoid_: Provider, generic PDF
+
+**Statement Movement**:
+A posted financial statement row representing an actual movement of money, including spending, a Refund, income, or a transfer. Balances, limits, subtotals, and payment instructions are informational statement values rather than Statement Movements.
+_Avoid_: Statement row, imported Transaction
+
+**Import Preview**:
+The transient, owner-editable set of proposed Statement Movements and explicitly excluded informational values produced before confirming a Statement Import. It does not affect spending totals and is discarded if not confirmed.
+_Avoid_: Pending Transactions, import draft
+
+**Statement Import Reference**:
+The minimal identity and outcome retained for a confirmed Statement Import so the same PDF cannot be imported twice. The source PDF and its extracted text are not retained.
+_Avoid_: Stored statement, import file
+
+**WARDA**:
+BCP's automatic savings feature. Money moved into WARDA contributes positive spending under a Savings Category, while money withdrawn from WARDA contributes a Refund under the same Category so reports show the net amount saved.
+_Avoid_: Guarda, ordinary transfer
+
 **Parser Profile**:
 An owner-created, owner-enabled definition that trusts declared authenticated senders, identifies supported Spending Notification Formats, and extracts Transaction details through deterministic rules validated against a transiently observed Gmail message.
 _Avoid_: Learned parser, sender rule
