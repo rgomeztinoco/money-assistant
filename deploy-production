@@ -38,6 +38,6 @@ compose config --quiet
 compose build --pull migrate
 compose up --detach --wait postgres
 compose run --rm --no-deps migrate
-compose up --detach --wait --remove-orphans --no-deps web worker scheduler proxy
+compose up --detach --wait --remove-orphans --force-recreate --no-deps web worker scheduler proxy
 
 printf '%s\n' 'Production deployment completed successfully.'
