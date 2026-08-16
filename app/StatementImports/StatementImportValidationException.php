@@ -10,6 +10,7 @@ final class StatementImportValidationException extends RuntimeException implemen
     public function __construct(
         string $message,
         public readonly string $errorCode,
+        public readonly string $validationField = 'statement',
     ) {
         parent::__construct($message);
     }

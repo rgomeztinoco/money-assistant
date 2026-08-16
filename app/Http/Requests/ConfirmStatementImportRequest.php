@@ -19,13 +19,13 @@ class ConfirmStatementImportRequest extends FormRequest
     {
         return [
             'statement' => ['required', 'file', 'mimes:pdf', 'mimetypes:application/pdf,application/x-pdf', 'max:'.config('statement-imports.max_file_kilobytes')],
-            'file_hash' => ['required', 'string', 'size:64'],
+            'file_hash' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/i'],
             'instrument_label' => ['required', 'string', 'max:100'],
             'instrument_last_four' => ['nullable', 'regex:/^\d{4}$/'],
             'warda_category_id' => ['nullable', 'integer'],
             'movements' => ['required', 'array', 'min:1'],
-            'movements.*' => ['required', 'array'],
-            'movements.*.source_row_id' => ['required', 'string', 'size:64'],
+            'movements.*' => ['required', 'array:source_row_id,occurred_on,description,amount_minor,currency,classification'],
+            'movements.*.source_row_id' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/i', 'distinct:strict'],
             'movements.*.occurred_on' => ['required', 'date_format:Y-m-d'],
             'movements.*.description' => ['required', 'string', 'max:255'],
             'movements.*.amount_minor' => ['required', 'regex:/^\d+$/'],

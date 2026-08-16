@@ -60,7 +60,9 @@ class StatementImportController extends Controller
                 $validated,
             );
         } catch (StatementImportValidationException $exception) {
-            throw ValidationException::withMessages(['statement' => $exception->getMessage()]);
+            throw ValidationException::withMessages([
+                $exception->validationField => $exception->getMessage(),
+            ]);
         }
 
         Inertia::flash('toast', [

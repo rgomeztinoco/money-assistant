@@ -69,6 +69,72 @@ test('the owner discovers Statement Imports selects a PDF and revisits a confirm
     }
 });
 
+test('an abandoned preview remains transient and is editable on a mobile viewport', function () {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText((string) file_get_contents(
+        base_path('tests/Fixtures/Statements/interbank.txt'),
+    ));
+    [$server, $applicationUrl] = startBrowserApplication();
+
+    try {
+        $page = visit($applicationUrl.'/login');
+        $page
+            ->type('#email', $owner->email)
+            ->type('#password', 'password')
+            ->click('[data-test="login-button"]')
+            ->assertPathIs('/dashboard')
+            ->navigate($applicationUrl.'/statement-imports/create')
+            ->resize(390, 844);
+
+        selectPdfInBrowser($page, '#preview-statement', $pdf);
+        $page
+            ->press('Preview statement')
+            ->assertSee('Reconciled')
+            ->assertVisible('label[for="movement-0-occurred-on"]')
+            ->assertVisible('label[for="movement-0-description"]')
+            ->assertVisible('label[for="movement-0-amount"]')
+            ->assertVisible('label[for="movement-0-currency"]')
+            ->assertNoJavaScriptErrors();
+
+        expect($page->script('document.documentElement.scrollWidth <= document.documentElement.clientWidth'))
+            ->toBeTrue()
+            ->and(StatementImport::query()->doesntExist())->toBeTrue();
+
+        $page
+            ->refresh()
+            ->assertDontSee('Reconciled');
+
+        expect(StatementImport::query()->doesntExist())->toBeTrue();
+
+        selectPdfInBrowser($page, '#preview-statement', $pdf);
+        $page
+            ->press('Preview statement')
+            ->assertSee('Reconciled')
+            ->click('Statement Imports')
+            ->assertPathIs('/statement-imports')
+            ->back()
+            ->assertPathIs('/statement-imports/create')
+            ->assertDontSee('Reconciled');
+
+        expect(StatementImport::query()->doesntExist())->toBeTrue();
+
+        selectPdfInBrowser($page, '#preview-statement', $pdf);
+        $page
+            ->press('Preview statement')
+            ->assertSee('Reconciled')
+            ->resize(1280, 720)
+            ->click('[data-test="sidebar-menu-button"]')
+            ->click('[data-test="logout-button"]')
+            ->assertPathIs('/login')
+            ->assertNoJavaScriptErrors()
+            ->assertNoConsoleLogs();
+
+        expect(StatementImport::query()->doesntExist())->toBeTrue();
+    } finally {
+        $server->stop();
+    }
+});
+
 /**
  * @return array{InvokedProcess, string}
  */

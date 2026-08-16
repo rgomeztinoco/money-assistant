@@ -1,5 +1,6 @@
 import { Head, Link, useForm, useHttp } from '@inertiajs/react';
 import { ArrowLeft, FileCheck2, Upload } from 'lucide-react';
+import { useState } from 'react';
 import { store as confirmStatementImport } from '@/actions/App/Http/Controllers/StatementImportController';
 import { store as previewStatementImport } from '@/actions/App/Http/Controllers/StatementImportPreviewController';
 import AlertError from '@/components/alert-error';
@@ -76,13 +77,16 @@ export default function CreateStatementImport({
         warda_category_id: suggested_warda_category_id?.toString() ?? '',
         movements: [],
     });
-    const preview = previewRequest.response;
+    const [preview, setPreview] = useState<StatementImportPreview | null>(null);
     const hasWarda = confirmation.data.movements.some(
         (movement) => movement.classification === 'warda',
     );
 
     function requestPreview(event: React.FormEvent) {
         event.preventDefault();
+        setPreview(null);
+        confirmation.reset();
+        confirmation.clearErrors();
         const form = event.currentTarget as HTMLFormElement;
         const statementInput = form.elements.namedItem(
             'statement',
@@ -93,6 +97,7 @@ export default function CreateStatementImport({
         }));
         previewRequest.post(previewStatementImport.url(), {
             onSuccess: (response) => {
+                setPreview(response);
                 confirmation.setData({
                     statement: null,
                     file_hash: response.file_hash,
@@ -117,6 +122,7 @@ export default function CreateStatementImport({
         index: number,
         values: Partial<ConfirmationMovement>,
     ) {
+        confirmation.clearErrors();
         confirmation.setData(
             'movements',
             confirmation.data.movements.map((movement, movementIndex) =>
@@ -190,12 +196,14 @@ export default function CreateStatementImport({
                                     name="statement"
                                     type="file"
                                     accept="application/pdf,.pdf"
-                                    onChange={(event) =>
+                                    onChange={(event) => {
+                                        setPreview(null);
+                                        previewRequest.clearErrors('statement');
                                         previewRequest.setData(
                                             'statement',
                                             event.target.files?.[0] ?? null,
-                                        )
-                                    }
+                                        );
+                                    }}
                                     required
                                 />
                                 <InputError
@@ -257,12 +265,15 @@ export default function CreateStatementImport({
                                                     .instrument_label
                                             }
                                             maxLength={100}
-                                            onChange={(event) =>
+                                            onChange={(event) => {
+                                                confirmation.clearErrors(
+                                                    'instrument_label',
+                                                );
                                                 confirmation.setData(
                                                     'instrument_label',
                                                     event.target.value,
-                                                )
-                                            }
+                                                );
+                                            }}
                                             required
                                         />
                                         <InputError
@@ -285,12 +296,15 @@ export default function CreateStatementImport({
                                             inputMode="numeric"
                                             pattern="\d{4}"
                                             maxLength={4}
-                                            onChange={(event) =>
+                                            onChange={(event) => {
+                                                confirmation.clearErrors(
+                                                    'instrument_last_four',
+                                                );
                                                 confirmation.setData(
                                                     'instrument_last_four',
                                                     event.target.value,
-                                                )
-                                            }
+                                                );
+                                            }}
                                         />
                                         <InputError
                                             message={
@@ -310,12 +324,15 @@ export default function CreateStatementImport({
                                                     confirmation.data
                                                         .warda_category_id
                                                 }
-                                                onChange={(event) =>
+                                                onChange={(event) => {
+                                                    confirmation.clearErrors(
+                                                        'warda_category_id',
+                                                    );
                                                     confirmation.setData(
                                                         'warda_category_id',
                                                         event.target.value,
-                                                    )
-                                                }
+                                                    );
+                                                }}
                                                 options={[
                                                     {
                                                         value: '',
@@ -340,9 +357,9 @@ export default function CreateStatementImport({
                                     )}
                                 </div>
 
-                                <div className="overflow-x-auto rounded-lg border">
-                                    <table className="w-full min-w-[70rem] text-sm">
-                                        <thead className="bg-muted/50 text-left">
+                                <div className="rounded-lg border md:overflow-x-auto">
+                                    <table className="block w-full text-sm md:table md:min-w-[70rem]">
+                                        <thead className="hidden bg-muted/50 text-left md:table-header-group">
                                             <tr>
                                                 <th className="px-3 py-2 font-medium">
                                                     Date
@@ -367,17 +384,24 @@ export default function CreateStatementImport({
                                                 </th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y">
+                                        <tbody className="grid gap-3 p-3 md:table-row-group md:p-0">
                                             {confirmation.data.movements.map(
                                                 (movement, movementIndex) => (
                                                     <tr
                                                         key={
                                                             movement.source_row_id
                                                         }
-                                                        className="align-top"
+                                                        className="grid gap-3 rounded-lg border p-3 align-top md:table-row md:rounded-none md:border-0 md:p-0"
                                                     >
-                                                        <td className="p-2">
+                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
+                                                            <Label
+                                                                htmlFor={`movement-${movementIndex}-occurred-on`}
+                                                                className="text-xs text-muted-foreground md:sr-only"
+                                                            >
+                                                                Date
+                                                            </Label>
                                                             <Input
+                                                                id={`movement-${movementIndex}-occurred-on`}
                                                                 type="date"
                                                                 value={
                                                                     movement.occurred_on
@@ -395,16 +419,32 @@ export default function CreateStatementImport({
                                                                         },
                                                                     )
                                                                 }
+                                                                aria-invalid={Boolean(
+                                                                    movementError(
+                                                                        movementIndex,
+                                                                        'occurred_on',
+                                                                    ),
+                                                                )}
+                                                                aria-describedby={`movement-${movementIndex}-occurred-on-error`}
+                                                                required
                                                             />
                                                             <InputError
+                                                                id={`movement-${movementIndex}-occurred-on-error`}
                                                                 message={movementError(
                                                                     movementIndex,
                                                                     'occurred_on',
                                                                 )}
                                                             />
                                                         </td>
-                                                        <td className="p-2">
+                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
+                                                            <Label
+                                                                htmlFor={`movement-${movementIndex}-description`}
+                                                                className="text-xs text-muted-foreground md:sr-only"
+                                                            >
+                                                                Description
+                                                            </Label>
                                                             <Input
+                                                                id={`movement-${movementIndex}-description`}
                                                                 value={
                                                                     movement.description
                                                                 }
@@ -422,16 +462,33 @@ export default function CreateStatementImport({
                                                                         },
                                                                     )
                                                                 }
+                                                                aria-invalid={Boolean(
+                                                                    movementError(
+                                                                        movementIndex,
+                                                                        'description',
+                                                                    ),
+                                                                )}
+                                                                aria-describedby={`movement-${movementIndex}-description-error`}
+                                                                required
                                                             />
                                                             <InputError
+                                                                id={`movement-${movementIndex}-description-error`}
                                                                 message={movementError(
                                                                     movementIndex,
                                                                     'description',
                                                                 )}
                                                             />
                                                         </td>
-                                                        <td className="p-2">
+                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
+                                                            <Label
+                                                                htmlFor={`movement-${movementIndex}-amount`}
+                                                                className="text-xs text-muted-foreground md:sr-only"
+                                                            >
+                                                                Amount in minor
+                                                                units
+                                                            </Label>
                                                             <Input
+                                                                id={`movement-${movementIndex}-amount`}
                                                                 value={
                                                                     movement.amount_minor
                                                                 }
@@ -450,14 +507,26 @@ export default function CreateStatementImport({
                                                                         },
                                                                     )
                                                                 }
+                                                                aria-invalid={Boolean(
+                                                                    movementError(
+                                                                        movementIndex,
+                                                                        'amount_minor',
+                                                                    ),
+                                                                )}
+                                                                aria-describedby={`movement-${movementIndex}-amount-error movement-${movementIndex}-formatted-amount`}
+                                                                required
                                                             />
                                                             <InputError
+                                                                id={`movement-${movementIndex}-amount-error`}
                                                                 message={movementError(
                                                                     movementIndex,
                                                                     'amount_minor',
                                                                 )}
                                                             />
-                                                            <p className="pt-1 text-xs text-muted-foreground">
+                                                            <p
+                                                                id={`movement-${movementIndex}-formatted-amount`}
+                                                                className="text-xs text-muted-foreground"
+                                                            >
                                                                 {formatMinorUnits(
                                                                     movement.amount_minor ||
                                                                         '0',
@@ -465,12 +534,25 @@ export default function CreateStatementImport({
                                                                 )}
                                                             </p>
                                                         </td>
-                                                        <td className="p-2">
+                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
+                                                            <Label
+                                                                htmlFor={`movement-${movementIndex}-currency`}
+                                                                className="text-xs text-muted-foreground md:sr-only"
+                                                            >
+                                                                Currency
+                                                            </Label>
                                                             <NativeSelect
-                                                                aria-label={`Currency for ${movement.description}`}
+                                                                id={`movement-${movementIndex}-currency`}
                                                                 value={
                                                                     movement.currency
                                                                 }
+                                                                aria-invalid={Boolean(
+                                                                    movementError(
+                                                                        movementIndex,
+                                                                        'currency',
+                                                                    ),
+                                                                )}
+                                                                aria-describedby={`movement-${movementIndex}-currency-error`}
                                                                 onChange={(
                                                                     event,
                                                                 ) =>
@@ -496,13 +578,17 @@ export default function CreateStatementImport({
                                                                 ]}
                                                             />
                                                             <InputError
+                                                                id={`movement-${movementIndex}-currency-error`}
                                                                 message={movementError(
                                                                     movementIndex,
                                                                     'currency',
                                                                 )}
                                                             />
                                                         </td>
-                                                        <td className="px-3 py-3 capitalize">
+                                                        <td className="grid gap-1 p-0 capitalize md:table-cell md:px-3 md:py-3">
+                                                            <span className="text-xs text-muted-foreground md:sr-only">
+                                                                Direction
+                                                            </span>
                                                             {
                                                                 preview
                                                                     .movements[
@@ -510,8 +596,15 @@ export default function CreateStatementImport({
                                                                 ].direction
                                                             }
                                                         </td>
-                                                        <td className="p-2">
+                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
+                                                            <Label
+                                                                htmlFor={`movement-${movementIndex}-classification`}
+                                                                className="text-xs text-muted-foreground md:sr-only"
+                                                            >
+                                                                Classification
+                                                            </Label>
                                                             <NativeSelect
+                                                                id={`movement-${movementIndex}-classification`}
                                                                 aria-label={`Classification for ${movement.description}`}
                                                                 value={
                                                                     movement.classification
@@ -539,15 +632,26 @@ export default function CreateStatementImport({
                                                                         ]
                                                                             .can_be_excluded,
                                                                 )}
+                                                                aria-invalid={Boolean(
+                                                                    movementError(
+                                                                        movementIndex,
+                                                                        'classification',
+                                                                    ),
+                                                                )}
+                                                                aria-describedby={`movement-${movementIndex}-classification-error`}
                                                             />
                                                             <InputError
+                                                                id={`movement-${movementIndex}-classification-error`}
                                                                 message={movementError(
                                                                     movementIndex,
                                                                     'classification',
                                                                 )}
                                                             />
                                                         </td>
-                                                        <td className="px-3 py-3">
+                                                        <td className="grid gap-2 p-0 md:table-cell md:px-3 md:py-3">
+                                                            <span className="text-xs text-muted-foreground md:sr-only">
+                                                                Spending impact
+                                                            </span>
                                                             <Badge
                                                                 variant={
                                                                     statementMovementContributesToSpending(
@@ -666,12 +770,15 @@ export default function CreateStatementImport({
                                         name="statement"
                                         type="file"
                                         accept="application/pdf,.pdf"
-                                        onChange={(event) =>
+                                        onChange={(event) => {
+                                            confirmation.clearErrors(
+                                                'statement',
+                                            );
                                             confirmation.setData(
                                                 'statement',
                                                 event.target.files?.[0] ?? null,
-                                            )
-                                        }
+                                            );
+                                        }}
                                         required
                                     />
                                     <InputError
