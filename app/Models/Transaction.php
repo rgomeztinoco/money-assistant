@@ -87,6 +87,12 @@ class Transaction extends Model
         return $this->hasMany(SpendingNotificationReference::class);
     }
 
+    /** @return HasOne<StatementMovement, $this> */
+    public function statementMovement(): HasOne
+    {
+        return $this->hasOne(StatementMovement::class);
+    }
+
     /**
      * @return BelongsTo<Transaction, $this>
      */

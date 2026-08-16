@@ -1,0 +1,20 @@
+Queremos contarte todo lo que necesitas saber sobre el estado de cuenta
+de tu Tarjeta de Crédito del 21/01/2026 al cierre de 20/02/2026
+AMERICAN EXPRESS 1234 - SOLES
+DETALLE DE PAGO DEL MES
+TU ESTADO DE CUENTA ANTERIOR  S/ US$
+Debías en el estado de cuenta anterior  100.00 0.00
+PAGOS REALIZADOS
+23-Ene Mercado Pago             -10.00 0.00
+02-Feb PAGO TARJ WEB APP        -90.00 0.00
+SUBTOTAL                         0.00 0.00
+TUS CONSUMOS
+Fecha Comercio                  S/ US$
+20-Ene Grocery                  20.00 0.00
+05-Feb USD Merchant              0.00 10.00
+06-Feb Single PEN amount         5.00
+SUBTOTAL                        25.00 10.00
+OTROS COBROS                    S/ US$
+20-Feb SEGURO DESGRAVAMEN        2.00
+SUBTOTAL                         2.00 0.00
+PAGO DEL MES (Suma de subtotales) = 27.00 10.00

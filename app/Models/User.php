@@ -37,6 +37,12 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(Transaction::class);
     }
 
+    /** @return HasMany<StatementImport, $this> */
+    public function statementImports(): HasMany
+    {
+        return $this->hasMany(StatementImport::class);
+    }
+
     /**
      * @return HasMany<Category, $this>
      */

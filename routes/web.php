@@ -15,6 +15,8 @@ use App\Http\Controllers\SpendingNotificationFormatActivationController;
 use App\Http\Controllers\SpendingNotificationFormatController;
 use App\Http\Controllers\SpendingNotificationRecoveryController;
 use App\Http\Controllers\SpendingNotificationRetryController;
+use App\Http\Controllers\StatementImportController;
+use App\Http\Controllers\StatementImportPreviewController;
 use App\Http\Controllers\TransactionCategoryController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionFieldReviewController;
@@ -31,6 +33,16 @@ Route::middleware(['auth'])->group(function () {
     Route::get('reports/{currency}', ReportController::class)->name('reports.show');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store', 'update']);
+    Route::resource('statement-imports', StatementImportController::class)
+        ->only(['index', 'create', 'store', 'show'])
+        ->names([
+            'index' => 'statement_imports.index',
+            'create' => 'statement_imports.create',
+            'store' => 'statement_imports.store',
+            'show' => 'statement_imports.show',
+        ]);
+    Route::post('statement-import-previews', [StatementImportPreviewController::class, 'store'])
+        ->name('statement_import_previews.store');
     Route::resource('merchant-rules', MerchantRuleController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->names([
