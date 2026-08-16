@@ -126,6 +126,10 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
         ->assertNotFound();
 
     $this->actingAs($owner)
+        ->get(route('statement_imports.show', PHP_INT_MAX))
+        ->assertNotFound();
+
+    $this->actingAs($owner)
         ->put(route('statement_imports.show', $import))
         ->assertMethodNotAllowed();
     $this->delete(route('statement_imports.show', $import))
@@ -179,7 +183,7 @@ test('the Statement Import index is owner scoped and exposes safe metadata', fun
     ]);
     StatementImport::factory()->for($otherOwner, 'owner')->create();
 
-    $this->actingAs($owner)
+    $response = $this->actingAs($owner)
         ->get(route('statement_imports.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('statement-imports/index')
@@ -188,4 +192,101 @@ test('the Statement Import index is owner scoped and exposes safe metadata', fun
             ->has('statement_imports.data.0.totals')
             ->missing('statement_imports.data.0.file_hash'),
         );
+
+    expect(array_keys($response->inertiaProps('statement_imports.data.0')))->toEqualCanonicalizing([
+        'id',
+        'financial_statement_format',
+        'period_start',
+        'period_end',
+        'instrument_label',
+        'instrument_last_four',
+        'movement_count',
+        'confirmed_at',
+        'totals',
+    ]);
+});
+
+test('BCP and Interbank imports coexist in safe history with complete movement summaries', function () {
+    $owner = User::factory()->create();
+    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'Savings']);
+    $workflow = app(StatementImportWorkflow::class);
+
+    foreach ([
+        [statementImportHttpPdf(), null],
+        [SyntheticPdf::fromText((string) file_get_contents(__DIR__.'/../Fixtures/Statements/bcp.txt')), $savings->id],
+    ] as [$pdf, $savingsCategoryId]) {
+        $preview = $workflow->preview(
+            $owner,
+            UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+        );
+        $movements = collect($preview->movements)
+            ->map(fn (StatementImportPreviewMovement $movement): array => [
+                'source_row_id' => $movement->sourceRowId,
+                'occurred_on' => $movement->occurredOn->toDateString(),
+                'description' => $movement->description,
+                'amount_minor' => $movement->amountMinor,
+                'currency' => $movement->currency->value,
+                'classification' => $movement->classification->value === 'needs_classification'
+                    ? 'already_recorded'
+                    : $movement->classification->value,
+            ])
+            ->all();
+        $confirmation = [
+            'file_hash' => $preview->fileHash,
+            'instrument_label' => $preview->instrumentLabel,
+            'instrument_last_four' => $preview->instrumentLastFour,
+            'movements' => $movements,
+        ];
+
+        if ($savingsCategoryId !== null) {
+            $confirmation['savings_category_id'] = $savingsCategoryId;
+        }
+
+        $workflow->confirm(
+            $owner,
+            UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+            $confirmation,
+        );
+    }
+
+    $indexResponse = $this->actingAs($owner)->get(route('statement_imports.index'));
+
+    expect($indexResponse->inertiaProps('statement_imports.data'))->toHaveCount(2)
+        ->and(collect($indexResponse->inertiaProps('statement_imports.data'))->pluck('financial_statement_format')->all())
+        ->toBe(['bcp', 'interbank']);
+
+    $bcpImport = StatementImport::query()
+        ->whereBelongsTo($owner, 'owner')
+        ->where('financial_statement_format', 'bcp')
+        ->sole();
+    $detailResponse = $this->get(route('statement_imports.show', $bcpImport))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('statement-imports/show')
+            ->where('statement_import.movements.0.classification', 'savings')
+            ->where('statement_import.movements.0.direction', 'debit')
+            ->where('statement_import.movements.0.transaction.kind', 'purchase')
+            ->where('statement_import.movements.0.transaction.category.name', 'Savings')
+            ->where('statement_import.movements.1.classification', 'savings')
+            ->where('statement_import.movements.1.direction', 'credit')
+            ->where('statement_import.movements.1.transaction.kind', 'refund')
+            ->where('statement_import.summary.PEN.savings_deposits_minor', '2000')
+            ->where('statement_import.summary.PEN.savings_withdrawals_minor', '500')
+            ->where('statement_import.summary.PEN.net_savings_minor', '1500')
+            ->missing('statement_import.file_hash')
+            ->missing('statement_import.movements.0.source_row_id')
+            ->missing('statement_import.movements.0.source_metadata'),
+        );
+    $movement = $detailResponse->inertiaProps('statement_import.movements.0');
+
+    expect(array_keys($movement))->toEqualCanonicalizing([
+        'id',
+        'position',
+        'occurred_on',
+        'amount_minor',
+        'currency',
+        'direction',
+        'classification',
+        'description',
+        'transaction',
+    ]);
 });

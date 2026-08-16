@@ -120,7 +120,7 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
     } finally {
         $server->stop();
     }
-});
+})->depends('the owner discovers Statement Imports selects a PDF and revisits a confirmed import');
 
 test('an abandoned preview remains transient and is editable on a mobile viewport', function () {
     $owner = User::factory()->create();
@@ -186,7 +186,7 @@ test('an abandoned preview remains transient and is editable on a mobile viewpor
     } finally {
         $server->stop();
     }
-});
+})->depends('BCP WARDA rows preview and confirm as Savings');
 
 /**
  * @return array{InvokedProcess, string}
