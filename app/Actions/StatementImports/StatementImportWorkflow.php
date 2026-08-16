@@ -467,8 +467,8 @@ final class StatementImportWorkflow
         $periodStart = $this->parseNumericDate($period[1]);
         $periodEnd = $this->parseNumericDate($period[2]);
         $lines = preg_split('/\R/u', $text) ?: [];
-        $debitColumn = 0;
-        $creditColumn = 0;
+        $debitColumn = null;
+        $creditColumn = null;
         $directionBoundary = null;
         $openingBalance = null;
         $printedDebits = null;
@@ -480,8 +480,14 @@ final class StatementImportWorkflow
 
         foreach ($lines as $line) {
             if (Str::contains($line, ['CARGOS / DEBE', 'ABONOS / HABER'])) {
-                $debitColumn = (int) strpos($line, 'CARGOS / DEBE');
-                $creditColumn = (int) strpos($line, 'ABONOS / HABER');
+                $debitColumn = strpos($line, 'CARGOS / DEBE');
+                $creditColumn = strpos($line, 'ABONOS / HABER');
+
+                if ($debitColumn === false || $creditColumn === false || $debitColumn >= $creditColumn) {
+                    throw $this->invalid('The BCP movement columns could not be read.', 'invalid_bcp_columns');
+                }
+
+                $directionBoundary = null;
 
                 continue;
             }
@@ -523,6 +529,10 @@ final class StatementImportWorkflow
                 ->replace('*', '')
                 ->squish()
                 ->toString();
+
+            if ($debitColumn === null || $creditColumn === null) {
+                throw $this->invalid('The BCP movement columns could not be read.', 'invalid_bcp_columns');
+            }
 
             $directionBoundary ??= $this->bcpDirectionBoundary($lines, $debitColumn, $creditColumn);
             $direction = $amountOffset >= $directionBoundary
@@ -1104,7 +1114,7 @@ final class StatementImportWorkflow
             return StatementMovementClassification::Tax;
         }
 
-        if (Str::startsWith($normalized, 'MANT. CUENTA')) {
+        if ($normalized === 'MANT. CUENTA') {
             return StatementMovementClassification::Fee;
         }
 
