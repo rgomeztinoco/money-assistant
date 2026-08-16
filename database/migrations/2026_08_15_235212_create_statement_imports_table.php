@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('statement_imports', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->string('provider', 16);
+            $table->string('financial_statement_format', 16);
             $table->string('parser_version', 32);
             $table->char('file_hash', 64);
             $table->date('period_start');

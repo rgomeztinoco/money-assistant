@@ -10,6 +10,11 @@ use App\StatementImports\StatementImportPreview;
 use App\StatementImports\StatementImportPreviewMovement;
 use App\StatementImports\StatementImportValidationException;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Concurrency;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
+use Tests\Support\ConcurrentStatementImportConfirmation;
 use Tests\SyntheticPdf;
 
 function bcpStatementText(): string
@@ -66,7 +71,7 @@ test('the Statement Import workflow previews a reconciled BCP statement without 
     $preview = app(StatementImportWorkflow::class)->preview($owner, $statement);
 
     expect($preview)
-        ->provider->value->toBe('bcp')
+        ->financialStatementFormat->value->toBe('bcp')
         ->periodStart->toDateString()->toBe('2026-02-01')
         ->periodEnd->toDateString()->toBe('2026-02-28')
         ->instrumentLabel->toBe('BCP Cuenta Digital')
@@ -156,7 +161,7 @@ test('the Statement Import workflow previews and reconciles Interbank currency c
     );
 
     expect($preview)
-        ->provider->value->toBe('interbank')
+        ->financialStatementFormat->value->toBe('interbank')
         ->periodStart->toDateString()->toBe('2026-01-21')
         ->periodEnd->toDateString()->toBe('2026-02-20')
         ->instrumentLabel->toBe('Interbank American Express')
@@ -190,6 +195,75 @@ test('the Statement Import workflow previews and reconciles Interbank currency c
         ]);
 });
 
+test('Interbank includes installment consumption in movements and reconciliation', function () {
+    $owner = User::factory()->create();
+    $statementText = str_replace(
+        [
+            'OTROS COBROS                    S/ US$',
+            '= 27.00 10.00',
+        ],
+        [
+            "TUS CONSUMOS EN CUOTAS\nFecha Comercio                  S/ US$\n10-Feb Installment purchase     10.00 0.00\nSUBTOTAL                        10.00 0.00\nOTROS COBROS                    S/ US$",
+            '= 37.00 10.00',
+        ],
+        interbankStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    );
+
+    $installmentPurchase = collect($preview->movements)
+        ->firstWhere('description', 'Installment purchase');
+
+    expect($preview->movements)->toHaveCount(7)
+        ->and($installmentPurchase)->not->toBeNull()
+        ->and($installmentPurchase->classification->value)->toBe('purchase')
+        ->and($preview->reconciliation)->toMatchArray([
+            'consumption_pen_minor' => '3500',
+            'consumption_usd_minor' => '1000',
+            'payment_total_pen_minor' => '3700',
+            'payment_total_usd_minor' => '1000',
+        ]);
+});
+
+test('Interbank preserves a negative payment subtotal joined to its decorative rule', function (string $subtotalLine) {
+    $owner = User::factory()->create();
+    $statementText = str_replace(
+        [
+            '02-Feb PAGO TARJ WEB APP        -90.00 0.00',
+            'SUBTOTAL                         0.00 0.00',
+            '= 27.00 10.00',
+        ],
+        [
+            "02-Feb PAGO TARJ WEB APP        -90.00 0.00\n03-Feb SECOND PAYMENT            -5.00 0.00",
+            $subtotalLine,
+            '= 22.00 10.00',
+        ],
+        interbankStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    );
+
+    expect($preview->reconciliation)->toMatchArray([
+        'payments_subtotal_pen_minor' => '-500',
+        'payment_total_pen_minor' => '2200',
+    ]);
+})->with([
+    'continuous decorative rule' => 'SUBTOTAL ----------------------------5.00 0.00',
+    'decorative rule split by extraction whitespace' => 'SUBTOTAL -------------- --------------5.00 0.00',
+]);
+
 test('Interbank assigns a single printed amount from its physical USD column', function () {
     $owner = User::factory()->create();
     $singleUsdRow = str_pad('06-Feb Single USD amount', 38).'5.00';
@@ -221,6 +295,77 @@ test('Interbank assigns a single printed amount from its physical USD column', f
         ->and($movement->currency->value)->toBe('USD')
         ->and($preview->reconciliation['consumption_pen_minor'])->toBe('2000')
         ->and($preview->reconciliation['consumption_usd_minor'])->toBe('1500');
+});
+
+test('Interbank reconstructs consumption across pages with a repeated heading', function () {
+    $statementPages = explode("\n05-Feb USD Merchant", interbankStatementText(), 2);
+    $statementPages[1] = "TUS CONSUMOS\nFecha Comercio                  S/ US$\n05-Feb USD Merchant".$statementPages[1];
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromPages($statementPages),
+        ),
+    );
+
+    expect($preview->movements)->toHaveCount(6)
+        ->and($preview->reconciliation['consumption_pen_minor'])->toBe('2500')
+        ->and($preview->reconciliation['consumption_usd_minor'])->toBe('1000');
+});
+
+test('Interbank infers movement years from a statement cycle crossing calendar years', function () {
+    $statementText = str_replace(
+        [
+            '21/01/2026', '20/02/2026',
+            '23-Ene', '02-Feb', '20-Ene', '05-Feb', '06-Feb', '20-Feb',
+        ],
+        [
+            '21/12/2025', '20/01/2026',
+            '23-Dic', '02-Ene', '20-Dic', '05-Ene', '06-Ene', '20-Ene',
+        ],
+        interbankStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    );
+
+    expect($preview->movements[0]->occurredOn->toDateString())->toBe('2025-12-23')
+        ->and($preview->movements[1]->occurredOn->toDateString())->toBe('2026-01-02')
+        ->and($preview->movements[2]->occurredOn->toDateString())->toBe('2025-12-20');
+});
+
+test('Interbank retains a posted movement before the cycle start using the inferred cycle year', function () {
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText(interbankStatementText()),
+        ),
+    );
+
+    expect($preview->periodStart->toDateString())->toBe('2026-01-21')
+        ->and($preview->movements[2]->occurredOn->toDateString())->toBe('2026-01-20');
+});
+
+test('Interbank exposes payment minimums as informational values', function () {
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText(interbankStatementText()),
+        ),
+    );
+
+    expect($preview->informationalValues)->toBe([
+        ['label' => 'Minimum payment', 'value' => '500', 'currency' => 'PEN'],
+        ['label' => 'Minimum payment', 'value' => '100', 'currency' => 'USD'],
+    ]);
 });
 
 test('only parser candidates can be confirmed as not a movement', function () {
@@ -310,20 +455,26 @@ test('unsafe and unsupported PDF inputs fail without retaining source evidence',
 
         $this->fail('The unsafe statement should have been rejected.');
     } catch (StatementImportValidationException $exception) {
-        expect($exception->errorCode)->toBe($errorCode)
-            ->and($exception->getMessage())->not->toContain($contents);
+        expect($exception->errorCode)->toBe($errorCode);
+
+        if ($contents !== '') {
+            expect($exception->getMessage())->not->toContain($contents);
+        }
     }
 
     expect(StatementImport::query()->doesntExist())->toBeTrue();
 })->with([
     'non-PDF content' => ['not a PDF', 'invalid_pdf'],
+    'empty file' => ['', 'invalid_pdf_size'],
+    'corrupt PDF' => ['%PDF-1.4 invalid structure', 'corrupt_pdf'],
+    'oversized PDF' => [fn () => '%PDF-'.str_repeat('x', (8 * 1024 * 1024) + 1), 'invalid_pdf_size'],
     'encrypted PDF' => [
         fn () => SyntheticPdf::fromText(bcpStatementText())."\n/Encrypt 9 0 R",
         'encrypted_pdf',
     ],
     'image-only PDF' => [fn () => SyntheticPdf::fromText('   '), 'empty_text'],
     'unknown layout' => [
-        fn () => SyntheticPdf::fromText('A valid selectable-text PDF from an unknown provider'),
+        fn () => SyntheticPdf::fromText('A valid selectable-text PDF with an unknown format'),
         'unsupported_format',
     ],
     'partial BCP signature' => [
@@ -335,6 +486,62 @@ test('unsafe and unsupported PDF inputs fail without retaining source evidence',
         'unsupported_format',
     ],
 ]);
+
+test('PDF extraction resource limits fail closed before producing a preview', function (
+    string $configurationKey,
+    int $configurationValue,
+    string $errorCode,
+) {
+    config([$configurationKey => $configurationValue]);
+
+    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText(interbankStatementText()),
+        ),
+    ), $errorCode);
+})->with([
+    'page count' => ['statement-imports.max_pages', 0, 'page_limit'],
+    'extracted output' => ['statement-imports.max_extracted_bytes', 16, 'extraction_limit'],
+]);
+
+test('PDF extraction is terminated at the configured processing time limit', function () {
+    config([
+        'statement-imports.processing_timeout_seconds' => 1,
+        'statement-imports.max_extracted_bytes' => 8 * 1024 * 1024,
+    ]);
+    $largeSelectablePdf = SyntheticPdf::fromText(str_repeat("line\n", 200000));
+
+    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+        new User,
+        UploadedFile::fake()->createWithContent('statement.pdf', $largeSelectablePdf),
+    ), 'processing_limit');
+});
+
+test('PDF failures do not expose or log source contents private filenames or full identifiers', function () {
+    Log::spy();
+    $privateFilename = 'interbank-4111111111111234-private.pdf';
+    $sourceContents = '%PDF-1.4 private-statement-4111111111111234';
+
+    try {
+        app(StatementImportWorkflow::class)->preview(
+            new User,
+            UploadedFile::fake()->createWithContent($privateFilename, $sourceContents),
+        );
+
+        $this->fail('The corrupt statement should have been rejected.');
+    } catch (StatementImportValidationException $exception) {
+        expect($exception->getMessage())
+            ->not->toContain($privateFilename)
+            ->not->toContain($sourceContents)
+            ->not->toContain('4111111111111234');
+    }
+
+    Log::shouldNotHaveReceived('error');
+    Log::shouldNotHaveReceived('warning');
+    Log::shouldNotHaveReceived('log');
+});
 
 test('independent BCP reconciliation failures block preview and persistence', function (
     string $original,
@@ -396,6 +603,40 @@ test('independent Interbank reconciliation failures block preview and persistenc
         '= 27.00 10.00',
         '= 28.00 10.00',
         'interbank_statement_mismatch',
+    ],
+]);
+
+test('missing duplicated and misplaced Interbank rows fail reconciliation', function (
+    string $statementText,
+    string $errorCode,
+) {
+    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    ), $errorCode);
+})->with([
+    'missing row' => [
+        fn () => str_replace("20-Ene Grocery                  20.00 0.00\n", '', interbankStatementText()),
+        'interbank_consumption_mismatch',
+    ],
+    'duplicated row' => [
+        fn () => str_replace(
+            '20-Ene Grocery                  20.00 0.00',
+            "20-Ene Grocery                  20.00 0.00\n20-Ene Grocery                  20.00 0.00",
+            interbankStatementText(),
+        ),
+        'interbank_consumption_mismatch',
+    ],
+    'misplaced currency amount' => [
+        fn () => str_replace(
+            '20-Ene Grocery                  20.00 0.00',
+            '20-Ene Grocery                   0.00 20.00',
+            interbankStatementText(),
+        ),
+        'interbank_consumption_mismatch',
     ],
 ]);
 
@@ -483,4 +724,82 @@ test('exact statement replay is owner scoped and rejected atomically for the sam
     expect(StatementImport::query()->count())->toBe(2)
         ->and(StatementMovement::query()->count())->toBe(12)
         ->and(Transaction::query()->count())->toBe(8);
+});
+
+test('a failure after persistence begins rolls back the complete Statement Import', function () {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $movementCreations = 0;
+    $eventName = 'eloquent.creating: '.StatementMovement::class;
+
+    Event::listen($eventName, function () use (&$movementCreations): void {
+        $movementCreations++;
+
+        if ($movementCreations === 3) {
+            throw new RuntimeException('Forced persistence failure.');
+        }
+    });
+
+    try {
+        expect(fn () => $workflow->confirm(
+            $owner,
+            UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+            confirmationPayload($preview),
+        ))->toThrow(RuntimeException::class, 'Forced persistence failure.');
+    } finally {
+        Event::forget($eventName);
+    }
+
+    expect($movementCreations)->toBe(3)
+        ->and(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
+        ->and(Transaction::query()->doesntExist())->toBeTrue();
+});
+
+test('concurrent confirmations retain one complete import and reject the duplicate', function () {
+    $connectionName = 'statement_import_concurrency';
+    config(["database.connections.{$connectionName}" => config('database.connections.pgsql')]);
+
+    $owner = new User([
+        'name' => 'Concurrent Statement Import Owner',
+        'email' => 'statement-import-'.str()->uuid().'@example.test',
+        'password' => 'password',
+    ]);
+    $owner->setConnection($connectionName);
+    $owner->save();
+
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $ownerId = $owner->getKey();
+
+    $firstConfirmation = ConcurrentStatementImportConfirmation::task($ownerId, $pdf, $confirmation);
+    $secondConfirmation = ConcurrentStatementImportConfirmation::task($ownerId, $pdf, $confirmation);
+
+    try {
+        $outcomes = Concurrency::driver('process')->run(
+            [$firstConfirmation, $secondConfirmation],
+            timeout: 30,
+        );
+
+        expect($outcomes)->toEqualCanonicalizing(['confirmed', 'duplicate_statement'])
+            ->and(StatementImport::query()->where('user_id', $ownerId)->count())->toBe(1)
+            ->and(StatementMovement::query()
+                ->whereHas('statementImport', fn ($query) => $query->where('user_id', $ownerId))
+                ->count())->toBe(6)
+            ->and(Transaction::query()->where('user_id', $ownerId)->count())->toBe(4);
+    } finally {
+        StatementImport::on($connectionName)->where('user_id', $ownerId)->delete();
+        Transaction::on($connectionName)->where('user_id', $ownerId)->delete();
+        User::on($connectionName)->find($ownerId)?->delete();
+        DB::purge($connectionName);
+    }
 });

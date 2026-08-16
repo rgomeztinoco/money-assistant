@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\StatementProvider;
+use App\FinancialStatementFormat;
 use Carbon\CarbonImmutable;
 use Database\Factories\StatementImportFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -15,7 +15,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $user_id
- * @property StatementProvider $provider
+ * @property FinancialStatementFormat $financial_statement_format
  * @property string $parser_version
  * @property string $file_hash
  * @property CarbonImmutable $period_start
@@ -30,7 +30,7 @@ use Illuminate\Support\Carbon;
  */
 #[Fillable([
     'user_id',
-    'provider',
+    'financial_statement_format',
     'parser_version',
     'file_hash',
     'period_start',
@@ -62,7 +62,7 @@ class StatementImport extends Model
     protected function casts(): array
     {
         return [
-            'provider' => StatementProvider::class,
+            'financial_statement_format' => FinancialStatementFormat::class,
             'period_start' => 'immutable_date',
             'period_end' => 'immutable_date',
             'reconciliation_values' => 'array',

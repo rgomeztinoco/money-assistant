@@ -10,13 +10,14 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import { statementMovementClassificationLabel } from '@/lib/statement-movement-classification';
 import { index, show } from '@/routes/statement_imports';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type {
     Currency,
+    FinancialStatementFormat,
     StatementClassification,
     StatementDirection,
-    StatementProvider,
 } from '@/types';
 
 type Summary = Record<
@@ -35,7 +36,7 @@ type Summary = Record<
 
 type StatementImportDetail = {
     id: number;
-    provider: StatementProvider;
+    financial_statement_format: FinancialStatementFormat;
     parser_version: string;
     period_start: string;
     period_end: string;
@@ -86,7 +87,7 @@ export default function StatementImportShow({
     return (
         <>
             <Head
-                title={`${statement_import.provider.toUpperCase()} Statement Import`}
+                title={`${statement_import.financial_statement_format.toUpperCase()} Statement Import`}
             />
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -96,7 +97,7 @@ export default function StatementImportShow({
                                 {statement_import.instrument_label}
                             </h1>
                             <Badge variant="outline">
-                                {statement_import.provider.toUpperCase()}
+                                {statement_import.financial_statement_format.toUpperCase()}
                             </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">
@@ -231,9 +232,8 @@ export default function StatementImportShow({
                                                         }
                                                         className="capitalize"
                                                     >
-                                                        {movement.classification.replaceAll(
-                                                            '_',
-                                                            ' ',
+                                                        {statementMovementClassificationLabel(
+                                                            movement.classification,
                                                         )}
                                                     </Badge>
                                                 </td>

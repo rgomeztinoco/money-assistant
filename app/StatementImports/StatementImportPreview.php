@@ -2,7 +2,7 @@
 
 namespace App\StatementImports;
 
-use App\StatementProvider;
+use App\FinancialStatementFormat;
 use Carbon\CarbonImmutable;
 
 final readonly class StatementImportPreview
@@ -13,7 +13,7 @@ final readonly class StatementImportPreview
      * @param  array<string, string>  $reconciliation
      */
     public function __construct(
-        public StatementProvider $provider,
+        public FinancialStatementFormat $financialStatementFormat,
         public string $parserVersion,
         public string $fileHash,
         public CarbonImmutable $periodStart,
@@ -29,7 +29,7 @@ final readonly class StatementImportPreview
     public function toArray(): array
     {
         return [
-            'provider' => $this->provider->value,
+            'financial_statement_format' => $this->financialStatementFormat->value,
             'parser_version' => $this->parserVersion,
             'file_hash' => $this->fileHash,
             'period_start' => $this->periodStart->toDateString(),

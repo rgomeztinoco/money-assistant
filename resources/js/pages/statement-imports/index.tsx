@@ -13,7 +13,7 @@ import { create, index, show } from '@/routes/statement_imports';
 
 type StatementImportItem = {
     id: number;
-    provider: 'bcp' | 'interbank';
+    financial_statement_format: 'bcp' | 'interbank';
     period_start: string;
     period_end: string;
     instrument_label: string;
@@ -102,7 +102,7 @@ export default function StatementImportsIndex({
                                     <thead className="bg-muted/50 text-left">
                                         <tr>
                                             <th className="px-4 py-3 font-medium">
-                                                Provider
+                                                Format
                                             </th>
                                             <th className="px-4 py-3 font-medium">
                                                 Period
@@ -133,7 +133,7 @@ export default function StatementImportsIndex({
                                                             className="hover:underline"
                                                         >
                                                             {
-                                                                statementImport.provider
+                                                                statementImport.financial_statement_format
                                                             }
                                                         </Link>
                                                     </td>

@@ -18,6 +18,10 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import {
+    statementMovementClassificationOptions,
+    statementMovementContributesToSpending,
+} from '@/lib/statement-movement-classification';
 import { index } from '@/routes/statement_imports';
 import type {
     CategoryOption,
@@ -44,31 +48,6 @@ type ConfirmationData = {
     warda_category_id: string;
     movements: ConfirmationMovement[];
 };
-
-const classificationOptions: Array<{
-    value: StatementClassification;
-    label: string;
-}> = [
-    { value: 'needs_classification', label: 'Needs classification' },
-    { value: 'purchase', label: 'Purchase' },
-    { value: 'refund', label: 'Refund' },
-    { value: 'fee', label: 'Bank fee' },
-    { value: 'tax', label: 'Tax' },
-    { value: 'income', label: 'Income' },
-    { value: 'transfer', label: 'Transfer or payment' },
-    { value: 'card_payment', label: 'Card payment' },
-    { value: 'warda', label: 'WARDA' },
-    { value: 'already_recorded', label: 'Already recorded' },
-    { value: 'not_a_movement', label: 'Not a movement' },
-];
-
-const spendingClassifications = new Set<StatementClassification>([
-    'purchase',
-    'refund',
-    'fee',
-    'tax',
-    'warda',
-]);
 
 function humanizeKey(key: string) {
     return key.replaceAll('_minor', '').replaceAll('_', ' ');
@@ -257,7 +236,7 @@ export default function CreateStatementImport({
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         <Badge variant="outline">
-                                            {preview.provider.toUpperCase()}
+                                            {preview.financial_statement_format.toUpperCase()}
                                         </Badge>
                                         <Badge variant="secondary">
                                             <FileCheck2 /> Reconciled
@@ -550,7 +529,7 @@ export default function CreateStatementImport({
                                                                         },
                                                                     )
                                                                 }
-                                                                options={classificationOptions.filter(
+                                                                options={statementMovementClassificationOptions.filter(
                                                                     (option) =>
                                                                         option.value !==
                                                                             'not_a_movement' ||
@@ -571,14 +550,14 @@ export default function CreateStatementImport({
                                                         <td className="px-3 py-3">
                                                             <Badge
                                                                 variant={
-                                                                    spendingClassifications.has(
+                                                                    statementMovementContributesToSpending(
                                                                         movement.classification,
                                                                     )
                                                                         ? 'default'
                                                                         : 'outline'
                                                                 }
                                                             >
-                                                                {spendingClassifications.has(
+                                                                {statementMovementContributesToSpending(
                                                                     movement.classification,
                                                                 )
                                                                     ? 'Affects spending'

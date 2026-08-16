@@ -18,7 +18,7 @@ class ConfirmStatementImportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'statement' => ['required', 'file', 'mimes:pdf', 'mimetypes:application/pdf,application/x-pdf', 'max:8192'],
+            'statement' => ['required', 'file', 'mimes:pdf', 'mimetypes:application/pdf,application/x-pdf', 'max:'.config('statement-imports.max_file_kilobytes')],
             'file_hash' => ['required', 'string', 'size:64'],
             'instrument_label' => ['required', 'string', 'max:100'],
             'instrument_last_four' => ['nullable', 'regex:/^\d{4}$/'],

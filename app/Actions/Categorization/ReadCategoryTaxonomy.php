@@ -54,10 +54,7 @@ final class ReadCategoryTaxonomy
     {
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
-            ->whereNull('archived_at')
-            ->where(fn ($query) => $query
-                ->whereNull('parent_id')
-                ->orWhereHas('parent', fn ($query) => $query->whereNull('archived_at')))
+            ->availableForAssignment()
             ->select(['id', 'user_id', 'parent_id', 'name'])
             ->with('parent:id,name')
             ->orderByRaw('lower(name)')
@@ -73,6 +70,15 @@ final class ReadCategoryTaxonomy
             ->sortBy('path', SORT_NATURAL | SORT_FLAG_CASE)
             ->values()
             ->all());
+    }
+
+    public function activeCategoryIdNamed(User $owner, string $name): ?int
+    {
+        return Category::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->availableForAssignment()
+            ->whereRaw('lower(name) = lower(?)', [$name])
+            ->value('id');
     }
 
     /**
