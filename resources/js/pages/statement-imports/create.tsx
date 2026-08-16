@@ -46,7 +46,7 @@ type ConfirmationData = {
     file_hash: string;
     instrument_label: string;
     instrument_last_four: string;
-    warda_category_id: string;
+    savings_category_id: string;
     movements: ConfirmationMovement[];
 };
 
@@ -60,10 +60,10 @@ function reconciliationCurrency(key: string): 'PEN' | 'USD' {
 
 export default function CreateStatementImport({
     category_options,
-    suggested_warda_category_id,
+    suggested_savings_category_id,
 }: {
     category_options: CategoryOption[];
-    suggested_warda_category_id: number | null;
+    suggested_savings_category_id: number | null;
 }) {
     const previewRequest = useHttp<
         { statement: File | null },
@@ -74,12 +74,12 @@ export default function CreateStatementImport({
         file_hash: '',
         instrument_label: '',
         instrument_last_four: '',
-        warda_category_id: suggested_warda_category_id?.toString() ?? '',
+        savings_category_id: suggested_savings_category_id?.toString() ?? '',
         movements: [],
     });
     const [preview, setPreview] = useState<StatementImportPreview | null>(null);
-    const hasWarda = confirmation.data.movements.some(
-        (movement) => movement.classification === 'warda',
+    const hasSavings = confirmation.data.movements.some(
+        (movement) => movement.classification === 'savings',
     );
 
     function requestPreview(event: React.FormEvent) {
@@ -103,8 +103,8 @@ export default function CreateStatementImport({
                     file_hash: response.file_hash,
                     instrument_label: response.instrument_label,
                     instrument_last_four: response.instrument_last_four ?? '',
-                    warda_category_id:
-                        suggested_warda_category_id?.toString() ?? '',
+                    savings_category_id:
+                        suggested_savings_category_id?.toString() ?? '',
                     movements: response.movements.map((movement) => ({
                         source_row_id: movement.source_row_id,
                         occurred_on: movement.occurred_on,
@@ -313,23 +313,23 @@ export default function CreateStatementImport({
                                             }
                                         />
                                     </div>
-                                    {hasWarda && (
+                                    {hasSavings && (
                                         <div className="grid gap-2 md:col-span-3">
-                                            <Label htmlFor="warda-category">
-                                                Savings Category for WARDA
+                                            <Label htmlFor="savings-category">
+                                                Category for Savings movements
                                             </Label>
                                             <NativeSelect
-                                                id="warda-category"
+                                                id="savings-category"
                                                 value={
                                                     confirmation.data
-                                                        .warda_category_id
+                                                        .savings_category_id
                                                 }
                                                 onChange={(event) => {
                                                     confirmation.clearErrors(
-                                                        'warda_category_id',
+                                                        'savings_category_id',
                                                     );
                                                     confirmation.setData(
-                                                        'warda_category_id',
+                                                        'savings_category_id',
                                                         event.target.value,
                                                     );
                                                 }}
@@ -350,7 +350,7 @@ export default function CreateStatementImport({
                                             <InputError
                                                 message={
                                                     confirmation.errors
-                                                        .warda_category_id
+                                                        .savings_category_id
                                                 }
                                             />
                                         </div>

@@ -65,13 +65,15 @@ test('the preview response never exposes a complete instrument identifier', func
 
 test('the create page suggests an active Savings Category case insensitively', function () {
     $owner = User::factory()->create();
+    Category::factory()->for($owner, 'owner')->archived()->create(['name' => 'Savings']);
     $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'savings']);
+    Category::factory()->for(User::factory()->create(), 'owner')->create(['name' => 'Savings']);
 
     $this->actingAs($owner)
         ->get(route('statement_imports.create'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('statement-imports/create')
-            ->where('suggested_warda_category_id', $savings->id),
+            ->where('suggested_savings_category_id', $savings->id),
         );
 });
 

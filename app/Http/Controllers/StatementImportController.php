@@ -38,7 +38,7 @@ class StatementImportController extends Controller
 
         return Inertia::render('statement-imports/create', [
             'category_options' => $this->readCategoryTaxonomy->activeOptions($owner),
-            'suggested_warda_category_id' => $this->readCategoryTaxonomy->activeCategoryIdNamed($owner, 'Savings'),
+            'suggested_savings_category_id' => $this->readCategoryTaxonomy->activeCategoryIdNamed($owner, 'Savings'),
         ]);
     }
 

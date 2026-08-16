@@ -28,9 +28,9 @@ type Summary = Record<
         income_minor: string;
         transfers_in_minor: string;
         transfers_out_minor: string;
-        warda_deposits_minor: string;
-        warda_withdrawals_minor: string;
-        net_warda_minor: string;
+        savings_deposits_minor: string;
+        savings_withdrawals_minor: string;
+        net_savings_minor: string;
     }
 >;
 
@@ -70,9 +70,9 @@ const summaryLabels: Array<[keyof Summary['PEN'], string]> = [
     ['income_minor', 'Income'],
     ['transfers_in_minor', 'Transfers in'],
     ['transfers_out_minor', 'Transfers out'],
-    ['warda_deposits_minor', 'WARDA deposits'],
-    ['warda_withdrawals_minor', 'WARDA withdrawals'],
-    ['net_warda_minor', 'Net WARDA savings'],
+    ['savings_deposits_minor', 'Savings deposits'],
+    ['savings_withdrawals_minor', 'Savings withdrawals'],
+    ['net_savings_minor', 'Net savings'],
 ];
 
 function reconciliationCurrency(key: string): Currency {

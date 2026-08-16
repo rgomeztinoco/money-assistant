@@ -25,7 +25,7 @@ export const statementMovementClassificationOptions: Array<{
         label: 'Card payment',
         contributesToSpending: false,
     },
-    { value: 'warda', label: 'WARDA', contributesToSpending: true },
+    { value: 'savings', label: 'Savings', contributesToSpending: true },
     {
         value: 'already_recorded',
         label: 'Already recorded',

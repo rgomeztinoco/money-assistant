@@ -11,7 +11,7 @@ export type StatementClassification =
     | 'income'
     | 'transfer'
     | 'card_payment'
-    | 'warda'
+    | 'savings'
     | 'already_recorded'
     | 'not_a_movement';
 

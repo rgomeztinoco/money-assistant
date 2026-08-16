@@ -95,9 +95,9 @@ final class ReadStatementImport
                 'income_minor' => '0',
                 'transfers_in_minor' => '0',
                 'transfers_out_minor' => '0',
-                'warda_deposits_minor' => '0',
-                'warda_withdrawals_minor' => '0',
-                'net_warda_minor' => '0',
+                'savings_deposits_minor' => '0',
+                'savings_withdrawals_minor' => '0',
+                'net_savings_minor' => '0',
             ];
         }
 
@@ -114,8 +114,8 @@ final class ReadStatementImport
         }
 
         foreach (['PEN', 'USD'] as $currency) {
-            $summary[$currency]['net_warda_minor'] = ExactInteger::from($summary[$currency]['warda_deposits_minor'])
-                ->subtract(ExactInteger::from($summary[$currency]['warda_withdrawals_minor']))
+            $summary[$currency]['net_savings_minor'] = ExactInteger::from($summary[$currency]['savings_deposits_minor'])
+                ->subtract(ExactInteger::from($summary[$currency]['savings_withdrawals_minor']))
                 ->value();
         }
 

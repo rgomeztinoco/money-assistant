@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Category;
 use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\Transaction;
@@ -69,6 +70,53 @@ test('the owner discovers Statement Imports selects a PDF and revisits a confirm
             ->and(StatementMovement::query()->count())->toBe(6)
             ->and(StatementMovement::query()->whereNull('transaction_id')->count())->toBe(2)
             ->and(Transaction::query()->count())->toBe(4);
+    } finally {
+        $server->stop();
+    }
+});
+
+test('BCP WARDA rows preview and confirm as Savings', function () {
+    $owner = User::factory()->create();
+    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'Savings']);
+    $pdf = SyntheticPdf::fromText((string) file_get_contents(
+        base_path('tests/Fixtures/Statements/bcp.txt'),
+    ));
+    [$server, $applicationUrl] = startBrowserApplication();
+
+    try {
+        $page = visit($applicationUrl.'/login');
+        $page
+            ->type('#email', $owner->email)
+            ->type('#password', 'password')
+            ->click('[data-test="login-button"]')
+            ->assertPathIs('/dashboard')
+            ->navigate($applicationUrl.'/statement-imports/create');
+        selectPdfInBrowser($page, '#preview-statement', $pdf);
+        $page
+            ->press('Preview statement')
+            ->assertSee('BCP')
+            ->assertSee('Category for Savings movements');
+
+        expect($page->value('#movement-0-classification'))->toBe('savings')
+            ->and($page->value('#savings-category'))->toBe((string) $savings->id);
+
+        $page->select(
+            'select[aria-label="Classification for DEPOSITO"]',
+            'already_recorded',
+        );
+        selectPdfInBrowser($page, '#confirm-statement', $pdf);
+        $page
+            ->press('Confirm Statement Import')
+            ->assertPathBeginsWith('/statement-imports/')
+            ->assertSee('Savings deposits')
+            ->assertSee('Savings withdrawals')
+            ->assertSee('Net savings')
+            ->assertSee('Savings')
+            ->assertNoJavaScriptErrors()
+            ->assertNoConsoleLogs();
+
+        expect(StatementMovement::query()->where('classification', 'savings')->count())->toBe(2)
+            ->and(Transaction::query()->whereBelongsTo($savings, 'category')->count())->toBe(2);
     } finally {
         $server->stop();
     }

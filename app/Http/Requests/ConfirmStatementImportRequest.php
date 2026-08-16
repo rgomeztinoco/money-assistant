@@ -22,7 +22,7 @@ class ConfirmStatementImportRequest extends FormRequest
             'file_hash' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/i'],
             'instrument_label' => ['required', 'string', 'max:100'],
             'instrument_last_four' => ['nullable', 'regex:/^\d{4}$/'],
-            'warda_category_id' => ['nullable', 'integer'],
+            'savings_category_id' => ['nullable', 'integer'],
             'movements' => ['required', 'array', 'min:1'],
             'movements.*' => ['required', 'array:source_row_id,occurred_on,description,amount_minor,currency,classification'],
             'movements.*.source_row_id' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/i', 'distinct:strict'],
