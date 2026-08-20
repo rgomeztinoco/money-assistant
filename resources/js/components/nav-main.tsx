@@ -12,15 +12,19 @@ import type { NavItem } from '@/types';
 
 export function NavMain({
     items = [],
-    label = 'Platform',
+    label,
+    priority = 'primary',
 }: {
     items: NavItem[];
-    label?: string;
+    label: string;
+    priority?: 'primary' | 'secondary';
 }) {
     const { isCurrentUrl } = useCurrentUrl();
 
     return (
-        <SidebarGroup className="px-2 py-0">
+        <SidebarGroup
+            className={priority === 'primary' ? 'px-2 py-0' : 'mt-4 px-2 py-0'}
+        >
             <SidebarGroupLabel>{label}</SidebarGroupLabel>
             <SidebarMenu>
                 {items.map((item) => (
@@ -29,6 +33,11 @@ export function NavMain({
                             asChild
                             isActive={isCurrentUrl(item.href)}
                             tooltip={{ children: item.title }}
+                            className={
+                                priority === 'secondary'
+                                    ? 'text-sidebar-foreground/75'
+                                    : undefined
+                            }
                         >
                             <Link
                                 href={item.href}
@@ -42,7 +51,12 @@ export function NavMain({
                         {item.badgeCount !== undefined &&
                             item.badgeCount > 0 && (
                                 <SidebarMenuBadge>
-                                    {item.badgeCount}
+                                    <span
+                                        aria-label={`${item.badgeCount} outstanding reviews`}
+                                        data-test={`nav-${item.title.toLowerCase().replaceAll(' ', '-')}-count`}
+                                    >
+                                        {item.badgeCount}
+                                    </span>
                                 </SidebarMenuBadge>
                             )}
                     </SidebarMenuItem>

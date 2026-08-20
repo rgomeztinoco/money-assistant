@@ -3,7 +3,6 @@
 namespace App\Actions\Ledger;
 
 use App\ExactInteger;
-use App\Models\LineItem;
 use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
@@ -11,6 +10,10 @@ use App\ReviewableTransactionField;
 
 class ReadReviewQueue
 {
+    public function __construct(
+        private CountOutstandingReviews $countOutstandingReviews,
+    ) {}
+
     /**
      * @return array{
      *     unresolved_field_count: int,
@@ -38,26 +41,11 @@ class ReadReviewQueue
      */
     public function handle(User $owner): array
     {
-        $unresolvedCategoryCount = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereNull('voided_at')
-            ->whereCategoryRequiresReview()
-            ->count();
-        $unresolvedCategoryCount += LineItem::query()
-            ->whereNull('category_id')
-            ->whereHas('receiptBreakdown', fn ($query) => $query
-                ->whereBelongsTo($owner, 'owner')
-                ->whereHas('transaction', fn ($query) => $query->whereNull('voided_at')))
-            ->count();
+        $counts = $this->countOutstandingReviews->breakdown($owner);
         $reviewQuery = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
             ->whereJsonLength('provisional_fields', '>', 0);
-
-        $unresolvedFieldCount = (int) (clone $reviewQuery)
-            ->toBase()
-            ->selectRaw('COALESCE(SUM(jsonb_array_length(provisional_fields)), 0) AS unresolved_field_count')
-            ->value('unresolved_field_count');
 
         $transactionModels = $reviewQuery
             ->select([
@@ -103,10 +91,6 @@ class ReadReviewQueue
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
             ->whereJsonLength('refund_relationship_review_reasons', '>', 0);
-        $unresolvedRefundRelationshipCount = (int) (clone $relationshipReviewQuery)
-            ->toBase()
-            ->selectRaw('COALESCE(SUM(jsonb_array_length(refund_relationship_review_reasons)), 0) AS unresolved_refund_relationship_count')
-            ->value('unresolved_refund_relationship_count');
         $refundsAwaitingRelationshipReview = $relationshipReviewQuery
             ->select([
                 'id',
@@ -169,9 +153,9 @@ class ReadReviewQueue
         }
 
         return [
-            'unresolved_field_count' => $unresolvedFieldCount,
-            'unresolved_category_count' => $unresolvedCategoryCount,
-            'unresolved_refund_relationship_count' => $unresolvedRefundRelationshipCount,
+            'unresolved_field_count' => $counts['fields'],
+            'unresolved_category_count' => $counts['categories'],
+            'unresolved_refund_relationship_count' => $counts['refund_relationships'],
             'transactions' => $transactions,
             'refund_relationships' => $refundRelationships,
         ];

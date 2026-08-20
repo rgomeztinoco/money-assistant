@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Actions\Ledger\CountOutstandingReviews;
 use App\Contracts\Gmail;
 use App\Contracts\StatementPdfExtractor;
 use App\Integrations\Gmail\GoogleGmail;
@@ -30,8 +31,9 @@ class AppServiceProvider extends ServiceProvider
             ),
         );
 
-        $this->app->bind(StatementPdfExtractor::class, ProcessStatementPdfExtractor::class);
+        $this->app->scoped(CountOutstandingReviews::class);
 
+        $this->app->bind(StatementPdfExtractor::class, ProcessStatementPdfExtractor::class);
     }
 
     /**

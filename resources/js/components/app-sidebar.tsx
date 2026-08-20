@@ -1,4 +1,4 @@
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import {
     BarChart3,
     LayoutGrid,
@@ -32,6 +32,7 @@ import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
+    const { navigation } = usePage().props;
     const mainNavItems: NavItem[] = [
         {
             title: 'Dashboard',
@@ -47,11 +48,7 @@ export function AppSidebar() {
             title: 'Review Queue',
             href: reviewQueueIndex(),
             icon: ListChecks,
-        },
-        {
-            title: 'Statement Imports',
-            href: statementImportsIndex(),
-            icon: Files,
+            badgeCount: navigation.review_queue_count,
         },
         {
             title: 'Reports',
@@ -60,6 +57,11 @@ export function AppSidebar() {
         },
     ];
     const manageNavItems: NavItem[] = [
+        {
+            title: 'Statement Imports',
+            href: statementImportsIndex(),
+            icon: Files,
+        },
         {
             title: 'Categories',
             href: categoriesIndex(),
@@ -92,8 +94,12 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
-                <NavMain items={manageNavItems} label="Manage" />
+                <NavMain items={mainNavItems} label="Everyday" />
+                <NavMain
+                    items={manageNavItems}
+                    label="Manage & automate"
+                    priority="secondary"
+                />
             </SidebarContent>
 
             <SidebarFooter>
