@@ -13,8 +13,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import { spendingComparisonDescription } from '@/lib/spending-comparison';
+import type { SpendingComparison } from '@/lib/spending-comparison';
+import {
+    categoryTransactionsUrl,
+    periodTransactionsUrl,
+} from '@/lib/transaction-filter-url';
 import { show as reportShow } from '@/routes/reports';
-import { index as transactionsIndex } from '@/routes/transactions';
 import type { Currency } from '@/types';
 
 type ReportPeriod = {
@@ -24,12 +29,17 @@ type ReportPeriod = {
     total_minor: string;
 };
 
+type ReportComparison = SpendingComparison & {
+    period: Omit<ReportPeriod, 'total_minor'>;
+};
+
 type ReportMonth = {
     month: string;
     label: string;
     date_from: string;
     date_to: string;
     total_minor: string;
+    transaction_count: number;
 };
 
 type ReportCategoryAmount = {
@@ -48,11 +58,18 @@ type ReportCategoryGroup = ReportCategoryAmount & {
 type ReportProps = {
     currency: Currency;
     period: ReportPeriod;
+    comparison: ReportComparison;
     monthly_history: ReportMonth[];
     category_groups: ReportCategoryGroup[];
 };
 
-function reportUrl(currency: Currency, period: ReportPeriod) {
+function reportUrl({
+    currency,
+    period,
+}: {
+    currency: Currency;
+    period: ReportPeriod;
+}) {
     return reportShow(currency, {
         query: {
             date_from: period.date_from,
@@ -61,23 +78,69 @@ function reportUrl(currency: Currency, period: ReportPeriod) {
     });
 }
 
-function transactionUrl(currency: Currency, dateFrom: string, dateTo: string) {
-    return transactionsIndex({
-        query: {
-            currency,
-            date_from: dateFrom,
-            date_to: dateTo,
-        },
-    });
+function absoluteMinorUnits(value: string) {
+    const amount = BigInt(value);
+
+    return amount < 0n ? -amount : amount;
+}
+
+function chartWidth({ value, values }: { value: string; values: string[] }) {
+    const maximum = values.reduce((largest, candidate) => {
+        const amount = absoluteMinorUnits(candidate);
+
+        return amount > largest ? amount : largest;
+    }, 0n);
+
+    if (maximum === 0n) {
+        return 0;
+    }
+
+    const hundredthsOfAPercent =
+        (absoluteMinorUnits(value) * 10_000n) / maximum;
+
+    if (hundredthsOfAPercent === 0n && absoluteMinorUnits(value) > 0n) {
+        return 0.5;
+    }
+
+    return Number(hundredthsOfAPercent) / 100;
+}
+
+function ChartBar({ value, values }: { value: string; values: string[] }) {
+    return (
+        <span
+            className="h-2 overflow-hidden rounded-full bg-muted"
+            aria-hidden="true"
+        >
+            <span
+                data-test="chart-bar"
+                className={`block h-full rounded-full ${value.startsWith('-') ? 'bg-emerald-600 dark:bg-emerald-500' : 'bg-primary'}`}
+                style={{
+                    width: `${chartWidth({ value, values })}%`,
+                }}
+            />
+        </span>
+    );
 }
 
 export default function ReportShow({
     currency,
     period,
+    comparison,
     monthly_history: monthlyHistory,
     category_groups: categoryGroups,
 }: ReportProps) {
     const otherCurrency: Currency = currency === 'PEN' ? 'USD' : 'PEN';
+    const monthlyAmounts = monthlyHistory.map((month) => month.total_minor);
+    const categoryAmounts = categoryGroups.flatMap((group) => [
+        group.amount_minor,
+        ...group.children.map((child) => child.amount_minor),
+    ]);
+    const hasMonthlyActivity = monthlyHistory.some(
+        (month) => month.transaction_count > 0,
+    );
+    const recordedMonthCount = monthlyHistory.filter(
+        (month) => month.transaction_count > 0,
+    ).length;
 
     return (
         <>
@@ -101,13 +164,16 @@ export default function ReportShow({
 
                     <div className="flex gap-2" aria-label="Report currency">
                         <Button asChild variant="secondary">
-                            <Link href={reportUrl(currency, period)}>
+                            <Link href={reportUrl({ currency, period })}>
                                 {currency}
                             </Link>
                         </Button>
                         <Button asChild variant="outline">
                             <Link
-                                href={reportUrl(otherCurrency, period)}
+                                href={reportUrl({
+                                    currency: otherCurrency,
+                                    period,
+                                })}
                                 data-test={`report-switch-${otherCurrency.toLowerCase()}`}
                             >
                                 {otherCurrency}
@@ -131,25 +197,55 @@ export default function ReportShow({
                                 Transactions are excluded.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                            <p
-                                className="text-4xl font-semibold tabular-nums"
-                                data-test="report-period-total"
+                        <CardContent className="grid gap-4">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                                <div className="grid gap-1">
+                                    <p
+                                        className="text-4xl font-semibold tabular-nums"
+                                        data-test="report-period-total"
+                                    >
+                                        {formatMinorUnits(
+                                            period.total_minor,
+                                            currency,
+                                        )}
+                                    </p>
+                                    <p className="text-sm font-medium">
+                                        {spendingComparisonDescription({
+                                            comparison,
+                                            currency,
+                                        })}
+                                    </p>
+                                </div>
+                                <Button asChild variant="outline">
+                                    <Link
+                                        href={periodTransactionsUrl({
+                                            currency,
+                                            period,
+                                        })}
+                                    >
+                                        View Transactions
+                                        <ChevronRight />
+                                    </Link>
+                                </Button>
+                            </div>
+                            <Link
+                                href={periodTransactionsUrl({
+                                    currency,
+                                    period: comparison.period,
+                                })}
+                                className="flex flex-col gap-1 rounded-lg border bg-muted/20 p-3 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden sm:flex-row sm:items-center sm:justify-between"
                             >
-                                {formatMinorUnits(period.total_minor, currency)}
-                            </p>
-                            <Button asChild variant="outline">
-                                <Link
-                                    href={transactionUrl(
+                                <span className="text-sm text-muted-foreground">
+                                    Previous equivalent period,{' '}
+                                    {comparison.period.label}
+                                </span>
+                                <span className="font-semibold tabular-nums">
+                                    {formatMinorUnits(
+                                        comparison.previous_total_minor,
                                         currency,
-                                        period.date_from,
-                                        period.date_to,
                                     )}
-                                >
-                                    View Transactions
-                                    <ChevronRight />
-                                </Link>
-                            </Button>
+                                </span>
+                            </Link>
                         </CardContent>
                     </Card>
 
@@ -235,27 +331,46 @@ export default function ReportShow({
                                 selected period end.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="grid gap-2">
+                        <CardContent className="grid gap-3">
+                            {!hasMonthlyActivity && (
+                                <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                                    Monthly patterns will appear as Transactions
+                                    accumulate. This period has no recorded{' '}
+                                    {currency} spending yet.
+                                </p>
+                            )}
+                            {recordedMonthCount === 1 && (
+                                <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                                    One month has recorded spending.
+                                    Month-over-month patterns will appear after
+                                    another month of Transactions accumulates.
+                                </p>
+                            )}
                             {monthlyHistory.map((month) => (
                                 <Link
                                     key={month.month}
-                                    href={reportShow(currency, {
-                                        query: {
-                                            date_from: month.date_from,
-                                            date_to: month.date_to,
-                                        },
+                                    href={periodTransactionsUrl({
+                                        currency,
+                                        period: month,
                                     })}
-                                    className="flex items-center justify-between gap-4 rounded-lg border bg-muted/20 p-3 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                    data-test={`report-month-${month.month}`}
+                                    className="grid gap-2 rounded-lg border bg-muted/20 p-3 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                                 >
-                                    <span className="font-medium">
-                                        {month.label}
+                                    <span className="flex items-center justify-between gap-4">
+                                        <span className="font-medium">
+                                            {month.label}
+                                        </span>
+                                        <span className="font-semibold tabular-nums">
+                                            {formatMinorUnits(
+                                                month.total_minor,
+                                                currency,
+                                            )}
+                                        </span>
                                     </span>
-                                    <span className="font-semibold tabular-nums">
-                                        {formatMinorUnits(
-                                            month.total_minor,
-                                            currency,
-                                        )}
-                                    </span>
+                                    <ChartBar
+                                        value={month.total_minor}
+                                        values={monthlyAmounts}
+                                    />
                                 </Link>
                             ))}
                         </CardContent>
@@ -264,7 +379,7 @@ export default function ReportShow({
                     <Card>
                         <CardHeader>
                             <Tags className="size-5 text-muted-foreground" />
-                            <CardTitle>Category groups</CardTitle>
+                            <CardTitle>Category composition</CardTitle>
                             <CardDescription>
                                 Parent totals include their child Categories
                                 once. Receipt Breakdown Line Items replace the
@@ -285,55 +400,91 @@ export default function ReportShow({
                                         }
                                         className="grid gap-2 rounded-lg border p-3"
                                     >
-                                        <div className="flex items-center justify-between gap-4">
-                                            <div className="flex min-w-0 items-center gap-2">
-                                                <span className="truncate font-medium">
-                                                    {group.category.name}
+                                        <Link
+                                            href={categoryTransactionsUrl({
+                                                currency,
+                                                period,
+                                                categoryId: group.category.id,
+                                            })}
+                                            data-test={`report-category-${group.category.id ?? 'uncategorized'}`}
+                                            className="grid gap-2 rounded-md p-1 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                        >
+                                            <span className="flex items-center justify-between gap-4">
+                                                <span className="flex min-w-0 items-center gap-2">
+                                                    <span className="truncate font-medium">
+                                                        {group.category.name}
+                                                    </span>
+                                                    {group.category
+                                                        .archived && (
+                                                        <Badge variant="outline">
+                                                            Archived
+                                                        </Badge>
+                                                    )}
                                                 </span>
-                                                {group.category.archived && (
-                                                    <Badge variant="outline">
-                                                        Archived
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                            <span className="font-semibold tabular-nums">
-                                                {formatMinorUnits(
-                                                    group.amount_minor,
-                                                    currency,
-                                                )}
+                                                <span className="font-semibold tabular-nums">
+                                                    {formatMinorUnits(
+                                                        group.amount_minor,
+                                                        currency,
+                                                    )}
+                                                </span>
                                             </span>
-                                        </div>
+                                            <ChartBar
+                                                value={group.amount_minor}
+                                                values={categoryAmounts}
+                                            />
+                                        </Link>
 
                                         {group.children.length > 0 && (
                                             <div className="grid gap-2 border-t pt-2">
                                                 {group.children.map((child) => (
-                                                    <div
+                                                    <Link
                                                         key={child.category.id}
-                                                        className="flex items-center justify-between gap-4 pl-4 text-sm"
-                                                    >
-                                                        <div className="flex min-w-0 items-center gap-2">
-                                                            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                                                            <span className="truncate">
-                                                                {
+                                                        href={categoryTransactionsUrl(
+                                                            {
+                                                                currency,
+                                                                period,
+                                                                categoryId:
                                                                     child
                                                                         .category
-                                                                        .name
-                                                                }
+                                                                        .id,
+                                                            },
+                                                        )}
+                                                        data-test={`report-category-${child.category.id}`}
+                                                        className="grid gap-2 rounded-md p-2 pl-4 text-sm hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                                    >
+                                                        <span className="flex items-center justify-between gap-4">
+                                                            <span className="flex min-w-0 items-center gap-2">
+                                                                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                                                                <span className="truncate">
+                                                                    {
+                                                                        child
+                                                                            .category
+                                                                            .name
+                                                                    }
+                                                                </span>
+                                                                {child.category
+                                                                    .archived && (
+                                                                    <Badge variant="outline">
+                                                                        Archived
+                                                                    </Badge>
+                                                                )}
                                                             </span>
-                                                            {child.category
-                                                                .archived && (
-                                                                <Badge variant="outline">
-                                                                    Archived
-                                                                </Badge>
-                                                            )}
-                                                        </div>
-                                                        <span className="tabular-nums">
-                                                            {formatMinorUnits(
-                                                                child.amount_minor,
-                                                                currency,
-                                                            )}
+                                                            <span className="tabular-nums">
+                                                                {formatMinorUnits(
+                                                                    child.amount_minor,
+                                                                    currency,
+                                                                )}
+                                                            </span>
                                                         </span>
-                                                    </div>
+                                                        <ChartBar
+                                                            value={
+                                                                child.amount_minor
+                                                            }
+                                                            values={
+                                                                categoryAmounts
+                                                            }
+                                                        />
+                                                    </Link>
                                                 ))}
                                             </div>
                                         )}

@@ -94,6 +94,87 @@ test('the Dashboard shows current-period totals, Review Queue workload, recent T
             ->missing('gmail.scope'));
 });
 
+test('the Dashboard compares equivalent periods and highlights the largest Category changes by currency', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-18 15:00:00 UTC'));
+    $owner = User::factory()->create();
+    $otherOwner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $transport = Category::factory()->for($owner, 'owner')->create(['name' => 'Transport']);
+
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-02',
+        'amount_minor' => 4_000,
+        'category_id' => $food->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-05',
+        'amount_minor' => 2_000,
+        'category_id' => $transport->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-07-03',
+        'amount_minor' => 2_000,
+        'category_id' => $food->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-07-10',
+        'amount_minor' => 3_500,
+        'category_id' => $transport->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+        'occurred_on' => '2026-08-06',
+        'amount_minor' => 1_000,
+        'category_id' => $food->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-07-20',
+        'amount_minor' => 50_000,
+        'category_id' => $food->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-08',
+        'amount_minor' => 70_000,
+        'category_id' => $food->id,
+        'voided_at' => now(),
+    ]);
+    Transaction::factory()->for($otherOwner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-08',
+        'amount_minor' => 90_000,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('comparison_period.date_from', '2026-07-01')
+            ->where('comparison_period.date_to', '2026-07-18')
+            ->where('spending.comparisons.PEN.current_total_minor', '6000')
+            ->where('spending.comparisons.PEN.previous_total_minor', '5500')
+            ->where('spending.comparisons.PEN.change_minor', '500')
+            ->where('spending.comparisons.PEN.percentage_change', '9.09')
+            ->where('spending.comparisons.PEN.direction', 'increased')
+            ->where('spending.comparisons.USD.current_total_minor', '1000')
+            ->where('spending.comparisons.USD.previous_total_minor', '0')
+            ->where('spending.comparisons.USD.percentage_change', null)
+            ->where('spending.comparisons.USD.direction', 'no_baseline')
+            ->where('spending.category_insights.PEN.0.category.id', $food->id)
+            ->where('spending.category_insights.PEN.0.category.name', 'Food')
+            ->where('spending.category_insights.PEN.0.current_total_minor', '4000')
+            ->where('spending.category_insights.PEN.0.previous_total_minor', '2000')
+            ->where('spending.category_insights.PEN.0.change_minor', '2000')
+            ->where('spending.category_insights.PEN.1.category.id', $transport->id)
+            ->where('spending.category_insights.PEN.1.change_minor', '-1500'));
+});
+
+test('the Dashboard caps an equivalent previous month at its actual final day', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-03-31 15:00:00 UTC'));
+
+    $this->actingAs(User::factory()->create())
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('comparison_period.date_from', '2026-02-01')
+            ->where('comparison_period.date_to', '2026-02-28'));
+});
+
 test('the Dashboard promotes stale Gmail synchronization instead of reporting it healthy', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-18 15:00:00 UTC'));
     $owner = User::factory()->create();

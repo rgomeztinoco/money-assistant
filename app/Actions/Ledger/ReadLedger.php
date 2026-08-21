@@ -3,6 +3,9 @@
 namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
+use App\Models\Category;
+use App\Models\LineItem;
+use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -91,9 +94,11 @@ class ReadLedger
         array $filters = [],
     ): array {
         $filters = $this->normalizeFilters($filters);
+        $categoryIds = $this->categoryIdsForFilter($owner, $filters['category_id']);
         $transactionQuery = $this->applyFilters(
             Transaction::query()->whereBelongsTo($owner, 'owner'),
             $filters,
+            $categoryIds,
         )
             ->when($filters['void_state'] === 'active', fn (Builder $query) => $query->whereNull('voided_at'))
             ->when($filters['void_state'] === 'voided', fn (Builder $query) => $query->whereNotNull('voided_at'))
@@ -232,9 +237,10 @@ class ReadLedger
     /**
      * @param  Builder<Transaction>  $query
      * @param  LedgerFilters  $filters
+     * @param  list<int>|null  $categoryIds
      * @return Builder<Transaction>
      */
-    private function applyFilters(Builder $query, array $filters): Builder
+    private function applyFilters(Builder $query, array $filters, ?array $categoryIds): Builder
     {
         if ($filters['search'] !== '') {
             $query->where('merchant_description', 'ilike', '%'.$filters['search'].'%');
@@ -245,7 +251,7 @@ class ReadLedger
             ->when($filters['date_to'] !== null, fn (Builder $query) => $query->whereDate('occurred_on', '<=', $filters['date_to']))
             ->when($filters['currency'] !== 'all', fn (Builder $query) => $query->where('currency', $filters['currency']))
             ->when($filters['kind'] !== 'all', fn (Builder $query) => $query->where('kind', $filters['kind']))
-            ->when($filters['category_id'] !== null, fn (Builder $query) => $query->where('category_id', $filters['category_id']))
+            ->when($categoryIds !== null, fn (Builder $query) => $this->whereHasCategoryContribution($query, $categoryIds))
             ->when($filters['refund_relationship'] === 'linked', fn (Builder $query) => $query
                 ->where('kind', TransactionKind::Refund)
                 ->whereNotNull('original_purchase_id'))
@@ -271,6 +277,51 @@ class ReadLedger
         }
 
         return $query;
+    }
+
+    /** @return list<int>|null */
+    private function categoryIdsForFilter(User $owner, ?int $categoryId): ?array
+    {
+        if ($categoryId === null) {
+            return null;
+        }
+
+        $category = Category::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->findOrFail($categoryId);
+        $categoryIds = [$category->id];
+
+        foreach ($category->children()->get(['id']) as $child) {
+            $categoryIds[] = $child->id;
+        }
+
+        return $categoryIds;
+    }
+
+    /**
+     * @param  Builder<Transaction>  $query
+     * @param  list<int>  $categoryIds
+     */
+    private function whereHasCategoryContribution(Builder $query, array $categoryIds): void
+    {
+        $transactionsWithLineItems = ReceiptBreakdown::query()
+            ->select('transaction_id')
+            ->whereIn('id', LineItem::query()->select('receipt_breakdown_id'));
+        $transactionsWithMatchingLineItems = ReceiptBreakdown::query()
+            ->select('transaction_id')
+            ->whereIn('id', LineItem::query()
+                ->select('receipt_breakdown_id')
+                ->whereIn('category_id', $categoryIds));
+
+        $query->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems, $transactionsWithMatchingLineItems): void {
+            $query
+                ->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems): void {
+                    $query
+                        ->whereIn('category_id', $categoryIds)
+                        ->whereNotIn('id', $transactionsWithLineItems);
+                })
+                ->orWhereIn('id', $transactionsWithMatchingLineItems);
+        });
     }
 
     /** @param Builder<Transaction> $query */

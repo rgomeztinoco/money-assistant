@@ -2,6 +2,8 @@
 
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
+use App\Models\LineItem;
+use App\Models\ReceiptBreakdown;
 use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
@@ -107,6 +109,49 @@ test('ledger filters distinguish category, Refund relationship, review, and void
             ->has('transactions', 0)
             ->where('voided_transactions', fn (Collection $transactions): bool => $transactions
                 ->contains('id', $voidedTransaction->id)));
+});
+
+test('Category drill-down includes child Categories and Receipt Breakdown contributions', function () {
+    $owner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
+        'name' => 'Dining',
+    ]);
+    $shopping = Category::factory()->for($owner, 'owner')->create(['name' => 'Shopping']);
+    $directFood = Transaction::factory()->for($owner, 'owner')->create([
+        'category_id' => $food->id,
+    ]);
+    $directDining = Transaction::factory()->for($owner, 'owner')->create([
+        'category_id' => $dining->id,
+    ]);
+    $itemized = Transaction::factory()->for($owner, 'owner')->create([
+        'category_id' => $shopping->id,
+    ]);
+    $breakdown = ReceiptBreakdown::factory()->recycle($owner)->for($itemized)->create();
+    LineItem::factory()->for($breakdown)->create([
+        'category_id' => $dining->id,
+        'line_total_minor' => $itemized->amount_minor,
+    ]);
+    $unrelated = Transaction::factory()->for($owner, 'owner')->create([
+        'category_id' => $shopping->id,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('transactions.index', ['category_id' => $food->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('transactions', fn (Collection $transactions): bool => $transactions
+                ->contains('id', $directFood->id)
+                && $transactions->contains('id', $directDining->id)
+                && $transactions->contains('id', $itemized->id)
+                && $transactions->doesntContain('id', $unrelated->id)));
+
+    $this->get(route('transactions.index', ['category_id' => $dining->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('transactions', fn (Collection $transactions): bool => $transactions
+                ->doesntContain('id', $directFood->id)
+                && $transactions->contains('id', $directDining->id)
+                && $transactions->contains('id', $itemized->id)
+                && $transactions->doesntContain('id', $unrelated->id)));
 });
 
 test('unsupported ledger filter values are rejected', function (string $field, string $value) {
