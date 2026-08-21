@@ -12,7 +12,7 @@ enum StatementMovementClassification: string
     case Income = 'income';
     case Transfer = 'transfer';
     case CardPayment = 'card_payment';
-    case Warda = 'warda';
+    case Savings = 'savings';
     case AlreadyRecorded = 'already_recorded';
     case NotAMovement = 'not_a_movement';
 
@@ -23,7 +23,7 @@ enum StatementMovementClassification: string
             self::Refund,
             self::Fee,
             self::Tax,
-            self::Warda,
+            self::Savings,
         ], true);
     }
 
@@ -33,7 +33,7 @@ enum StatementMovementClassification: string
             return null;
         }
 
-        if ($this === self::Refund || ($this === self::Warda && $direction === StatementMovementDirection::Credit)) {
+        if ($this === self::Refund || ($this === self::Savings && $direction === StatementMovementDirection::Credit)) {
             return TransactionKind::Refund;
         }
 
@@ -49,9 +49,9 @@ enum StatementMovementClassification: string
             self::Transfer => $direction === StatementMovementDirection::Credit
                 ? 'transfers_in_minor'
                 : 'transfers_out_minor',
-            self::Warda => $direction === StatementMovementDirection::Credit
-                ? 'warda_withdrawals_minor'
-                : 'warda_deposits_minor',
+            self::Savings => $direction === StatementMovementDirection::Credit
+                ? 'savings_withdrawals_minor'
+                : 'savings_deposits_minor',
             default => null,
         };
     }

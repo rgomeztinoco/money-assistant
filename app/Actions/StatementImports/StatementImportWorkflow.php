@@ -97,7 +97,7 @@ final class StatementImportWorkflow
      *     file_hash?: mixed,
      *     instrument_label?: mixed,
      *     instrument_last_four?: mixed,
-     *     warda_category_id?: mixed,
+     *     savings_category_id?: mixed,
      *     movements?: mixed
      * }  $confirmation
      */
@@ -141,22 +141,22 @@ final class StatementImportWorkflow
         }
 
         $editedMovements = $this->validateMovementEdits($preview, $confirmation['movements'] ?? null);
-        $hasWarda = collect($editedMovements)
-            ->contains(fn (array $movement): bool => $movement['classification'] === StatementMovementClassification::Warda);
-        $wardaCategory = $hasWarda
-            ? $this->activeOwnedCategory($owner, $confirmation['warda_category_id'] ?? null)
+        $hasSavings = collect($editedMovements)
+            ->contains(fn (array $movement): bool => $movement['classification'] === StatementMovementClassification::Savings);
+        $savingsCategory = $hasSavings
+            ? $this->activeOwnedCategory($owner, $confirmation['savings_category_id'] ?? null)
             : null;
 
-        if ($hasWarda && $wardaCategory === null) {
+        if ($hasSavings && $savingsCategory === null) {
             throw $this->invalid(
-                'Select an active Savings Category for WARDA movements.',
-                'warda_category_required',
-                'warda_category_id',
+                'Select an active Category for Savings movements.',
+                'savings_category_required',
+                'savings_category_id',
             );
         }
 
         try {
-            return DB::transaction(function () use ($owner, $preview, $editedMovements, $instrumentLabel, $instrumentLastFour, $wardaCategory): StatementImport {
+            return DB::transaction(function () use ($owner, $preview, $editedMovements, $instrumentLabel, $instrumentLastFour, $savingsCategory): StatementImport {
                 $statementImport = StatementImport::create([
                     'user_id' => $owner->getKey(),
                     'financial_statement_format' => $preview->financialStatementFormat,
@@ -178,7 +178,7 @@ final class StatementImportWorkflow
                     $sourceMovement = $editedMovement['source'];
                     $classification = $editedMovement['classification'];
                     $category = match ($classification) {
-                        StatementMovementClassification::Warda => $wardaCategory,
+                        StatementMovementClassification::Savings => $savingsCategory,
                         StatementMovementClassification::Tax => $taxCategory,
                         StatementMovementClassification::Fee => $feeCategory,
                         default => null,
@@ -1107,7 +1107,7 @@ final class StatementImportWorkflow
         $normalized = Str::upper($description);
 
         if ($normalized === 'WARDA') {
-            return StatementMovementClassification::Warda;
+            return StatementMovementClassification::Savings;
         }
 
         if ($normalized === 'IMPUESTO ITF') {

@@ -17,6 +17,8 @@ use App\Models\User;
 use App\StatementImports\StatementImportPreview;
 use App\StatementImports\StatementImportPreviewMovement;
 use App\StatementImports\StatementImportValidationException;
+use App\StatementMovementClassification;
+use App\StatementMovementDirection;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Concurrency;
@@ -90,11 +92,11 @@ test('the Statement Import workflow previews a reconciled BCP statement without 
         ->movements->sequence(
             fn ($movement) => $movement
                 ->direction->value->toBe('debit')
-                ->classification->value->toBe('warda')
+                ->classification->value->toBe('savings')
                 ->amountMinor->toBe('2000'),
             fn ($movement) => $movement
                 ->direction->value->toBe('credit')
-                ->classification->value->toBe('warda')
+                ->classification->value->toBe('savings')
                 ->amountMinor->toBe('500'),
             fn ($movement) => $movement->classification->value->toBe('tax'),
             fn ($movement) => $movement->classification->value->toBe('purchase'),
@@ -169,7 +171,7 @@ test('the BCP asterisk remains opaque metadata', function () {
 
     expect($movement->description)->toBe('WARDA')
         ->and($movement->direction->value)->toBe('debit')
-        ->and($movement->classification->value)->toBe('warda')
+        ->and($movement->classification->value)->toBe('savings')
         ->and($movement->contributesToSpending)->toBeTrue()
         ->and($movement->sourceMetadata)->toBe(['asterisk' => true]);
 });
@@ -191,7 +193,7 @@ test('BCP automatically classifies only supported narrow labels', function (
 
     expect($preview->movements[3]->classification->value)->toBe($classification);
 })->with([
-    'WARDA' => ['WARDA', 'warda'],
+    'WARDA' => ['WARDA', 'savings'],
     'ITF tax' => ['IMPUESTO ITF', 'tax'],
     'bank fee' => ['MANT. CUENTA', 'fee'],
     'purchase' => ['PAGO YAPE A 1234', 'purchase'],
@@ -233,7 +235,7 @@ test('the Statement Import workflow atomically confirms edited BCP movements and
             'file_hash' => $preview->fileHash,
             'instrument_label' => 'BCP Savings account',
             'instrument_last_four' => '1234',
-            'warda_category_id' => $savings->id,
+            'savings_category_id' => $savings->id,
             'movements' => $editedMovements,
         ],
     );
@@ -260,6 +262,138 @@ test('the Statement Import workflow atomically confirms edited BCP movements and
         ->and(Transaction::query()->where('payment_instrument_label', 'BCP Savings account')->count())->toBe(4)
         ->and(Transaction::query()->where('payment_instrument_last_four', '1234')->count())->toBe(4)
         ->and(Transaction::query()->whereNotNull('merchant_rule_id')->doesntExist())->toBeTrue();
+});
+
+test('Savings movements require an active Category owned by the confirming owner', function (Closure $categoryId) {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(bcpStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $confirmation['savings_category_id'] = $categoryId($owner);
+
+    expectStatementImportError(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    ), 'savings_category_required');
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
+        ->and(Transaction::query()->doesntExist())->toBeTrue();
+})->with([
+    'missing Category' => fn (User $owner): null => null,
+    'archived Category' => fn (User $owner): int => Category::factory()
+        ->for($owner, 'owner')
+        ->archived()
+        ->create()
+        ->id,
+    'another owners Category' => fn (User $owner): int => Category::factory()
+        ->for(User::factory()->create(), 'owner')
+        ->create()
+        ->id,
+]);
+
+test('WARDA rows map to Savings transactions reports and the selected Category', function () {
+    $owner = User::factory()->create();
+    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'Long-term goals']);
+    $ruleCategory = Category::factory()->for($owner, 'owner')->create(['name' => 'Rule target']);
+    $taxes = Category::factory()->for($owner, 'owner')->create(['name' => 'Taxes']);
+    $bankFees = Category::factory()->for($owner, 'owner')->create(['name' => 'Bank Fees']);
+    MerchantRule::factory()
+        ->for($owner, 'owner')
+        ->for($ruleCategory, 'category')
+        ->create([
+            'merchant' => 'WARDA',
+            'merchant_key' => app(MerchantNormalizer::class)->normalize('WARDA'),
+        ]);
+    $statementText = str_replace(
+        'Pago YAPE a 123456',
+        str_pad('MANT. CUENTA', 18),
+        bcpStatementText(),
+    );
+    $pdf = SyntheticPdf::fromText($statementText);
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $confirmation['savings_category_id'] = $savings->id;
+    $import = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+    $savingsMovements = $import->movements->where('classification', StatementMovementClassification::Savings);
+    $deposit = $savingsMovements->firstWhere('direction', StatementMovementDirection::Debit);
+    $withdrawal = $savingsMovements->firstWhere('direction', StatementMovementDirection::Credit);
+    $report = app(ReadCurrencyReport::class)->handle(
+        $owner,
+        Currency::Pen,
+        CarbonImmutable::parse('2026-02-01'),
+        CarbonImmutable::parse('2026-02-28'),
+    );
+    $reviewQueue = app(ReadReviewQueue::class)->handle($owner);
+    $details = app(ReadStatementImport::class)->handle($owner, $import);
+    $reportCategories = collect($report['category_groups'])->keyBy('category.name');
+
+    expect($deposit->description)->toBe('WARDA')
+        ->and($deposit->transaction->kind->value)->toBe('purchase')
+        ->and($deposit->transaction->category_id)->toBe($savings->id)
+        ->and($withdrawal->description)->toBe('WARDA')
+        ->and($withdrawal->transaction->kind->value)->toBe('refund')
+        ->and($withdrawal->transaction->category_id)->toBe($savings->id)
+        ->and($withdrawal->transaction->original_purchase_id)->toBeNull()
+        ->and($withdrawal->transaction->refund_relationship_review_reasons)->toBe([])
+        ->and($import->movements->firstWhere('classification', StatementMovementClassification::Tax)->transaction->category_id)->toBe($taxes->id)
+        ->and($import->movements->firstWhere('classification', StatementMovementClassification::Fee)->transaction->category_id)->toBe($bankFees->id)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('category_assignment_provenance', CategoryAssignmentProvenance::Owner)->count())->toBe(4)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNotNull('merchant_rule_id')->doesntExist())->toBeTrue()
+        ->and(Category::query()->whereBelongsTo($owner, 'owner')->count())->toBe(4)
+        ->and(MerchantRule::query()->whereBelongsTo($owner, 'owner')->count())->toBe(1)
+        ->and($report['period']['total_minor'])->toBe('2501')
+        ->and($reportCategories->get('Long-term goals')['amount_minor'])->toBe('1500')
+        ->and($reviewQueue['unresolved_category_count'])->toBe(0)
+        ->and($reviewQueue['unresolved_refund_relationship_count'])->toBe(0)
+        ->and($details['summary']['PEN'])->toMatchArray([
+            'spending_minor' => '1001',
+            'savings_deposits_minor' => '2000',
+            'savings_withdrawals_minor' => '500',
+            'net_savings_minor' => '1500',
+        ]);
+});
+
+test('missing or archived special Categories leave BCP fees and taxes Uncategorized', function () {
+    $owner = User::factory()->create();
+    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'Savings']);
+    Category::factory()->for($owner, 'owner')->archived()->create(['name' => 'Bank Fees']);
+    $statementText = str_replace(
+        'Pago YAPE a 123456',
+        str_pad('MANT. CUENTA', 18),
+        bcpStatementText(),
+    );
+    $pdf = SyntheticPdf::fromText($statementText);
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $confirmation['savings_category_id'] = $savings->id;
+    $import = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+
+    expect($import->movements->firstWhere('classification', StatementMovementClassification::Tax)->transaction->category_id)->toBeNull()
+        ->and($import->movements->firstWhere('classification', StatementMovementClassification::Fee)->transaction->category_id)->toBeNull()
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_id')->count())->toBe(2)
+        ->and(app(ReadReviewQueue::class)->handle($owner)['unresolved_category_count'])->toBe(2);
 });
 
 test('the Statement Import workflow previews and reconciles Interbank currency columns across the closed cycle', function () {
@@ -721,7 +855,7 @@ test('only parser candidates can be confirmed as not a movement', function () {
         ->and($candidate->canBeExcluded)->toBeTrue();
 
     $confirmation = confirmationPayload($preview);
-    $confirmation['warda_category_id'] = $savings->id;
+    $confirmation['savings_category_id'] = $savings->id;
     $import = $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
