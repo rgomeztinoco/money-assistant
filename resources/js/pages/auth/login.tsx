@@ -15,9 +15,9 @@ type Props = {
 export default function Login({ status }: Props) {
     return (
         <>
-            <Head title="Log in" />
+            <Head title="Sign in" />
 
-            <PasskeyVerify separator="Recovery sign-in with password" />
+            <PasskeyVerify separator="Recovery password fallback" />
 
             <Form
                 {...store.form()}
@@ -52,7 +52,7 @@ export default function Login({ status }: Props) {
                                     required
                                     tabIndex={2}
                                     autoComplete="current-password"
-                                    placeholder="Password"
+                                    placeholder="Recovery password"
                                 />
                                 <InputError message={errors.password} />
                             </div>
@@ -65,7 +65,7 @@ export default function Login({ status }: Props) {
                                 data-test="login-button"
                             >
                                 {processing && <Spinner />}
-                                Recover access
+                                Sign in with recovery password
                             </Button>
                         </div>
                     </>
@@ -82,7 +82,7 @@ export default function Login({ status }: Props) {
 }
 
 Login.layout = {
-    title: 'Log in to your account',
+    title: 'Owner sign in',
     description:
-        'Use a passkey for normal sign-in. Your password is available for recovery.',
+        'Access the private workspace where you manage everyday spending.',
 };

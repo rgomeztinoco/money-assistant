@@ -107,7 +107,7 @@ test('the Dashboard promotes stale Gmail synchronization instead of reporting it
             ->where('gmail.state', 'stale'));
 });
 
-test('shared Inertia data does not query or expose Dashboard integration status and workload', function () {
+test('shared Inertia data exposes only the navigation workload outside the Dashboard', function () {
     $owner = User::factory()->create();
     DB::enableQueryLog();
 
@@ -119,7 +119,8 @@ test('shared Inertia data does not query or expose Dashboard integration status 
     $response
         ->assertInertia(fn (Assert $page) => $page
             ->missing('gmail')
-            ->missing('review_queue'));
+            ->missing('review_queue')
+            ->where('navigation.review_queue_count', 0));
 
     expect($queries)
         ->not->toContain('gmail_connections')

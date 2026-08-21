@@ -4,11 +4,17 @@ use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
+use Inertia\Testing\AssertableInertia as Assert;
 
 test('login screen can be rendered', function () {
     $response = $this->get(route('login'));
 
-    $response->assertOk();
+    $response
+        ->assertOk()
+        ->assertSee('Money Assistant')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('auth/login')
+            ->where('navigation.review_queue_count', 0));
 });
 
 test('users can authenticate using the login screen', function () {

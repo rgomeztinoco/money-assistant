@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Ledger\CountOutstandingReviews;
 use App\Actions\Ledger\RecordManualTransaction;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
@@ -9,6 +10,7 @@ use App\Models\User;
 use App\ReviewableTransactionField;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('a confirmed Transaction with provisional fields remains in totals and appears once in the Review Queue', function () {
@@ -47,6 +49,53 @@ test('a confirmed Transaction with provisional fields remains in totals and appe
             ->where('transactions.0.fields.0.value', '2026-07-22')
             ->where('transactions.0.fields.1.name', 'merchant_description')
             ->where('transactions.0.fields.1.value', 'Neighborhood market'));
+});
+
+test('the shared navigation count uses the Review Queue workload breakdown', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    Transaction::factory()->for($owner, 'owner')->purchase()->provisional([
+        ReviewableTransactionField::OccurredOn,
+        ReviewableTransactionField::MerchantDescription,
+    ])->create([
+        'category_id' => $category->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->create();
+
+    $this->actingAs($owner)
+        ->get(route('review_queue.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('unresolved_field_count', 2)
+            ->where('unresolved_category_count', 1)
+            ->where('unresolved_refund_relationship_count', 0)
+            ->where('navigation.review_queue_count', 3));
+});
+
+test('the Review Queue workload is aggregated once per request', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    Transaction::factory()->for($owner, 'owner')->purchase()->provisional([
+        ReviewableTransactionField::OccurredOn,
+    ])->create([
+        'category_id' => $category->id,
+    ]);
+
+    $countOutstandingReviews = app(CountOutstandingReviews::class);
+
+    DB::enableQueryLog();
+    $breakdown = $countOutstandingReviews->breakdown($owner);
+    $outstandingCount = app(CountOutstandingReviews::class)->handle($owner);
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    expect($breakdown)
+        ->toBe([
+            'categories' => 0,
+            'fields' => 1,
+            'refund_relationships' => 0,
+        ])
+        ->and($outstandingCount)->toBe(1)
+        ->and($queries)->toHaveCount(2);
 });
 
 test('an Uncategorized Transaction remains in totals, reports in its system bucket, and enters the Review Queue', function () {

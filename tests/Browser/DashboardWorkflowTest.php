@@ -80,18 +80,38 @@ test('the Dashboard directs attention into filtered owner workflows', function (
 
 test('navigation exposes only retained personal-finance destinations', function () {
     $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $transactionAwaitingReview = Transaction::factory()->for($owner, 'owner')->purchase()->provisional([
+        ReviewableTransactionField::MerchantDescription,
+    ])->create([
+        'category_id' => $category->id,
+    ]);
     $this->actingAs($owner);
 
     $page = visit('/dashboard');
 
     $page
+        ->assertTitle('Dashboard - Money Assistant')
+        ->assertSee('Everyday')
         ->assertSee('Dashboard')
         ->assertSee('Transactions')
         ->assertSee('Review Queue')
         ->assertSee('Reports')
+        ->assertSee('Manage & automate')
+        ->assertSee('Statement Imports')
         ->assertSee('Categories')
         ->assertSee('Merchant Rules')
         ->assertSee('Parser Profiles')
+        ->assertSeeIn('[data-test="nav-review-queue-count"]', '1');
+
+    $transactionAwaitingReview->update(['provisional_fields' => []]);
+
+    $page
+        ->click('[data-test="nav-review-queue"]')
+        ->assertPathIs('/review-queue')
+        ->assertTitle('Review Queue - Money Assistant')
+        ->assertAttribute('[data-test="nav-review-queue"]', 'data-active', 'true')
+        ->assertSeeIn('[data-slot="breadcrumb-page"]', 'Review Queue')
         ->click('[data-test="sidebar-menu-button"]')
         ->assertSee('Settings')
         ->assertNoJavaScriptErrors()
