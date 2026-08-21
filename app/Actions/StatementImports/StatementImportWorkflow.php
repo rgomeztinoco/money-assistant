@@ -116,19 +116,28 @@ final class StatementImportWorkflow
         $instrumentLastFour = $confirmation['instrument_last_four'] ?? null;
 
         if ($instrumentLabel === '' || Str::length($instrumentLabel) > 100) {
-            throw $this->invalid('A safe payment-instrument label is required.', 'invalid_instrument_label');
+            throw $this->invalid(
+                'A safe payment-instrument label is required.',
+                'invalid_instrument_label',
+                'instrument_label',
+            );
         }
 
         if (preg_match('/(?:\d[\s-]?){5,}/', $instrumentLabel) === 1) {
             throw $this->invalid(
                 'Use a product label without a complete account or card number.',
                 'unsafe_instrument_label',
+                'instrument_label',
             );
         }
 
         if ($instrumentLastFour !== null
             && (! is_string($instrumentLastFour) || preg_match('/^\d{4}$/D', $instrumentLastFour) !== 1)) {
-            throw $this->invalid('Payment-instrument last four must contain exactly four digits.', 'invalid_instrument_last_four');
+            throw $this->invalid(
+                'Payment-instrument last four must contain exactly four digits.',
+                'invalid_instrument_last_four',
+                'instrument_last_four',
+            );
         }
 
         $editedMovements = $this->validateMovementEdits($preview, $confirmation['movements'] ?? null);
@@ -139,7 +148,11 @@ final class StatementImportWorkflow
             : null;
 
         if ($hasWarda && $wardaCategory === null) {
-            throw $this->invalid('Select an active Savings Category for WARDA movements.', 'warda_category_required');
+            throw $this->invalid(
+                'Select an active Savings Category for WARDA movements.',
+                'warda_category_required',
+                'warda_category_id',
+            );
         }
 
         try {
@@ -213,7 +226,11 @@ final class StatementImportWorkflow
     private function validateMovementEdits(StatementImportPreview $preview, mixed $edits): array
     {
         if (! is_array($edits) || count($edits) !== count($preview->movements)) {
-            throw $this->invalid('Every source movement must be included exactly once.', 'movement_set_mismatch');
+            throw $this->invalid(
+                'Every source movement must be included exactly once.',
+                'movement_set_mismatch',
+                'movements',
+            );
         }
 
         $sourceMovements = collect($preview->movements)->keyBy(
@@ -222,16 +239,24 @@ final class StatementImportWorkflow
         $seen = [];
         $validated = [];
 
-        foreach ($edits as $edit) {
+        foreach (array_values($edits) as $movementIndex => $edit) {
             if (! is_array($edit) || ! is_string($edit['source_row_id'] ?? null)) {
-                throw $this->invalid('Every movement must retain its source identity.', 'invalid_source_row');
+                throw $this->invalid(
+                    'Every movement must retain its source identity.',
+                    'invalid_source_row',
+                    "movements.{$movementIndex}.source_row_id",
+                );
             }
 
             $sourceRowId = $edit['source_row_id'];
             $source = $sourceMovements->get($sourceRowId);
 
             if (! $source instanceof StatementImportPreviewMovement || isset($seen[$sourceRowId])) {
-                throw $this->invalid('A source movement was omitted, duplicated, or substituted.', 'movement_set_mismatch');
+                throw $this->invalid(
+                    'A source movement was omitted, duplicated, or substituted.',
+                    'movement_set_mismatch',
+                    "movements.{$movementIndex}.source_row_id",
+                );
             }
 
             $seen[$sourceRowId] = true;
@@ -244,29 +269,48 @@ final class StatementImportWorkflow
                     throw $this->invalid(
                         'A posted movement cannot be removed from the import.',
                         'movement_cannot_be_excluded',
+                        "movements.{$movementIndex}.classification",
                     );
                 }
 
                 continue;
             }
 
-            $occurredOn = $this->strictDate($edit['occurred_on'] ?? null);
-            $amountMinor = $this->positiveMinorUnits($edit['amount_minor'] ?? null);
+            $occurredOn = $this->strictDate(
+                $edit['occurred_on'] ?? null,
+                "movements.{$movementIndex}.occurred_on",
+            );
+            $amountMinor = $this->positiveMinorUnits(
+                $edit['amount_minor'] ?? null,
+                "movements.{$movementIndex}.amount_minor",
+            );
             $currency = is_string($edit['currency'] ?? null)
                 ? Currency::tryFrom($edit['currency'])
                 : null;
             $description = Str::squish(is_string($edit['description'] ?? null) ? $edit['description'] : '');
 
             if ($currency === null) {
-                throw $this->invalid('A movement has an unsupported currency.', 'invalid_movement_currency');
+                throw $this->invalid(
+                    'A movement has an unsupported currency.',
+                    'invalid_movement_currency',
+                    "movements.{$movementIndex}.currency",
+                );
             }
 
             if ($classification === null || $classification === StatementMovementClassification::NeedsClassification) {
-                throw $this->invalid('Classify every real movement before confirming the import.', 'movement_needs_classification');
+                throw $this->invalid(
+                    'Classify every real movement before confirming the import.',
+                    'movement_needs_classification',
+                    "movements.{$movementIndex}.classification",
+                );
             }
 
             if ($description === '' || Str::length($description) > 255) {
-                throw $this->invalid('Every movement requires a short description.', 'invalid_movement_description');
+                throw $this->invalid(
+                    'Every movement requires a short description.',
+                    'invalid_movement_description',
+                    "movements.{$movementIndex}.description",
+                );
             }
 
             $validated[] = [
@@ -280,7 +324,11 @@ final class StatementImportWorkflow
         }
 
         if (count($seen) !== $sourceMovements->count()) {
-            throw $this->invalid('Every source movement must be included exactly once.', 'movement_set_mismatch');
+            throw $this->invalid(
+                'Every source movement must be included exactly once.',
+                'movement_set_mismatch',
+                'movements',
+            );
         }
 
         usort($validated, fn (array $left, array $right): int => $left['source']->position <=> $right['source']->position);
@@ -345,36 +393,48 @@ final class StatementImportWorkflow
             ->first();
     }
 
-    private function strictDate(mixed $date): CarbonImmutable
+    private function strictDate(mixed $date, string $validationField = 'statement'): CarbonImmutable
     {
         if (! is_string($date)) {
-            throw $this->invalid('Every movement requires a valid date.', 'invalid_movement_date');
+            throw $this->invalid('Every movement requires a valid date.', 'invalid_movement_date', $validationField);
         }
 
         $parsed = CarbonImmutable::createFromFormat('!Y-m-d', $date, config('app.timezone'));
 
         if ($parsed === null || $parsed->toDateString() !== $date) {
-            throw $this->invalid('Every movement requires a valid date.', 'invalid_movement_date');
+            throw $this->invalid('Every movement requires a valid date.', 'invalid_movement_date', $validationField);
         }
 
         return $parsed;
     }
 
-    private function positiveMinorUnits(mixed $amount): string
+    private function positiveMinorUnits(mixed $amount, string $validationField = 'statement'): string
     {
         if (! is_int($amount) && ! is_string($amount)) {
-            throw $this->invalid('Movement amounts must use positive integer minor units.', 'invalid_movement_amount');
+            throw $this->invalid(
+                'Movement amounts must use positive integer minor units.',
+                'invalid_movement_amount',
+                $validationField,
+            );
         }
 
         try {
             $exact = ExactInteger::from($amount);
         } catch (Throwable) {
-            throw $this->invalid('Movement amounts must use positive integer minor units.', 'invalid_movement_amount');
+            throw $this->invalid(
+                'Movement amounts must use positive integer minor units.',
+                'invalid_movement_amount',
+                $validationField,
+            );
         }
 
         if ($exact->compare(ExactInteger::from(0)) !== 1
             || $exact->compare(ExactInteger::from('9223372036854775807')) === 1) {
-            throw $this->invalid('Movement amounts must use positive integer minor units.', 'invalid_movement_amount');
+            throw $this->invalid(
+                'Movement amounts must use positive integer minor units.',
+                'invalid_movement_amount',
+                $validationField,
+            );
         }
 
         return $exact->value();
@@ -1102,8 +1162,11 @@ final class StatementImportWorkflow
         return substr(str_replace('-', '', $account[0]), -4);
     }
 
-    private function invalid(string $message, string $errorCode): StatementImportValidationException
-    {
-        return new StatementImportValidationException($message, $errorCode);
+    private function invalid(
+        string $message,
+        string $errorCode,
+        string $validationField = 'statement',
+    ): StatementImportValidationException {
+        return new StatementImportValidationException($message, $errorCode, $validationField);
     }
 }

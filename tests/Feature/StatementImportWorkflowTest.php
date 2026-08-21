@@ -122,6 +122,10 @@ test('the Statement Import workflow atomically confirms edited BCP movements and
                 : $movement->classification->value,
         ])
         ->all();
+    $editedMovements[0]['occurred_on'] = '2026-02-06';
+    $editedMovements[0]['description'] = 'Corrected WARDA deposit';
+    $editedMovements[0]['amount_minor'] = '2100';
+    $editedMovements[0]['currency'] = 'USD';
 
     $import = app(StatementImportWorkflow::class)->confirm(
         $owner,
@@ -135,9 +139,19 @@ test('the Statement Import workflow atomically confirms edited BCP movements and
         ],
     );
 
+    $correctedMovement = $import->movements->first();
+
     expect($import->movements)->toHaveCount(5)
         ->and($import->movements->whereNotNull('transaction_id'))->toHaveCount(4)
         ->and($import->movements->last()->classification->value)->toBe('income')
+        ->and($correctedMovement->occurred_on->toDateString())->toBe('2026-02-06')
+        ->and($correctedMovement->description)->toBe('Corrected WARDA deposit')
+        ->and($correctedMovement->amount_minor)->toBe(2100)
+        ->and($correctedMovement->currency->value)->toBe('USD')
+        ->and($correctedMovement->transaction->occurred_on->toDateString())->toBe('2026-02-06')
+        ->and($correctedMovement->transaction->merchant_description)->toBe('Corrected WARDA deposit')
+        ->and($correctedMovement->transaction->amount_minor)->toBe(2100)
+        ->and($correctedMovement->transaction->currency->value)->toBe('USD')
         ->and(Transaction::query()->count())->toBe(4)
         ->and(Transaction::query()->where('kind', 'purchase')->count())->toBe(3)
         ->and(Transaction::query()->where('kind', 'refund')->count())->toBe(1)

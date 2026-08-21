@@ -126,6 +126,42 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
     expect(StatementMovement::query()->where('classification', 'already_recorded')->count())->toBe(1);
 });
 
+test('semantic confirmation failures identify the affected preview row', function () {
+    $owner = User::factory()->create();
+    $pdf = statementImportHttpPdf();
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $movements = collect($preview->movements)
+        ->map(fn (StatementImportPreviewMovement $movement): array => [
+            'source_row_id' => $movement->sourceRowId,
+            'occurred_on' => $movement->occurredOn->toDateString(),
+            'description' => $movement->description,
+            'amount_minor' => $movement->amountMinor,
+            'currency' => $movement->currency->value,
+            'classification' => $movement->classification->value,
+        ])
+        ->all();
+
+    $this->actingAs($owner)
+        ->from(route('statement_imports.create'))
+        ->post(route('statement_imports.store'), [
+            'statement' => UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+            'file_hash' => $preview->fileHash,
+            'instrument_label' => $preview->instrumentLabel,
+            'instrument_last_four' => $preview->instrumentLastFour,
+            'movements' => $movements,
+        ])
+        ->assertRedirect(route('statement_imports.create'))
+        ->assertSessionHasErrors([
+            'movements.0.classification' => 'Classify every real movement before confirming the import.',
+        ]);
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue();
+});
+
 test('the Statement Import index is owner scoped and exposes safe metadata', function () {
     $owner = User::factory()->create();
     $otherOwner = User::factory()->create();
