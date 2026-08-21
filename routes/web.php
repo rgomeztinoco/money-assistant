@@ -11,6 +11,8 @@ use App\Http\Controllers\ParserProfileSourceMessageController;
 use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReviewQueueController;
+use App\Http\Controllers\ReviewQueueLineItemCategoryController;
+use App\Http\Controllers\ReviewQueueTransactionCategoryController;
 use App\Http\Controllers\SpendingNotificationFormatActivationController;
 use App\Http\Controllers\SpendingNotificationFormatController;
 use App\Http\Controllers\SpendingNotificationRecoveryController;
@@ -71,6 +73,14 @@ Route::middleware(['auth'])->group(function () {
         ->name('transactions.void.destroy');
     Route::get('review-queue', ReviewQueueController::class)
         ->name('review_queue.index');
+    Route::put(
+        'review-queue/transactions/{transaction}/category',
+        [ReviewQueueTransactionCategoryController::class, 'update'],
+    )->name('review_queue.transactions.category.update');
+    Route::put(
+        'review-queue/line-items/{line_item}/category',
+        [ReviewQueueLineItemCategoryController::class, 'update'],
+    )->name('review_queue.line_items.category.update');
     Route::get(
         'parser-profile-source-messages/{gmailMessageDiscovery}',
         [ParserProfileSourceMessageController::class, 'show'],

@@ -42,6 +42,8 @@ class IndexTransactionsRequest extends FormRequest
             'void_state' => ['nullable', Rule::in(['all', 'active', 'voided'])],
             'selected' => ['nullable', 'integer', 'min:1'],
             'inspector' => ['nullable', Rule::in(['closed'])],
+            'item' => ['nullable', 'string', 'regex:/^(transaction|line-item):[1-9][0-9]*$/'],
+            'view' => ['nullable', Rule::in(['guided', 'overview'])],
             'page' => ['nullable', 'integer', 'min:1'],
         ];
     }
