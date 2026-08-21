@@ -112,6 +112,94 @@ test('the Statement Import workflow previews a reconciled BCP statement without 
         ->and(Transaction::query()->doesntExist())->toBeTrue();
 });
 
+test('BCP reconstructs one movement table across pages with repeated headers', function () {
+    [$firstPage, $secondPage] = explode("\n03FEB", bcpStatementText(), 2);
+    $repeatedHeader = 'FECHA PROC. FECHA VALOR  DESCRIPCION                     CARGOS / DEBE   ABONOS / HABER';
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromPages([
+                $firstPage,
+                $repeatedHeader."\n03FEB".$secondPage,
+            ]),
+        ),
+    );
+
+    expect($preview->movements)->toHaveCount(5)
+        ->and(collect($preview->movements)->pluck('position')->all())->toBe([1, 2, 3, 4, 5])
+        ->and(collect($preview->movements)->pluck('amountMinor')->all())->toBe(['2000', '500', '1', '1000', '5000'])
+        ->and($preview->reconciliation)->toMatchArray([
+            'debits_minor' => '3001',
+            'credits_minor' => '5500',
+        ]);
+});
+
+test('BCP direction follows the physical amount column rather than description text', function () {
+    $statementText = str_replace(
+        ['WARDA                                  20.00', 'DEPOSITO                                                50.00'],
+        ['ABONO DE PRUEBA                         20.00', 'CARGO DE PRUEBA                                         50.00'],
+        bcpStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText($statementText)),
+    );
+
+    expect($preview->movements[0]->description)->toBe('ABONO DE PRUEBA')
+        ->and($preview->movements[0]->direction->value)->toBe('debit')
+        ->and($preview->movements[4]->description)->toBe('CARGO DE PRUEBA')
+        ->and($preview->movements[4]->direction->value)->toBe('credit');
+});
+
+test('the BCP asterisk remains opaque metadata', function () {
+    $statementText = str_replace(
+        'WARDA                                  20.00',
+        'WARDA*                                 20.00',
+        bcpStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText($statementText)),
+    );
+    $movement = $preview->movements[0];
+
+    expect($movement->description)->toBe('WARDA')
+        ->and($movement->direction->value)->toBe('debit')
+        ->and($movement->classification->value)->toBe('warda')
+        ->and($movement->contributesToSpending)->toBeTrue()
+        ->and($movement->sourceMetadata)->toBe(['asterisk' => true]);
+});
+
+test('BCP automatically classifies only supported narrow labels', function (
+    string $description,
+    string $classification,
+) {
+    $statementText = str_replace(
+        'Pago YAPE a 123456',
+        str_pad($description, 18),
+        bcpStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText($statementText)),
+    );
+
+    expect($preview->movements[3]->classification->value)->toBe($classification);
+})->with([
+    'WARDA' => ['WARDA', 'warda'],
+    'ITF tax' => ['IMPUESTO ITF', 'tax'],
+    'bank fee' => ['MANT. CUENTA', 'fee'],
+    'purchase' => ['PAGO YAPE A 1234', 'purchase'],
+    'explicit transfer' => ['TRANSF.BCO.INTERBA', 'transfer'],
+    'generic transfer' => ['TRANSFERENCIA', 'needs_classification'],
+    'unsupported fee suffix' => ['MANT. CUENTA EXTRA', 'needs_classification'],
+]);
+
 test('the Statement Import workflow atomically confirms edited BCP movements and only creates spending Transactions', function () {
     $owner = User::factory()->create();
     $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'savings']);
