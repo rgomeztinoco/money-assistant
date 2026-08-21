@@ -124,3 +124,35 @@ test('baseline tables expose the retained application columns', function (string
         'created_at', 'updated_at',
     ]],
 ]);
+
+test('Statement Import constraints protect replay source identity and Transaction linkage', function (): void {
+    $importIndexes = collect(Schema::getIndexes('statement_imports'))->keyBy('name');
+    $movementIndexes = collect(Schema::getIndexes('statement_movements'))->keyBy('name');
+    $movementForeignKeys = collect(Schema::getForeignKeys('statement_movements'))->keyBy('name');
+
+    expect($importIndexes['statement_imports_user_id_file_hash_unique'])
+        ->toMatchArray([
+            'columns' => ['user_id', 'file_hash'],
+            'unique' => true,
+        ])
+        ->and($movementIndexes['statement_movements_statement_import_id_source_row_id_unique'])
+        ->toMatchArray([
+            'columns' => ['statement_import_id', 'source_row_id'],
+            'unique' => true,
+        ])
+        ->and($movementIndexes['statement_movements_statement_import_id_position_unique'])
+        ->toMatchArray([
+            'columns' => ['statement_import_id', 'position'],
+            'unique' => true,
+        ])
+        ->and($movementIndexes['statement_movements_transaction_id_unique'])
+        ->toMatchArray([
+            'columns' => ['transaction_id'],
+            'unique' => true,
+        ])
+        ->and($movementForeignKeys['statement_movements_transaction_id_foreign'])
+        ->toMatchArray([
+            'foreign_table' => 'transactions',
+            'on_delete' => 'restrict',
+        ]);
+});

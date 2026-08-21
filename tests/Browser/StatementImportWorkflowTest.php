@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\StatementImport;
+use App\Models\StatementMovement;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Support\Facades\Process;
@@ -63,7 +65,10 @@ test('the owner discovers Statement Imports selects a PDF and revisits a confirm
             ->assertNoJavaScriptErrors()
             ->assertNoConsoleLogs();
 
-        expect(StatementImport::query()->count())->toBe(1);
+        expect(StatementImport::query()->count())->toBe(1)
+            ->and(StatementMovement::query()->count())->toBe(6)
+            ->and(StatementMovement::query()->whereNull('transaction_id')->count())->toBe(2)
+            ->and(Transaction::query()->count())->toBe(4);
     } finally {
         $server->stop();
     }

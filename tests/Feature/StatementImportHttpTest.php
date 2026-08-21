@@ -123,6 +123,12 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
         ->get(route('statement_imports.show', $import))
         ->assertNotFound();
 
+    $this->actingAs($owner)
+        ->put(route('statement_imports.show', $import))
+        ->assertMethodNotAllowed();
+    $this->delete(route('statement_imports.show', $import))
+        ->assertMethodNotAllowed();
+
     expect(StatementMovement::query()->where('classification', 'already_recorded')->count())->toBe(1);
 });
 
