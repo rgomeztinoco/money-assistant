@@ -176,6 +176,36 @@ function LedgerFiltersForm({
     categoryOptions: CategoryOption[];
     mode: 'transactions' | 'review_queue';
 }) {
+    const activeFilters = [
+        filters.search ? `Search: ${filters.search}` : null,
+        filters.date_from ? `From: ${filters.date_from}` : null,
+        filters.date_to ? `To: ${filters.date_to}` : null,
+        filters.currency === 'all' ? null : `Currency: ${filters.currency}`,
+        filters.kind === 'all'
+            ? null
+            : `Kind: ${filters.kind === 'refund' ? 'Refund' : 'Purchase'}`,
+        filters.category_id === null
+            ? null
+            : `Category: ${categoryOptions.find((category) => category.id === filters.category_id)?.path ?? filters.category_id}`,
+        filters.category_state === 'all'
+            ? null
+            : `Category state: ${filters.category_state}`,
+        mode === 'review_queue' || filters.review_state === 'all'
+            ? null
+            : `Review: ${filters.review_state === 'outstanding' ? 'Needs review' : 'Clear'}`,
+        filters.refund_relationship === 'all'
+            ? null
+            : `Refunds: ${filters.refund_relationship.replace('_', ' ')}`,
+        mode === 'review_queue' || filters.void_state === 'all'
+            ? null
+            : `Ledger state: ${filters.void_state}`,
+    ].filter((filter): filter is string => filter !== null);
+    const hasAdvancedFilters =
+        filters.category_state !== 'all' ||
+        (mode === 'transactions' && filters.review_state !== 'all') ||
+        filters.refund_relationship !== 'all' ||
+        (mode === 'transactions' && filters.void_state !== 'all');
+
     return (
         <Card>
             <CardHeader className="gap-1">
@@ -184,7 +214,22 @@ function LedgerFiltersForm({
                     Search by description, then narrow the current ledger state.
                 </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="grid gap-4">
+                {activeFilters.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/60 p-3">
+                        <span className="text-xs font-medium text-muted-foreground">
+                            Active filters
+                        </span>
+                        {activeFilters.map((filter) => (
+                            <Badge key={filter} variant="outline">
+                                {filter}
+                            </Badge>
+                        ))}
+                        <Button asChild type="button" variant="ghost" size="sm">
+                            <Link href={workspaceIndex(mode)}>Clear all</Link>
+                        </Button>
+                    </div>
+                )}
                 <Form
                     action={workspaceIndex(mode).url}
                     method="get"
@@ -264,96 +309,121 @@ function LedgerFiltersForm({
                                     })),
                                 ]}
                             />
-                            <SelectFilter
-                                id="filter-category-state"
-                                name="category_state"
-                                label="Filter Category state"
-                                value={
-                                    filters.category_state === 'all'
-                                        ? ''
-                                        : filters.category_state
-                                }
-                                options={[
-                                    { value: '', label: 'Any Category state' },
-                                    {
-                                        value: 'categorized',
-                                        label: 'Categorized',
-                                    },
-                                    {
-                                        value: 'uncategorized',
-                                        label: 'Uncategorized',
-                                    },
-                                ]}
-                            />
-                            {mode === 'transactions' && (
-                                <SelectFilter
-                                    id="filter-review-state"
-                                    name="review_state"
-                                    label="Filter review state"
-                                    value={
-                                        filters.review_state === 'all'
-                                            ? ''
-                                            : filters.review_state
-                                    }
-                                    options={[
-                                        {
-                                            value: '',
-                                            label: 'Any review state',
-                                        },
-                                        {
-                                            value: 'outstanding',
-                                            label: 'Needs review',
-                                        },
-                                        {
-                                            value: 'clear',
-                                            label: 'Review clear',
-                                        },
-                                    ]}
-                                />
-                            )}
-                            <SelectFilter
-                                id="filter-refund-relationship"
-                                name="refund_relationship"
-                                label="Filter Refund relationship"
-                                value={
-                                    filters.refund_relationship === 'all'
-                                        ? ''
-                                        : filters.refund_relationship
-                                }
-                                options={[
-                                    {
-                                        value: '',
-                                        label: 'Any Refund relationship',
-                                    },
-                                    {
-                                        value: 'linked',
-                                        label: 'Linked Refunds',
-                                    },
-                                    {
-                                        value: 'unlinked',
-                                        label: 'Unlinked Refunds',
-                                    },
-                                    {
-                                        value: 'not_applicable',
-                                        label: 'Purchases',
-                                    },
-                                ]}
-                            />
-                            <SelectFilter
-                                id="filter-void-state"
-                                name="void_state"
-                                label="Filter void state"
-                                value={
-                                    filters.void_state === 'all'
-                                        ? ''
-                                        : filters.void_state
-                                }
-                                options={[
-                                    { value: '', label: 'Active and Voided' },
-                                    { value: 'active', label: 'Active only' },
-                                    { value: 'voided', label: 'Voided only' },
-                                ]}
-                            />
+                            <details
+                                className="rounded-lg border md:col-span-2 xl:col-span-4"
+                                open={hasAdvancedFilters || undefined}
+                            >
+                                <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+                                    Advanced filters
+                                </summary>
+                                <div className="grid gap-3 border-t p-4 md:grid-cols-2 xl:grid-cols-4">
+                                    <SelectFilter
+                                        id="filter-category-state"
+                                        name="category_state"
+                                        label="Filter Category state"
+                                        value={
+                                            filters.category_state === 'all'
+                                                ? ''
+                                                : filters.category_state
+                                        }
+                                        options={[
+                                            {
+                                                value: '',
+                                                label: 'Any Category state',
+                                            },
+                                            {
+                                                value: 'categorized',
+                                                label: 'Categorized',
+                                            },
+                                            {
+                                                value: 'uncategorized',
+                                                label: 'Uncategorized',
+                                            },
+                                        ]}
+                                    />
+                                    {mode === 'transactions' && (
+                                        <SelectFilter
+                                            id="filter-review-state"
+                                            name="review_state"
+                                            label="Filter review state"
+                                            value={
+                                                filters.review_state === 'all'
+                                                    ? ''
+                                                    : filters.review_state
+                                            }
+                                            options={[
+                                                {
+                                                    value: '',
+                                                    label: 'Any review state',
+                                                },
+                                                {
+                                                    value: 'outstanding',
+                                                    label: 'Needs review',
+                                                },
+                                                {
+                                                    value: 'clear',
+                                                    label: 'Review clear',
+                                                },
+                                            ]}
+                                        />
+                                    )}
+                                    <SelectFilter
+                                        id="filter-refund-relationship"
+                                        name="refund_relationship"
+                                        label="Filter Refund relationship"
+                                        value={
+                                            filters.refund_relationship ===
+                                            'all'
+                                                ? ''
+                                                : filters.refund_relationship
+                                        }
+                                        options={[
+                                            {
+                                                value: '',
+                                                label: 'Any Refund relationship',
+                                            },
+                                            {
+                                                value: 'linked',
+                                                label: 'Linked Refunds',
+                                            },
+                                            {
+                                                value: 'unlinked',
+                                                label: 'Unlinked Refunds',
+                                            },
+                                            {
+                                                value: 'not_applicable',
+                                                label: 'Purchases',
+                                            },
+                                        ]}
+                                    />
+                                    {mode === 'transactions' && (
+                                        <SelectFilter
+                                            id="filter-void-state"
+                                            name="void_state"
+                                            label="Filter void state"
+                                            value={
+                                                filters.void_state === 'all'
+                                                    ? ''
+                                                    : filters.void_state
+                                            }
+                                            options={[
+                                                {
+                                                    value: '',
+                                                    label: 'Active and Voided',
+                                                },
+                                                {
+                                                    value: 'active',
+                                                    label: 'Active only',
+                                                },
+                                                {
+                                                    value: 'voided',
+                                                    label: 'Voided only',
+                                                },
+                                            ]}
+                                        />
+                                    )}
+                                </div>
+                            </details>
                             <div className="flex items-end gap-2 xl:col-span-2">
                                 <Button type="submit" disabled={processing}>
                                     {processing ? <Spinner /> : <Search />}
@@ -411,7 +481,7 @@ function RecordTransactionForm({ today }: { today: string }) {
             <CardContent>
                 <Form
                     {...recordTransaction.form()}
-                    resetOnSuccess={['amount_minor', 'merchant_description']}
+                    resetOnSuccess={['amount', 'merchant_description']}
                     className="grid gap-4"
                 >
                     {({ errors, processing }) => (
@@ -429,19 +499,17 @@ function RecordTransactionForm({ today }: { today: string }) {
                                 <InputError message={errors.occurred_on} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="amount_minor">
-                                    Amount in minor units
-                                </Label>
+                                <Label htmlFor="amount">Amount</Label>
                                 <Input
-                                    id="amount_minor"
-                                    name="amount_minor"
+                                    id="amount"
+                                    name="amount"
                                     type="number"
-                                    min="1"
-                                    step="1"
-                                    inputMode="numeric"
-                                    placeholder="1250"
+                                    min="0.01"
+                                    step="0.01"
+                                    inputMode="decimal"
+                                    placeholder="12.50"
                                 />
-                                <InputError message={errors.amount_minor} />
+                                <InputError message={errors.amount} />
                             </div>
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <SelectFilter
@@ -494,7 +562,7 @@ function RecordTransactionForm({ today }: { today: string }) {
     );
 }
 
-function LedgerTable({
+function LedgerList({
     transactions,
     mode,
     filters,
@@ -508,111 +576,83 @@ function LedgerTable({
     selectedTransactionId?: number;
 }) {
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full min-w-[44rem] text-sm">
-                <thead>
-                    <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="pb-3 font-medium">Date</th>
-                        <th className="pb-3 font-medium">
-                            Merchant or description
-                        </th>
-                        <th className="pb-3 font-medium">Kind</th>
-                        <th className="pb-3 text-right font-medium">Amount</th>
-                        <th className="pb-3 text-right font-medium">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {transactions.map((transaction) => {
-                        const isRefund = transaction.kind === 'refund';
-                        const KindIcon = isRefund
-                            ? ArrowDownLeft
-                            : ArrowUpRight;
+        <ul className="grid gap-3">
+            {transactions.map((transaction) => {
+                const isRefund = transaction.kind === 'refund';
+                const KindIcon = isRefund ? ArrowDownLeft : ArrowUpRight;
 
-                        return (
-                            <tr
-                                key={transaction.id}
-                                className={`border-b last:border-0 ${selectedTransactionId === transaction.id ? 'bg-primary/5' : 'hover:bg-muted/40'}`}
-                            >
-                                <td className="py-4 pr-4 whitespace-nowrap text-muted-foreground">
-                                    {transaction.occurred_on}
-                                </td>
-                                <td className="py-4 pr-4">
-                                    <p className="font-medium">
-                                        {transaction.merchant_description}
-                                    </p>
-                                    <div className="mt-1 flex flex-wrap gap-1">
-                                        {transaction.category ? (
-                                            <span className="text-xs text-muted-foreground">
-                                                {transaction.category.name}
-                                            </span>
-                                        ) : (
-                                            <Badge variant="outline">
-                                                Uncategorized
-                                            </Badge>
-                                        )}
-                                        {transaction.review_state ===
-                                            'outstanding' && (
-                                            <Badge variant="secondary">
-                                                Needs review
-                                            </Badge>
-                                        )}
-                                        {transaction.voided_at !== null && (
-                                            <Badge variant="secondary">
-                                                <CircleOff /> Voided
-                                            </Badge>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="py-4 pr-4">
-                                    <Badge
-                                        variant={
-                                            isRefund ? 'secondary' : 'outline'
-                                        }
-                                    >
-                                        <KindIcon />
-                                        {isRefund ? 'Refund' : 'Purchase'}
-                                    </Badge>
-                                </td>
-                                <td
-                                    className={`py-4 text-right font-medium whitespace-nowrap tabular-nums ${isRefund ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
+                return (
+                    <li
+                        key={transaction.id}
+                        className={`grid gap-4 rounded-lg border p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${selectedTransactionId === transaction.id ? 'border-primary/40 bg-primary/5' : 'hover:bg-muted/40'}`}
+                    >
+                        <div className="grid min-w-0 gap-2">
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <p className="min-w-0 font-medium break-words">
+                                    {transaction.merchant_description}
+                                </p>
+                                <p
+                                    className={`font-semibold whitespace-nowrap tabular-nums ${isRefund ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
                                 >
                                     {isRefund ? '−' : ''}
                                     {formatMinorUnits(
                                         transaction.amount_minor,
                                         transaction.currency,
                                     )}
-                                </td>
-                                <td className="py-4 pl-4">
-                                    <div className="grid justify-items-end gap-2">
-                                        <Button
-                                            asChild
-                                            variant="ghost"
-                                            size="sm"
-                                        >
-                                            <Link
-                                                href={workspaceIndex(
-                                                    mode,
-                                                    filters,
-                                                    transaction.id,
-                                                    page,
-                                                )}
-                                                preserveScroll
-                                                preserveState
-                                            >
-                                                Inspect
-                                            </Link>
-                                        </Button>
-                                        <TransactionStateForm
-                                            transaction={transaction}
-                                        />
-                                    </div>
-                                </td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-        </div>
+                                </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                {transaction.occurred_on}
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                                <Badge
+                                    variant={isRefund ? 'secondary' : 'outline'}
+                                >
+                                    <KindIcon />
+                                    {isRefund ? 'Refund' : 'Purchase'}
+                                </Badge>
+                                {transaction.category ? (
+                                    <Badge variant="outline">
+                                        {transaction.category.name}
+                                    </Badge>
+                                ) : (
+                                    <Badge variant="outline">
+                                        Uncategorized
+                                    </Badge>
+                                )}
+                                {transaction.review_state === 'outstanding' && (
+                                    <Badge variant="secondary">
+                                        Needs review
+                                    </Badge>
+                                )}
+                                {transaction.voided_at !== null && (
+                                    <Badge variant="secondary">
+                                        <CircleOff /> Voided
+                                    </Badge>
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
+                            <Button asChild variant="outline" size="sm">
+                                <Link
+                                    href={workspaceIndex(
+                                        mode,
+                                        filters,
+                                        transaction.id,
+                                        page,
+                                    )}
+                                    preserveScroll
+                                    preserveState
+                                >
+                                    Inspect
+                                </Link>
+                            </Button>
+                            <TransactionStateForm transaction={transaction} />
+                        </div>
+                    </li>
+                );
+            })}
+        </ul>
     );
 }
 
@@ -794,7 +834,7 @@ export default function TransactionsIndex({
                                     </div>
                                 </div>
                             ) : (
-                                <LedgerTable
+                                <LedgerList
                                     transactions={ledgerRows}
                                     mode={workspace.mode}
                                     filters={filters}

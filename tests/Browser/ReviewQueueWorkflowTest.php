@@ -40,9 +40,11 @@ test('the owner edits all current values and clears the Review Queue directly', 
 
     $page
         ->assertSee('3 reviews')
+        ->assertDontSee('Review: Needs review')
+        ->assertDontSee('Ledger state: active')
         ->assertSee('Included in spending totals')
         ->fill('Edit occurrence date', '2026-07-23')
-        ->fill('Edit amount in minor units', '9000')
+        ->fill('Edit amount', '90.00')
         ->fill('Edit merchant or description', 'Neighborhood market')
         ->press('Save Transaction')
         ->assertSee('Transaction updated.')

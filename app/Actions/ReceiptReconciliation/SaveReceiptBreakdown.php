@@ -2,6 +2,7 @@
 
 namespace App\Actions\ReceiptReconciliation;
 
+use App\CurrencyAmount;
 use App\ExactInteger;
 use App\Models\Category;
 use App\Models\ReceiptBreakdown;
@@ -57,8 +58,15 @@ final class SaveReceiptBreakdown
             $delta = ExactInteger::from($currentTransaction->amount_minor)->subtract($total);
 
             if ($delta->compare(ExactInteger::from(0)) !== 0) {
+                $difference = $delta->compare(ExactInteger::from(0)) === 1
+                    ? CurrencyAmount::currencyUnits($delta->value(), $currentTransaction->currency).' '.$currentTransaction->currency->value.' remaining.'
+                    : CurrencyAmount::currencyUnits(
+                        $delta->multiply(ExactInteger::from(-1))->value(),
+                        $currentTransaction->currency,
+                    ).' '.$currentTransaction->currency->value.' over the Transaction amount.';
+
                 throw ValidationException::withMessages([
-                    'line_items' => "Line Item totals must reconcile exactly. Current delta: {$delta->value()} minor units.",
+                    'line_items' => "Line Item totals must reconcile exactly. {$difference}",
                 ]);
             }
 

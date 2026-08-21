@@ -75,6 +75,87 @@ test('the owner atomically saves a reconciled purchase Receipt Breakdown', funct
         ->and(receiptCategoryTotalFor($this, $owner, Currency::Pen, null))->toBe('1300');
 });
 
+test('the owner records signed Line Item totals in currency units', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
+        'amount_minor' => 2_500,
+    ]);
+
+    $this->actingAs($owner)
+        ->put(route('transactions.receipt_breakdowns.update', $transaction), [
+            'line_items' => [
+                [
+                    'description' => 'Lunch',
+                    'quantity' => '1',
+                    'unit_price' => '27.00',
+                    'line_total' => '27.00',
+                    'category_id' => null,
+                ],
+                [
+                    'description' => 'Discount',
+                    'quantity' => null,
+                    'unit_price' => null,
+                    'line_total' => '-2.00',
+                    'category_id' => null,
+                ],
+            ],
+        ])
+        ->assertSessionHasNoErrors();
+
+    $lineItems = $transaction->receiptBreakdown()->firstOrFail()->lineItems;
+
+    expect($lineItems)->toHaveCount(2)
+        ->and($lineItems[0]->unit_price_minor)->toBe(2_700)
+        ->and($lineItems[0]->line_total_minor)->toBe(2_700)
+        ->and($lineItems[1]->line_total_minor)->toBe(-200);
+});
+
+test('Receipt Breakdown currency-unit totals reject fractional minor units', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
+        'amount_minor' => 2_500,
+    ]);
+
+    $this->actingAs($owner)
+        ->put(route('transactions.receipt_breakdowns.update', $transaction), [
+            'line_items' => [[
+                'description' => 'Inexact total',
+                'line_total' => '25.001',
+                'category_id' => null,
+            ]],
+        ])
+        ->assertSessionHasErrors('line_items.0.line_total');
+
+    expect($transaction->receiptBreakdown()->doesntExist())->toBeTrue();
+});
+
+test('Receipt Breakdown input cannot mix currency and minor units', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
+        'amount_minor' => 2_500,
+    ]);
+
+    $this->actingAs($owner)
+        ->put(route('transactions.receipt_breakdowns.update', $transaction), [
+            'line_items' => [[
+                'description' => 'Ambiguous item',
+                'unit_price' => '25.00',
+                'unit_price_minor' => 2_500,
+                'line_total' => '25.00',
+                'line_total_minor' => 2_500,
+                'category_id' => null,
+            ]],
+        ])
+        ->assertSessionHasErrors([
+            'line_items.0.unit_price',
+            'line_items.0.unit_price_minor',
+            'line_items.0.line_total',
+            'line_items.0.line_total_minor',
+        ]);
+
+    expect($transaction->receiptBreakdown()->doesntExist())->toBeTrue();
+});
+
 test('an unreconciled replacement leaves the current Receipt Breakdown unchanged', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
@@ -96,7 +177,9 @@ test('an unreconciled replacement leaves the current Receipt Breakdown unchanged
         'unit_price_minor' => null,
         'line_total_minor' => 2_400,
         'category_id' => null,
-    ]])->assertSessionHasErrors('line_items');
+    ]])->assertSessionHasErrors([
+        'line_items' => 'Line Item totals must reconcile exactly. 1.00 PEN remaining.',
+    ]);
 
     $this->get(route('transactions.index', ['selected' => $transaction->id]))
         ->assertOk()

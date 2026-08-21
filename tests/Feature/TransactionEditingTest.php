@@ -65,6 +65,25 @@ test('the owner directly edits the current Transaction and clears reviewed field
         ->and($transaction->provisional_fields)->toBe([]);
 });
 
+test('the owner edits a Transaction amount in currency units', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->create([
+        'amount_minor' => 1_000,
+    ]);
+
+    $this->actingAs($owner)
+        ->put(route('transactions.update', $transaction), [
+            'occurred_on' => $transaction->occurred_on->toDateString(),
+            'amount' => '25.01',
+            'currency' => 'PEN',
+            'kind' => $transaction->kind->value,
+            'merchant_description' => $transaction->merchant_description,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($transaction->refresh()->amount_minor)->toBe(2_501);
+});
+
 test('the ledger is paginated and loads the selected inspector separately', function () {
     $owner = User::factory()->create();
     $transactions = Transaction::factory()

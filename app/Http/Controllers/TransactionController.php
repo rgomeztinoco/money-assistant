@@ -58,7 +58,7 @@ class TransactionController extends Controller
         $this->recordManualTransaction->handle(
             owner: $request->user(),
             occurredOn: CarbonImmutable::parse($validated['occurred_on'], config('app.timezone')),
-            amountMinor: (int) $validated['amount_minor'],
+            amountMinor: $request->amountMinor(),
             currency: Currency::from($validated['currency']),
             kind: TransactionKind::from($validated['kind']),
             merchantDescription: $validated['merchant_description'],
@@ -82,7 +82,7 @@ class TransactionController extends Controller
             owner: $request->user(),
             transaction: $transaction,
             occurredOn: CarbonImmutable::parse($validated['occurred_on'], config('app.timezone')),
-            amountMinor: (int) $validated['amount_minor'],
+            amountMinor: $request->amountMinor(),
             currency: Currency::from($validated['currency']),
             kind: TransactionKind::from($validated['kind']),
             merchantDescription: $validated['merchant_description'],
