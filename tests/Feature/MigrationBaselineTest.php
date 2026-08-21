@@ -22,6 +22,8 @@ test('fresh PostgreSQL migrations contain only the lean v1 baseline', function (
         'sessions',
         'spending_notification_formats',
         'spending_notification_references',
+        'statement_imports',
+        'statement_movements',
         'transactions',
         'users',
     ];
@@ -41,6 +43,7 @@ test('fresh PostgreSQL migrations contain only the lean v1 baseline', function (
             '2026_08_13_150808_create_ledger_baseline',
             '2026_08_13_150809_create_parser_profile_baseline',
             '2026_08_13_150810_create_gmail_baseline',
+            '2026_08_15_235212_create_statement_imports_table',
         ]);
 });
 
@@ -108,5 +111,16 @@ test('baseline tables expose the retained application columns', function (string
         'id', 'user_id', 'transaction_id', 'spending_notification_format_id',
         'gmail_message_discovery_id', 'gmail_account_identity', 'message_id', 'processing_outcome',
         'attempt_count', 'last_attempted_at', 'created_at', 'updated_at',
+    ]],
+    'Statement Imports' => ['statement_imports', [
+        'id', 'user_id', 'provider', 'parser_version', 'file_hash', 'period_start',
+        'period_end', 'instrument_label', 'instrument_last_four', 'reconciliation_values',
+        'movement_count', 'confirmed_at', 'created_at', 'updated_at',
+    ]],
+    'Statement Movements' => ['statement_movements', [
+        'id', 'statement_import_id', 'transaction_id', 'source_row_id', 'position',
+        'occurred_on', 'amount_minor', 'currency', 'direction', 'classification',
+        'description', 'instrument_label', 'instrument_last_four', 'source_metadata',
+        'created_at', 'updated_at',
     ]],
 ]);

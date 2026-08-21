@@ -3,6 +3,7 @@ import {
     ArrowDownLeft,
     ArrowUpRight,
     CircleOff,
+    FileUp,
     ListChecks,
     ReceiptText,
     RotateCcw,
@@ -31,6 +32,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
+import { create as createStatementImport } from '@/routes/statement_imports';
 import { index } from '@/routes/transactions';
 import type {
     CategoryOption,
@@ -726,13 +728,19 @@ export default function TransactionsIndex({
                                 : 'A focused ledger for finding, reviewing, and editing current Transactions.'}
                         </p>
                     </div>
-                    {isReviewQueue && (
+                    {isReviewQueue ? (
                         <Badge variant="outline" className="w-fit">
                             <ListChecks /> {pagination.total}{' '}
                             {pagination.total === 1
                                 ? 'Transaction'
                                 : 'Transactions'}
                         </Badge>
+                    ) : (
+                        <Button asChild variant="outline">
+                            <Link href={createStatementImport()}>
+                                <FileUp /> Import statement
+                            </Link>
+                        </Button>
                     )}
                 </div>
 

@@ -6,6 +6,7 @@ import {
     MailSearch,
     Store,
     ReceiptText,
+    Files,
     Tags,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
@@ -26,6 +27,7 @@ import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import { index as parserProfilesIndex } from '@/routes/parser_profiles';
 import { show as reportShow } from '@/routes/reports';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
+import { index as statementImportsIndex } from '@/routes/statement_imports';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
 
@@ -45,6 +47,11 @@ export function AppSidebar() {
             title: 'Review Queue',
             href: reviewQueueIndex(),
             icon: ListChecks,
+        },
+        {
+            title: 'Statement Imports',
+            href: statementImportsIndex(),
+            icon: Files,
         },
         {
             title: 'Reports',
