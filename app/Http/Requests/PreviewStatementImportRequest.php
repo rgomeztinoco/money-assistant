@@ -20,7 +20,7 @@ class PreviewStatementImportRequest extends FormRequest
                 'file',
                 'mimes:pdf',
                 'mimetypes:application/pdf,application/x-pdf',
-                'max:8192',
+                'max:'.config('statement-imports.max_file_kilobytes'),
             ],
         ];
     }

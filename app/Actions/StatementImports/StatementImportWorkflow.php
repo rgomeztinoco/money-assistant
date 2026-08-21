@@ -3,8 +3,10 @@
 namespace App\Actions\StatementImports;
 
 use App\CategoryAssignmentProvenance;
+use App\Contracts\StatementPdfExtractor;
 use App\Currency;
 use App\ExactInteger;
+use App\FinancialStatementFormat;
 use App\Models\Category;
 use App\Models\StatementImport;
 use App\Models\StatementMovement;
@@ -15,14 +17,11 @@ use App\StatementImports\StatementImportPreviewMovement;
 use App\StatementImports\StatementImportValidationException;
 use App\StatementMovementClassification;
 use App\StatementMovementDirection;
-use App\StatementProvider;
-use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Smalot\PdfParser\Parser;
 use Throwable;
 
 /**
@@ -37,21 +36,12 @@ use Throwable;
  */
 final class StatementImportWorkflow
 {
-    private const int MAX_FILE_BYTES = 8 * 1024 * 1024;
-
-    private const int MAX_PAGES = 12;
-
-    private const int MAX_EXTRACTED_BYTES = 1024 * 1024;
-
-    private const float MAX_PROCESSING_SECONDS = 10.0;
-
-    public function __construct(private Parser $pdfParser) {}
+    public function __construct(private StatementPdfExtractor $pdfExtractor) {}
 
     public function preview(User $owner, UploadedFile $statement): StatementImportPreview
     {
         unset($owner);
 
-        $startedAt = microtime(true);
         $path = $statement->getRealPath();
 
         if ($path === false || ! is_readable($path)) {
@@ -60,7 +50,9 @@ final class StatementImportWorkflow
 
         $bytes = file_get_contents($path);
 
-        if ($bytes === false || $bytes === '' || strlen($bytes) > self::MAX_FILE_BYTES) {
+        if ($bytes === false
+            || $bytes === ''
+            || strlen($bytes) > ((int) config('statement-imports.max_file_kilobytes') * 1024)) {
             throw $this->invalid('The statement must be a PDF no larger than 8 MB.', 'invalid_pdf_size');
         }
 
@@ -72,30 +64,11 @@ final class StatementImportWorkflow
             throw $this->invalid('Remove the PDF password before importing this statement.', 'encrypted_pdf');
         }
 
-        try {
-            $pdf = $this->pdfParser->parseContent($bytes);
-            $pages = $pdf->getPages();
-            $text = $pdf->getText();
-        } catch (Throwable) {
-            throw $this->invalid('The PDF is corrupt or cannot be read.', 'corrupt_pdf');
-        } finally {
-            unset($bytes);
-        }
-
-        if (count($pages) === 0 || count($pages) > self::MAX_PAGES) {
-            throw $this->invalid('The statement has an unsupported number of pages.', 'page_limit');
-        }
+        unset($bytes);
+        $text = $this->pdfExtractor->extract($path);
 
         if (Str::squish($text) === '') {
             throw $this->invalid('The PDF has no selectable text. Scanned statements are not supported.', 'empty_text');
-        }
-
-        if (strlen($text) > self::MAX_EXTRACTED_BYTES) {
-            throw $this->invalid('The extracted statement is too large to process safely.', 'extraction_limit');
-        }
-
-        if ((microtime(true) - $startedAt) > self::MAX_PROCESSING_SECONDS) {
-            throw $this->invalid('The statement took too long to process.', 'processing_limit');
         }
 
         try {
@@ -113,13 +86,9 @@ final class StatementImportWorkflow
                 throw $this->invalid('This Financial Statement Format is not supported.', 'unsupported_format');
             }
 
-            if ((microtime(true) - $startedAt) > self::MAX_PROCESSING_SECONDS) {
-                throw $this->invalid('The statement took too long to process.', 'processing_limit');
-            }
-
             return $preview;
         } finally {
-            unset($text, $pages, $pdf);
+            unset($text);
         }
     }
 
@@ -173,18 +142,11 @@ final class StatementImportWorkflow
             throw $this->invalid('Select an active Savings Category for WARDA movements.', 'warda_category_required');
         }
 
-        if (StatementImport::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->where('file_hash', $preview->fileHash)
-            ->exists()) {
-            throw $this->invalid('This exact statement has already been confirmed.', 'duplicate_statement');
-        }
-
         try {
             return DB::transaction(function () use ($owner, $preview, $editedMovements, $instrumentLabel, $instrumentLastFour, $wardaCategory): StatementImport {
                 $statementImport = StatementImport::create([
                     'user_id' => $owner->getKey(),
-                    'provider' => $preview->provider,
+                    'financial_statement_format' => $preview->financialStatementFormat,
                     'parser_version' => $preview->parserVersion,
                     'file_hash' => $preview->fileHash,
                     'period_start' => $preview->periodStart,
@@ -337,14 +299,11 @@ final class StatementImportWorkflow
     ): ?Transaction {
         $classification = $movement['classification'];
 
-        if (! $this->contributesToSpending($classification)) {
+        $kind = $classification->transactionKind($direction);
+
+        if ($kind === null) {
             return null;
         }
-
-        $kind = $classification === StatementMovementClassification::Refund
-            || ($classification === StatementMovementClassification::Warda && $direction === StatementMovementDirection::Credit)
-                ? TransactionKind::Refund
-                : TransactionKind::Purchase;
 
         return Transaction::create([
             'user_id' => $owner->getKey(),
@@ -372,11 +331,8 @@ final class StatementImportWorkflow
 
         return Category::query()
             ->whereBelongsTo($owner, 'owner')
+            ->availableForAssignment()
             ->whereKey((int) $categoryId)
-            ->whereNull('archived_at')
-            ->where(fn ($query) => $query
-                ->whereNull('parent_id')
-                ->orWhereHas('parent', fn ($query) => $query->whereNull('archived_at')))
             ->first();
     }
 
@@ -384,11 +340,8 @@ final class StatementImportWorkflow
     {
         return Category::query()
             ->whereBelongsTo($owner, 'owner')
+            ->availableForAssignment()
             ->whereRaw('lower(name) = lower(?)', [$name])
-            ->whereNull('archived_at')
-            ->where(fn ($query) => $query
-                ->whereNull('parent_id')
-                ->orWhereHas('parent', fn ($query) => $query->whereNull('archived_at')))
             ->first();
     }
 
@@ -536,7 +489,7 @@ final class StatementImportWorkflow
                 currency: Currency::Pen,
                 direction: $direction,
                 classification: $classification,
-                contributesToSpending: $this->contributesToSpending($classification),
+                contributesToSpending: $classification->contributesToSpending(),
                 canBeExcluded: $canBeExcluded,
                 sourceMetadata: ['asterisk' => str_contains($line, '*')],
             );
@@ -566,7 +519,7 @@ final class StatementImportWorkflow
         }
 
         return new StatementImportPreview(
-            provider: StatementProvider::Bcp,
+            financialStatementFormat: FinancialStatementFormat::Bcp,
             parserVersion: 'bcp-v1',
             fileHash: $fileHash,
             periodStart: $periodStart,
@@ -600,12 +553,14 @@ final class StatementImportWorkflow
         $printedOtherCharges = ['PEN' => null, 'USD' => null];
         $printedPaymentTotal = ['PEN' => null, 'USD' => null];
         $currencyBoundary = null;
+        $sectionStartSums = ['PEN' => ExactInteger::from(0), 'USD' => ExactInteger::from(0)];
         $sectionSums = [
             'payments' => ['PEN' => ExactInteger::from(0), 'USD' => ExactInteger::from(0)],
             'consumption' => ['PEN' => ExactInteger::from(0), 'USD' => ExactInteger::from(0)],
             'other_charges' => ['PEN' => ExactInteger::from(0), 'USD' => ExactInteger::from(0)],
         ];
         $movements = [];
+        $informationalValues = [];
 
         foreach ($lines as $line) {
             $normalizedLine = Str::squish($line);
@@ -622,19 +577,46 @@ final class StatementImportWorkflow
             }
 
             if ($normalizedLine === 'PAGOS REALIZADOS') {
+                if ($section !== 'payments') {
+                    $sectionStartSums = $sectionSums['payments'];
+                }
                 $section = 'payments';
 
                 continue;
             }
 
-            if ($normalizedLine === 'TUS CONSUMOS' || Str::endsWith($normalizedLine, 'TUS CONSUMOS')) {
+            if ($normalizedLine === 'TUS CONSUMOS'
+                || $normalizedLine === 'TUS CONSUMOS EN CUOTAS'
+                || Str::endsWith($normalizedLine, 'TUS CONSUMOS')) {
+                if ($section !== 'consumption') {
+                    $sectionStartSums = $sectionSums['consumption'];
+                }
                 $section = 'consumption';
 
                 continue;
             }
 
             if (Str::startsWith($normalizedLine, 'OTROS COBROS')) {
+                if ($section !== 'other_charges') {
+                    $sectionStartSums = $sectionSums['other_charges'];
+                }
                 $section = 'other_charges';
+
+                continue;
+            }
+
+            if (Str::startsWith($normalizedLine, 'PAGO MÍNIMO DEL MES')) {
+                $minimumPayment = $this->completeCurrencyPair($this->interbankAmounts($line));
+
+                foreach (['PEN', 'USD'] as $currency) {
+                    if ($minimumPayment[$currency] !== null) {
+                        $informationalValues[] = [
+                            'label' => 'Minimum payment',
+                            'value' => $minimumPayment[$currency],
+                            'currency' => $currency,
+                        ];
+                    }
+                }
 
                 continue;
             }
@@ -648,10 +630,33 @@ final class StatementImportWorkflow
 
             if (Str::startsWith($normalizedLine, 'SUBTOTAL')) {
                 $subtotal = $this->completeCurrencyPair($this->interbankAmounts($line));
+                $expectedSubtotal = match ($section) {
+                    'payments' => [
+                        'PEN' => ExactInteger::from($previous['PEN'] ?? 0)
+                            ->add($sectionSums['payments']['PEN'])
+                            ->value(),
+                        'USD' => ExactInteger::from($previous['USD'] ?? 0)
+                            ->add($sectionSums['payments']['USD'])
+                            ->value(),
+                    ],
+                    'consumption', 'other_charges' => [
+                        'PEN' => $sectionSums[$section]['PEN']->subtract($sectionStartSums['PEN'])->value(),
+                        'USD' => $sectionSums[$section]['USD']->subtract($sectionStartSums['USD'])->value(),
+                    ],
+                    default => ['PEN' => null, 'USD' => null],
+                };
+                $subtotal = $this->resolveJoinedInterbankSubtotalSign(
+                    $line,
+                    $subtotal,
+                    $expectedSubtotal,
+                );
 
                 match ($section) {
                     'payments' => $printedPayments = $subtotal,
-                    'consumption' => $printedConsumption = $subtotal,
+                    'consumption' => $printedConsumption = $this->addInterbankCurrencyPairs(
+                        $printedConsumption,
+                        $subtotal,
+                    ),
                     'other_charges' => $printedOtherCharges = $subtotal,
                     default => null,
                 };
@@ -666,26 +671,34 @@ final class StatementImportWorkflow
             }
 
             $description = Str::squish($row[3]);
-            $firstAmountOffset = strrpos($line, $row[4]);
+            preg_match_all('/-?[\d,]+\.\d{2}/u', $line, $amountCaptures, PREG_OFFSET_CAPTURE);
+            $rowAmountCount = isset($row[5]) ? 2 : 1;
+            $rowAmountCaptures = array_slice($amountCaptures[0], -$rowAmountCount);
+            $firstAmountCapture = $rowAmountCaptures[0] ?? null;
 
-            if ($firstAmountOffset === false) {
+            if (! is_array($firstAmountCapture)) {
                 throw $this->invalid('An Interbank row amount could not be located.', 'invalid_currency_columns');
             }
 
-            if (isset($row[5])) {
-                $secondAmountOffset = strrpos($line, $row[5]);
+            $firstAmountOffset = $firstAmountCapture[1];
 
-                if ($secondAmountOffset === false) {
+            if (isset($row[5])) {
+                $secondAmountCapture = $rowAmountCaptures[1] ?? null;
+
+                if (! is_array($secondAmountCapture)) {
                     throw $this->invalid('An Interbank row amount could not be located.', 'invalid_currency_columns');
                 }
 
-                $amounts = [
-                    'PEN' => $this->signedMinorUnits($row[4]),
-                    'USD' => $this->signedMinorUnits($row[5]),
-                ];
+                $secondAmountOffset = $secondAmountCapture[1];
                 $currencyBoundary = (int) floor(
                     ($firstAmountOffset + $secondAmountOffset) / 2,
                 );
+                $amounts = [];
+
+                foreach ($rowAmountCaptures as [$amount, $amountOffset]) {
+                    $physicalCurrency = $amountOffset < $currencyBoundary ? 'PEN' : 'USD';
+                    $amounts[$physicalCurrency] = $this->signedMinorUnits($amount);
+                }
             } else {
                 $isFixtureBackedPenCharge = Str::upper($description) === 'SEGURO DESGRAVAMEN';
                 $currency = ! $isFixtureBackedPenCharge
@@ -736,7 +749,7 @@ final class StatementImportWorkflow
                 currency: Currency::from($currency),
                 direction: $direction,
                 classification: $classification,
-                contributesToSpending: $this->contributesToSpending($classification),
+                contributesToSpending: $classification->contributesToSpending(),
                 canBeExcluded: false,
                 sourceMetadata: [
                     'section' => $section,
@@ -779,7 +792,7 @@ final class StatementImportWorkflow
         }
 
         return new StatementImportPreview(
-            provider: StatementProvider::Interbank,
+            financialStatementFormat: FinancialStatementFormat::Interbank,
             parserVersion: 'interbank-v1',
             fileHash: $fileHash,
             periodStart: $periodStart,
@@ -787,7 +800,7 @@ final class StatementImportWorkflow
             instrumentLabel: 'Interbank American Express',
             instrumentLastFour: $this->interbankLastFour($text),
             movements: $movements,
-            informationalValues: [],
+            informationalValues: $informationalValues,
             reconciliation: [
                 'previous_balance_pen_minor' => $previous['PEN'],
                 'previous_balance_usd_minor' => $previous['USD'],
@@ -807,21 +820,27 @@ final class StatementImportWorkflow
     private function interbankAmounts(string $line): array
     {
         $line = preg_replace('/-{2,}/u', ' ', $line) ?? $line;
-        preg_match_all('/-?[\d,]+\.\d{2}/u', $line, $matches);
-        $amounts = array_map(fn (string $amount): string => $this->signedMinorUnits($amount), $matches[0]);
+        preg_match_all('/-?[\d,]+\.\d{2}/u', $line, $matches, PREG_OFFSET_CAPTURE);
+        $amounts = $matches[0];
 
         if (count($amounts) === 0) {
             return [];
         }
 
         if (count($amounts) === 1) {
-            return ['PEN' => $amounts[0]];
+            return ['PEN' => $this->signedMinorUnits($amounts[0][0])];
         }
 
-        return [
-            'PEN' => $amounts[count($amounts) - 2],
-            'USD' => $amounts[count($amounts) - 1],
-        ];
+        [$penAmount, $usdAmount] = array_slice($amounts, -2);
+        $currencyBoundary = (int) floor(($penAmount[1] + $usdAmount[1]) / 2);
+        $physicalAmounts = [];
+
+        foreach ([$penAmount, $usdAmount] as [$amount, $amountOffset]) {
+            $currency = $amountOffset < $currencyBoundary ? 'PEN' : 'USD';
+            $physicalAmounts[$currency] = $this->signedMinorUnits($amount);
+        }
+
+        return $physicalAmounts;
     }
 
     /**
@@ -834,6 +853,57 @@ final class StatementImportWorkflow
             'PEN' => $amounts['PEN'] ?? null,
             'USD' => $amounts['USD'] ?? (isset($amounts['PEN']) ? '0' : null),
         ];
+    }
+
+    /**
+     * @param  array{PEN: string|null, USD: string|null}  $current
+     * @param  array{PEN: string|null, USD: string|null}  $additional
+     * @return array{PEN: string|null, USD: string|null}
+     */
+    private function addInterbankCurrencyPairs(array $current, array $additional): array
+    {
+        return [
+            'PEN' => $this->addInterbankCurrencyAmount($current, $additional, 'PEN'),
+            'USD' => $this->addInterbankCurrencyAmount($current, $additional, 'USD'),
+        ];
+    }
+
+    /**
+     * @param  array{PEN: string|null, USD: string|null}  $current
+     * @param  array{PEN: string|null, USD: string|null}  $additional
+     */
+    private function addInterbankCurrencyAmount(array $current, array $additional, string $currency): ?string
+    {
+        if ($additional[$currency] === null) {
+            return $current[$currency];
+        }
+
+        return ExactInteger::from($current[$currency] ?? 0)
+            ->add(ExactInteger::from($additional[$currency]))
+            ->value();
+    }
+
+    /**
+     * @param  array{PEN: string|null, USD: string|null}  $subtotal
+     * @param  array{PEN: string|null, USD: string|null}  $expected
+     * @return array{PEN: string|null, USD: string|null}
+     */
+    private function resolveJoinedInterbankSubtotalSign(
+        string $line,
+        array $subtotal,
+        array $expected,
+    ): array {
+        if (preg_match('/SUBTOTAL(?=[\s-]*-{2,})[\s-]+[\d,]+\.\d{2}/u', $line) !== 1
+            || $subtotal['PEN'] === null
+            || $expected['PEN'] === null
+            || ! str_starts_with($expected['PEN'], '-')
+            || ltrim($subtotal['PEN'], '-') !== ltrim($expected['PEN'], '-')) {
+            return $subtotal;
+        }
+
+        $subtotal['PEN'] = $expected['PEN'];
+
+        return $subtotal;
     }
 
     private function signedMinorUnits(string $amount): string
@@ -868,10 +938,12 @@ final class StatementImportWorkflow
         $year = $month > $periodEnd->month ? $periodStart->year : $periodEnd->year;
 
         try {
-            return CarbonImmutable::createSafe($year, $month, $day, timezone: config('app.timezone'));
+            $occurredOn = CarbonImmutable::createSafe($year, $month, $day, 0, 0, 0, config('app.timezone'));
         } catch (Throwable) {
             throw $this->invalid('An Interbank movement contains an invalid date.', 'invalid_movement_date');
         }
+
+        return $occurredOn;
     }
 
     private function interbankLastFour(string $text): ?string
@@ -998,17 +1070,6 @@ final class StatementImportWorkflow
         }
 
         return StatementMovementClassification::NeedsClassification;
-    }
-
-    private function contributesToSpending(StatementMovementClassification $classification): bool
-    {
-        return in_array($classification, [
-            StatementMovementClassification::Purchase,
-            StatementMovementClassification::Refund,
-            StatementMovementClassification::Fee,
-            StatementMovementClassification::Tax,
-            StatementMovementClassification::Warda,
-        ], true);
     }
 
     /**

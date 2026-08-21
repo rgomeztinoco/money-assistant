@@ -1,11 +1,9 @@
 <?php
 
-use App\Actions\StatementImports\StatementImportWorkflow;
 use App\Models\StatementImport;
 use App\Models\User;
-use App\StatementImports\StatementImportPreview;
-use App\StatementImports\StatementImportPreviewMovement;
-use Illuminate\Http\UploadedFile;
+use Illuminate\Contracts\Process\InvokedProcess;
+use Illuminate\Support\Facades\Process;
 use Tests\SyntheticPdf;
 
 beforeEach(function () {
@@ -14,65 +12,111 @@ beforeEach(function () {
 
 test('the owner discovers Statement Imports selects a PDF and revisits a confirmed import', function () {
     $owner = User::factory()->create();
-    $this->actingAs($owner);
     $pdf = SyntheticPdf::fromText((string) file_get_contents(
         base_path('tests/Fixtures/Statements/interbank.txt'),
     ));
-    $workflow = app(StatementImportWorkflow::class);
-    $preview = $workflow->preview(
-        $owner,
-        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
-    );
-    $workflow->confirm(
-        $owner,
-        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
-        browserStatementConfirmation($preview),
-    );
+    [$server, $applicationUrl] = startBrowserApplication();
 
-    $page = visit(route('transactions.index'));
+    try {
+        $page = visit($applicationUrl.'/login');
+        $page
+            ->type('#email', $owner->email)
+            ->type('#password', 'password')
+            ->click('[data-test="login-button"]')
+            ->assertPathIs('/dashboard')
+            ->click('Transactions')
+            ->assertPathIs('/transactions')
+            ->click('Import statement')
+            ->assertPathIs('/statement-imports/create');
+        selectPdfInBrowser($page, '#preview-statement', $pdf);
+        expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
+        $page
+            ->press('Preview statement')
+            ->assertSee('INTERBANK')
+            ->assertSee('Reconciled')
+            ->assertSee('Minimum payment');
+        expect($page->value('select[aria-label="Classification for Mercado Pago"]'))
+            ->toBe('needs_classification');
+        selectPdfInBrowser($page, '#confirm-statement', $pdf);
+        $page
+            ->press('Confirm Statement Import')
+            ->assertSee('Classify every real movement before confirming the import.');
 
-    $page
-        ->click('Import statement')
-        ->assertPathIs('/statement-imports/create')
-        ->assertSee('Preview the PDF');
-    selectPdfInBrowser($page, '#preview-statement', $pdf);
-    $page
-        ->assertScript("document.querySelector('#preview-statement').files.length === 1")
-        ->click('Statement Imports')
-        ->assertPathIs('/statement-imports')
-        ->assertSee('Interbank American Express')
-        ->assertSee('payment total pen')
-        ->click('interbank')
-        ->assertSee('Statement Movements')
-        ->assertSee('Source reconciliation')
-        ->assertSee('payment total usd')
-        ->assertSee('Mercado Pago')
-        ->assertSee('Already recorded')
-        ->assertNoJavaScriptErrors()
-        ->assertNoConsoleLogs();
+        expect(StatementImport::query()->doesntExist())->toBeTrue();
 
-    expect(StatementImport::query()->count())->toBe(1);
+        $page->select(
+            'select[aria-label="Classification for Mercado Pago"]',
+            'already_recorded',
+        );
+        selectPdfInBrowser($page, '#confirm-statement', $pdf);
+        $page
+            ->press('Confirm Statement Import')
+            ->assertPathBeginsWith('/statement-imports/')
+            ->assertSee('Statement Movements')
+            ->assertSee('Source reconciliation')
+            ->assertSee('payment total usd')
+            ->assertSee('Mercado Pago')
+            ->assertSee('Already recorded')
+            ->click('Statement Imports')
+            ->assertPathIs('/statement-imports')
+            ->assertSee('Interbank American Express')
+            ->assertNoJavaScriptErrors()
+            ->assertNoConsoleLogs();
+
+        expect(StatementImport::query()->count())->toBe(1);
+    } finally {
+        $server->stop();
+    }
 });
 
-function browserStatementConfirmation(StatementImportPreview $preview): array
+/**
+ * @return array{InvokedProcess, string}
+ */
+function startBrowserApplication(): array
 {
-    return [
-        'file_hash' => $preview->fileHash,
-        'instrument_label' => $preview->instrumentLabel,
-        'instrument_last_four' => $preview->instrumentLastFour,
-        'movements' => collect($preview->movements)
-            ->map(fn (StatementImportPreviewMovement $movement): array => [
-                'source_row_id' => $movement->sourceRowId,
-                'occurred_on' => $movement->occurredOn->toDateString(),
-                'description' => $movement->description,
-                'amount_minor' => $movement->amountMinor,
-                'currency' => $movement->currency->value,
-                'classification' => $movement->classification->value === 'needs_classification'
-                    ? 'already_recorded'
-                    : $movement->classification->value,
-            ])
-            ->all(),
-    ];
+    $socket = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
+
+    if ($socket === false) {
+        throw new RuntimeException("Unable to reserve a browser application port: {$errorCode} {$errorMessage}");
+    }
+
+    $address = stream_socket_get_name($socket, false);
+    fclose($socket);
+
+    if ($address === false) {
+        throw new RuntimeException('Unable to determine the browser application port.');
+    }
+
+    $port = (int) str($address)->afterLast(':')->toString();
+    $applicationUrl = "http://127.0.0.1:{$port}";
+    $server = Process::path(base_path())
+        ->env([
+            'APP_ENV' => 'testing',
+            'APP_URL' => $applicationUrl,
+            'DB_CONNECTION' => config('database.default'),
+            'DB_DATABASE' => config('database.connections.pgsql.database'),
+            'DB_HOST' => config('database.connections.pgsql.host'),
+            'DB_PASSWORD' => config('database.connections.pgsql.password'),
+            'DB_PORT' => config('database.connections.pgsql.port'),
+            'DB_USERNAME' => config('database.connections.pgsql.username'),
+            'SESSION_DRIVER' => 'database',
+        ])
+        ->timeout(120)
+        ->start([
+            PHP_BINARY,
+            'artisan',
+            'serve',
+            '--host=127.0.0.1',
+            "--port={$port}",
+            '--no-reload',
+            '--no-interaction',
+        ]);
+
+    $server->waitUntil(
+        fn (string $type, string $output): bool => str_contains($output, 'Server running on'),
+    );
+
+    return [$server, $applicationUrl];
 }
 
 function selectPdfInBrowser(mixed $page, string $selector, string $pdf): void

@@ -10,7 +10,7 @@ final readonly class StatementImportListItem implements Arrayable
     /** @param array<string, string> $totals */
     public function __construct(
         public int $id,
-        public string $provider,
+        public string $financialStatementFormat,
         public string $periodStart,
         public string $periodEnd,
         public string $instrumentLabel,
@@ -25,7 +25,7 @@ final readonly class StatementImportListItem implements Arrayable
     {
         return [
             'id' => $this->id,
-            'provider' => $this->provider,
+            'financial_statement_format' => $this->financialStatementFormat,
             'period_start' => $this->periodStart,
             'period_end' => $this->periodEnd,
             'instrument_label' => $this->instrumentLabel,

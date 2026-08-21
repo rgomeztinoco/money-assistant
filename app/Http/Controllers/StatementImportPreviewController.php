@@ -11,17 +11,17 @@ use Illuminate\Validation\ValidationException;
 
 class StatementImportPreviewController extends Controller
 {
-    public function store(
-        PreviewStatementImportRequest $request,
-        StatementImportWorkflow $statementImportWorkflow,
-    ): JsonResponse {
+    public function __construct(private StatementImportWorkflow $statementImportWorkflow) {}
+
+    public function store(PreviewStatementImportRequest $request): JsonResponse
+    {
         $statement = $request->validated('statement');
 
         assert($statement instanceof UploadedFile);
 
         try {
             return response()->json(
-                $statementImportWorkflow->preview($request->user(), $statement)->toArray(),
+                $this->statementImportWorkflow->preview($request->user(), $statement)->toArray(),
             );
         } catch (StatementImportValidationException $exception) {
             throw ValidationException::withMessages(['statement' => $exception->getMessage()]);

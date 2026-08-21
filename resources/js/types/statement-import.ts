@@ -1,6 +1,6 @@
 import type { Currency } from './ledger';
 
-export type StatementProvider = 'bcp' | 'interbank';
+export type FinancialStatementFormat = 'bcp' | 'interbank';
 export type StatementDirection = 'debit' | 'credit';
 export type StatementClassification =
     | 'needs_classification'
@@ -30,7 +30,7 @@ export type StatementPreviewMovement = {
 };
 
 export type StatementImportPreview = {
-    provider: StatementProvider;
+    financial_statement_format: FinancialStatementFormat;
     parser_version: string;
     file_hash: string;
     period_start: string;

@@ -6,8 +6,6 @@ use App\ExactInteger;
 use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\User;
-use App\StatementMovementClassification;
-use App\StatementMovementDirection;
 
 final class ReadStatementImport
 {
@@ -17,8 +15,33 @@ final class ReadStatementImport
         $statementImport = StatementImport::query()
             ->whereBelongsTo($owner, 'owner')
             ->whereKey($statementImport->getKey())
+            ->select([
+                'id',
+                'user_id',
+                'financial_statement_format',
+                'parser_version',
+                'period_start',
+                'period_end',
+                'instrument_label',
+                'instrument_last_four',
+                'reconciliation_values',
+                'movement_count',
+                'confirmed_at',
+            ])
             ->with([
                 'movements' => fn ($query) => $query
+                    ->select([
+                        'id',
+                        'statement_import_id',
+                        'transaction_id',
+                        'position',
+                        'occurred_on',
+                        'amount_minor',
+                        'currency',
+                        'direction',
+                        'classification',
+                        'description',
+                    ])
                     ->with(['transaction:id,kind,voided_at,category_id', 'transaction.category:id,name'])
                     ->orderBy('position'),
             ])
@@ -26,7 +49,7 @@ final class ReadStatementImport
 
         return [
             'id' => $statementImport->id,
-            'provider' => $statementImport->provider->value,
+            'financial_statement_format' => $statementImport->financial_statement_format->value,
             'parser_version' => $statementImport->parser_version,
             'period_start' => $statementImport->period_start->toDateString(),
             'period_end' => $statementImport->period_end->toDateString(),
@@ -81,20 +104,7 @@ final class ReadStatementImport
         foreach ($statementImport->movements as $movement) {
             $currency = $movement->currency->value;
             $amount = ExactInteger::from($movement->amount_minor);
-            $key = match ($movement->classification) {
-                StatementMovementClassification::Purchase,
-                StatementMovementClassification::Fee,
-                StatementMovementClassification::Tax => 'spending_minor',
-                StatementMovementClassification::Refund => 'refunds_minor',
-                StatementMovementClassification::Income => 'income_minor',
-                StatementMovementClassification::Transfer => $movement->direction === StatementMovementDirection::Credit
-                    ? 'transfers_in_minor'
-                    : 'transfers_out_minor',
-                StatementMovementClassification::Warda => $movement->direction === StatementMovementDirection::Credit
-                    ? 'warda_withdrawals_minor'
-                    : 'warda_deposits_minor',
-                default => null,
-            };
+            $key = $movement->classification->summaryKey($movement->direction);
 
             if ($key !== null) {
                 $summary[$currency][$key] = ExactInteger::from($summary[$currency][$key])

@@ -113,7 +113,7 @@ test('baseline tables expose the retained application columns', function (string
         'attempt_count', 'last_attempted_at', 'created_at', 'updated_at',
     ]],
     'Statement Imports' => ['statement_imports', [
-        'id', 'user_id', 'provider', 'parser_version', 'file_hash', 'period_start',
+        'id', 'user_id', 'financial_statement_format', 'parser_version', 'file_hash', 'period_start',
         'period_end', 'instrument_label', 'instrument_last_four', 'reconciliation_values',
         'movement_count', 'confirmed_at', 'created_at', 'updated_at',
     ]],

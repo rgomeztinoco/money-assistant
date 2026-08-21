@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\CarbonImmutable;
 use Database\Factories\CategoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -73,6 +74,19 @@ class Category extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');
+    }
+
+    /**
+     * @param  Builder<Category>  $query
+     * @return Builder<Category>
+     */
+    public function scopeAvailableForAssignment(Builder $query): Builder
+    {
+        return $query
+            ->whereNull('archived_at')
+            ->where(fn (Builder $query): Builder => $query
+                ->whereNull('parent_id')
+                ->orWhereHas('parent', fn (Builder $query): Builder => $query->whereNull('archived_at')));
     }
 
     /**

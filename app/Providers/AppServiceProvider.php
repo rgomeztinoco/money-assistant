@@ -3,7 +3,9 @@
 namespace App\Providers;
 
 use App\Contracts\Gmail;
+use App\Contracts\StatementPdfExtractor;
 use App\Integrations\Gmail\GoogleGmail;
+use App\StatementImports\ProcessStatementPdfExtractor;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Date;
@@ -27,6 +29,8 @@ class AppServiceProvider extends ServiceProvider
                 redirectUri: (string) config('services.gmail.redirect_uri'),
             ),
         );
+
+        $this->app->bind(StatementPdfExtractor::class, ProcessStatementPdfExtractor::class);
 
     }
 

@@ -14,13 +14,25 @@ final class ReadStatementImports
     {
         $imports = StatementImport::query()
             ->whereBelongsTo($owner, 'owner')
+            ->select([
+                'id',
+                'user_id',
+                'financial_statement_format',
+                'period_start',
+                'period_end',
+                'instrument_label',
+                'instrument_last_four',
+                'reconciliation_values',
+                'movement_count',
+                'confirmed_at',
+            ])
             ->latest('confirmed_at')
             ->latest('id')
             ->paginate(25);
         $items = $imports->getCollection()
             ->map(fn (StatementImport $import): StatementImportListItem => new StatementImportListItem(
                 id: $import->id,
-                provider: $import->provider->value,
+                financialStatementFormat: $import->financial_statement_format->value,
                 periodStart: $import->period_start->toDateString(),
                 periodEnd: $import->period_end->toDateString(),
                 instrumentLabel: $import->instrument_label,

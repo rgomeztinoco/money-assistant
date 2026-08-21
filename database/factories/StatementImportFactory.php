@@ -2,9 +2,9 @@
 
 namespace Database\Factories;
 
+use App\FinancialStatementFormat;
 use App\Models\StatementImport;
 use App\Models\User;
-use App\StatementProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -21,7 +21,7 @@ class StatementImportFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            'provider' => fake()->randomElement(StatementProvider::cases()),
+            'financial_statement_format' => fake()->randomElement(FinancialStatementFormat::cases()),
             'parser_version' => 'fixture-v1',
             'file_hash' => fake()->unique()->sha256(),
             'period_start' => '2026-02-01',

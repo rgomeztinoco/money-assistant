@@ -35,11 +35,32 @@ test('the owner can preview a statement through the standalone HTTP endpoint', f
             ),
         ], ['Accept' => 'application/json'])
         ->assertOk()
-        ->assertJsonPath('provider', 'interbank')
+        ->assertJsonPath('financial_statement_format', 'interbank')
         ->assertJsonPath('movements.0.contributes_to_spending', false)
         ->assertJsonPath('movements.0.can_be_excluded', false)
         ->assertJsonPath('reconciliation.payment_total_pen_minor', '2700')
         ->assertJsonCount(6, 'movements');
+});
+
+test('the preview response never exposes a complete instrument identifier', function () {
+    $owner = User::factory()->create();
+    $completeIdentifier = '1234 5678 9012 3456';
+    $statementText = (string) file_get_contents(
+        __DIR__.'/../Fixtures/Statements/interbank.txt',
+    )."\nNúmero de tarjeta {$completeIdentifier}";
+
+    $response = $this->actingAs($owner)
+        ->post(route('statement_import_previews.store'), [
+            'statement' => UploadedFile::fake()->createWithContent(
+                'private-statement.pdf',
+                SyntheticPdf::fromText($statementText),
+            ),
+        ], ['Accept' => 'application/json'])
+        ->assertOk()
+        ->assertJsonPath('instrument_last_four', '1234');
+
+    expect($response->getContent())->not->toContain($completeIdentifier)
+        ->and($response->getContent())->not->toContain('private-statement.pdf');
 });
 
 test('the create page suggests an active Savings Category case insensitively', function () {

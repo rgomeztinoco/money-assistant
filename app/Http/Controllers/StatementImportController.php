@@ -7,7 +7,6 @@ use App\Actions\StatementImports\ReadStatementImport;
 use App\Actions\StatementImports\ReadStatementImports;
 use App\Actions\StatementImports\StatementImportWorkflow;
 use App\Http\Requests\ConfirmStatementImportRequest;
-use App\Models\Category;
 use App\Models\StatementImport;
 use App\StatementImports\StatementImportValidationException;
 use Illuminate\Http\RedirectResponse;
@@ -19,35 +18,32 @@ use Inertia\Response;
 
 class StatementImportController extends Controller
 {
-    public function index(Request $request, ReadStatementImports $readStatementImports): Response
+    public function __construct(
+        private ReadStatementImports $readStatementImports,
+        private ReadStatementImport $readStatementImport,
+        private ReadCategoryTaxonomy $readCategoryTaxonomy,
+        private StatementImportWorkflow $statementImportWorkflow,
+    ) {}
+
+    public function index(Request $request): Response
     {
         return Inertia::render('statement-imports/index', [
-            'statement_imports' => $readStatementImports->handle($request->user()),
+            'statement_imports' => $this->readStatementImports->handle($request->user()),
         ]);
     }
 
-    public function create(Request $request, ReadCategoryTaxonomy $readCategoryTaxonomy): Response
+    public function create(Request $request): Response
     {
         $owner = $request->user();
-        $suggestedWardaCategoryId = Category::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->whereRaw('lower(name) = lower(?)', ['Savings'])
-            ->whereNull('archived_at')
-            ->where(fn ($query) => $query
-                ->whereNull('parent_id')
-                ->orWhereHas('parent', fn ($query) => $query->whereNull('archived_at')))
-            ->value('id');
 
         return Inertia::render('statement-imports/create', [
-            'category_options' => $readCategoryTaxonomy->activeOptions($owner),
-            'suggested_warda_category_id' => $suggestedWardaCategoryId,
+            'category_options' => $this->readCategoryTaxonomy->activeOptions($owner),
+            'suggested_warda_category_id' => $this->readCategoryTaxonomy->activeCategoryIdNamed($owner, 'Savings'),
         ]);
     }
 
-    public function store(
-        ConfirmStatementImportRequest $request,
-        StatementImportWorkflow $statementImportWorkflow,
-    ): RedirectResponse {
+    public function store(ConfirmStatementImportRequest $request): RedirectResponse
+    {
         $validated = $request->validated();
         $statement = $validated['statement'];
 
@@ -58,7 +54,7 @@ class StatementImportController extends Controller
         }
 
         try {
-            $statementImport = $statementImportWorkflow->confirm(
+            $statementImport = $this->statementImportWorkflow->confirm(
                 $request->user(),
                 $statement,
                 $validated,
@@ -72,16 +68,15 @@ class StatementImportController extends Controller
             'message' => __('Statement Import confirmed.'),
         ]);
 
-        return redirect()->route('statement_imports.show', $statementImport);
+        return to_route('statement_imports.show', $statementImport);
     }
 
     public function show(
         Request $request,
         StatementImport $statementImport,
-        ReadStatementImport $readStatementImport,
     ): Response {
         return Inertia::render('statement-imports/show', [
-            'statement_import' => $readStatementImport->handle($request->user(), $statementImport),
+            'statement_import' => $this->readStatementImport->handle($request->user(), $statementImport),
         ]);
     }
 }

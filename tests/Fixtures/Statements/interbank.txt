@@ -17,4 +17,5 @@ SUBTOTAL                        25.00 10.00
 OTROS COBROS                    S/ US$
 20-Feb SEGURO DESGRAVAMEN        2.00
 SUBTOTAL                         2.00 0.00
+PAGO MÍNIMO DEL MES             5.00 1.00
 PAGO DEL MES (Suma de subtotales) = 27.00 10.00
