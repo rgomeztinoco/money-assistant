@@ -104,6 +104,20 @@ export default function StatementImportShow({
                             {statement_import.period_start} through{' '}
                             {statement_import.period_end} ·{' '}
                             {statement_import.movement_count} movements
+                            {statement_import.instrument_last_four && (
+                                <>
+                                    {' '}
+                                    · ····{' '}
+                                    {statement_import.instrument_last_four}
+                                </>
+                            )}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                            Confirmed{' '}
+                            {new Date(
+                                statement_import.confirmed_at,
+                            ).toLocaleString()}{' '}
+                            · Parser {statement_import.parser_version}
                         </p>
                     </div>
                     <Button asChild variant="outline">
@@ -190,24 +204,45 @@ export default function StatementImportShow({
                     <CardContent>
                         <div className="overflow-x-auto rounded-lg border">
                             <table className="w-full min-w-[64rem] text-sm">
+                                <caption className="sr-only">
+                                    Retained Statement Movements
+                                </caption>
                                 <thead className="bg-muted/50 text-left">
                                     <tr>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th
+                                            scope="col"
+                                            className="px-3 py-2 font-medium"
+                                        >
                                             Date
                                         </th>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th
+                                            scope="col"
+                                            className="px-3 py-2 font-medium"
+                                        >
                                             Description
                                         </th>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th
+                                            scope="col"
+                                            className="px-3 py-2 font-medium"
+                                        >
                                             Classification
                                         </th>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th
+                                            scope="col"
+                                            className="px-3 py-2 font-medium"
+                                        >
                                             Direction
                                         </th>
-                                        <th className="px-3 py-2 text-right font-medium">
+                                        <th
+                                            scope="col"
+                                            className="px-3 py-2 text-right font-medium"
+                                        >
                                             Amount
                                         </th>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th
+                                            scope="col"
+                                            className="px-3 py-2 font-medium"
+                                        >
                                             Linked Transaction
                                         </th>
                                     </tr>
@@ -276,6 +311,15 @@ export default function StatementImportShow({
                                                     ) : (
                                                         <span className="text-muted-foreground">
                                                             None
+                                                        </span>
+                                                    )}
+                                                    {movement.transaction && (
+                                                        <span className="block text-xs text-muted-foreground">
+                                                            {movement
+                                                                .transaction
+                                                                .category
+                                                                ?.name ??
+                                                                'Uncategorized'}
                                                         </span>
                                                     )}
                                                 </td>

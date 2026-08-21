@@ -99,24 +99,45 @@ export default function StatementImportsIndex({
                         ) : (
                             <div className="overflow-x-auto rounded-lg border">
                                 <table className="w-full min-w-[58rem] text-sm">
+                                    <caption className="sr-only">
+                                        Confirmed Statement Imports
+                                    </caption>
                                     <thead className="bg-muted/50 text-left">
                                         <tr>
-                                            <th className="px-4 py-3 font-medium">
+                                            <th
+                                                scope="col"
+                                                className="px-4 py-3 font-medium"
+                                            >
                                                 Format
                                             </th>
-                                            <th className="px-4 py-3 font-medium">
+                                            <th
+                                                scope="col"
+                                                className="px-4 py-3 font-medium"
+                                            >
                                                 Period
                                             </th>
-                                            <th className="px-4 py-3 font-medium">
+                                            <th
+                                                scope="col"
+                                                className="px-4 py-3 font-medium"
+                                            >
                                                 Instrument
                                             </th>
-                                            <th className="px-4 py-3 text-right font-medium">
+                                            <th
+                                                scope="col"
+                                                className="px-4 py-3 text-right font-medium"
+                                            >
                                                 Movements
                                             </th>
-                                            <th className="px-4 py-3 font-medium">
+                                            <th
+                                                scope="col"
+                                                className="px-4 py-3 font-medium"
+                                            >
                                                 Totals
                                             </th>
-                                            <th className="px-4 py-3 font-medium">
+                                            <th
+                                                scope="col"
+                                                className="px-4 py-3 font-medium"
+                                            >
                                                 Confirmed
                                             </th>
                                         </tr>
@@ -131,6 +152,7 @@ export default function StatementImportsIndex({
                                                                 statementImport.id,
                                                             )}
                                                             className="hover:underline"
+                                                            aria-label={`View ${statementImport.instrument_label} statement from ${statementImport.period_start} through ${statementImport.period_end}`}
                                                         >
                                                             {
                                                                 statementImport.financial_statement_format
