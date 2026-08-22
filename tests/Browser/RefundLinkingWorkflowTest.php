@@ -39,7 +39,9 @@ test('the owner links a Refund and sees an excessive relationship in the Review 
 
     visit('/review-queue')
         ->assertSee('Linked Refunds exceed the purchase')
-        ->assertSee('The confirmed Refunds remain included.')
+        ->assertSee('Review the linked purchase and correct the Refund relationship before continuing.')
+        ->click('Correct this relationship')
+        ->assertSee('Edit current Transaction')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

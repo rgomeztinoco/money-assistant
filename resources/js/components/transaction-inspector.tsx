@@ -402,9 +402,11 @@ function ReceiptBreakdownSection({
 function TransactionEditForm({
     transaction,
     categoryOptions,
+    nextReviewItem,
 }: {
     transaction: SelectedTransaction;
     categoryOptions: CategoryOption[];
+    nextReviewItem?: string;
 }) {
     return (
         <Form
@@ -415,6 +417,13 @@ function TransactionEditForm({
         >
             {({ errors, processing }) => (
                 <>
+                    {nextReviewItem && (
+                        <input
+                            type="hidden"
+                            name="next_review_item"
+                            value={nextReviewItem}
+                        />
+                    )}
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="grid gap-2">
                             <Label
@@ -642,10 +651,12 @@ export function TransactionInspector({
     transaction,
     categoryOptions,
     onOpenChange,
+    nextReviewItem,
 }: {
     transaction: SelectedTransaction | null;
     categoryOptions: CategoryOption[];
     onOpenChange: (open: boolean) => void;
+    nextReviewItem?: string;
 }) {
     const unresolvedReviewCount = transaction
         ? transaction.review.fields.length +
@@ -753,6 +764,7 @@ export function TransactionInspector({
                             <TransactionEditForm
                                 transaction={transaction}
                                 categoryOptions={categoryOptions}
+                                nextReviewItem={nextReviewItem}
                             />
                         </section>
 

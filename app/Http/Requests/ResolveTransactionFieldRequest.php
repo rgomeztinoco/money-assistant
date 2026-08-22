@@ -43,6 +43,7 @@ class ResolveTransactionFieldRequest extends FormRequest
                 'required',
                 ...$this->replacementValueRules($field),
             ],
+            'next_review_item' => ['nullable', 'string', 'regex:/^(transaction|line-item):[1-9][0-9]*$/'],
         ];
     }
 

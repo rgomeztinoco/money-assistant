@@ -104,18 +104,19 @@ test('the Transaction workspace stays actionable without horizontal scrolling on
 
 test('the Review Queue inspector can be dismissed without immediately reopening', function () {
     $owner = User::factory()->create();
-    Transaction::factory()
+    $transaction = Transaction::factory()
         ->for($owner, 'owner')
         ->provisional([ReviewableTransactionField::MerchantDescription])
         ->create(['merchant_description' => 'Review me']);
     $this->actingAs($owner);
 
-    $page = visit('/review-queue');
+    $page = visit("/review-queue?item=transaction:{$transaction->id}&selected={$transaction->id}");
 
     $page
         ->assertSee('Edit current Transaction')
         ->press('Close')
-        ->assertQueryStringHas('inspector', 'closed')
+        ->assertQueryStringMissing('selected')
+        ->assertSee('Review me')
         ->assertDontSee('Edit current Transaction')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();

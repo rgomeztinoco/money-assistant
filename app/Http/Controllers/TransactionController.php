@@ -98,6 +98,10 @@ class TransactionController extends Controller
             'message' => __('Transaction updated.'),
         ]);
 
+        if (isset($validated['next_review_item'])) {
+            return to_route('review_queue.index', ['item' => $validated['next_review_item']]);
+        }
+
         return $this->redirectToWorkspace('transactions.index');
     }
 }
