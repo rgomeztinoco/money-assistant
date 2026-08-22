@@ -21,6 +21,10 @@ final class ApplyMerchantRuleToTransaction
                 ->lockForUpdate()
                 ->sole();
 
+            if (! $lockedTransaction->kind->supportsCategory()) {
+                return $lockedTransaction;
+            }
+
             if ($lockedTransaction->category_id !== null
                 || $lockedTransaction->category_assignment_provenance !== null) {
                 return $lockedTransaction;

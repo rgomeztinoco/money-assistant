@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import { movementKindLabel, movementKindOptions } from '@/lib/money-movement';
 import { index } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type {
@@ -153,7 +154,7 @@ function TransactionSummary({
             <div>
                 <p className="text-sm text-muted-foreground">Kind</p>
                 <p className="font-medium">
-                    {transaction.kind === 'purchase' ? 'Purchase' : 'Refund'}
+                    {movementKindLabel(transaction.kind)}
                 </p>
             </div>
             <div>
@@ -268,8 +269,8 @@ function TransactionCategoryDecision({
                                                     label: 'Any kind',
                                                 },
                                                 {
-                                                    value: 'purchase',
-                                                    label: 'Purchases',
+                                                    value: 'spending',
+                                                    label: 'Spending',
                                                 },
                                                 {
                                                     value: 'refund',
@@ -430,10 +431,10 @@ function FieldCorrectionInput({
                     id={id}
                     name="value"
                     defaultValue={field.value}
-                    options={[
-                        { value: 'purchase', label: 'Purchase' },
-                        { value: 'refund', label: 'Refund' },
-                    ]}
+                    options={movementKindOptions.filter(
+                        ({ value }) =>
+                            value === 'spending' || value === 'refund',
+                    )}
                 />
             );
         case 'merchant_description':

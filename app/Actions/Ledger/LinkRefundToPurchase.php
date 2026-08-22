@@ -75,7 +75,7 @@ class LinkRefundToPurchase
             throw new InvalidArgumentException('Only a Refund can link to an original purchase.');
         }
 
-        if ($purchase->kind !== TransactionKind::Purchase) {
+        if ($purchase->kind !== TransactionKind::Spending) {
             throw new InvalidArgumentException('A Refund can link only to a purchase.');
         }
 

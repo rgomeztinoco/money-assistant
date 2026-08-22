@@ -22,6 +22,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import { movementDescription } from '@/lib/money-movement';
 import { spendingComparisonDescription } from '@/lib/spending-comparison';
 import type { SpendingComparison } from '@/lib/spending-comparison';
 import {
@@ -32,7 +33,12 @@ import { dashboard } from '@/routes';
 import { edit as connectionsEdit } from '@/routes/connections';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
-import type { Currency, TransactionKind } from '@/types';
+import type {
+    Currency,
+    TransactionDirection,
+    TransactionKind,
+    TransferPurpose,
+} from '@/types';
 
 type DashboardPeriod = {
     label: string;
@@ -44,6 +50,12 @@ type DashboardSpending = {
     totals: Record<Currency, string>;
     comparisons: Record<Currency, SpendingComparison>;
     category_insights: Record<Currency, CategoryInsight[]>;
+};
+
+type PeriodSummary = {
+    net_spending_minor: string;
+    income_minor: string;
+    moved_to_savings_minor: string;
 };
 
 type CategoryInsight = {
@@ -62,6 +74,8 @@ type RecentTransaction = {
     amount_minor: string;
     currency: Currency;
     kind: TransactionKind;
+    direction: TransactionDirection;
+    transfer_purpose: TransferPurpose | null;
     merchant_description: string;
 };
 
@@ -128,12 +142,10 @@ function formatSyncTimestamp(timestamp: string | null) {
 }
 
 function transactionAmount(transaction: RecentTransaction) {
-    const amount =
-        transaction.kind === 'refund'
-            ? `-${transaction.amount_minor}`
-            : transaction.amount_minor;
-
-    return formatMinorUnits(amount, transaction.currency);
+    return `${transaction.direction === 'credit' ? '+' : '−'}${formatMinorUnits(
+        transaction.amount_minor,
+        transaction.currency,
+    )}`;
 }
 
 function categoryChangeDescription({
@@ -158,6 +170,7 @@ function categoryChangeDescription({
 export default function Dashboard({
     period,
     comparison_period,
+    summaries,
     spending,
     review_queue,
     recent_transactions,
@@ -165,6 +178,7 @@ export default function Dashboard({
 }: {
     period: DashboardPeriod;
     comparison_period: DashboardPeriod;
+    summaries: Record<Currency, PeriodSummary>;
     spending: DashboardSpending;
     review_queue: { outstanding_count: number };
     recent_transactions: RecentTransaction[];
@@ -197,24 +211,51 @@ export default function Dashboard({
                                         {period.label}
                                     </Badge>
                                 </div>
-                                <Link
-                                    href={periodTransactionsUrl({
-                                        currency,
-                                        period,
-                                    })}
-                                    data-test={`dashboard-spending-${currency.toLowerCase()}`}
-                                    className="group grid gap-1 rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-                                >
-                                    <CardDescription>
-                                        {currency} current-period total
-                                    </CardDescription>
-                                    <CardTitle className="text-3xl tabular-nums transition-colors group-hover:text-primary">
-                                        {formatMinorUnits(
-                                            spending.totals[currency],
+                                <dl className="grid gap-3 sm:grid-cols-2">
+                                    <Link
+                                        href={periodTransactionsUrl({
                                             currency,
-                                        )}
-                                    </CardTitle>
-                                </Link>
+                                            period,
+                                        })}
+                                        data-test={`dashboard-spending-${currency.toLowerCase()}`}
+                                        className="group grid gap-1 rounded-lg border p-3 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden sm:col-span-2"
+                                    >
+                                        <dt className="text-sm text-muted-foreground">
+                                            Net Spending
+                                        </dt>
+                                        <dd className="text-3xl font-semibold tabular-nums transition-colors group-hover:text-primary">
+                                            {formatMinorUnits(
+                                                summaries[currency]
+                                                    .net_spending_minor,
+                                                currency,
+                                            )}
+                                        </dd>
+                                    </Link>
+                                    <div className="grid gap-1 rounded-lg border p-3">
+                                        <dt className="text-sm text-muted-foreground">
+                                            Income
+                                        </dt>
+                                        <dd className="text-lg font-semibold tabular-nums">
+                                            {formatMinorUnits(
+                                                summaries[currency]
+                                                    .income_minor,
+                                                currency,
+                                            )}
+                                        </dd>
+                                    </div>
+                                    <div className="grid gap-1 rounded-lg border p-3">
+                                        <dt className="text-sm text-muted-foreground">
+                                            Moved to Savings
+                                        </dt>
+                                        <dd className="text-lg font-semibold tabular-nums">
+                                            {formatMinorUnits(
+                                                summaries[currency]
+                                                    .moved_to_savings_minor,
+                                                currency,
+                                            )}
+                                        </dd>
+                                    </div>
+                                </dl>
                                 <p className="text-sm font-medium">
                                     {spendingComparisonDescription({
                                         comparison:
@@ -394,10 +435,11 @@ export default function Dashboard({
                             ) : (
                                 <div className="divide-y">
                                     {recent_transactions.map((transaction) => {
-                                        const KindIcon =
-                                            transaction.kind === 'refund'
-                                                ? ArrowDownLeft
-                                                : ArrowUpRight;
+                                        const isMoneyIn =
+                                            transaction.direction === 'credit';
+                                        const KindIcon = isMoneyIn
+                                            ? ArrowDownLeft
+                                            : ArrowUpRight;
 
                                         return (
                                             <Link
@@ -422,11 +464,17 @@ export default function Dashboard({
                                                     <span className="block text-xs text-muted-foreground">
                                                         {formatDate(
                                                             transaction.occurred_on,
-                                                        )}
+                                                        )}{' '}
+                                                        ·{' '}
+                                                        {movementDescription({
+                                                            kind: transaction.kind,
+                                                            transferPurpose:
+                                                                transaction.transfer_purpose,
+                                                        })}
                                                     </span>
                                                 </span>
                                                 <span
-                                                    className={`text-sm font-semibold tabular-nums ${transaction.kind === 'refund' ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
+                                                    className={`text-sm font-semibold tabular-nums ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
                                                 >
                                                     {transactionAmount(
                                                         transaction,

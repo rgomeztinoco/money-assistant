@@ -64,8 +64,8 @@ test('restoring the same Transaction returns exactly one contribution to the led
 
     expect($transaction->refresh()->voided_at)->toBeNull();
 })->with([
-    'USD purchase' => [TransactionKind::Purchase, Currency::Usd],
-    'PEN purchase' => [TransactionKind::Purchase, Currency::Pen],
+    'USD purchase' => [TransactionKind::Spending, Currency::Usd],
+    'PEN purchase' => [TransactionKind::Spending, Currency::Pen],
     'USD Refund' => [TransactionKind::Refund, Currency::Usd],
     'PEN Refund' => [TransactionKind::Refund, Currency::Pen],
 ]);

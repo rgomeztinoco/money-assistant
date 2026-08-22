@@ -4,7 +4,10 @@ namespace App\Models;
 
 use App\CategoryAssignmentProvenance;
 use App\Currency;
+use App\IncomeSource;
+use App\TransactionDirection;
 use App\TransactionKind;
+use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Database\Factories\TransactionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -23,6 +26,9 @@ use Illuminate\Support\Carbon;
  * @property int $amount_minor
  * @property Currency $currency
  * @property TransactionKind $kind
+ * @property TransactionDirection $direction
+ * @property IncomeSource|null $income_source
+ * @property TransferPurpose|null $transfer_purpose
  * @property string $merchant_description
  * @property string|null $payment_instrument_label
  * @property string|null $payment_instrument_last_four
@@ -46,6 +52,9 @@ use Illuminate\Support\Carbon;
     'amount_minor',
     'currency',
     'kind',
+    'direction',
+    'income_source',
+    'transfer_purpose',
     'merchant_description',
     'payment_instrument_label',
     'payment_instrument_last_four',
@@ -67,6 +76,7 @@ class Transaction extends Model
      * @var array<string, mixed>
      */
     protected $attributes = [
+        'direction' => 'debit',
         'provisional_fields' => '[]',
         'refund_relationship_review_reasons' => '[]',
     ];
@@ -130,6 +140,7 @@ class Transaction extends Model
     public function scopeWhereCategoryRequiresReview(Builder $query): Builder
     {
         return $query
+            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->whereNull('category_id')
             ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
                 ->whereHas('lineItems'));
@@ -169,6 +180,9 @@ class Transaction extends Model
             'amount_minor' => 'integer',
             'currency' => Currency::class,
             'kind' => TransactionKind::class,
+            'direction' => TransactionDirection::class,
+            'income_source' => IncomeSource::class,
+            'transfer_purpose' => TransferPurpose::class,
             'confirmed_at' => 'immutable_datetime',
             'provisional_fields' => 'array',
             'voided_at' => 'immutable_datetime',

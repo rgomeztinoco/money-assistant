@@ -23,21 +23,28 @@ enum StatementMovementClassification: string
             self::Refund,
             self::Fee,
             self::Tax,
-            self::Savings,
         ], true);
     }
 
-    public function transactionKind(StatementMovementDirection $direction): ?TransactionKind
+    public function transactionKind(): ?TransactionKind
     {
-        if (! $this->contributesToSpending()) {
-            return null;
-        }
+        return match ($this) {
+            self::Purchase, self::Fee, self::Tax => TransactionKind::Spending,
+            self::Refund => TransactionKind::Refund,
+            self::Income => TransactionKind::Income,
+            self::Transfer, self::CardPayment, self::Savings => TransactionKind::Transfer,
+            self::NeedsClassification, self::AlreadyRecorded, self::NotAMovement => null,
+        };
+    }
 
-        if ($this === self::Refund || ($this === self::Savings && $direction === StatementMovementDirection::Credit)) {
-            return TransactionKind::Refund;
-        }
-
-        return TransactionKind::Purchase;
+    public function transferPurpose(): ?TransferPurpose
+    {
+        return match ($this) {
+            self::Savings => TransferPurpose::Savings,
+            self::CardPayment => TransferPurpose::CardPayment,
+            self::Transfer => TransferPurpose::Internal,
+            default => null,
+        };
     }
 
     public function summaryKey(StatementMovementDirection $direction): ?string

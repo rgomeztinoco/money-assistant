@@ -48,6 +48,9 @@ use Illuminate\Support\Str;
  *     amount_minor: string,
  *     currency: string,
  *     kind: string,
+ *     direction: string,
+ *     income_source: string|null,
+ *     transfer_purpose: string|null,
  *     merchant_description: string,
  *     confirmed_at: string,
  *     original_purchase: array{id: int, merchant_description: string}|null,
@@ -67,6 +70,9 @@ class ReadLedger
         'amount_minor',
         'currency',
         'kind',
+        'direction',
+        'income_source',
+        'transfer_purpose',
         'merchant_description',
         'confirmed_at',
         'original_purchase_id',
@@ -148,6 +154,9 @@ class ReadLedger
      *     amount_minor: string,
      *     currency: string,
      *     kind: string,
+     *     direction: string,
+     *     income_source: string|null,
+     *     transfer_purpose: string|null,
      *     merchant_description: string,
      *     confirmed_at: string,
      *     original_purchase: array{id: int, merchant_description: string}|null,
@@ -164,9 +173,11 @@ class ReadLedger
         $receiptBreakdown = $transaction->receiptBreakdown?->lineItems->isNotEmpty() === true
             ? $transaction->receiptBreakdown
             : null;
-        $unresolvedCategoryCount = $receiptBreakdown === null
-            ? ($transaction->category_id === null ? 1 : 0)
-            : $receiptBreakdown->lineItems->whereNull('category_id')->count();
+        $unresolvedCategoryCount = $transaction->kind->supportsCategory()
+            ? ($receiptBreakdown === null
+                ? ($transaction->category_id === null ? 1 : 0)
+                : $receiptBreakdown->lineItems->whereNull('category_id')->count())
+            : 0;
         $reviewFields = [];
 
         foreach ($transaction->provisional_fields as $fieldName) {
@@ -194,6 +205,9 @@ class ReadLedger
             'amount_minor' => (string) $transaction->amount_minor,
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
+            'direction' => $transaction->direction->value,
+            'income_source' => $transaction->income_source?->value,
+            'transfer_purpose' => $transaction->transfer_purpose?->value,
             'merchant_description' => $transaction->merchant_description,
             'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
             'original_purchase' => $transaction->originalPurchase === null
@@ -259,7 +273,7 @@ class ReadLedger
                 ->where('kind', TransactionKind::Refund)
                 ->whereNull('original_purchase_id'))
             ->when($filters['refund_relationship'] === 'not_applicable', fn (Builder $query) => $query
-                ->where('kind', TransactionKind::Purchase));
+                ->where('kind', '<>', TransactionKind::Refund));
 
         if ($filters['category_state'] === 'categorized') {
             $this->whereHasNoUncategorizedContribution($query);
@@ -313,31 +327,33 @@ class ReadLedger
                 ->select('receipt_breakdown_id')
                 ->whereIn('category_id', $categoryIds));
 
-        $query->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems, $transactionsWithMatchingLineItems): void {
-            $query
-                ->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems): void {
-                    $query
-                        ->whereIn('category_id', $categoryIds)
-                        ->whereNotIn('id', $transactionsWithLineItems);
-                })
-                ->orWhereIn('id', $transactionsWithMatchingLineItems);
-        });
+        $query->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+            ->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems, $transactionsWithMatchingLineItems): void {
+                $query
+                    ->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems): void {
+                        $query
+                            ->whereIn('category_id', $categoryIds)
+                            ->whereNotIn('id', $transactionsWithLineItems);
+                    })
+                    ->orWhereIn('id', $transactionsWithMatchingLineItems);
+            });
     }
 
     /** @param Builder<Transaction> $query */
     private function whereHasUncategorizedContribution(Builder $query): void
     {
-        $query->where(function (Builder $query): void {
-            $query
-                ->where(function (Builder $query): void {
-                    $query
-                        ->whereNull('category_id')
-                        ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
-                            ->whereHas('lineItems'));
-                })
-                ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
-                    ->whereHas('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
-        });
+        $query->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+            ->where(function (Builder $query): void {
+                $query
+                    ->where(function (Builder $query): void {
+                        $query
+                            ->whereNull('category_id')
+                            ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
+                                ->whereHas('lineItems'));
+                    })
+                    ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
+                        ->whereHas('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
+            });
     }
 
     /** @param Builder<Transaction> $query */
@@ -345,15 +361,19 @@ class ReadLedger
     {
         $query->where(function (Builder $query): void {
             $query
-                ->where(function (Builder $query): void {
+                ->whereNotIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+                ->orWhere(function (Builder $query): void {
                     $query
-                        ->whereNotNull('category_id')
-                        ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
-                            ->whereHas('lineItems'));
-                })
-                ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
-                    ->whereHas('lineItems')
-                    ->whereDoesntHave('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
+                        ->where(function (Builder $query): void {
+                            $query
+                                ->whereNotNull('category_id')
+                                ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
+                                    ->whereHas('lineItems'));
+                        })
+                        ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
+                            ->whereHas('lineItems')
+                            ->whereDoesntHave('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
+                });
         });
     }
 }

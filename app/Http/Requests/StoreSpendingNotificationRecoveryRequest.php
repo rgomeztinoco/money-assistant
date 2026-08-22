@@ -45,7 +45,10 @@ class StoreSpendingNotificationRecoveryRequest extends FormRequest
                 'max:'.PHP_INT_MAX,
             ],
             'currency' => ['required', Rule::enum(Currency::class)],
-            'kind' => ['required', Rule::enum(TransactionKind::class)],
+            'kind' => ['required', Rule::in([
+                TransactionKind::Spending->value,
+                TransactionKind::Refund->value,
+            ])],
             'merchant_description' => ['required', 'string', 'max:255'],
         ];
     }

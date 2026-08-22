@@ -37,7 +37,6 @@ import {
 } from '@/lib/statement-movement-classification';
 import { index } from '@/routes/statement_imports';
 import type {
-    CategoryOption,
     StatementClassification,
     StatementImportPreview,
     StatementPreviewMovement,
@@ -58,7 +57,6 @@ type ConfirmationData = {
     file_hash: string;
     instrument_label: string;
     instrument_last_four: string;
-    savings_category_id: string;
     movements: ConfirmationMovement[];
 };
 
@@ -147,8 +145,8 @@ function MovementEditor({
                     {statementMovementContributesToSpending(
                         movement.classification,
                     )
-                        ? 'Affects spending'
-                        : 'Statement only'}
+                        ? 'Affects Net Spending'
+                        : 'Excluded from Net Spending'}
                 </Badge>
                 {sourceMovement.can_be_excluded && (
                     <Badge variant="outline">Suggested exclusion</Badge>
@@ -318,13 +316,7 @@ function MovementEditor({
     );
 }
 
-export default function CreateStatementImport({
-    category_options,
-    suggested_savings_category_id,
-}: {
-    category_options: CategoryOption[];
-    suggested_savings_category_id: number | null;
-}) {
+export default function CreateStatementImport() {
     const previewRequest = useHttp<
         { statement: File | null },
         StatementImportPreview
@@ -334,7 +326,6 @@ export default function CreateStatementImport({
         file_hash: '',
         instrument_label: '',
         instrument_last_four: '',
-        savings_category_id: suggested_savings_category_id?.toString() ?? '',
         movements: [],
     });
     const [preview, setPreview] = useState<StatementImportPreview | null>(null);
@@ -373,14 +364,10 @@ export default function CreateStatementImport({
         (movement) =>
             statementMovementContributesToSpending(movement.classification),
     ).length;
-    const statementOnlyMovementCount =
+    const outsideNetSpendingCount =
         confirmation.data.movements.length -
         spendingMovementCount -
         unresolvedCount;
-    const hasSavings = confirmation.data.movements.some(
-        (movement) => movement.classification === 'savings',
-    );
-
     function requestPreview(event: React.FormEvent<HTMLFormElement>): void {
         event.preventDefault();
 
@@ -403,8 +390,6 @@ export default function CreateStatementImport({
                     file_hash: response.file_hash,
                     instrument_label: response.instrument_label,
                     instrument_last_four: response.instrument_last_four ?? '',
-                    savings_category_id:
-                        suggested_savings_category_id?.toString() ?? '',
                     movements: response.movements.map((movement) => ({
                         source_row_id: movement.source_row_id,
                         occurred_on: movement.occurred_on,
@@ -578,7 +563,7 @@ export default function CreateStatementImport({
                                     </div>
                                     <div className="grid gap-1 rounded-lg border p-3">
                                         <span className="text-xs text-muted-foreground">
-                                            Affect spending
+                                            Affect Net Spending
                                         </span>
                                         <span className="text-xl font-semibold tabular-nums">
                                             {spendingMovementCount}
@@ -586,10 +571,10 @@ export default function CreateStatementImport({
                                     </div>
                                     <div className="grid gap-1 rounded-lg border p-3">
                                         <span className="text-xs text-muted-foreground">
-                                            Statement only
+                                            Outside Net Spending
                                         </span>
                                         <span className="text-xl font-semibold tabular-nums">
-                                            {statementOnlyMovementCount}
+                                            {outsideNetSpendingCount}
                                         </span>
                                     </div>
                                     <div className="grid gap-1 rounded-lg border p-3">
@@ -662,49 +647,6 @@ export default function CreateStatementImport({
                                             }
                                         />
                                     </div>
-                                    {hasSavings && (
-                                        <div className="grid gap-2 md:col-span-3">
-                                            <Label htmlFor="savings-category">
-                                                Category for Savings movements
-                                            </Label>
-                                            <NativeSelect
-                                                id="savings-category"
-                                                value={
-                                                    confirmation.data
-                                                        .savings_category_id
-                                                }
-                                                onChange={(event) => {
-                                                    confirmation.clearErrors(
-                                                        'savings_category_id',
-                                                    );
-                                                    confirmation.setData(
-                                                        'savings_category_id',
-                                                        event.currentTarget
-                                                            .value,
-                                                    );
-                                                }}
-                                                options={[
-                                                    {
-                                                        value: '',
-                                                        label: 'Select an active Category',
-                                                    },
-                                                    ...category_options.map(
-                                                        (category) => ({
-                                                            value: category.id.toString(),
-                                                            label: category.path,
-                                                        }),
-                                                    ),
-                                                ]}
-                                                required
-                                            />
-                                            <InputError
-                                                message={
-                                                    confirmation.errors
-                                                        .savings_category_id
-                                                }
-                                            />
-                                        </div>
-                                    )}
                                 </div>
                             </CardContent>
                         </Card>

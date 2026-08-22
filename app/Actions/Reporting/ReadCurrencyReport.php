@@ -7,6 +7,7 @@ use App\ExactInteger;
 use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
+use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -18,11 +19,15 @@ use Illuminate\Database\Eloquent\Collection;
  */
 final class ReadCurrencyReport
 {
-    public function __construct(private ReadSpendingAnalysis $readSpendingAnalysis) {}
+    public function __construct(
+        private ReadSpendingAnalysis $readSpendingAnalysis,
+        private ReadPeriodSummary $readPeriodSummary,
+    ) {}
 
     /**
      * @return array{
      *     currency: string,
+     *     summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string},
      *     period: array{label: string, date_from: string, date_to: string, total_minor: string},
      *     comparison: array{period: array{label: string, date_from: string, date_to: string}, current_total_minor: string, previous_total_minor: string, change_minor: string, percentage_change: string|null, direction: string},
      *     monthly_history: list<ReportMonthData>,
@@ -46,7 +51,7 @@ final class ReadCurrencyReport
             ->orderBy('name')
             ->get(['id', 'parent_id', 'name', 'archived_at']);
         $categoriesById = $categories->keyBy('id');
-        $periodTotal = ExactInteger::from(0);
+        $summary = $this->readPeriodSummary->handle($owner, $currency, $dateFrom, $dateTo);
 
         /** @var array<int|string, ExactInteger> $categoryAmounts */
         $categoryAmounts = [];
@@ -55,6 +60,7 @@ final class ReadCurrencyReport
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
+            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
             ->select(['id', 'amount_minor', 'kind', 'category_id'])
             ->with([
@@ -64,8 +70,7 @@ final class ReadCurrencyReport
             ->lazyById();
 
         foreach ($transactions as $transaction) {
-            $transactionAmount = $transaction->kind->signedAmount((string) $transaction->amount_minor);
-            $periodTotal = $periodTotal->add($transactionAmount);
+            $transactionAmount = $transaction->kind->netSpendingAmount((string) $transaction->amount_minor);
             $lineItems = $transaction->receiptBreakdown?->lineItems;
 
             if ($lineItems === null || $lineItems->isEmpty()) {
@@ -83,7 +88,7 @@ final class ReadCurrencyReport
                 $this->addCategoryAmount(
                     $categoryAmounts,
                     $lineItem->category_id,
-                    $transaction->kind->signedAmount($lineItem->line_total_minor),
+                    $transaction->kind->netSpendingAmount($lineItem->line_total_minor),
                     $categoriesById,
                 );
             }
@@ -91,11 +96,12 @@ final class ReadCurrencyReport
 
         return [
             'currency' => $currency->value,
+            'summary' => $summary,
             'period' => [
                 'label' => $this->periodLabel($dateFrom, $dateTo),
                 'date_from' => $dateFrom->toDateString(),
                 'date_to' => $dateTo->toDateString(),
-                'total_minor' => $periodTotal->value(),
+                'total_minor' => $summary['net_spending_minor'],
             ],
             'comparison' => [
                 'period' => [
@@ -149,6 +155,7 @@ final class ReadCurrencyReport
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
+            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->where('occurred_on', '<=', $dateTo->toDateString())
             ->min('occurred_on');
         $selectedPeriodStart = $dateFrom->startOfMonth();
@@ -174,6 +181,7 @@ final class ReadCurrencyReport
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
+            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->whereBetween('occurred_on', [$historyStart->toDateString(), $dateTo->toDateString()])
             ->select(['id', 'occurred_on', 'amount_minor', 'kind'])
             ->cursor();
@@ -181,7 +189,7 @@ final class ReadCurrencyReport
         foreach ($transactions as $transaction) {
             $monthKey = $transaction->occurred_on->format('Y-m');
             $monthlyAmounts[$monthKey] = $monthlyAmounts[$monthKey]->add(
-                $transaction->kind->signedAmount((string) $transaction->amount_minor),
+                $transaction->kind->netSpendingAmount((string) $transaction->amount_minor),
             );
             $monthlyTransactionCounts[$monthKey]++;
         }

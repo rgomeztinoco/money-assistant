@@ -147,7 +147,7 @@ test('the owner can independently create a future Merchant Rule and bulk assign 
         'category_id' => $category->id,
         'create_merchant_rule' => $createMerchantRule,
         'bulk_assign' => $bulkAssign,
-        'rule_transaction_kind' => 'purchase',
+        'rule_transaction_kind' => 'spending',
         'rule_currency' => 'PEN',
     ])->assertSessionHasNoErrors();
 
@@ -166,7 +166,7 @@ test('the owner can independently create a future Merchant Rule and bulk assign 
             ->merchant->toBe('CAFÉ—Central!!!')
             ->merchant_key->toBe('café central')
             ->category_id->toBe($category->id)
-            ->transaction_kind->toBe(TransactionKind::Purchase)
+            ->transaction_kind->toBe(TransactionKind::Spending)
             ->currency->toBe(Currency::Pen)
             ->enabled->toBeTrue();
     }
@@ -185,7 +185,7 @@ test('future Merchant Rule creation rejects an existing exact disabled scope wit
     MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create([
         'merchant' => 'Scoped merchant',
         'merchant_key' => 'scoped merchant',
-        'transaction_kind' => TransactionKind::Purchase,
+        'transaction_kind' => TransactionKind::Spending,
         'currency' => Currency::Pen,
     ]);
 
@@ -194,7 +194,7 @@ test('future Merchant Rule creation rejects an existing exact disabled scope wit
             'category_id' => $category->id,
             'create_merchant_rule' => true,
             'bulk_assign' => false,
-            'rule_transaction_kind' => 'purchase',
+            'rule_transaction_kind' => 'spending',
             'rule_currency' => 'PEN',
         ])
         ->assertSessionHasErrors('create_merchant_rule');
@@ -215,7 +215,7 @@ test('categorization rolls back started bulk assignments when Merchant Rule crea
     MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create([
         'merchant' => 'Rollback merchant',
         'merchant_key' => 'rollback merchant',
-        'transaction_kind' => TransactionKind::Purchase,
+        'transaction_kind' => TransactionKind::Spending,
         'currency' => Currency::Pen,
     ]);
 
@@ -225,7 +225,7 @@ test('categorization rolls back started bulk assignments when Merchant Rule crea
         categoryId: $category->id,
         createMerchantRule: true,
         bulkAssign: true,
-        ruleTransactionKind: TransactionKind::Purchase,
+        ruleTransactionKind: TransactionKind::Spending,
         ruleCurrency: Currency::Pen,
     ))->toThrow(QueryException::class);
 
@@ -317,7 +317,7 @@ test('a confirmed Transaction with provisional fields remains in totals and appe
         occurredOn: CarbonImmutable::parse('2026-07-22'),
         amountMinor: 12345,
         currency: Currency::Usd,
-        kind: TransactionKind::Purchase,
+        kind: TransactionKind::Spending,
         merchantDescription: 'Neighborhood market',
         provisionalFields: [
             ReviewableTransactionField::OccurredOn,
@@ -443,7 +443,7 @@ test('the owner can accept one provisional field and replace another value', fun
         occurredOn: CarbonImmutable::parse('2026-07-22'),
         amountMinor: 12345,
         currency: Currency::Usd,
-        kind: TransactionKind::Purchase,
+        kind: TransactionKind::Spending,
         merchantDescription: 'Neighborhood market',
         provisionalFields: [
             ReviewableTransactionField::MerchantDescription,
@@ -516,7 +516,7 @@ test('direct edits replace the current value for every reviewable Transaction fi
         occurredOn: CarbonImmutable::parse('2026-07-22'),
         amountMinor: 12345,
         currency: Currency::Usd,
-        kind: TransactionKind::Purchase,
+        kind: TransactionKind::Spending,
         merchantDescription: 'Provisional market',
         provisionalFields: [$field],
     );
@@ -587,7 +587,8 @@ test('invalid field review input leaves the confirmed Transaction unchanged', fu
     'invalid occurrence date' => [ReviewableTransactionField::OccurredOn, ['value' => '2026-02-30'], 'value'],
     'fractional amount' => [ReviewableTransactionField::AmountMinor, ['value' => '1.5'], 'value'],
     'unsupported currency' => [ReviewableTransactionField::Currency, ['value' => 'EUR'], 'value'],
-    'unsupported kind' => [ReviewableTransactionField::Kind, ['value' => 'transfer'], 'value'],
+    'unsupported kind' => [ReviewableTransactionField::Kind, ['value' => 'unsupported'], 'value'],
+    'kind requiring full movement details' => [ReviewableTransactionField::Kind, ['value' => 'transfer'], 'value'],
     'merchant above maximum length' => [ReviewableTransactionField::MerchantDescription, ['value' => str_repeat('a', 256)], 'value'],
     'unsupported resolution' => [ReviewableTransactionField::MerchantDescription, ['resolution' => 'revise'], 'resolution'],
 ]);

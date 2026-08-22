@@ -5,11 +5,47 @@ Money Assistant records personal spending and helps its owner understand and imp
 ## Language
 
 **Transaction**:
-A confirmed personal money movement that immediately affects spending totals as either a purchase or a Refund, even when some details remain uncertain and require review. A saved manual entry or supported Spending Notification is sufficient confirmation.
-_Avoid_: Expense, purchase
+A confirmed posted movement of money represented once with an independent Movement Direction and financial meaning: Spending, Refund or reimbursement, Income, or Transfer. A Transaction may come from manual entry, a supported Spending Notification, or a Statement Movement, and it remains confirmed even when details require review.
+_Avoid_: Expense, purchase, cash-flow entry
+
+**Movement Direction**:
+Whether money moved out of an account (debit) or into an account (credit). Direction records what happened to the account and does not determine the movement's financial meaning.
+_Avoid_: Transaction type, financial meaning
+
+**Spending**:
+A Transaction meaning for money spent on goods, services, fees, taxes, or obligations. Spending increases Net Spending and may use a Category or Receipt Breakdown. A full mortgage payment may remain Spending under Housing without representing a liability or home-equity ledger.
+_Avoid_: Debit, expense record
+
+**Refund or reimbursement**:
+A Transaction meaning for money returned after Spending or reimbursed by another party. It reduces Net Spending and may be linked to the original Spending Transaction without rewriting either movement.
+_Avoid_: Income, credit
+
+**Income**:
+A Transaction meaning for money earned or otherwise received as income. It is summarized separately from Net Spending and uses an Income Source rather than a Spending Category.
+_Avoid_: Refund, credit
+
+**Income Source**:
+The small owner-facing taxonomy for Income: Salary, Independent work, Investments, or Other income. It is independent from Spending Categories.
+_Avoid_: Category, merchant
+
+**Transfer**:
+A Transaction meaning for money moved between the owner's accounts or used to pay a card. Transfers do not affect Net Spending or Income. Savings Transfers contribute to Moved to Savings; card payments and ordinary internal Transfers do not.
+_Avoid_: Spending, Income
+
+**Transfer Purpose**:
+The reason for a Transfer: Moved to savings, Card payment, or Other transfer. It determines whether the movement contributes to Moved to Savings without changing its Movement Direction.
+_Avoid_: Category, direction
+
+**Net Spending**:
+Spending minus Refunds and reimbursements for one currency and period. Income and Transfers never reduce it.
+_Avoid_: Net external cash flow, balance change
+
+**Moved to Savings**:
+Savings Transfers moving money out minus savings withdrawals moving money in, for one currency and period. It is not spending, income, equity, or a complete account balance.
+_Avoid_: Savings spending, net external cash flow
 
 **Voided Transaction**:
-A retained Transaction determined not to represent actual spending and therefore excluded from spending totals. Voiding is reversible.
+A retained Transaction excluded from period summaries because it does not represent an actual confirmed movement in its current form. Voiding is reversible.
 _Avoid_: Deleted transaction
 
 **Spending Notification**:
@@ -21,7 +57,7 @@ The minimal Gmail identity and processing outcome retained for a Gmail message e
 _Avoid_: Stored notification, raw email
 
 **Statement Import**:
-An owner-initiated conversion of every posted Statement Movement from a supported Financial Statement Format. Movements that contribute to spending also create linked Transactions, while other movements remain visible only within the Statement Import.
+An owner-initiated conversion of every posted Statement Movement from a supported Financial Statement Format. Every actual movement creates one linked Transaction, while balances, limits, headings, and other informational values remain excluded.
 _Avoid_: Transaction Import, statement synchronization
 
 **Financial Statement Format**:
@@ -41,7 +77,7 @@ The minimal identity and outcome retained for a confirmed Statement Import so th
 _Avoid_: Stored statement, import file
 
 **WARDA**:
-BCP's automatic savings feature. Money moved into WARDA contributes positive spending under a Savings Category, while money withdrawn from WARDA contributes a Refund under the same Category so reports show the net amount saved.
+BCP's automatic savings feature. Money moved into or withdrawn from WARDA is a Transfer with the Savings purpose. Deposits increase Moved to Savings and withdrawals reduce it without affecting Net Spending or Income.
 _Avoid_: Guarda, ordinary transfer
 
 **Parser Profile**:
@@ -53,7 +89,7 @@ An independently identifiable message layout that a Parser Profile supports only
 _Avoid_: Sender, institution format
 
 **Category**:
-The owner-facing classification assigned to a Transaction or Line Item for spending analysis. An unassigned amount reports in the system Uncategorized bucket. Categories form a customizable two-level taxonomy: either a top-level Category or one of its second-level Categories may be assigned, and second-level spending rolls up to its current parent. Active Category names are case-insensitively unique among siblings, while the same child name may appear under different parents. A Category keeps its identity and historical assignments when renamed or moved, and its current name and parent apply across historical reporting.
+The owner-facing classification assigned to a Spending or Refund Transaction or its Line Item for spending analysis. Income uses an Income Source, and Transfers use a Transfer Purpose. An unassigned Spending or Refund amount reports in the system Uncategorized bucket. Categories form a customizable two-level taxonomy: either a top-level Category or one of its second-level Categories may be assigned, and second-level spending rolls up to its current parent. Active Category names are case-insensitively unique among siblings, while the same child name may appear under different parents. A Category keeps its identity and historical assignments when renamed or moved, and its current name and parent apply across historical reporting.
 _Avoid_: Tag, type
 
 **Archived Category**:
@@ -61,7 +97,7 @@ A Category that keeps its historical assignments and report contribution but is 
 _Avoid_: Deleted Category
 
 **Uncategorized Transaction**:
-A confirmed Transaction with no owner Category or deterministic Merchant Rule match. It remains included in total spending, appears in the system Uncategorized reporting bucket, and waits in the Review Queue; Uncategorized is not a customizable Category or a Merchant Rule target.
+A confirmed Spending or Refund Transaction with no owner Category or deterministic Merchant Rule match. It remains included in Net Spending, appears in the system Uncategorized reporting bucket, and waits in the Review Queue; Income and Transfers are never Uncategorized.
 _Avoid_: Uncategorized Category
 
 **Category Assignment Provenance**:
@@ -77,11 +113,11 @@ An owner-provided change to a current Transaction value. It takes effect immedia
 _Avoid_: Override
 
 **Merchant Rule**:
-An owner-created exact merchant-to-active-Category mapping for whole Transactions, optionally scoped by Transaction kind or currency. Its deterministic merchant key normalizes case, Unicode, punctuation, and whitespace; when enabled, it categorizes only future Uncategorized Transactions, and its complete scope cannot conflict with another enabled Merchant Rule.
+An owner-created exact merchant-to-active-Category mapping for whole Spending or Refund Transactions, optionally scoped by those meanings or currency. Its deterministic merchant key normalizes case, Unicode, punctuation, and whitespace; when enabled, it categorizes only future Uncategorized Transactions, and its complete scope cannot conflict with another enabled Merchant Rule.
 _Avoid_: Model training, hidden preference
 
 **Receipt Breakdown**:
-An itemized allocation attached to a Transaction whose reconciled amounts replace that Transaction's own Category contribution. Saving an initial or replacement Receipt Breakdown succeeds atomically only when its signed Line Items reconcile exactly to the Transaction amount. It does not create additional Transactions or change the Transaction's amount; the retained Transaction Category is only a fallback.
+An itemized allocation attached to a Spending or Refund Transaction whose reconciled amounts replace that Transaction's own Category contribution. Saving an initial or replacement Receipt Breakdown succeeds atomically only when its signed Line Items reconcile exactly to the Transaction amount. It does not create additional Transactions or change the Transaction's amount; the retained Transaction Category is only a fallback.
 _Avoid_: Nested transactions, child transactions
 
 **Line Item**:
@@ -91,7 +127,3 @@ _Avoid_: Sub-transaction
 **Unidentified Line Item**:
 An owner-confirmed, Uncategorized Line Item representing a known amount whose receipt detail is unavailable. It may reconcile a partial receipt and remains in the Review Queue; Money Assistant may not invent it from an arithmetic remainder.
 _Avoid_: Balancing item, miscellaneous item
-
-**Refund**:
-A separate Transaction that reverses all or part of an earlier purchase and reduces spending totals. It may be linked to that purchase without changing the original Transaction, but the link never copies or infers a Receipt Breakdown; every Refund allocation requires owner review.
-_Avoid_: Income, credit

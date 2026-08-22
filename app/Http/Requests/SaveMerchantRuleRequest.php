@@ -34,7 +34,10 @@ class SaveMerchantRuleRequest extends FormRequest
                     ->where('user_id', $this->user()->id)
                     ->whereNull('archived_at'),
             ],
-            'transaction_kind' => ['nullable', Rule::enum(TransactionKind::class)],
+            'transaction_kind' => ['nullable', Rule::in([
+                TransactionKind::Spending->value,
+                TransactionKind::Refund->value,
+            ])],
             'currency' => ['nullable', Rule::enum(Currency::class)],
             'enabled' => ['required', 'boolean'],
         ];

@@ -29,6 +29,12 @@ type ReportPeriod = {
     total_minor: string;
 };
 
+type PeriodSummary = {
+    net_spending_minor: string;
+    income_minor: string;
+    moved_to_savings_minor: string;
+};
+
 type ReportComparison = SpendingComparison & {
     period: Omit<ReportPeriod, 'total_minor'>;
 };
@@ -57,6 +63,7 @@ type ReportCategoryGroup = ReportCategoryAmount & {
 
 type ReportProps = {
     currency: Currency;
+    summary: PeriodSummary;
     period: ReportPeriod;
     comparison: ReportComparison;
     monthly_history: ReportMonth[];
@@ -124,6 +131,7 @@ function ChartBar({ value, values }: { value: string; values: string[] }) {
 
 export default function ReportShow({
     currency,
+    summary,
     period,
     comparison,
     monthly_history: monthlyHistory,
@@ -193,22 +201,51 @@ export default function ReportShow({
                             </div>
                             <CardTitle>{period.label}</CardTitle>
                             <CardDescription>
-                                Net {currency} purchases after Refunds. Voided
+                                Confirmed {currency} movement summaries. Voided
                                 Transactions are excluded.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="grid gap-4">
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                                <div className="grid gap-1">
-                                    <p
+                            <dl className="grid gap-3 sm:grid-cols-3">
+                                <div className="grid gap-1 rounded-lg border p-3 sm:col-span-3">
+                                    <dt className="text-sm text-muted-foreground">
+                                        Net Spending
+                                    </dt>
+                                    <dd
                                         className="text-4xl font-semibold tabular-nums"
                                         data-test="report-period-total"
                                     >
                                         {formatMinorUnits(
-                                            period.total_minor,
+                                            summary.net_spending_minor,
                                             currency,
                                         )}
-                                    </p>
+                                    </dd>
+                                </div>
+                                <div className="grid gap-1 rounded-lg border p-3">
+                                    <dt className="text-sm text-muted-foreground">
+                                        Income
+                                    </dt>
+                                    <dd className="text-lg font-semibold tabular-nums">
+                                        {formatMinorUnits(
+                                            summary.income_minor,
+                                            currency,
+                                        )}
+                                    </dd>
+                                </div>
+                                <div className="grid gap-1 rounded-lg border p-3 sm:col-span-2">
+                                    <dt className="text-sm text-muted-foreground">
+                                        Moved to Savings
+                                    </dt>
+                                    <dd className="text-lg font-semibold tabular-nums">
+                                        {formatMinorUnits(
+                                            summary.moved_to_savings_minor,
+                                            currency,
+                                        )}
+                                    </dd>
+                                </div>
+                            </dl>
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                                <div className="grid gap-1">
                                     <p className="text-sm font-medium">
                                         {spendingComparisonDescription({
                                             comparison,

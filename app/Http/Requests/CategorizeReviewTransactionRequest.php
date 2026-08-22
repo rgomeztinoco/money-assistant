@@ -41,7 +41,10 @@ class CategorizeReviewTransactionRequest extends FormRequest
             ],
             'create_merchant_rule' => ['required', 'boolean'],
             'bulk_assign' => ['required', 'boolean'],
-            'rule_transaction_kind' => ['nullable', Rule::enum(TransactionKind::class)],
+            'rule_transaction_kind' => ['nullable', Rule::in([
+                TransactionKind::Spending->value,
+                TransactionKind::Refund->value,
+            ])],
             'rule_currency' => ['nullable', Rule::enum(Currency::class)],
             'next_review_item' => ['nullable', 'string', 'regex:/^(transaction|line-item):[1-9][0-9]*$/'],
         ];

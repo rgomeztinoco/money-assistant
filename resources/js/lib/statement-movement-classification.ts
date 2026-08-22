@@ -25,12 +25,7 @@ export const statementMovementClassificationOptions: Array<{
         label: 'Card payment',
         contributesToSpending: false,
     },
-    { value: 'savings', label: 'Savings', contributesToSpending: true },
-    {
-        value: 'already_recorded',
-        label: 'Already recorded',
-        contributesToSpending: false,
-    },
+    { value: 'savings', label: 'Savings', contributesToSpending: false },
     {
         value: 'not_a_movement',
         label: 'Not a movement',
@@ -48,6 +43,10 @@ const statementMovementClassifications = new Map(
 export function statementMovementClassificationLabel(
     classification: StatementClassification,
 ): string {
+    if (classification === 'already_recorded') {
+        return 'Already recorded';
+    }
+
     return (
         statementMovementClassifications.get(classification)?.label ??
         classification

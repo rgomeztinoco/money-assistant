@@ -52,7 +52,7 @@ test('filters, selection, and scroll context persist while directly editing a Tr
         ->assertQueryStringHas('review_state', 'outstanding')
         ->assertQueryStringHas('selected')
         ->assertSee('Edit current Transaction')
-        ->assertSee('Included in spending totals')
+        ->assertSee('Included in Net Spending')
         ->press('Advanced details')
         ->assertSee('Provenance')
         ->fill('Edit merchant or description', 'Neighborhood market Lima')

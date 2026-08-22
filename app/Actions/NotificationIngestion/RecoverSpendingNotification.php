@@ -8,6 +8,7 @@ use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
 use App\SpendingNotificationProcessingOutcome;
+use App\TransactionDirection;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +45,9 @@ final class RecoverSpendingNotification
                 amountMinor: $amountMinor,
                 currency: $currency,
                 kind: $kind,
+                direction: $kind === TransactionKind::Refund
+                    ? TransactionDirection::Credit
+                    : TransactionDirection::Debit,
                 merchantDescription: $merchantDescription,
             );
             $reference->forceFill([

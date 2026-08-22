@@ -44,6 +44,8 @@ test('fresh PostgreSQL migrations contain only the lean v1 baseline', function (
             '2026_08_13_150809_create_parser_profile_baseline',
             '2026_08_13_150810_create_gmail_baseline',
             '2026_08_15_235212_create_statement_imports_table',
+            '2026_08_22_011805_add_money_movement_fields_to_transactions_table',
+            '2026_08_22_012614_migrate_existing_money_movements',
         ]);
 });
 
@@ -72,7 +74,8 @@ test('baseline tables expose the retained application columns', function (string
         'merchant_description', 'payment_instrument_label', 'payment_instrument_last_four',
         'confirmed_at', 'provisional_fields', 'voided_at', 'original_purchase_id',
         'refund_relationship_review_reasons', 'category_id', 'category_assignment_provenance',
-        'merchant_rule_id', 'created_at', 'updated_at',
+        'merchant_rule_id', 'created_at', 'updated_at', 'direction', 'income_source',
+        'transfer_purpose',
     ]],
     'Categories' => ['categories', [
         'id', 'user_id', 'parent_id', 'name', 'archived_at', 'created_at', 'updated_at',

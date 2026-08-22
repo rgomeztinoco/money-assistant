@@ -12,6 +12,8 @@ use App\Models\User;
 use App\SpendingNotificationExtraction;
 use App\SpendingNotificationParser;
 use App\SpendingNotificationProcessingOutcome;
+use App\TransactionDirection;
+use App\TransactionKind;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -142,6 +144,9 @@ final class ProcessSpendingNotification
                 amountMinor: $extraction->amountMinor,
                 currency: $extraction->currency,
                 kind: $extraction->kind,
+                direction: $extraction->kind === TransactionKind::Refund
+                    ? TransactionDirection::Credit
+                    : TransactionDirection::Debit,
                 merchantDescription: $extraction->merchantDescription,
                 provisionalFields: $extraction->provisionalFields,
             );

@@ -129,7 +129,7 @@ final class SpendingNotificationParser
         $semantics = is_array($rule) ? ($rule['semantics'] ?? null) : null;
 
         return match ($semantics) {
-            'fixed_purchase' => TransactionKind::Purchase,
+            'fixed_purchase' => TransactionKind::Spending,
             'fixed_refund' => TransactionKind::Refund,
             default => throw new InvalidArgumentException(
                 'The Transaction-kind semantics are not supported.',
@@ -226,7 +226,7 @@ final class SpendingNotificationParser
             || ($semantics === 'signed' && $sign === '')
             || ! in_array($semantics, ['absolute', 'signed'], true)
             || ($semantics === 'signed'
-                && (($kind === TransactionKind::Purchase && $sign !== '+')
+                && (($kind === TransactionKind::Spending && $sign !== '+')
                     || ($kind === TransactionKind::Refund && $sign !== '-')))) {
             throw new InvalidArgumentException(
                 'The amount sign does not agree with the declared semantics.',

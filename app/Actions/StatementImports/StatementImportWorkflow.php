@@ -7,6 +7,7 @@ use App\Contracts\StatementPdfExtractor;
 use App\Currency;
 use App\ExactInteger;
 use App\FinancialStatementFormat;
+use App\IncomeSource;
 use App\Models\Category;
 use App\Models\StatementImport;
 use App\Models\StatementMovement;
@@ -17,6 +18,7 @@ use App\StatementImports\StatementImportPreviewMovement;
 use App\StatementImports\StatementImportValidationException;
 use App\StatementMovementClassification;
 use App\StatementMovementDirection;
+use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
@@ -97,7 +99,6 @@ final class StatementImportWorkflow
      *     file_hash?: mixed,
      *     instrument_label?: mixed,
      *     instrument_last_four?: mixed,
-     *     savings_category_id?: mixed,
      *     movements?: mixed
      * }  $confirmation
      */
@@ -141,22 +142,8 @@ final class StatementImportWorkflow
         }
 
         $editedMovements = $this->validateMovementEdits($preview, $confirmation['movements'] ?? null);
-        $hasSavings = collect($editedMovements)
-            ->contains(fn (array $movement): bool => $movement['classification'] === StatementMovementClassification::Savings);
-        $savingsCategory = $hasSavings
-            ? $this->activeOwnedCategory($owner, $confirmation['savings_category_id'] ?? null)
-            : null;
-
-        if ($hasSavings && $savingsCategory === null) {
-            throw $this->invalid(
-                'Select an active Category for Savings movements.',
-                'savings_category_required',
-                'savings_category_id',
-            );
-        }
-
         try {
-            return DB::transaction(function () use ($owner, $preview, $editedMovements, $instrumentLabel, $instrumentLastFour, $savingsCategory): StatementImport {
+            return DB::transaction(function () use ($owner, $preview, $editedMovements, $instrumentLabel, $instrumentLastFour): StatementImport {
                 $statementImport = StatementImport::create([
                     'user_id' => $owner->getKey(),
                     'financial_statement_format' => $preview->financialStatementFormat,
@@ -178,12 +165,11 @@ final class StatementImportWorkflow
                     $sourceMovement = $editedMovement['source'];
                     $classification = $editedMovement['classification'];
                     $category = match ($classification) {
-                        StatementMovementClassification::Savings => $savingsCategory,
                         StatementMovementClassification::Tax => $taxCategory,
                         StatementMovementClassification::Fee => $feeCategory,
                         default => null,
                     };
-                    $transaction = $this->createSpendingTransaction(
+                    $transaction = $this->createTransaction(
                         owner: $owner,
                         movement: $editedMovement,
                         direction: $sourceMovement->direction,
@@ -194,7 +180,7 @@ final class StatementImportWorkflow
 
                     StatementMovement::create([
                         'statement_import_id' => $statementImport->getKey(),
-                        'transaction_id' => $transaction?->getKey(),
+                        'transaction_id' => $transaction->getKey(),
                         'source_row_id' => $sourceMovement->sourceRowId,
                         'position' => $sourceMovement->position,
                         'occurred_on' => $editedMovement['occurred_on'],
@@ -297,7 +283,10 @@ final class StatementImportWorkflow
                 );
             }
 
-            if ($classification === null || $classification === StatementMovementClassification::NeedsClassification) {
+            if ($classification === null || in_array($classification, [
+                StatementMovementClassification::NeedsClassification,
+                StatementMovementClassification::AlreadyRecorded,
+            ], true)) {
                 throw $this->invalid(
                     'Classify every real movement before confirming the import.',
                     'movement_needs_classification',
@@ -337,20 +326,19 @@ final class StatementImportWorkflow
     }
 
     /** @param ValidatedMovement $movement */
-    private function createSpendingTransaction(
+    private function createTransaction(
         User $owner,
         array $movement,
         StatementMovementDirection $direction,
         ?Category $category,
         string $instrumentLabel,
         ?string $instrumentLastFour,
-    ): ?Transaction {
+    ): Transaction {
         $classification = $movement['classification'];
-
-        $kind = $classification->transactionKind($direction);
+        $kind = $classification->transactionKind();
 
         if ($kind === null) {
-            return null;
+            throw $this->invalid('Every confirmed movement needs a financial meaning.', 'movement_needs_classification');
         }
 
         return Transaction::create([
@@ -359,6 +347,11 @@ final class StatementImportWorkflow
             'amount_minor' => $movement['amount_minor'],
             'currency' => $movement['currency'],
             'kind' => $kind,
+            'direction' => $direction->value,
+            'income_source' => $kind === TransactionKind::Income
+                ? IncomeSource::Other
+                : null,
+            'transfer_purpose' => $classification->transferPurpose(),
             'merchant_description' => $movement['description'],
             'payment_instrument_label' => $instrumentLabel,
             'payment_instrument_last_four' => $instrumentLastFour,
@@ -369,19 +362,6 @@ final class StatementImportWorkflow
                 ? null
                 : CategoryAssignmentProvenance::Owner,
         ]);
-    }
-
-    private function activeOwnedCategory(User $owner, mixed $categoryId): ?Category
-    {
-        if (! is_int($categoryId) && ! (is_string($categoryId) && ctype_digit($categoryId))) {
-            return null;
-        }
-
-        return Category::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->availableForAssignment()
-            ->whereKey((int) $categoryId)
-            ->first();
     }
 
     private function activeCategoryNamed(User $owner, string $name): ?Category

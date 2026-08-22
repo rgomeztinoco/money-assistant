@@ -6,7 +6,6 @@ use App\Currency;
 use App\ExactInteger;
 use App\Models\Transaction;
 use App\Models\User;
-use App\TransactionKind;
 use Carbon\CarbonImmutable;
 
 final class ReadCurrencyTotals
@@ -26,10 +25,7 @@ final class ReadCurrencyTotals
             ->cursor();
 
         foreach ($transactions as $transaction) {
-            $amount = ExactInteger::from((string) $transaction->amount_minor);
-            $signedAmount = $transaction->kind === TransactionKind::Refund
-                ? ExactInteger::from(0)->subtract($amount)
-                : $amount;
+            $signedAmount = $transaction->kind->netSpendingAmount((string) $transaction->amount_minor);
             $currency = $transaction->currency->value;
             $totals[$currency] = $totals[$currency]->add($signedAmount);
         }

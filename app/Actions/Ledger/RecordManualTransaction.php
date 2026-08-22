@@ -4,10 +4,13 @@ namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ApplyMerchantRuleToTransaction;
 use App\Currency;
+use App\IncomeSource;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
+use App\TransactionDirection;
 use App\TransactionKind;
+use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -29,6 +32,9 @@ class RecordManualTransaction
         Currency $currency,
         TransactionKind $kind,
         string $merchantDescription,
+        ?TransactionDirection $direction = null,
+        ?IncomeSource $incomeSource = null,
+        ?TransferPurpose $transferPurpose = null,
         array $provisionalFields = [],
         ?string $paymentInstrumentLabel = null,
         ?string $paymentInstrumentLastFour = null,
@@ -43,13 +49,21 @@ class RecordManualTransaction
             throw new InvalidArgumentException('A merchant or short description is required.');
         }
 
-        return DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $provisionalFields, $paymentInstrumentLabel, $paymentInstrumentLastFour): Transaction {
+        $direction ??= match ($kind) {
+            TransactionKind::Spending, TransactionKind::Transfer => TransactionDirection::Debit,
+            TransactionKind::Refund, TransactionKind::Income => TransactionDirection::Credit,
+        };
+
+        return DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $direction, $merchantDescription, $incomeSource, $transferPurpose, $provisionalFields, $paymentInstrumentLabel, $paymentInstrumentLastFour): Transaction {
             $transaction = Transaction::create([
                 'user_id' => $owner->getKey(),
                 'occurred_on' => $occurredOn,
                 'amount_minor' => $amountMinor,
                 'currency' => $currency,
                 'kind' => $kind,
+                'direction' => $direction,
+                'income_source' => $kind === TransactionKind::Income ? $incomeSource : null,
+                'transfer_purpose' => $kind === TransactionKind::Transfer ? $transferPurpose : null,
                 'merchant_description' => $merchantDescription,
                 'payment_instrument_label' => $paymentInstrumentLabel,
                 'payment_instrument_last_four' => $paymentInstrumentLastFour,
@@ -61,8 +75,9 @@ class RecordManualTransaction
                     ->all(),
             ]);
 
-            return $this->applyMerchantRuleToTransaction->handle($transaction);
+            return $kind->supportsCategory()
+                ? $this->applyMerchantRuleToTransaction->handle($transaction)
+                : $transaction;
         });
-
     }
 }

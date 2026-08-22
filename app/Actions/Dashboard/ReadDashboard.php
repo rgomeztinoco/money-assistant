@@ -4,6 +4,7 @@ namespace App\Actions\Dashboard;
 
 use App\Actions\Ledger\CountOutstandingReviews;
 use App\Actions\NotificationIngestion\ReadGmailConnectionStatus;
+use App\Actions\Reporting\ReadPeriodSummary;
 use App\Actions\Reporting\ReadSpendingAnalysis;
 use App\Actions\Reporting\SpendingComparisonPeriod;
 use App\Currency;
@@ -13,7 +14,7 @@ use Carbon\CarbonImmutable;
 /**
  * @phpstan-type SpendingComparisonData array{current_total_minor: string, previous_total_minor: string, change_minor: string, percentage_change: string|null, direction: 'increased'|'decreased'|'unchanged'|'no_baseline'|'no_activity'}
  * @phpstan-type CategoryInsightData array{category: array{id: int|null, name: string}, current_total_minor: string, previous_total_minor: string, change_minor: string}
- * @phpstan-type RecentTransactionData array{id: int, occurred_on: string, amount_minor: string, currency: string, kind: string, merchant_description: string}
+ * @phpstan-type RecentTransactionData array{id: int, occurred_on: string, amount_minor: string, currency: string, kind: string, direction: string, transfer_purpose: string|null, merchant_description: string}
  */
 final class ReadDashboard
 {
@@ -22,12 +23,14 @@ final class ReadDashboard
         private CountOutstandingReviews $countOutstandingReviews,
         private ReadGmailConnectionStatus $readGmailConnectionStatus,
         private ReadSpendingAnalysis $readSpendingAnalysis,
+        private ReadPeriodSummary $readPeriodSummary,
     ) {}
 
     /**
      * @return array{
      *     period: array{label: string, date_from: string, date_to: string},
      *     comparison_period: array{label: string, date_from: string, date_to: string},
+     *     summaries: array{PEN: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}, USD: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}},
      *     spending: array{
      *         totals: array{PEN: string, USD: string},
      *         comparisons: array{PEN: SpendingComparisonData, USD: SpendingComparisonData},
@@ -64,6 +67,20 @@ final class ReadDashboard
                 'label' => $comparisonPeriod->previousDateFrom->isoFormat('MMMM D').' – '.$comparisonPeriod->previousDateTo->isoFormat('MMMM D, YYYY'),
                 'date_from' => $comparisonPeriod->previousDateFrom->toDateString(),
                 'date_to' => $comparisonPeriod->previousDateTo->toDateString(),
+            ],
+            'summaries' => [
+                Currency::Pen->value => $this->readPeriodSummary->handle(
+                    $owner,
+                    Currency::Pen,
+                    $comparisonPeriod->currentDateFrom,
+                    $today,
+                ),
+                Currency::Usd->value => $this->readPeriodSummary->handle(
+                    $owner,
+                    Currency::Usd,
+                    $comparisonPeriod->currentDateFrom,
+                    $today,
+                ),
             ],
             'spending' => [
                 'totals' => [

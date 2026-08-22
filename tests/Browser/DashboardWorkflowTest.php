@@ -39,6 +39,17 @@ test('the Dashboard directs attention into filtered owner workflows', function (
         'amount_minor' => 1_000,
         'category_id' => $category->id,
     ]);
+    Transaction::factory()->for($owner, 'owner')->income()->pen()->create([
+        'occurred_on' => now()->toDateString(),
+        'amount_minor' => 5_000,
+        'merchant_description' => 'Salary',
+    ]);
+    Transaction::factory()->for($owner, 'owner')->transfer()->pen()->create([
+        'occurred_on' => now()->toDateString(),
+        'amount_minor' => 1_500,
+        'transfer_purpose' => 'savings',
+        'merchant_description' => 'Moved to savings',
+    ]);
     GmailConnection::factory()->for($owner, 'owner')->create([
         'gmail_account_identity' => 'owner@example.com',
     ]);
@@ -47,10 +58,13 @@ test('the Dashboard directs attention into filtered owner workflows', function (
     $page = visit('/dashboard')->resize(390, 844);
 
     $page
-        ->assertSee('PEN current-period total')
-        ->assertSee('USD current-period total')
+        ->assertSee('Net Spending')
+        ->assertSee('Income')
+        ->assertSee('Moved to Savings')
         ->assertSee('$ 10.00')
         ->assertSee('S/ 25.00')
+        ->assertSee('S/ 50.00')
+        ->assertSee('S/ 15.00')
         ->assertSee('100% more than the previous period')
         ->assertSee('150% more than the previous period')
         ->assertSee('What changed')

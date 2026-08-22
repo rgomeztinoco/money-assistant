@@ -54,7 +54,7 @@ function confirmationPayload(StatementImportPreview $preview): array
                 'amount_minor' => $movement->amountMinor,
                 'currency' => $movement->currency->value,
                 'classification' => $movement->classification->value === 'needs_classification'
-                    ? 'already_recorded'
+                    ? 'transfer'
                     : $movement->classification->value,
             ])
             ->all(),
@@ -172,7 +172,7 @@ test('the BCP asterisk remains opaque metadata', function () {
     expect($movement->description)->toBe('WARDA')
         ->and($movement->direction->value)->toBe('debit')
         ->and($movement->classification->value)->toBe('savings')
-        ->and($movement->contributesToSpending)->toBeTrue()
+        ->and($movement->contributesToSpending)->toBeFalse()
         ->and($movement->sourceMetadata)->toBe(['asterisk' => true]);
 });
 
@@ -202,9 +202,8 @@ test('BCP automatically classifies only supported narrow labels', function (
     'unsupported fee suffix' => ['MANT. CUENTA EXTRA', 'needs_classification'],
 ]);
 
-test('the Statement Import workflow atomically confirms edited BCP movements and only creates spending Transactions', function () {
+test('the Statement Import workflow atomically confirms one Transaction for every BCP movement', function () {
     $owner = User::factory()->create();
-    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'savings']);
     $taxes = Category::factory()->for($owner, 'owner')->create(['name' => 'taxes']);
     $pdf = SyntheticPdf::fromText(bcpStatementText());
     $preview = app(StatementImportWorkflow::class)->preview(
@@ -235,7 +234,6 @@ test('the Statement Import workflow atomically confirms edited BCP movements and
             'file_hash' => $preview->fileHash,
             'instrument_label' => 'BCP Savings account',
             'instrument_last_four' => '1234',
-            'savings_category_id' => $savings->id,
             'movements' => $editedMovements,
         ],
     );
@@ -243,7 +241,7 @@ test('the Statement Import workflow atomically confirms edited BCP movements and
     $correctedMovement = $import->movements->first();
 
     expect($import->movements)->toHaveCount(5)
-        ->and($import->movements->whereNotNull('transaction_id'))->toHaveCount(4)
+        ->and($import->movements->whereNotNull('transaction_id'))->toHaveCount(5)
         ->and($import->movements->last()->classification->value)->toBe('income')
         ->and($correctedMovement->occurred_on->toDateString())->toBe('2026-02-06')
         ->and($correctedMovement->description)->toBe('Corrected WARDA deposit')
@@ -253,18 +251,21 @@ test('the Statement Import workflow atomically confirms edited BCP movements and
         ->and($correctedMovement->transaction->merchant_description)->toBe('Corrected WARDA deposit')
         ->and($correctedMovement->transaction->amount_minor)->toBe(2100)
         ->and($correctedMovement->transaction->currency->value)->toBe('USD')
-        ->and(Transaction::query()->count())->toBe(4)
-        ->and(Transaction::query()->where('kind', 'purchase')->count())->toBe(3)
-        ->and(Transaction::query()->where('kind', 'refund')->count())->toBe(1)
-        ->and(Transaction::query()->whereBelongsTo($savings, 'category')->count())->toBe(2)
+        ->and($correctedMovement->transaction->direction->value)->toBe('debit')
+        ->and($correctedMovement->transaction->kind->value)->toBe('transfer')
+        ->and($correctedMovement->transaction->transfer_purpose->value)->toBe('savings')
+        ->and(Transaction::query()->count())->toBe(5)
+        ->and(Transaction::query()->where('kind', 'spending')->count())->toBe(2)
+        ->and(Transaction::query()->where('kind', 'income')->count())->toBe(1)
+        ->and(Transaction::query()->where('kind', 'transfer')->count())->toBe(2)
         ->and(Transaction::query()->whereBelongsTo($taxes, 'category')->count())->toBe(1)
-        ->and(Transaction::query()->whereNull('category_id')->count())->toBe(1)
-        ->and(Transaction::query()->where('payment_instrument_label', 'BCP Savings account')->count())->toBe(4)
-        ->and(Transaction::query()->where('payment_instrument_last_four', '1234')->count())->toBe(4)
+        ->and(Transaction::query()->whereNull('category_id')->count())->toBe(4)
+        ->and(Transaction::query()->where('payment_instrument_label', 'BCP Savings account')->count())->toBe(5)
+        ->and(Transaction::query()->where('payment_instrument_last_four', '1234')->count())->toBe(5)
         ->and(Transaction::query()->whereNotNull('merchant_rule_id')->doesntExist())->toBeTrue();
 });
 
-test('Savings movements require an active Category owned by the confirming owner', function (Closure $categoryId) {
+test('Savings movements are represented as Transfers without requiring a Spending Category', function () {
     $owner = User::factory()->create();
     $pdf = SyntheticPdf::fromText(bcpStatementText());
     $workflow = app(StatementImportWorkflow::class);
@@ -273,29 +274,19 @@ test('Savings movements require an active Category owned by the confirming owner
         UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
     );
     $confirmation = confirmationPayload($preview);
-    $confirmation['savings_category_id'] = $categoryId($owner);
-
-    expectStatementImportError(fn () => $workflow->confirm(
+    $import = $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
         $confirmation,
-    ), 'savings_category_required');
+    );
+    $savingsMovements = $import->movements
+        ->where('classification', StatementMovementClassification::Savings);
 
-    expect(StatementImport::query()->doesntExist())->toBeTrue()
-        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
-        ->and(Transaction::query()->doesntExist())->toBeTrue();
-})->with([
-    'missing Category' => fn (User $owner): null => null,
-    'archived Category' => fn (User $owner): int => Category::factory()
-        ->for($owner, 'owner')
-        ->archived()
-        ->create()
-        ->id,
-    'another owners Category' => fn (User $owner): int => Category::factory()
-        ->for(User::factory()->create(), 'owner')
-        ->create()
-        ->id,
-]);
+    expect($savingsMovements)->toHaveCount(2)
+        ->and($savingsMovements->pluck('transaction.kind')->unique()->sole()->value)->toBe('transfer')
+        ->and($savingsMovements->pluck('transaction.transfer_purpose')->unique()->sole()->value)->toBe('savings')
+        ->and($savingsMovements->pluck('transaction.category_id')->filter())->toBeEmpty();
+});
 
 test('WARDA rows map to Savings transactions reports and the selected Category', function () {
     $owner = User::factory()->create();
@@ -322,7 +313,6 @@ test('WARDA rows map to Savings transactions reports and the selected Category',
         UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
     );
     $confirmation = confirmationPayload($preview);
-    $confirmation['savings_category_id'] = $savings->id;
     $import = $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
@@ -342,21 +332,23 @@ test('WARDA rows map to Savings transactions reports and the selected Category',
     $reportCategories = collect($report['category_groups'])->keyBy('category.name');
 
     expect($deposit->description)->toBe('WARDA')
-        ->and($deposit->transaction->kind->value)->toBe('purchase')
-        ->and($deposit->transaction->category_id)->toBe($savings->id)
+        ->and($deposit->transaction->kind->value)->toBe('transfer')
+        ->and($deposit->transaction->transfer_purpose->value)->toBe('savings')
+        ->and($deposit->transaction->category_id)->toBeNull()
         ->and($withdrawal->description)->toBe('WARDA')
-        ->and($withdrawal->transaction->kind->value)->toBe('refund')
-        ->and($withdrawal->transaction->category_id)->toBe($savings->id)
+        ->and($withdrawal->transaction->kind->value)->toBe('transfer')
+        ->and($withdrawal->transaction->transfer_purpose->value)->toBe('savings')
+        ->and($withdrawal->transaction->category_id)->toBeNull()
         ->and($withdrawal->transaction->original_purchase_id)->toBeNull()
         ->and($withdrawal->transaction->refund_relationship_review_reasons)->toBe([])
         ->and($import->movements->firstWhere('classification', StatementMovementClassification::Tax)->transaction->category_id)->toBe($taxes->id)
         ->and($import->movements->firstWhere('classification', StatementMovementClassification::Fee)->transaction->category_id)->toBe($bankFees->id)
-        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('category_assignment_provenance', CategoryAssignmentProvenance::Owner)->count())->toBe(4)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('category_assignment_provenance', CategoryAssignmentProvenance::Owner)->count())->toBe(2)
         ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNotNull('merchant_rule_id')->doesntExist())->toBeTrue()
         ->and(Category::query()->whereBelongsTo($owner, 'owner')->count())->toBe(4)
         ->and(MerchantRule::query()->whereBelongsTo($owner, 'owner')->count())->toBe(1)
-        ->and($report['period']['total_minor'])->toBe('2501')
-        ->and($reportCategories->get('Long-term goals')['amount_minor'])->toBe('1500')
+        ->and($report['period']['total_minor'])->toBe('1001')
+        ->and($reportCategories->has('Long-term goals'))->toBeFalse()
         ->and($reviewQueue['unresolved_category_count'])->toBe(0)
         ->and($reviewQueue['unresolved_refund_relationship_count'])->toBe(0)
         ->and($details['summary']['PEN'])->toMatchArray([
@@ -383,7 +375,6 @@ test('missing or archived special Categories leave BCP fees and taxes Uncategori
         UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
     );
     $confirmation = confirmationPayload($preview);
-    $confirmation['savings_category_id'] = $savings->id;
     $import = $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
@@ -392,7 +383,7 @@ test('missing or archived special Categories leave BCP fees and taxes Uncategori
 
     expect($import->movements->firstWhere('classification', StatementMovementClassification::Tax)->transaction->category_id)->toBeNull()
         ->and($import->movements->firstWhere('classification', StatementMovementClassification::Fee)->transaction->category_id)->toBeNull()
-        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_id')->count())->toBe(2)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_id')->count())->toBe(5)
         ->and(app(ReadReviewQueue::class)->handle($owner)['unresolved_category_count'])->toBe(2);
 });
 
@@ -522,22 +513,37 @@ test('owner classifications determine whether an ambiguous Interbank movement cr
 
     expect($confirmedMovement->classification->value)->toBe($classification);
 
-    if ($transactionKind === null) {
-        expect($confirmedMovement->transaction_id)->toBeNull();
-
-        return;
-    }
-
     expect($confirmedMovement->transaction)->not->toBeNull()
         ->and($confirmedMovement->transaction->kind->value)->toBe($transactionKind);
 })->with([
-    'Purchase' => ['purchase', 'purchase'],
+    'Purchase' => ['purchase', 'spending'],
     'Refund' => ['refund', 'refund'],
-    'Income' => ['income', null],
-    'ordinary transfer' => ['transfer', null],
-    'card payment' => ['card_payment', null],
-    'Already recorded' => ['already_recorded', null],
+    'Income' => ['income', 'income'],
+    'ordinary transfer' => ['transfer', 'transfer'],
+    'card payment' => ['card_payment', 'transfer'],
 ]);
+
+test('confirmation requires a real meaning instead of duplicating an already recorded movement', function () {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $confirmation['movements'][0]['classification'] = 'already_recorded';
+
+    expectStatementImportError(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    ), 'movement_needs_classification');
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
+        ->and(Transaction::query()->doesntExist())->toBeTrue();
+});
 
 test('Interbank confirmation isolates non-spending movements from reports rules and review counts', function () {
     $owner = User::factory()->create();
@@ -558,7 +564,7 @@ test('Interbank confirmation isolates non-spending movements from reports rules 
     $confirmation = confirmationPayload($preview);
     $confirmation['movements'][0]['classification'] = 'transfer';
     $confirmation['movements'][3]['classification'] = 'refund';
-    $confirmation['movements'][4]['classification'] = 'already_recorded';
+    $confirmation['movements'][4]['classification'] = 'transfer';
 
     $import = $workflow->confirm(
         $owner,
@@ -582,13 +588,14 @@ test('Interbank confirmation isolates non-spending movements from reports rules 
     $importDetails = app(ReadStatementImport::class)->handle($owner, $import);
 
     expect($import->movements)->toHaveCount(6)
-        ->and($import->movements->whereNotNull('transaction_id'))->toHaveCount(3)
-        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->count())->toBe(3)
-        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('kind', 'purchase')->count())->toBe(2)
+        ->and($import->movements->whereNotNull('transaction_id'))->toHaveCount(6)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->count())->toBe(6)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('kind', 'spending')->count())->toBe(2)
         ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('kind', 'refund')->count())->toBe(1)
-        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_id')->count())->toBe(3)
-        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_assignment_provenance')->count())->toBe(3)
-        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('merchant_rule_id')->count())->toBe(3)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('kind', 'transfer')->count())->toBe(3)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_id')->count())->toBe(6)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_assignment_provenance')->count())->toBe(6)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('merchant_rule_id')->count())->toBe(6)
         ->and($penReport['period']['total_minor'])->toBe('2200')
         ->and($usdReport['period']['total_minor'])->toBe('-1000')
         ->and($reviewQueue['unresolved_category_count'])->toBe(3)
@@ -597,6 +604,11 @@ test('Interbank confirmation isolates non-spending movements from reports rules 
         ->and($importDetails['summary']['PEN'])->toMatchArray([
             'spending_minor' => '2200',
             'transfers_in_minor' => '1000',
+        ])
+        ->and($importDetails['movements'][0]['transaction'])->toMatchArray([
+            'kind' => 'transfer',
+            'income_source' => null,
+            'transfer_purpose' => 'internal',
         ])
         ->and($importDetails['summary']['USD']['refunds_minor'])->toBe('1000');
 
@@ -628,7 +640,7 @@ test('linked Transaction edits and voiding preserve the immutable confirmed Inte
             'occurred_on' => '2026-02-10',
             'amount_minor' => '2500',
             'currency' => 'PEN',
-            'kind' => 'purchase',
+            'kind' => 'spending',
             'merchant_description' => 'Edited imported purchase',
             'payment_instrument_label' => 'Interbank Amex',
             'payment_instrument_last_four' => '1234',
@@ -1189,7 +1201,7 @@ test('exact statement replay is owner scoped and rejected atomically for the sam
 
     expect(StatementImport::query()->count())->toBe(2)
         ->and(StatementMovement::query()->count())->toBe(12)
-        ->and(Transaction::query()->count())->toBe(8);
+        ->and(Transaction::query()->count())->toBe(12);
 });
 
 test('a failure after persistence begins rolls back the complete Statement Import', function () {
@@ -1261,7 +1273,7 @@ test('concurrent confirmations retain one complete import and reject the duplica
             ->and(StatementMovement::query()
                 ->whereHas('statementImport', fn ($query) => $query->where('user_id', $ownerId))
                 ->count())->toBe(6)
-            ->and(Transaction::query()->where('user_id', $ownerId)->count())->toBe(4);
+            ->and(Transaction::query()->where('user_id', $ownerId)->count())->toBe(6);
     } finally {
         StatementImport::on($connectionName)->where('user_id', $ownerId)->delete();
         Transaction::on($connectionName)->where('user_id', $ownerId)->delete();

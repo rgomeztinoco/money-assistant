@@ -9,6 +9,7 @@ import {
     RotateCcw,
     Search,
 } from 'lucide-react';
+import { useState } from 'react';
 import { store as recordTransaction } from '@/actions/App/Http/Controllers/TransactionController';
 import {
     destroy as restoreTransaction,
@@ -31,35 +32,26 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import {
+    incomeSourceOptions,
+    movementDescription,
+    movementDirectionOptions,
+    movementKindFromValue,
+    movementKindLabel,
+    movementKindOptions,
+    movementSupportsCategory,
+    transferPurposeOptions,
+} from '@/lib/money-movement';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { create as createStatementImport } from '@/routes/statement_imports';
 import { index } from '@/routes/transactions';
 import type {
     CategoryOption,
-    Currency,
-    LedgerCategory,
     LedgerFilters,
+    LedgerTransaction,
     SelectedTransaction,
     TransactionKind,
 } from '@/types';
-
-type LedgerTransaction = {
-    id: number;
-    occurred_on: string;
-    amount_minor: string;
-    currency: Currency;
-    kind: TransactionKind;
-    merchant_description: string;
-    original_purchase: {
-        id: number;
-        merchant_description: string;
-    } | null;
-    category: LedgerCategory | null;
-    review_state: 'outstanding' | 'clear';
-    review_field_count: number;
-    refund_relationship_review_count: number;
-    voided_at: string | null;
-};
 
 type Pagination = {
     current_page: number;
@@ -183,7 +175,7 @@ function LedgerFiltersForm({
         filters.currency === 'all' ? null : `Currency: ${filters.currency}`,
         filters.kind === 'all'
             ? null
-            : `Kind: ${filters.kind === 'refund' ? 'Refund' : 'Purchase'}`,
+            : `Kind: ${movementKindLabel(filters.kind)}`,
         filters.category_id === null
             ? null
             : `Category: ${categoryOptions.find((category) => category.id === filters.category_id)?.path ?? filters.category_id}`,
@@ -292,8 +284,10 @@ function LedgerFiltersForm({
                                 }
                                 options={[
                                     { value: '', label: 'All kinds' },
-                                    { value: 'purchase', label: 'Purchases' },
+                                    { value: 'spending', label: 'Spending' },
                                     { value: 'refund', label: 'Refunds' },
+                                    { value: 'income', label: 'Income' },
+                                    { value: 'transfer', label: 'Transfers' },
                                 ]}
                             />
                             <SelectFilter
@@ -454,7 +448,7 @@ function SelectFilter({
     name: string;
     label: string;
     value: string;
-    options: Array<{ value: string; label: string }>;
+    options: ReadonlyArray<{ value: string; label: string }>;
 }) {
     return (
         <div className="grid gap-2">
@@ -470,12 +464,14 @@ function SelectFilter({
 }
 
 function RecordTransactionForm({ today }: { today: string }) {
+    const [kind, setKind] = useState<TransactionKind>('spending');
+
     return (
         <Card>
             <CardHeader>
                 <CardTitle>Record a Transaction</CardTitle>
                 <CardDescription>
-                    Add a purchase or Refund in its original currency.
+                    Record what the money meant and which way it moved.
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -522,20 +518,51 @@ function RecordTransactionForm({ today }: { today: string }) {
                                         { value: 'PEN', label: 'PEN' },
                                     ]}
                                 />
+                                <div className="grid gap-2">
+                                    <Label htmlFor="kind">
+                                        Movement meaning
+                                    </Label>
+                                    <NativeSelect
+                                        id="kind"
+                                        name="kind"
+                                        value={kind}
+                                        onChange={(event) =>
+                                            setKind(
+                                                movementKindFromValue(
+                                                    event.target.value,
+                                                ),
+                                            )
+                                        }
+                                        options={movementKindOptions}
+                                    />
+                                    <InputError message={errors.kind} />
+                                </div>
                                 <SelectFilter
-                                    id="kind"
-                                    name="kind"
-                                    label="Transaction kind"
-                                    value="purchase"
-                                    options={[
-                                        {
-                                            value: 'purchase',
-                                            label: 'Purchase',
-                                        },
-                                        { value: 'refund', label: 'Refund' },
-                                    ]}
+                                    id="direction"
+                                    name="direction"
+                                    label="Money direction"
+                                    value="debit"
+                                    options={movementDirectionOptions}
                                 />
                             </div>
+                            {kind === 'income' && (
+                                <SelectFilter
+                                    id="income_source"
+                                    name="income_source"
+                                    label="Income source"
+                                    value="salary"
+                                    options={incomeSourceOptions}
+                                />
+                            )}
+                            {kind === 'transfer' && (
+                                <SelectFilter
+                                    id="transfer_purpose"
+                                    name="transfer_purpose"
+                                    label="Transfer purpose"
+                                    value="internal"
+                                    options={transferPurposeOptions}
+                                />
+                            )}
                             <div className="grid gap-2">
                                 <Label htmlFor="merchant_description">
                                     Merchant or short description
@@ -578,8 +605,8 @@ function LedgerList({
     return (
         <ul className="grid gap-3">
             {transactions.map((transaction) => {
-                const isRefund = transaction.kind === 'refund';
-                const KindIcon = isRefund ? ArrowDownLeft : ArrowUpRight;
+                const isMoneyIn = transaction.direction === 'credit';
+                const KindIcon = isMoneyIn ? ArrowDownLeft : ArrowUpRight;
 
                 return (
                     <li
@@ -592,9 +619,9 @@ function LedgerList({
                                     {transaction.merchant_description}
                                 </p>
                                 <p
-                                    className={`font-semibold whitespace-nowrap tabular-nums ${isRefund ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
+                                    className={`font-semibold whitespace-nowrap tabular-nums ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
                                 >
-                                    {isRefund ? '−' : ''}
+                                    {isMoneyIn ? '+' : '−'}
                                     {formatMinorUnits(
                                         transaction.amount_minor,
                                         transaction.currency,
@@ -606,20 +633,28 @@ function LedgerList({
                             </p>
                             <div className="flex flex-wrap gap-1">
                                 <Badge
-                                    variant={isRefund ? 'secondary' : 'outline'}
+                                    variant={
+                                        isMoneyIn ? 'secondary' : 'outline'
+                                    }
                                 >
                                     <KindIcon />
-                                    {isRefund ? 'Refund' : 'Purchase'}
+                                    {movementDescription({
+                                        kind: transaction.kind,
+                                        transferPurpose:
+                                            transaction.transfer_purpose,
+                                    })}
                                 </Badge>
                                 {transaction.category ? (
                                     <Badge variant="outline">
                                         {transaction.category.name}
                                     </Badge>
-                                ) : (
+                                ) : movementSupportsCategory(
+                                      transaction.kind,
+                                  ) ? (
                                     <Badge variant="outline">
                                         Uncategorized
                                     </Badge>
-                                )}
+                                ) : null}
                                 {transaction.review_state === 'outstanding' && (
                                     <Badge variant="secondary">
                                         Needs review
@@ -829,7 +864,7 @@ export default function TransactionsIndex({
                                         <p className="text-sm text-muted-foreground">
                                             {isReviewQueue
                                                 ? 'No current Transaction or Line Item fields need review.'
-                                                : 'Adjust the filters or record a new purchase or Refund.'}
+                                                : 'Adjust the filters or record a new money movement.'}
                                         </p>
                                     </div>
                                 </div>

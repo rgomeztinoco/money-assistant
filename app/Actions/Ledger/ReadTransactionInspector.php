@@ -9,6 +9,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
+use App\TransactionKind;
 
 /**
  * @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance
@@ -38,6 +39,9 @@ class ReadTransactionInspector
      *     amount_minor: string,
      *     currency: string,
      *     kind: string,
+     *     direction: string,
+     *     income_source: string|null,
+     *     transfer_purpose: string|null,
      *     merchant_description: string,
      *     payment_instrument_label: string|null,
      *     payment_instrument_last_four: string|null,
@@ -111,6 +115,9 @@ class ReadTransactionInspector
             'amount_minor' => (string) $transaction->amount_minor,
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
+            'direction' => $transaction->direction->value,
+            'income_source' => $transaction->income_source?->value,
+            'transfer_purpose' => $transaction->transfer_purpose?->value,
             'merchant_description' => $transaction->merchant_description,
             'payment_instrument_label' => $transaction->payment_instrument_label,
             'payment_instrument_last_four' => $transaction->payment_instrument_last_four,
@@ -124,7 +131,8 @@ class ReadTransactionInspector
                     'provenance' => $this->readCategoryAssignmentProvenance->handle($transaction, $owner),
                 ],
             'review' => [
-                'category' => ($receiptBreakdown === null || $receiptBreakdown['line_items'] === [])
+                'category' => $transaction->kind->supportsCategory()
+                    && ($receiptBreakdown === null || $receiptBreakdown['line_items'] === [])
                     && $transaction->category_id === null,
                 'fields' => $reviewFields,
                 'refund_relationship_reasons' => $refundRelationshipReasons,
@@ -147,7 +155,7 @@ class ReadTransactionInspector
             'purchase_options' => array_values(Transaction::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->whereNull('voided_at')
-                ->where('kind', 'purchase')
+                ->where('kind', TransactionKind::Spending)
                 ->whereKeyNot($transaction->getKey())
                 ->orderByDesc('occurred_on')
                 ->orderByDesc('id')

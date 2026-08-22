@@ -13,14 +13,14 @@ test('an exact Merchant Rule categorizes only matching future Transactions after
     $category = Category::factory()->for($owner, 'owner')->create();
     $historicalTransaction = Transaction::factory()->for($owner, 'owner')->create([
         'merchant_description' => 'Café Central',
-        'kind' => 'purchase',
+        'kind' => 'spending',
         'currency' => 'PEN',
     ]);
     $this->actingAs($owner)
         ->post(route('merchant_rules.store'), [
             'merchant' => 'CAFÉ—CENTRAL',
             'category_id' => $category->id,
-            'transaction_kind' => 'purchase',
+            'transaction_kind' => 'spending',
             'currency' => 'PEN',
             'enabled' => true,
         ])->assertSessionHasNoErrors();
@@ -31,7 +31,7 @@ test('an exact Merchant Rule categorizes only matching future Transactions after
         'occurred_on' => '2026-08-10',
         'amount_minor' => 1_000,
         'currency' => 'PEN',
-        'kind' => 'purchase',
+        'kind' => 'spending',
         'merchant_description' => "  cafe\u{0301}...central  ",
     ])->assertSessionHasNoErrors();
 
@@ -84,7 +84,7 @@ test('disabled and out-of-scope Merchant Rules leave new Transactions Uncategori
         'enabled' => true,
     ])->assertSessionHasNoErrors();
 
-    expect($record('purchase', 'USD')->category_id)->toBeNull()
+    expect($record('spending', 'USD')->category_id)->toBeNull()
         ->and($record('refund', 'PEN')->category_id)->toBeNull()
         ->and($record('refund', 'USD')->category_id)->toBe($category->id);
 });

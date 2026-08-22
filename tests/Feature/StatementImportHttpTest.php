@@ -63,17 +63,15 @@ test('the preview response never exposes a complete instrument identifier', func
         ->and($response->getContent())->not->toContain('private-statement.pdf');
 });
 
-test('the create page suggests an active Savings Category case insensitively', function () {
+test('the create page does not ask for a Spending Category for Savings Transfers', function () {
     $owner = User::factory()->create();
-    Category::factory()->for($owner, 'owner')->archived()->create(['name' => 'Savings']);
-    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'savings']);
-    Category::factory()->for(User::factory()->create(), 'owner')->create(['name' => 'Savings']);
 
     $this->actingAs($owner)
         ->get(route('statement_imports.create'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('statement-imports/create')
-            ->where('suggested_savings_category_id', $savings->id),
+            ->missing('suggested_savings_category_id')
+            ->missing('category_options'),
         );
 });
 
@@ -93,7 +91,7 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
             'amount_minor' => $movement->amountMinor,
             'currency' => $movement->currency->value,
             'classification' => $movement->classification->value === 'needs_classification'
-                ? 'already_recorded'
+                ? 'transfer'
                 : $movement->classification->value,
         ])
         ->all();
@@ -135,7 +133,7 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
     $this->delete(route('statement_imports.show', $import))
         ->assertMethodNotAllowed();
 
-    expect(StatementMovement::query()->where('classification', 'already_recorded')->count())->toBe(1);
+    expect(StatementMovement::query()->where('classification', 'transfer')->count())->toBe(1);
 });
 
 test('semantic confirmation failures identify the affected preview row', function () {
@@ -227,7 +225,7 @@ test('BCP and Interbank imports coexist in safe history with complete movement s
                 'amount_minor' => $movement->amountMinor,
                 'currency' => $movement->currency->value,
                 'classification' => $movement->classification->value === 'needs_classification'
-                    ? 'already_recorded'
+                    ? 'transfer'
                     : $movement->classification->value,
             ])
             ->all();
@@ -264,11 +262,11 @@ test('BCP and Interbank imports coexist in safe history with complete movement s
             ->component('statement-imports/show')
             ->where('statement_import.movements.0.classification', 'savings')
             ->where('statement_import.movements.0.direction', 'debit')
-            ->where('statement_import.movements.0.transaction.kind', 'purchase')
-            ->where('statement_import.movements.0.transaction.category.name', 'Savings')
+            ->where('statement_import.movements.0.transaction.kind', 'transfer')
+            ->where('statement_import.movements.0.transaction.category', null)
             ->where('statement_import.movements.1.classification', 'savings')
             ->where('statement_import.movements.1.direction', 'credit')
-            ->where('statement_import.movements.1.transaction.kind', 'refund')
+            ->where('statement_import.movements.1.transaction.kind', 'transfer')
             ->where('statement_import.summary.PEN.savings_deposits_minor', '2000')
             ->where('statement_import.summary.PEN.savings_withdrawals_minor', '500')
             ->where('statement_import.summary.PEN.net_savings_minor', '1500')
