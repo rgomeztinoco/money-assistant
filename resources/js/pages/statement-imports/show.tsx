@@ -74,6 +74,7 @@ const summaryLabels: Array<[keyof Summary['PEN'], string]> = [
     ['savings_withdrawals_minor', 'Savings withdrawals'],
     ['net_savings_minor', 'Net savings'],
 ];
+const summaryCurrencies = ['PEN', 'USD'] satisfies Currency[];
 
 function reconciliationCurrency(key: string): Currency {
     return key.includes('_usd_') ? 'USD' : 'PEN';
@@ -128,7 +129,7 @@ export default function StatementImportShow({
                 </div>
 
                 <div className="grid gap-4 xl:grid-cols-2">
-                    {(['PEN', 'USD'] as const).map((currency) => (
+                    {summaryCurrencies.map((currency) => (
                         <Card key={currency}>
                             <CardHeader>
                                 <CardTitle>{currency} summary</CardTitle>
@@ -202,132 +203,88 @@ export default function StatementImportShow({
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="overflow-x-auto rounded-lg border">
-                            <table className="w-full min-w-[64rem] text-sm">
-                                <caption className="sr-only">
-                                    Retained Statement Movements
-                                </caption>
-                                <thead className="bg-muted/50 text-left">
-                                    <tr>
-                                        <th
-                                            scope="col"
-                                            className="px-3 py-2 font-medium"
-                                        >
-                                            Date
-                                        </th>
-                                        <th
-                                            scope="col"
-                                            className="px-3 py-2 font-medium"
-                                        >
-                                            Description
-                                        </th>
-                                        <th
-                                            scope="col"
-                                            className="px-3 py-2 font-medium"
-                                        >
-                                            Classification
-                                        </th>
-                                        <th
-                                            scope="col"
-                                            className="px-3 py-2 font-medium"
-                                        >
-                                            Direction
-                                        </th>
-                                        <th
-                                            scope="col"
-                                            className="px-3 py-2 text-right font-medium"
-                                        >
-                                            Amount
-                                        </th>
-                                        <th
-                                            scope="col"
-                                            className="px-3 py-2 font-medium"
-                                        >
-                                            Linked Transaction
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                    {statement_import.movements.map(
-                                        (movement) => (
-                                            <tr key={movement.id}>
-                                                <td className="px-3 py-3 tabular-nums">
-                                                    {movement.occurred_on}
-                                                </td>
-                                                <td className="px-3 py-3 font-medium">
-                                                    {movement.description}
-                                                </td>
-                                                <td className="px-3 py-3">
-                                                    <Badge
-                                                        variant={
-                                                            movement.classification ===
-                                                            'needs_classification'
-                                                                ? 'destructive'
-                                                                : 'outline'
-                                                        }
-                                                        className="capitalize"
-                                                    >
-                                                        {statementMovementClassificationLabel(
-                                                            movement.classification,
-                                                        )}
-                                                    </Badge>
-                                                </td>
-                                                <td className="px-3 py-3 capitalize">
+                        <div
+                            className="grid min-w-0 gap-3 lg:grid-cols-2"
+                            data-test="statement-movements"
+                        >
+                            {statement_import.movements.map((movement) => (
+                                <article
+                                    key={movement.id}
+                                    className="grid min-w-0 gap-4 rounded-lg border p-4"
+                                >
+                                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="grid min-w-0 gap-1">
+                                            <p className="font-medium break-words">
+                                                {movement.description}
+                                            </p>
+                                            <p className="text-sm text-muted-foreground tabular-nums">
+                                                {movement.occurred_on} ·{' '}
+                                                <span className="capitalize">
                                                     {movement.direction}
-                                                </td>
-                                                <td className="px-3 py-3 text-right tabular-nums">
-                                                    {formatMinorUnits(
-                                                        movement.amount_minor,
-                                                        movement.currency,
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-3">
-                                                    {movement.transaction ? (
-                                                        <Link
-                                                            href={transactionsIndex(
-                                                                {
-                                                                    query: {
-                                                                        selected:
-                                                                            movement
-                                                                                .transaction
-                                                                                .id,
-                                                                    },
-                                                                },
-                                                            )}
-                                                            className="inline-flex items-center gap-1 hover:underline"
-                                                        >
-                                                            {movement
-                                                                .transaction
-                                                                .voided_at
-                                                                ? 'Voided '
-                                                                : ''}
-                                                            {
-                                                                movement
-                                                                    .transaction
-                                                                    .kind
-                                                            }
-                                                            <ExternalLink className="size-3" />
-                                                        </Link>
-                                                    ) : (
-                                                        <span className="text-muted-foreground">
-                                                            None
-                                                        </span>
-                                                    )}
-                                                    {movement.transaction && (
-                                                        <span className="block text-xs text-muted-foreground">
-                                                            {movement
-                                                                .transaction
-                                                                .category
-                                                                ?.name ??
-                                                                'Uncategorized'}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ),
-                                    )}
-                                </tbody>
-                            </table>
+                                                </span>
+                                            </p>
+                                        </div>
+                                        <p className="font-medium tabular-nums">
+                                            {formatMinorUnits(
+                                                movement.amount_minor,
+                                                movement.currency,
+                                            )}
+                                        </p>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2">
+                                        <Badge
+                                            variant={
+                                                movement.classification ===
+                                                'needs_classification'
+                                                    ? 'destructive'
+                                                    : 'outline'
+                                            }
+                                        >
+                                            {statementMovementClassificationLabel(
+                                                movement.classification,
+                                            )}
+                                        </Badge>
+                                        <Badge variant="secondary">
+                                            Movement {movement.position}
+                                        </Badge>
+                                    </div>
+
+                                    <div className="grid gap-1 border-t pt-3">
+                                        <span className="text-xs text-muted-foreground">
+                                            Linked Transaction
+                                        </span>
+                                        {movement.transaction ? (
+                                            <Link
+                                                href={transactionsIndex({
+                                                    query: {
+                                                        selected:
+                                                            movement.transaction
+                                                                .id,
+                                                    },
+                                                })}
+                                                className="inline-flex w-fit items-center gap-1 capitalize hover:underline"
+                                            >
+                                                {movement.transaction.voided_at
+                                                    ? 'Voided '
+                                                    : ''}
+                                                {movement.transaction.kind}
+                                                <ExternalLink className="size-3" />
+                                            </Link>
+                                        ) : (
+                                            <span className="text-sm text-muted-foreground">
+                                                None
+                                            </span>
+                                        )}
+                                        {movement.transaction && (
+                                            <span className="text-xs text-muted-foreground">
+                                                {movement.transaction.category
+                                                    ?.name ?? 'Uncategorized'}
+                                            </span>
+                                        )}
+                                    </div>
+                                </article>
+                            ))}
                         </div>
                     </CardContent>
                 </Card>

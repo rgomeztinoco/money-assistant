@@ -1,5 +1,12 @@
 import { Head, Link, useForm, useHttp } from '@inertiajs/react';
-import { ArrowLeft, FileCheck2, Upload } from 'lucide-react';
+import {
+    ArrowLeft,
+    CheckCircle2,
+    CircleAlert,
+    Eye,
+    FileCheck2,
+    Upload,
+} from 'lucide-react';
 import { useState } from 'react';
 import { store as confirmStatementImport } from '@/actions/App/Http/Controllers/StatementImportController';
 import { store as previewStatementImport } from '@/actions/App/Http/Controllers/StatementImportPreviewController';
@@ -14,6 +21,11 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -50,12 +62,260 @@ type ConfirmationData = {
     movements: ConfirmationMovement[];
 };
 
-function humanizeKey(key: string) {
+type MovementEditorProps = {
+    movement: ConfirmationMovement;
+    movementIndex: number;
+    sourceMovement: StatementPreviewMovement;
+    updateMovement: (
+        movementIndex: number,
+        values: Partial<ConfirmationMovement>,
+    ) => void;
+    movementError: (
+        movementIndex: number,
+        field: keyof ConfirmationMovement,
+    ) => string | undefined;
+};
+
+function humanizeKey(key: string): string {
     return key.replaceAll('_minor', '').replaceAll('_', ' ');
 }
 
 function reconciliationCurrency(key: string): 'PEN' | 'USD' {
     return key.includes('_usd_') ? 'USD' : 'PEN';
+}
+
+function parseStatementClassification(
+    value: string,
+): StatementClassification | null {
+    return (
+        statementMovementClassificationOptions.find(
+            (classification) => classification.value === value,
+        )?.value ?? null
+    );
+}
+
+function hasOwnProperty<Key extends PropertyKey>(
+    value: object,
+    key: Key,
+): value is object & Record<Key, unknown> {
+    return Object.hasOwn(value, key);
+}
+
+function MovementEditor({
+    movement,
+    movementIndex,
+    sourceMovement,
+    updateMovement,
+    movementError,
+}: MovementEditorProps) {
+    const classificationOptions = statementMovementClassificationOptions.filter(
+        (option) =>
+            option.value !== 'not_a_movement' || sourceMovement.can_be_excluded,
+    );
+
+    return (
+        <article
+            className="grid min-w-0 gap-4 rounded-lg border p-4"
+            data-test={`statement-movement-${movementIndex}`}
+        >
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="grid min-w-0 gap-1">
+                    <p className="font-medium break-words">
+                        {movement.description}
+                    </p>
+                    <p className="text-sm text-muted-foreground tabular-nums">
+                        {movement.occurred_on} ·{' '}
+                        {formatMinorUnits(
+                            movement.amount_minor || '0',
+                            movement.currency,
+                        )}{' '}
+                        ·{' '}
+                        <span className="capitalize">
+                            {sourceMovement.direction}
+                        </span>
+                    </p>
+                </div>
+                <Badge
+                    variant={
+                        statementMovementContributesToSpending(
+                            movement.classification,
+                        )
+                            ? 'default'
+                            : 'outline'
+                    }
+                >
+                    {statementMovementContributesToSpending(
+                        movement.classification,
+                    )
+                        ? 'Affects spending'
+                        : 'Statement only'}
+                </Badge>
+                {sourceMovement.can_be_excluded && (
+                    <Badge variant="outline">Suggested exclusion</Badge>
+                )}
+            </div>
+
+            <div className="grid gap-2">
+                <Label htmlFor={`movement-${movementIndex}-classification`}>
+                    Classification
+                </Label>
+                <NativeSelect
+                    id={`movement-${movementIndex}-classification`}
+                    aria-label={`Classification for ${movement.description}`}
+                    value={movement.classification}
+                    onChange={(event) => {
+                        const classification = parseStatementClassification(
+                            event.currentTarget.value,
+                        );
+
+                        if (classification !== null) {
+                            updateMovement(movementIndex, { classification });
+                        }
+                    }}
+                    options={classificationOptions}
+                    aria-invalid={Boolean(
+                        movementError(movementIndex, 'classification'),
+                    )}
+                    aria-describedby={`movement-${movementIndex}-classification-error`}
+                />
+                <InputError
+                    id={`movement-${movementIndex}-classification-error`}
+                    message={movementError(movementIndex, 'classification')}
+                />
+            </div>
+
+            <details className="rounded-md border bg-muted/20">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
+                    Edit movement details
+                </summary>
+                <div className="grid gap-4 border-t p-3 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                        <Label
+                            htmlFor={`movement-${movementIndex}-occurred-on`}
+                        >
+                            Date
+                        </Label>
+                        <Input
+                            id={`movement-${movementIndex}-occurred-on`}
+                            type="date"
+                            value={movement.occurred_on}
+                            onChange={(event) =>
+                                updateMovement(movementIndex, {
+                                    occurred_on: event.currentTarget.value,
+                                })
+                            }
+                            aria-invalid={Boolean(
+                                movementError(movementIndex, 'occurred_on'),
+                            )}
+                            aria-describedby={`movement-${movementIndex}-occurred-on-error`}
+                            required
+                        />
+                        <InputError
+                            id={`movement-${movementIndex}-occurred-on-error`}
+                            message={movementError(
+                                movementIndex,
+                                'occurred_on',
+                            )}
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label
+                            htmlFor={`movement-${movementIndex}-description`}
+                        >
+                            Description
+                        </Label>
+                        <Input
+                            id={`movement-${movementIndex}-description`}
+                            value={movement.description}
+                            maxLength={255}
+                            onChange={(event) =>
+                                updateMovement(movementIndex, {
+                                    description: event.currentTarget.value,
+                                })
+                            }
+                            aria-invalid={Boolean(
+                                movementError(movementIndex, 'description'),
+                            )}
+                            aria-describedby={`movement-${movementIndex}-description-error`}
+                            required
+                        />
+                        <InputError
+                            id={`movement-${movementIndex}-description-error`}
+                            message={movementError(
+                                movementIndex,
+                                'description',
+                            )}
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor={`movement-${movementIndex}-amount`}>
+                            Amount in minor units
+                        </Label>
+                        <Input
+                            id={`movement-${movementIndex}-amount`}
+                            value={movement.amount_minor}
+                            inputMode="numeric"
+                            pattern="\d+"
+                            onChange={(event) =>
+                                updateMovement(movementIndex, {
+                                    amount_minor: event.currentTarget.value,
+                                })
+                            }
+                            aria-invalid={Boolean(
+                                movementError(movementIndex, 'amount_minor'),
+                            )}
+                            aria-describedby={`movement-${movementIndex}-amount-error movement-${movementIndex}-formatted-amount`}
+                            required
+                        />
+                        <InputError
+                            id={`movement-${movementIndex}-amount-error`}
+                            message={movementError(
+                                movementIndex,
+                                'amount_minor',
+                            )}
+                        />
+                        <p
+                            id={`movement-${movementIndex}-formatted-amount`}
+                            className="text-xs text-muted-foreground"
+                        >
+                            {formatMinorUnits(
+                                movement.amount_minor || '0',
+                                movement.currency,
+                            )}
+                        </p>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor={`movement-${movementIndex}-currency`}>
+                            Currency
+                        </Label>
+                        <NativeSelect
+                            id={`movement-${movementIndex}-currency`}
+                            value={movement.currency}
+                            aria-invalid={Boolean(
+                                movementError(movementIndex, 'currency'),
+                            )}
+                            aria-describedby={`movement-${movementIndex}-currency-error`}
+                            onChange={(event) => {
+                                const currency = event.currentTarget.value;
+
+                                if (currency === 'PEN' || currency === 'USD') {
+                                    updateMovement(movementIndex, { currency });
+                                }
+                            }}
+                            options={[
+                                { value: 'PEN', label: 'PEN' },
+                                { value: 'USD', label: 'USD' },
+                            ]}
+                        />
+                        <InputError
+                            id={`movement-${movementIndex}-currency-error`}
+                            message={movementError(movementIndex, 'currency')}
+                        />
+                    </div>
+                </div>
+            </details>
+        </article>
+    );
 }
 
 export default function CreateStatementImport({
@@ -78,28 +338,68 @@ export default function CreateStatementImport({
         movements: [],
     });
     const [preview, setPreview] = useState<StatementImportPreview | null>(null);
+    const [selectedStatement, setSelectedStatement] = useState<File | null>(
+        null,
+    );
+    const unresolvedMovementIndexes = confirmation.data.movements
+        .map((movement, movementIndex) => ({ movement, movementIndex }))
+        .filter(
+            ({ movement }) =>
+                movement.classification === 'needs_classification',
+        )
+        .map(({ movementIndex }) => movementIndex);
+    const suggestedExclusionIndexes = preview
+        ? preview.movements
+              .map((movement, movementIndex) => ({ movement, movementIndex }))
+              .filter(
+                  ({ movement, movementIndex }) =>
+                      movement.can_be_excluded &&
+                      !unresolvedMovementIndexes.includes(movementIndex),
+              )
+              .map(({ movementIndex }) => movementIndex)
+        : [];
+    const exceptionMovementIndexes = [
+        ...unresolvedMovementIndexes,
+        ...suggestedExclusionIndexes,
+    ];
+    const classifiedMovementIndexes = confirmation.data.movements
+        .map((_, movementIndex) => movementIndex)
+        .filter(
+            (movementIndex) =>
+                !exceptionMovementIndexes.includes(movementIndex),
+        );
+    const unresolvedCount = unresolvedMovementIndexes.length;
+    const spendingMovementCount = confirmation.data.movements.filter(
+        (movement) =>
+            statementMovementContributesToSpending(movement.classification),
+    ).length;
+    const statementOnlyMovementCount =
+        confirmation.data.movements.length -
+        spendingMovementCount -
+        unresolvedCount;
     const hasSavings = confirmation.data.movements.some(
         (movement) => movement.classification === 'savings',
     );
 
-    function requestPreview(event: React.FormEvent) {
+    function requestPreview(event: React.FormEvent<HTMLFormElement>): void {
         event.preventDefault();
+
+        if (selectedStatement === null) {
+            return;
+        }
+
         setPreview(null);
         confirmation.reset();
         confirmation.clearErrors();
-        const form = event.currentTarget as HTMLFormElement;
-        const statementInput = form.elements.namedItem(
-            'statement',
-        ) as HTMLInputElement | null;
         previewRequest.transform((data) => ({
             ...data,
-            statement: statementInput?.files?.[0] ?? data.statement,
+            statement: selectedStatement,
         }));
         previewRequest.post(previewStatementImport.url(), {
             onSuccess: (response) => {
                 setPreview(response);
                 confirmation.setData({
-                    statement: null,
+                    statement: selectedStatement,
                     file_hash: response.file_hash,
                     instrument_label: response.instrument_label,
                     instrument_last_four: response.instrument_last_four ?? '',
@@ -119,14 +419,16 @@ export default function CreateStatementImport({
     }
 
     function updateMovement(
-        index: number,
+        movementIndex: number,
         values: Partial<ConfirmationMovement>,
-    ) {
+    ): void {
         confirmation.clearErrors();
         confirmation.setData(
             'movements',
-            confirmation.data.movements.map((movement, movementIndex) =>
-                movementIndex === index ? { ...movement, ...values } : movement,
+            confirmation.data.movements.map((movement, currentIndex) =>
+                currentIndex === movementIndex
+                    ? { ...movement, ...values }
+                    : movement,
             ),
         );
     }
@@ -134,21 +436,29 @@ export default function CreateStatementImport({
     function movementError(
         movementIndex: number,
         field: keyof ConfirmationMovement,
-    ) {
-        return (confirmation.errors as Record<string, string | undefined>)[
-            `movements.${movementIndex}.${field}`
-        ];
+    ): string | undefined {
+        const errors: object = confirmation.errors;
+        const errorKey = `movements.${movementIndex}.${field}`;
+
+        if (!hasOwnProperty(errors, errorKey)) {
+            return undefined;
+        }
+
+        const error = errors[errorKey];
+
+        return typeof error === 'string' ? error : undefined;
     }
 
-    function confirm(event: React.FormEvent) {
+    function confirm(event: React.FormEvent<HTMLFormElement>): void {
         event.preventDefault();
-        const form = event.currentTarget as HTMLFormElement;
-        const statementInput = form.elements.namedItem(
-            'statement',
-        ) as HTMLInputElement | null;
+
+        if (selectedStatement === null || unresolvedCount > 0) {
+            return;
+        }
+
         confirmation.transform((data) => ({
             ...data,
-            statement: statementInput?.files?.[0] ?? data.statement,
+            statement: selectedStatement,
         }));
         confirmation.post(confirmStatementImport.url());
     }
@@ -163,8 +473,8 @@ export default function CreateStatementImport({
                             Import a statement
                         </h1>
                         <p className="text-sm text-muted-foreground">
-                            Preview a supported BCP or Interbank text PDF, then
-                            classify every movement before confirming it.
+                            Choose a supported BCP or Interbank text PDF once,
+                            then resolve only the movements that need attention.
                         </p>
                     </div>
                     <Button asChild variant="outline">
@@ -176,10 +486,11 @@ export default function CreateStatementImport({
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>1. Preview the PDF</CardTitle>
+                        <CardTitle>1. Choose the PDF</CardTitle>
                         <CardDescription>
-                            The source and extracted text are processed
-                            transiently and are not retained.
+                            The file and extracted text stay transient. Refresh,
+                            navigation, logout, or closing this tab discards
+                            them.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -197,11 +508,16 @@ export default function CreateStatementImport({
                                     type="file"
                                     accept="application/pdf,.pdf"
                                     onChange={(event) => {
+                                        const statement =
+                                            event.currentTarget.files?.[0] ??
+                                            null;
+
                                         setPreview(null);
+                                        setSelectedStatement(statement);
                                         previewRequest.clearErrors('statement');
                                         previewRequest.setData(
                                             'statement',
-                                            event.target.files?.[0] ?? null,
+                                            statement,
                                         );
                                     }}
                                     required
@@ -214,7 +530,7 @@ export default function CreateStatementImport({
                                 type="submit"
                                 disabled={
                                     previewRequest.processing ||
-                                    previewRequest.data.statement === null
+                                    selectedStatement === null
                                 }
                             >
                                 {previewRequest.processing ? (
@@ -234,9 +550,7 @@ export default function CreateStatementImport({
                             <CardHeader>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div className="grid gap-1">
-                                        <CardTitle>
-                                            2. Review every movement
-                                        </CardTitle>
+                                        <CardTitle>Proposed import</CardTitle>
                                         <CardDescription>
                                             {preview.period_start} through{' '}
                                             {preview.period_end}
@@ -253,6 +567,41 @@ export default function CreateStatementImport({
                                 </div>
                             </CardHeader>
                             <CardContent className="grid gap-5">
+                                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                                    <div className="grid gap-1 rounded-lg border p-3">
+                                        <span className="text-xs text-muted-foreground">
+                                            Proposed movements
+                                        </span>
+                                        <span className="text-xl font-semibold tabular-nums">
+                                            {confirmation.data.movements.length}
+                                        </span>
+                                    </div>
+                                    <div className="grid gap-1 rounded-lg border p-3">
+                                        <span className="text-xs text-muted-foreground">
+                                            Affect spending
+                                        </span>
+                                        <span className="text-xl font-semibold tabular-nums">
+                                            {spendingMovementCount}
+                                        </span>
+                                    </div>
+                                    <div className="grid gap-1 rounded-lg border p-3">
+                                        <span className="text-xs text-muted-foreground">
+                                            Statement only
+                                        </span>
+                                        <span className="text-xl font-semibold tabular-nums">
+                                            {statementOnlyMovementCount}
+                                        </span>
+                                    </div>
+                                    <div className="grid gap-1 rounded-lg border p-3">
+                                        <span className="text-xs text-muted-foreground">
+                                            Unresolved
+                                        </span>
+                                        <span className="text-xl font-semibold tabular-nums">
+                                            {unresolvedCount}
+                                        </span>
+                                    </div>
+                                </div>
+
                                 <div className="grid gap-4 md:grid-cols-3">
                                     <div className="grid gap-2 md:col-span-2">
                                         <Label htmlFor="instrument-label">
@@ -271,7 +620,7 @@ export default function CreateStatementImport({
                                                 );
                                                 confirmation.setData(
                                                     'instrument_label',
-                                                    event.target.value,
+                                                    event.currentTarget.value,
                                                 );
                                             }}
                                             required
@@ -302,7 +651,7 @@ export default function CreateStatementImport({
                                                 );
                                                 confirmation.setData(
                                                     'instrument_last_four',
-                                                    event.target.value,
+                                                    event.currentTarget.value,
                                                 );
                                             }}
                                         />
@@ -330,7 +679,8 @@ export default function CreateStatementImport({
                                                     );
                                                     confirmation.setData(
                                                         'savings_category_id',
-                                                        event.target.value,
+                                                        event.currentTarget
+                                                            .value,
                                                     );
                                                 }}
                                                 options={[
@@ -356,393 +706,212 @@ export default function CreateStatementImport({
                                         </div>
                                     )}
                                 </div>
-
-                                <div className="rounded-lg border md:overflow-x-auto">
-                                    <table className="block w-full text-sm md:table md:min-w-[70rem]">
-                                        <thead className="hidden bg-muted/50 text-left md:table-header-group">
-                                            <tr>
-                                                <th className="px-3 py-2 font-medium">
-                                                    Date
-                                                </th>
-                                                <th className="px-3 py-2 font-medium">
-                                                    Description
-                                                </th>
-                                                <th className="px-3 py-2 font-medium">
-                                                    Amount
-                                                </th>
-                                                <th className="px-3 py-2 font-medium">
-                                                    Currency
-                                                </th>
-                                                <th className="px-3 py-2 font-medium">
-                                                    Direction
-                                                </th>
-                                                <th className="px-3 py-2 font-medium">
-                                                    Classification
-                                                </th>
-                                                <th className="px-3 py-2 font-medium">
-                                                    Spending impact
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="grid gap-3 p-3 md:table-row-group md:p-0">
-                                            {confirmation.data.movements.map(
-                                                (movement, movementIndex) => (
-                                                    <tr
-                                                        key={
-                                                            movement.source_row_id
-                                                        }
-                                                        className="grid gap-3 rounded-lg border p-3 align-top md:table-row md:rounded-none md:border-0 md:p-0"
-                                                    >
-                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
-                                                            <Label
-                                                                htmlFor={`movement-${movementIndex}-occurred-on`}
-                                                                className="text-xs text-muted-foreground md:sr-only"
-                                                            >
-                                                                Date
-                                                            </Label>
-                                                            <Input
-                                                                id={`movement-${movementIndex}-occurred-on`}
-                                                                type="date"
-                                                                value={
-                                                                    movement.occurred_on
-                                                                }
-                                                                onChange={(
-                                                                    event,
-                                                                ) =>
-                                                                    updateMovement(
-                                                                        movementIndex,
-                                                                        {
-                                                                            occurred_on:
-                                                                                event
-                                                                                    .target
-                                                                                    .value,
-                                                                        },
-                                                                    )
-                                                                }
-                                                                aria-invalid={Boolean(
-                                                                    movementError(
-                                                                        movementIndex,
-                                                                        'occurred_on',
-                                                                    ),
-                                                                )}
-                                                                aria-describedby={`movement-${movementIndex}-occurred-on-error`}
-                                                                required
-                                                            />
-                                                            <InputError
-                                                                id={`movement-${movementIndex}-occurred-on-error`}
-                                                                message={movementError(
-                                                                    movementIndex,
-                                                                    'occurred_on',
-                                                                )}
-                                                            />
-                                                        </td>
-                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
-                                                            <Label
-                                                                htmlFor={`movement-${movementIndex}-description`}
-                                                                className="text-xs text-muted-foreground md:sr-only"
-                                                            >
-                                                                Description
-                                                            </Label>
-                                                            <Input
-                                                                id={`movement-${movementIndex}-description`}
-                                                                value={
-                                                                    movement.description
-                                                                }
-                                                                maxLength={255}
-                                                                onChange={(
-                                                                    event,
-                                                                ) =>
-                                                                    updateMovement(
-                                                                        movementIndex,
-                                                                        {
-                                                                            description:
-                                                                                event
-                                                                                    .target
-                                                                                    .value,
-                                                                        },
-                                                                    )
-                                                                }
-                                                                aria-invalid={Boolean(
-                                                                    movementError(
-                                                                        movementIndex,
-                                                                        'description',
-                                                                    ),
-                                                                )}
-                                                                aria-describedby={`movement-${movementIndex}-description-error`}
-                                                                required
-                                                            />
-                                                            <InputError
-                                                                id={`movement-${movementIndex}-description-error`}
-                                                                message={movementError(
-                                                                    movementIndex,
-                                                                    'description',
-                                                                )}
-                                                            />
-                                                        </td>
-                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
-                                                            <Label
-                                                                htmlFor={`movement-${movementIndex}-amount`}
-                                                                className="text-xs text-muted-foreground md:sr-only"
-                                                            >
-                                                                Amount in minor
-                                                                units
-                                                            </Label>
-                                                            <Input
-                                                                id={`movement-${movementIndex}-amount`}
-                                                                value={
-                                                                    movement.amount_minor
-                                                                }
-                                                                inputMode="numeric"
-                                                                pattern="\d+"
-                                                                onChange={(
-                                                                    event,
-                                                                ) =>
-                                                                    updateMovement(
-                                                                        movementIndex,
-                                                                        {
-                                                                            amount_minor:
-                                                                                event
-                                                                                    .target
-                                                                                    .value,
-                                                                        },
-                                                                    )
-                                                                }
-                                                                aria-invalid={Boolean(
-                                                                    movementError(
-                                                                        movementIndex,
-                                                                        'amount_minor',
-                                                                    ),
-                                                                )}
-                                                                aria-describedby={`movement-${movementIndex}-amount-error movement-${movementIndex}-formatted-amount`}
-                                                                required
-                                                            />
-                                                            <InputError
-                                                                id={`movement-${movementIndex}-amount-error`}
-                                                                message={movementError(
-                                                                    movementIndex,
-                                                                    'amount_minor',
-                                                                )}
-                                                            />
-                                                            <p
-                                                                id={`movement-${movementIndex}-formatted-amount`}
-                                                                className="text-xs text-muted-foreground"
-                                                            >
-                                                                {formatMinorUnits(
-                                                                    movement.amount_minor ||
-                                                                        '0',
-                                                                    movement.currency,
-                                                                )}
-                                                            </p>
-                                                        </td>
-                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
-                                                            <Label
-                                                                htmlFor={`movement-${movementIndex}-currency`}
-                                                                className="text-xs text-muted-foreground md:sr-only"
-                                                            >
-                                                                Currency
-                                                            </Label>
-                                                            <NativeSelect
-                                                                id={`movement-${movementIndex}-currency`}
-                                                                value={
-                                                                    movement.currency
-                                                                }
-                                                                aria-invalid={Boolean(
-                                                                    movementError(
-                                                                        movementIndex,
-                                                                        'currency',
-                                                                    ),
-                                                                )}
-                                                                aria-describedby={`movement-${movementIndex}-currency-error`}
-                                                                onChange={(
-                                                                    event,
-                                                                ) =>
-                                                                    updateMovement(
-                                                                        movementIndex,
-                                                                        {
-                                                                            currency:
-                                                                                event
-                                                                                    .target
-                                                                                    .value as StatementPreviewMovement['currency'],
-                                                                        },
-                                                                    )
-                                                                }
-                                                                options={[
-                                                                    {
-                                                                        value: 'PEN',
-                                                                        label: 'PEN',
-                                                                    },
-                                                                    {
-                                                                        value: 'USD',
-                                                                        label: 'USD',
-                                                                    },
-                                                                ]}
-                                                            />
-                                                            <InputError
-                                                                id={`movement-${movementIndex}-currency-error`}
-                                                                message={movementError(
-                                                                    movementIndex,
-                                                                    'currency',
-                                                                )}
-                                                            />
-                                                        </td>
-                                                        <td className="grid gap-1 p-0 capitalize md:table-cell md:px-3 md:py-3">
-                                                            <span className="text-xs text-muted-foreground md:sr-only">
-                                                                Direction
-                                                            </span>
-                                                            {
-                                                                preview
-                                                                    .movements[
-                                                                    movementIndex
-                                                                ].direction
-                                                            }
-                                                        </td>
-                                                        <td className="grid gap-2 p-0 md:table-cell md:p-2">
-                                                            <Label
-                                                                htmlFor={`movement-${movementIndex}-classification`}
-                                                                className="text-xs text-muted-foreground md:sr-only"
-                                                            >
-                                                                Classification
-                                                            </Label>
-                                                            <NativeSelect
-                                                                id={`movement-${movementIndex}-classification`}
-                                                                aria-label={`Classification for ${movement.description}`}
-                                                                value={
-                                                                    movement.classification
-                                                                }
-                                                                onChange={(
-                                                                    event,
-                                                                ) =>
-                                                                    updateMovement(
-                                                                        movementIndex,
-                                                                        {
-                                                                            classification:
-                                                                                event
-                                                                                    .target
-                                                                                    .value as StatementClassification,
-                                                                        },
-                                                                    )
-                                                                }
-                                                                options={statementMovementClassificationOptions.filter(
-                                                                    (option) =>
-                                                                        option.value !==
-                                                                            'not_a_movement' ||
-                                                                        preview
-                                                                            .movements[
-                                                                            movementIndex
-                                                                        ]
-                                                                            .can_be_excluded,
-                                                                )}
-                                                                aria-invalid={Boolean(
-                                                                    movementError(
-                                                                        movementIndex,
-                                                                        'classification',
-                                                                    ),
-                                                                )}
-                                                                aria-describedby={`movement-${movementIndex}-classification-error`}
-                                                            />
-                                                            <InputError
-                                                                id={`movement-${movementIndex}-classification-error`}
-                                                                message={movementError(
-                                                                    movementIndex,
-                                                                    'classification',
-                                                                )}
-                                                            />
-                                                        </td>
-                                                        <td className="grid gap-2 p-0 md:table-cell md:px-3 md:py-3">
-                                                            <span className="text-xs text-muted-foreground md:sr-only">
-                                                                Spending impact
-                                                            </span>
-                                                            <Badge
-                                                                variant={
-                                                                    statementMovementContributesToSpending(
-                                                                        movement.classification,
-                                                                    )
-                                                                        ? 'default'
-                                                                        : 'outline'
-                                                                }
-                                                            >
-                                                                {statementMovementContributesToSpending(
-                                                                    movement.classification,
-                                                                )
-                                                                    ? 'Affects spending'
-                                                                    : 'Statement only'}
-                                                            </Badge>
-                                                        </td>
-                                                    </tr>
-                                                ),
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
                             </CardContent>
                         </Card>
 
                         <Card>
                             <CardHeader>
-                                <CardTitle>Reconciliation</CardTitle>
-                                <CardDescription>
-                                    Printed statement totals verified against
-                                    every parsed row.
-                                </CardDescription>
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div className="grid gap-1">
+                                        <CardTitle>
+                                            2. Resolve exceptions
+                                        </CardTitle>
+                                        <CardDescription>
+                                            Review ambiguous movements and any
+                                            parser-suggested exclusions first.
+                                        </CardDescription>
+                                    </div>
+                                    <Badge
+                                        variant={
+                                            unresolvedCount > 0
+                                                ? 'destructive'
+                                                : 'secondary'
+                                        }
+                                    >
+                                        {unresolvedCount > 0 ? (
+                                            <CircleAlert />
+                                        ) : (
+                                            <CheckCircle2 />
+                                        )}
+                                        {unresolvedCount} unresolved
+                                    </Badge>
+                                </div>
                             </CardHeader>
-                            <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                {Object.entries(preview.reconciliation).map(
-                                    ([key, value]) => {
-                                        const currency =
-                                            reconciliationCurrency(key);
-
-                                        return (
-                                            <div
-                                                key={key}
-                                                className="grid gap-1 rounded-lg border p-3"
-                                            >
-                                                <span className="text-xs text-muted-foreground capitalize">
-                                                    {humanizeKey(key)}
-                                                </span>
-                                                <span className="font-medium tabular-nums">
-                                                    {formatMinorUnits(
-                                                        value,
-                                                        currency,
-                                                    )}
-                                                </span>
-                                            </div>
-                                        );
-                                    },
+                            <CardContent className="grid gap-4">
+                                {exceptionMovementIndexes.length > 0 ? (
+                                    exceptionMovementIndexes.map(
+                                        (movementIndex) => (
+                                            <MovementEditor
+                                                key={
+                                                    confirmation.data.movements[
+                                                        movementIndex
+                                                    ].source_row_id
+                                                }
+                                                movement={
+                                                    confirmation.data.movements[
+                                                        movementIndex
+                                                    ]
+                                                }
+                                                movementIndex={movementIndex}
+                                                sourceMovement={
+                                                    preview.movements[
+                                                        movementIndex
+                                                    ]
+                                                }
+                                                updateMovement={updateMovement}
+                                                movementError={movementError}
+                                            />
+                                        ),
+                                    )
+                                ) : (
+                                    <div className="flex items-start gap-3 rounded-lg border border-dashed p-4">
+                                        <CheckCircle2 className="mt-0.5 size-5 text-muted-foreground" />
+                                        <div className="grid gap-1">
+                                            <p className="font-medium">
+                                                No exceptions remain
+                                            </p>
+                                            <p className="text-sm text-muted-foreground">
+                                                Every real movement has a valid
+                                                disposition.
+                                            </p>
+                                        </div>
+                                    </div>
                                 )}
+
+                                <details className="rounded-lg border">
+                                    <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 font-medium">
+                                        <Eye className="size-4" /> Inspect{' '}
+                                        {classifiedMovementIndexes.length}{' '}
+                                        classified movements
+                                    </summary>
+                                    <div
+                                        className="grid gap-3 border-t p-3 lg:grid-cols-2"
+                                        data-test="classified-movements"
+                                    >
+                                        {classifiedMovementIndexes.map(
+                                            (movementIndex) => (
+                                                <MovementEditor
+                                                    key={
+                                                        confirmation.data
+                                                            .movements[
+                                                            movementIndex
+                                                        ].source_row_id
+                                                    }
+                                                    movement={
+                                                        confirmation.data
+                                                            .movements[
+                                                            movementIndex
+                                                        ]
+                                                    }
+                                                    movementIndex={
+                                                        movementIndex
+                                                    }
+                                                    sourceMovement={
+                                                        preview.movements[
+                                                            movementIndex
+                                                        ]
+                                                    }
+                                                    updateMovement={
+                                                        updateMovement
+                                                    }
+                                                    movementError={
+                                                        movementError
+                                                    }
+                                                />
+                                            ),
+                                        )}
+                                    </div>
+                                </details>
                             </CardContent>
                         </Card>
 
-                        {preview.informational_values.length > 0 && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>Informational values</CardTitle>
-                                    <CardDescription>
-                                        These values support review but are not
-                                        posted movements.
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                    {preview.informational_values.map(
-                                        (value, valueIndex) => (
-                                            <div
-                                                key={`${value.label}-${valueIndex}`}
-                                                className="grid gap-1 rounded-lg border p-3"
-                                            >
-                                                <span className="text-xs text-muted-foreground">
-                                                    {value.label}
-                                                </span>
-                                                <span className="font-medium tabular-nums">
-                                                    {formatMinorUnits(
-                                                        value.value,
-                                                        value.currency,
-                                                    )}
-                                                </span>
-                                            </div>
-                                        ),
-                                    )}
-                                </CardContent>
-                            </Card>
-                        )}
+                        <Collapsible className="rounded-xl border bg-card text-card-foreground shadow-sm">
+                            <CollapsibleTrigger
+                                type="button"
+                                className="w-full cursor-pointer px-6 py-5"
+                                data-test="statement-checks"
+                            >
+                                <span className="block text-left font-semibold">
+                                    Statement checks and information
+                                </span>
+                                <span className="mt-1 block text-left text-sm text-muted-foreground">
+                                    Reconciliation and informational values stay
+                                    available when you need them.
+                                </span>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="grid gap-6 border-t p-6">
+                                <section className="grid gap-3">
+                                    <div className="grid gap-1">
+                                        <h2 className="font-semibold">
+                                            Reconciliation
+                                        </h2>
+                                        <p className="text-sm text-muted-foreground">
+                                            Printed statement totals verified
+                                            against every parsed row.
+                                        </p>
+                                    </div>
+                                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                        {Object.entries(
+                                            preview.reconciliation,
+                                        ).map(([key, value]) => {
+                                            const currency =
+                                                reconciliationCurrency(key);
+
+                                            return (
+                                                <div
+                                                    key={key}
+                                                    className="grid gap-1 rounded-lg border p-3"
+                                                >
+                                                    <span className="text-xs text-muted-foreground capitalize">
+                                                        {humanizeKey(key)}
+                                                    </span>
+                                                    <span className="font-medium tabular-nums">
+                                                        {formatMinorUnits(
+                                                            value,
+                                                            currency,
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+
+                                {preview.informational_values.length > 0 && (
+                                    <section className="grid gap-3">
+                                        <div className="grid gap-1">
+                                            <h2 className="font-semibold">
+                                                Informational values
+                                            </h2>
+                                            <p className="text-sm text-muted-foreground">
+                                                These values support review but
+                                                are not posted movements.
+                                            </p>
+                                        </div>
+                                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                            {preview.informational_values.map(
+                                                (value, valueIndex) => (
+                                                    <div
+                                                        key={`${value.label}-${valueIndex}`}
+                                                        className="grid gap-1 rounded-lg border p-3"
+                                                    >
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {value.label}
+                                                        </span>
+                                                        <span className="font-medium tabular-nums">
+                                                            {formatMinorUnits(
+                                                                value.value,
+                                                                value.currency,
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                ),
+                                            )}
+                                        </div>
+                                    </section>
+                                )}
+                            </CollapsibleContent>
+                        </Collapsible>
 
                         {Object.keys(confirmation.errors).length > 0 && (
                             <AlertError
@@ -753,43 +922,33 @@ export default function CreateStatementImport({
 
                         <Card>
                             <CardHeader>
-                                <CardTitle>3. Confirm the same PDF</CardTitle>
+                                <CardTitle>
+                                    3. Confirm Statement Import
+                                </CardTitle>
                                 <CardDescription>
-                                    Re-upload the exact previewed file so the
-                                    server can reparse it and verify every
-                                    source row.
+                                    The PDF selected above remains only in this
+                                    tab's memory and will be resubmitted
+                                    automatically so the server can reparse it.
                                 </CardDescription>
                             </CardHeader>
-                            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end">
-                                <div className="grid min-w-0 flex-1 gap-2">
-                                    <Label htmlFor="confirm-statement">
-                                        Same statement PDF
-                                    </Label>
-                                    <Input
-                                        id="confirm-statement"
-                                        name="statement"
-                                        type="file"
-                                        accept="application/pdf,.pdf"
-                                        onChange={(event) => {
-                                            confirmation.clearErrors(
-                                                'statement',
-                                            );
-                                            confirmation.setData(
-                                                'statement',
-                                                event.target.files?.[0] ?? null,
-                                            );
-                                        }}
-                                        required
-                                    />
-                                    <InputError
-                                        message={confirmation.errors.statement}
-                                    />
+                            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="grid gap-1">
+                                    <p className="font-medium">
+                                        {unresolvedCount === 0
+                                            ? 'Ready for confirmation'
+                                            : `${unresolvedCount} movement${unresolvedCount === 1 ? '' : 's'} still need a decision`}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Confirmation reparses the source and
+                                        checks every reconciliation invariant.
+                                    </p>
                                 </div>
                                 <Button
                                     type="submit"
                                     disabled={
                                         confirmation.processing ||
-                                        confirmation.data.statement === null
+                                        selectedStatement === null ||
+                                        unresolvedCount > 0
                                     }
                                 >
                                     {confirmation.processing && <Spinner />}

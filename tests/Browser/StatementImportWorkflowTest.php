@@ -13,7 +13,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the owner discovers Statement Imports selects a PDF and revisits a confirmed import', function () {
+test('the owner selects a statement once resolves exceptions and revisits the confirmed import', function () {
     $owner = User::factory()->create();
     $pdf = SyntheticPdf::fromText((string) file_get_contents(
         base_path('tests/Fixtures/Statements/interbank.txt'),
@@ -33,25 +33,30 @@ test('the owner discovers Statement Imports selects a PDF and revisits a confirm
             ->assertPathIs('/statement-imports/create');
         selectPdfInBrowser($page, '#preview-statement', $pdf);
         expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
+        $page->press('Preview statement');
         $page
-            ->press('Preview statement')
             ->assertSee('INTERBANK')
             ->assertSee('Reconciled')
-            ->assertSee('Minimum payment');
+            ->assertSee('Statement checks and information')
+            ->click('[data-test="statement-checks"]')
+            ->assertSee('Minimum payment')
+            ->click('[data-test="statement-checks"]')
+            ->assertDontSee('Minimum payment')
+            ->assertSee('1 unresolved')
+            ->assertSee('5 classified movements')
+            ->assertButtonDisabled('Confirm Statement Import');
         expect($page->value('select[aria-label="Classification for Mercado Pago"]'))
             ->toBe('needs_classification');
-        selectPdfInBrowser($page, '#confirm-statement', $pdf);
-        $page
-            ->press('Confirm Statement Import')
-            ->assertSee('Classify every real movement before confirming the import.');
-
-        expect(StatementImport::query()->doesntExist())->toBeTrue();
+        expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
 
         $page->select(
             'select[aria-label="Classification for Mercado Pago"]',
             'already_recorded',
         );
-        selectPdfInBrowser($page, '#confirm-statement', $pdf);
+        $page
+            ->assertSee('0 unresolved')
+            ->assertButtonEnabled('Confirm Statement Import');
+        expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
         $page
             ->press('Confirm Statement Import')
             ->assertPathBeginsWith('/statement-imports/')
@@ -59,10 +64,19 @@ test('the owner discovers Statement Imports selects a PDF and revisits a confirm
             ->assertSee('Source reconciliation')
             ->assertSee('payment total usd')
             ->assertSee('Mercado Pago')
-            ->assertSee('Already recorded')
+            ->assertSee('Already recorded');
+
+        $page->resize(390, 844);
+        expect($page->script("document.querySelector('[data-test=statement-movements]').scrollWidth <= document.querySelector('[data-test=statement-movements]').clientWidth"))
+            ->toBeTrue();
+
+        $page
             ->click('Statement Imports')
             ->assertPathIs('/statement-imports')
-            ->assertSee('Interbank American Express')
+            ->assertSee('Interbank American Express');
+        expect($page->script("document.querySelector('[data-test=statement-import-list]').scrollWidth <= document.querySelector('[data-test=statement-import-list]').clientWidth"))
+            ->toBeTrue();
+        $page
             ->assertNoJavaScriptErrors()
             ->assertNoConsoleLogs();
 
@@ -104,7 +118,6 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
             'select[aria-label="Classification for DEPOSITO"]',
             'already_recorded',
         );
-        selectPdfInBrowser($page, '#confirm-statement', $pdf);
         $page
             ->press('Confirm Statement Import')
             ->assertPathBeginsWith('/statement-imports/')
@@ -120,7 +133,7 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
     } finally {
         $server->stop();
     }
-})->depends('the owner discovers Statement Imports selects a PDF and revisits a confirmed import');
+})->depends('the owner selects a statement once resolves exceptions and revisits the confirmed import');
 
 test('an abandoned preview remains transient and is editable on a mobile viewport', function () {
     $owner = User::factory()->create();
@@ -143,10 +156,10 @@ test('an abandoned preview remains transient and is editable on a mobile viewpor
         $page
             ->press('Preview statement')
             ->assertSee('Reconciled')
-            ->assertVisible('label[for="movement-0-occurred-on"]')
-            ->assertVisible('label[for="movement-0-description"]')
-            ->assertVisible('label[for="movement-0-amount"]')
-            ->assertVisible('label[for="movement-0-currency"]')
+            ->assertSee('1 unresolved')
+            ->assertVisible(
+                'select[aria-label="Classification for Mercado Pago"]',
+            )
             ->assertNoJavaScriptErrors();
 
         expect($page->script('document.documentElement.scrollWidth <= document.documentElement.clientWidth'))

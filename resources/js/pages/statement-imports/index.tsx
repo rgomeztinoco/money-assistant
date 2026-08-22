@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { FilePlus2, FileText } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -97,142 +98,125 @@ export default function StatementImportsIndex({
                                 </div>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto rounded-lg border">
-                                <table className="w-full min-w-[58rem] text-sm">
-                                    <caption className="sr-only">
-                                        Confirmed Statement Imports
-                                    </caption>
-                                    <thead className="bg-muted/50 text-left">
-                                        <tr>
-                                            <th
-                                                scope="col"
-                                                className="px-4 py-3 font-medium"
-                                            >
-                                                Format
-                                            </th>
-                                            <th
-                                                scope="col"
-                                                className="px-4 py-3 font-medium"
-                                            >
-                                                Period
-                                            </th>
-                                            <th
-                                                scope="col"
-                                                className="px-4 py-3 font-medium"
-                                            >
-                                                Instrument
-                                            </th>
-                                            <th
-                                                scope="col"
-                                                className="px-4 py-3 text-right font-medium"
-                                            >
-                                                Movements
-                                            </th>
-                                            <th
-                                                scope="col"
-                                                className="px-4 py-3 font-medium"
-                                            >
-                                                Totals
-                                            </th>
-                                            <th
-                                                scope="col"
-                                                className="px-4 py-3 font-medium"
-                                            >
-                                                Confirmed
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {statement_imports.data.map(
-                                            (statementImport) => (
-                                                <tr key={statementImport.id}>
-                                                    <td className="px-4 py-3 font-medium uppercase">
-                                                        <Link
-                                                            href={show(
-                                                                statementImport.id,
-                                                            )}
-                                                            className="hover:underline"
-                                                            aria-label={`View ${statementImport.instrument_label} statement from ${statementImport.period_start} through ${statementImport.period_end}`}
-                                                        >
-                                                            {
-                                                                statementImport.financial_statement_format
-                                                            }
-                                                        </Link>
-                                                    </td>
-                                                    <td className="px-4 py-3 tabular-nums">
-                                                        {
-                                                            statementImport.period_start
-                                                        }{' '}
-                                                        –{' '}
-                                                        {
-                                                            statementImport.period_end
-                                                        }
-                                                    </td>
-                                                    <td className="px-4 py-3">
+                            <div
+                                className="grid min-w-0 gap-3 lg:grid-cols-2"
+                                data-test="statement-import-list"
+                            >
+                                {statement_imports.data.map(
+                                    (statementImport) => (
+                                        <article
+                                            key={statementImport.id}
+                                            className="grid min-w-0 gap-4 rounded-lg border p-4"
+                                        >
+                                            <div className="flex min-w-0 items-start justify-between gap-3">
+                                                <div className="grid min-w-0 gap-1">
+                                                    <Link
+                                                        href={show(
+                                                            statementImport.id,
+                                                        )}
+                                                        className="font-medium break-words hover:underline"
+                                                        aria-label={`View ${statementImport.instrument_label} statement from ${statementImport.period_start} through ${statementImport.period_end}`}
+                                                    >
                                                         {
                                                             statementImport.instrument_label
                                                         }
-                                                        {statementImport.instrument_last_four && (
-                                                            <span className="text-muted-foreground">
-                                                                {' '}
-                                                                ····{' '}
-                                                                {
-                                                                    statementImport.instrument_last_four
-                                                                }
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right tabular-nums">
+                                                    </Link>
+                                                    <p className="text-sm text-muted-foreground tabular-nums">
+                                                        {
+                                                            statementImport.period_start
+                                                        }{' '}
+                                                        through{' '}
+                                                        {
+                                                            statementImport.period_end
+                                                        }
+                                                    </p>
+                                                </div>
+                                                <Badge
+                                                    variant="outline"
+                                                    className="uppercase"
+                                                >
+                                                    {
+                                                        statementImport.financial_statement_format
+                                                    }
+                                                </Badge>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="grid gap-1 rounded-md bg-muted/40 p-3">
+                                                    <span className="text-xs text-muted-foreground">
+                                                        Movements
+                                                    </span>
+                                                    <span className="font-medium tabular-nums">
                                                         {
                                                             statementImport.movement_count
                                                         }
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <div className="grid gap-1">
-                                                            {identifyingTotals(
-                                                                statementImport,
-                                                            ).map(
-                                                                ([
-                                                                    key,
-                                                                    value,
-                                                                ]) => (
-                                                                    <span
-                                                                        key={
-                                                                            key
-                                                                        }
-                                                                        className="text-xs capitalize tabular-nums"
-                                                                    >
-                                                                        {key
-                                                                            .replaceAll(
-                                                                                '_minor',
-                                                                                '',
-                                                                            )
-                                                                            .replaceAll(
-                                                                                '_',
-                                                                                ' ',
-                                                                            )}
-                                                                        :{' '}
-                                                                        {formatMinorUnits(
-                                                                            value,
-                                                                            totalCurrency(
-                                                                                key,
-                                                                            ),
-                                                                        )}
-                                                                    </span>
-                                                                ),
+                                                    </span>
+                                                </div>
+                                                <div className="grid gap-1 rounded-md bg-muted/40 p-3">
+                                                    <span className="text-xs text-muted-foreground">
+                                                        Instrument
+                                                    </span>
+                                                    <span className="font-medium tabular-nums">
+                                                        {statementImport.instrument_last_four
+                                                            ? `Ending ${statementImport.instrument_last_four}`
+                                                            : 'No last four'}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid gap-1">
+                                                <span className="text-xs text-muted-foreground">
+                                                    Statement totals
+                                                </span>
+                                                {identifyingTotals(
+                                                    statementImport,
+                                                ).map(([key, value]) => (
+                                                    <span
+                                                        key={key}
+                                                        className="text-sm capitalize tabular-nums"
+                                                    >
+                                                        {key
+                                                            .replaceAll(
+                                                                '_minor',
+                                                                '',
+                                                            )
+                                                            .replaceAll(
+                                                                '_',
+                                                                ' ',
                                                             )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-3 tabular-nums">
-                                                        {new Date(
-                                                            statementImport.confirmed_at,
-                                                        ).toLocaleString()}
-                                                    </td>
-                                                </tr>
-                                            ),
-                                        )}
-                                    </tbody>
-                                </table>
+                                                        :{' '}
+                                                        {formatMinorUnits(
+                                                            value,
+                                                            totalCurrency(key),
+                                                        )}
+                                                    </span>
+                                                ))}
+                                            </div>
+
+                                            <div className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+                                                <p className="text-xs text-muted-foreground tabular-nums">
+                                                    Confirmed{' '}
+                                                    {new Date(
+                                                        statementImport.confirmed_at,
+                                                    ).toLocaleString()}
+                                                </p>
+                                                <Button
+                                                    asChild
+                                                    variant="outline"
+                                                    size="sm"
+                                                >
+                                                    <Link
+                                                        href={show(
+                                                            statementImport.id,
+                                                        )}
+                                                    >
+                                                        View details
+                                                    </Link>
+                                                </Button>
+                                            </div>
+                                        </article>
+                                    ),
+                                )}
                             </div>
                         )}
 
