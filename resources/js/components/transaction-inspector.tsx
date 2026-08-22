@@ -29,8 +29,21 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
-import { formatMinorUnits } from '@/lib/format-minor-units';
+import {
+    currencyUnitsToMinorUnits,
+    formatMinorUnits,
+    minorUnitsToCurrencyUnits,
+} from '@/lib/format-minor-units';
 import type { CategoryOption, SelectedTransaction } from '@/types';
+
+type EditableLineItem = {
+    clientId: string;
+    description: string;
+    quantity: string | null;
+    unitPrice: string;
+    lineTotal: string;
+    category: { id: number; name: string } | null;
+};
 
 function ReceiptBreakdownSection({
     transaction,
@@ -40,19 +53,27 @@ function ReceiptBreakdownSection({
     categoryOptions: CategoryOption[];
 }) {
     const breakdown = transaction.receipt_breakdown;
-    const [lineItems, setLineItems] = useState(
+    const [lineItems, setLineItems] = useState<EditableLineItem[]>(
         () =>
             breakdown?.line_items.map((lineItem) => ({
-                ...lineItem,
                 clientId: lineItem.id,
+                description: lineItem.description,
+                quantity: lineItem.quantity,
+                unitPrice:
+                    lineItem.unit_price_minor === null
+                        ? ''
+                        : minorUnitsToCurrencyUnits(lineItem.unit_price_minor),
+                lineTotal: minorUnitsToCurrencyUnits(lineItem.line_total_minor),
+                category: lineItem.category,
             })) ?? [
                 {
-                    id: '',
                     clientId: crypto.randomUUID(),
                     description: transaction.merchant_description,
                     quantity: null,
-                    unit_price_minor: null,
-                    line_total_minor: transaction.amount_minor,
+                    unitPrice: '',
+                    lineTotal: minorUnitsToCurrencyUnits(
+                        transaction.amount_minor,
+                    ),
                     category:
                         transaction.category === null
                             ? null
@@ -69,8 +90,8 @@ function ReceiptBreakdownSection({
         field:
             | 'description'
             | 'quantity'
-            | 'unit_price_minor'
-            | 'line_total_minor'
+            | 'unitPrice'
+            | 'lineTotal'
             | 'category_id',
         value: string,
     ) {
@@ -97,6 +118,24 @@ function ReceiptBreakdownSection({
             }),
         );
     }
+
+    let lineItemTotal = 0n;
+    let hasValidLineItemTotals = true;
+
+    for (const lineItem of lineItems) {
+        const lineTotal = currencyUnitsToMinorUnits(lineItem.lineTotal);
+
+        if (lineTotal === null) {
+            hasValidLineItemTotals = false;
+            break;
+        }
+
+        lineItemTotal += lineTotal;
+    }
+
+    const reconciliationDelta = hasValidLineItemTotals
+        ? BigInt(transaction.amount_minor) - lineItemTotal
+        : null;
 
     return (
         <section className="grid gap-3">
@@ -181,20 +220,19 @@ function ReceiptBreakdownSection({
                                         <Label
                                             htmlFor={`receipt-line-${lineItem.clientId}-unit-price`}
                                         >
-                                            Unit price in minor units
+                                            Unit price
                                         </Label>
                                         <Input
                                             id={`receipt-line-${lineItem.clientId}-unit-price`}
-                                            name={`line_items[${index}][unit_price_minor]`}
+                                            name={`line_items[${index}][unit_price]`}
                                             type="number"
-                                            step="1"
-                                            value={
-                                                lineItem.unit_price_minor ?? ''
-                                            }
+                                            step="0.01"
+                                            inputMode="decimal"
+                                            value={lineItem.unitPrice}
                                             onChange={(event) =>
                                                 updateLineItem(
                                                     lineItem.clientId,
-                                                    'unit_price_minor',
+                                                    'unitPrice',
                                                     event.target.value,
                                                 )
                                             }
@@ -205,18 +243,19 @@ function ReceiptBreakdownSection({
                                         <Label
                                             htmlFor={`receipt-line-${lineItem.clientId}-total`}
                                         >
-                                            Signed total in minor units
+                                            Line total
                                         </Label>
                                         <Input
                                             id={`receipt-line-${lineItem.clientId}-total`}
-                                            name={`line_items[${index}][line_total_minor]`}
+                                            name={`line_items[${index}][line_total]`}
                                             type="number"
-                                            step="1"
-                                            value={lineItem.line_total_minor}
+                                            step="0.01"
+                                            inputMode="decimal"
+                                            value={lineItem.lineTotal}
                                             onChange={(event) =>
                                                 updateLineItem(
                                                     lineItem.clientId,
-                                                    'line_total_minor',
+                                                    'lineTotal',
                                                     event.target.value,
                                                 )
                                             }
@@ -287,12 +326,11 @@ function ReceiptBreakdownSection({
                                     setLineItems((currentLineItems) => [
                                         ...currentLineItems,
                                         {
-                                            id: '',
                                             clientId: crypto.randomUUID(),
                                             description: '',
                                             quantity: null,
-                                            unit_price_minor: null,
-                                            line_total_minor: '1',
+                                            unitPrice: '',
+                                            lineTotal: '0.00',
                                             category: null,
                                         },
                                     ])
@@ -300,8 +338,24 @@ function ReceiptBreakdownSection({
                             >
                                 <Plus /> Add Line Item
                             </Button>
+                            <div
+                                className={`rounded-md border p-3 text-sm ${reconciliationDelta === 0n ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-200' : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200'}`}
+                            >
+                                {reconciliationDelta === null
+                                    ? 'Enter valid currency-unit totals to check reconciliation.'
+                                    : reconciliationDelta === 0n
+                                      ? 'Reconciled exactly'
+                                      : reconciliationDelta > 0n
+                                        ? `${formatMinorUnits(reconciliationDelta.toString(), transaction.currency)} remaining`
+                                        : `${formatMinorUnits((-reconciliationDelta).toString(), transaction.currency)} over the Transaction amount`}
+                            </div>
                             <InputError message={errors.line_items} />
-                            <Button type="submit" disabled={processing}>
+                            <Button
+                                type="submit"
+                                disabled={
+                                    processing || reconciliationDelta !== 0n
+                                }
+                            >
                                 {processing && <Spinner />}
                                 {breakdown
                                     ? 'Replace Receipt Breakdown'
@@ -380,18 +434,20 @@ function TransactionEditForm({
                             <Label
                                 htmlFor={`transaction-${transaction.id}-amount`}
                             >
-                                Edit amount in minor units
+                                Edit amount
                             </Label>
                             <Input
                                 id={`transaction-${transaction.id}-amount`}
-                                name="amount_minor"
+                                name="amount"
                                 type="number"
-                                min="1"
-                                step="1"
-                                inputMode="numeric"
-                                defaultValue={transaction.amount_minor}
+                                min="0.01"
+                                step="0.01"
+                                inputMode="decimal"
+                                defaultValue={minorUnitsToCurrencyUnits(
+                                    transaction.amount_minor,
+                                )}
                             />
-                            <InputError message={errors.amount_minor} />
+                            <InputError message={errors.amount} />
                         </div>
                         <div className="grid gap-2">
                             <Label
@@ -639,17 +695,7 @@ export function TransactionInspector({
                     <div className="grid gap-6 px-4 pb-6">
                         <section className="grid gap-3">
                             <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-                                Edit current Transaction
-                            </h2>
-                            <TransactionEditForm
-                                transaction={transaction}
-                                categoryOptions={categoryOptions}
-                            />
-                        </section>
-
-                        <section className="grid gap-3">
-                            <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-                                Current values
+                                Transaction summary
                             </h2>
                             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border p-4 text-sm">
                                 <div>
@@ -700,8 +746,18 @@ export function TransactionInspector({
                             </p>
                         </section>
 
+                        <section className="grid gap-3">
+                            <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                                Edit current Transaction
+                            </h2>
+                            <TransactionEditForm
+                                transaction={transaction}
+                                categoryOptions={categoryOptions}
+                            />
+                        </section>
+
                         <ReceiptBreakdownSection
-                            key={`${transaction.receipt_breakdown?.id ?? 'none'}-${transaction.receipt_breakdown?.line_items.map((lineItem) => lineItem.id).join('-') ?? ''}`}
+                            key={`${transaction.currency}-${transaction.amount_minor}-${transaction.receipt_breakdown?.id ?? 'none'}-${transaction.receipt_breakdown?.line_items.map((lineItem) => lineItem.id).join('-') ?? ''}`}
                             transaction={transaction}
                             categoryOptions={categoryOptions}
                         />
@@ -738,100 +794,119 @@ export function TransactionInspector({
                             ),
                         )}
 
-                        <section className="grid gap-3">
-                            <h2 className="flex items-center gap-2 font-semibold">
-                                <ShieldCheck className="size-4" /> Provenance
-                            </h2>
-                            <div className="grid gap-2 rounded-lg border p-4 text-sm">
-                                <p>
-                                    Category source:{' '}
-                                    <span className="font-medium">
-                                        {transaction.category?.provenance.source.replace(
-                                            '_',
-                                            ' ',
-                                        ) ?? 'No Category assignment'}
-                                    </span>
-                                </p>
-                                {transaction.category?.provenance.owner && (
-                                    <p className="text-muted-foreground">
-                                        Assigned by{' '}
-                                        {
-                                            transaction.category.provenance
-                                                .owner.name
-                                        }
-                                    </p>
-                                )}
-                                {transaction.category?.provenance
-                                    .merchant_rule && (
-                                    <p className="text-muted-foreground">
-                                        Merchant Rule #{' '}
-                                        {
-                                            transaction.category.provenance
-                                                .merchant_rule.id
-                                        }
-                                    </p>
-                                )}
-                                <p>
-                                    {transaction.source_reference_count === 0
-                                        ? 'Manual or owner-confirmed entry with no Spending Notification Reference.'
-                                        : `${transaction.source_reference_count} Spending Notification ${transaction.source_reference_count === 1 ? 'Reference' : 'References'} retained.`}
-                                </p>
-                                {transaction.source_references.map(
-                                    (reference) => (
-                                        <p
-                                            key={reference.id}
-                                            className="text-muted-foreground"
-                                        >
-                                            {reference.processing_outcome.replaceAll(
-                                                '_',
-                                                ' ',
-                                            )}
-                                            {reference.created_at
-                                                ? ` · ${reference.created_at.slice(0, 10)}`
-                                                : ''}
+                        <details className="rounded-lg border">
+                            <summary className="cursor-pointer px-4 py-3 font-semibold">
+                                Advanced details
+                            </summary>
+                            <div className="grid gap-6 border-t p-4">
+                                <section className="grid gap-3">
+                                    <h2 className="flex items-center gap-2 font-semibold">
+                                        <ShieldCheck className="size-4" />
+                                        Category Assignment Provenance and
+                                        source references
+                                    </h2>
+                                    <div className="grid gap-2 rounded-lg border p-4 text-sm">
+                                        <p>
+                                            Category source:{' '}
+                                            <span className="font-medium">
+                                                {transaction.category?.provenance.source.replace(
+                                                    '_',
+                                                    ' ',
+                                                ) ?? 'No Category assignment'}
+                                            </span>
                                         </p>
-                                    ),
-                                )}
-                            </div>
-                        </section>
-
-                        <section className="grid gap-3">
-                            <h2 className="flex items-center gap-2 font-semibold">
-                                <Link2 className="size-4" /> Refund links
-                            </h2>
-                            <div className="grid gap-2 rounded-lg border p-4 text-sm">
-                                {!transaction.original_purchase &&
-                                    transaction.linked_refunds.length === 0 && (
-                                        <p className="text-muted-foreground">
-                                            No Refund links.
-                                        </p>
-                                    )}
-                                {transaction.original_purchase && (
-                                    <p>
-                                        Original purchase:{' '}
-                                        <span className="font-medium">
-                                            {
-                                                transaction.original_purchase
-                                                    .merchant_description
-                                            }
-                                        </span>
-                                    </p>
-                                )}
-                                {transaction.linked_refunds.map((refund) => (
-                                    <p key={refund.id}>
-                                        Linked Refund:{' '}
-                                        <span className="font-medium">
-                                            {refund.merchant_description}
-                                        </span>{' '}
-                                        ·{' '}
-                                        {formatMinorUnits(
-                                            refund.amount_minor,
-                                            refund.currency,
+                                        {transaction.category?.provenance
+                                            .owner && (
+                                            <p className="text-muted-foreground">
+                                                Assigned by{' '}
+                                                {
+                                                    transaction.category
+                                                        .provenance.owner.name
+                                                }
+                                            </p>
                                         )}
-                                    </p>
-                                ))}
+                                        {transaction.category?.provenance
+                                            .merchant_rule && (
+                                            <p className="text-muted-foreground">
+                                                Merchant Rule #{' '}
+                                                {
+                                                    transaction.category
+                                                        .provenance
+                                                        .merchant_rule.id
+                                                }
+                                            </p>
+                                        )}
+                                        <p>
+                                            {transaction.source_reference_count ===
+                                            0
+                                                ? 'Manual or owner-confirmed entry with no Spending Notification Reference.'
+                                                : `${transaction.source_reference_count} Spending Notification ${transaction.source_reference_count === 1 ? 'Reference' : 'References'} retained.`}
+                                        </p>
+                                        {transaction.source_references.map(
+                                            (reference) => (
+                                                <p
+                                                    key={reference.id}
+                                                    className="text-muted-foreground"
+                                                >
+                                                    {reference.processing_outcome.replaceAll(
+                                                        '_',
+                                                        ' ',
+                                                    )}
+                                                    {reference.created_at
+                                                        ? ` · ${reference.created_at.slice(0, 10)}`
+                                                        : ''}
+                                                </p>
+                                            ),
+                                        )}
+                                    </div>
+                                </section>
+
+                                <section className="grid gap-3">
+                                    <h2 className="flex items-center gap-2 font-semibold">
+                                        <Link2 className="size-4" /> Refund
+                                        links
+                                    </h2>
+                                    <div className="grid gap-2 rounded-lg border p-4 text-sm">
+                                        {!transaction.original_purchase &&
+                                            transaction.linked_refunds
+                                                .length === 0 && (
+                                                <p className="text-muted-foreground">
+                                                    No Refund links.
+                                                </p>
+                                            )}
+                                        {transaction.original_purchase && (
+                                            <p>
+                                                Original purchase:{' '}
+                                                <span className="font-medium">
+                                                    {
+                                                        transaction
+                                                            .original_purchase
+                                                            .merchant_description
+                                                    }
+                                                </span>
+                                            </p>
+                                        )}
+                                        {transaction.linked_refunds.map(
+                                            (refund) => (
+                                                <p key={refund.id}>
+                                                    Linked Refund:{' '}
+                                                    <span className="font-medium">
+                                                        {
+                                                            refund.merchant_description
+                                                        }
+                                                    </span>{' '}
+                                                    ·{' '}
+                                                    {formatMinorUnits(
+                                                        refund.amount_minor,
+                                                        refund.currency,
+                                                    )}
+                                                </p>
+                                            ),
+                                        )}
+                                    </div>
+                                </section>
                             </div>
-                        </section>
+                        </details>
                     </div>
                 </SheetContent>
             )}

@@ -4,9 +4,9 @@ namespace App\Http\Requests;
 
 use App\Currency;
 use App\ExactInteger;
+use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
 use App\Models\Transaction;
 use App\TransactionKind;
-use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -14,6 +14,8 @@ use Illuminate\Validation\Validator;
 
 class UpdateTransactionRequest extends FormRequest
 {
+    use InteractsWithCurrencyAmountInput;
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -34,17 +36,7 @@ class UpdateTransactionRequest extends FormRequest
     {
         return [
             'occurred_on' => ['required', 'date_format:Y-m-d'],
-            'amount_minor' => [
-                'required',
-                function (string $attribute, mixed $value, Closure $fail): void {
-                    if (! is_int($value) && (! is_string($value) || ! ctype_digit($value))) {
-                        $fail('The :attribute field must be an integer.');
-                    }
-                },
-                'integer',
-                'min:1',
-                'max:'.PHP_INT_MAX,
-            ],
+            ...$this->currencyAmountInputRules(),
             'currency' => ['required', Rule::enum(Currency::class)],
             'kind' => ['required', Rule::enum(TransactionKind::class)],
             'merchant_description' => ['required', 'string', 'max:255'],
@@ -123,11 +115,11 @@ class UpdateTransactionRequest extends FormRequest
                 }
 
                 if (
-                    $lineItemTotal->compare(ExactInteger::from($this->integer('amount_minor'))) !== 0
+                    $lineItemTotal->compare(ExactInteger::from($this->amountMinor())) !== 0
                     && ! $this->boolean('remove_receipt_breakdown')
                 ) {
                     $validator->errors()->add(
-                        'amount_minor',
+                        $this->filled('amount') ? 'amount' : 'amount_minor',
                         'The amount must equal the current Receipt Breakdown total unless you confirm removing its Line Items.',
                     );
                 }

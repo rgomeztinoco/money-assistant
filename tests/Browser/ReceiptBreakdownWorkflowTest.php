@@ -27,6 +27,12 @@ test('the owner saves replaces and removes a Receipt Breakdown in the Transactio
     $page
         ->assertSee('Manual itemization')
         ->assertSee('Quantity and unit price are optional context only.')
+        ->fill('[name="line_items[0][line_total]"]', '20.00')
+        ->assertSee('S/ 5.00 remaining')
+        ->press('Add Line Item')
+        ->fill('[name="line_items[1][description]"]', 'Bread')
+        ->fill('[name="line_items[1][line_total]"]', '5.00')
+        ->assertSee('Reconciled exactly')
         ->select('[name="line_items[0][category_id]"]', (string) $groceries->id)
         ->press('Save Receipt Breakdown')
         ->assertSee('Receipt Breakdown saved.')
@@ -35,7 +41,7 @@ test('the owner saves replaces and removes a Receipt Breakdown in the Transactio
         ->assertQueryStringHas('search', 'Neighborhood');
 
     expect(ReceiptBreakdown::query()->count())->toBe(1)
-        ->and(ReceiptBreakdown::query()->sole()->lineItems()->count())->toBe(1);
+        ->and(ReceiptBreakdown::query()->sole()->lineItems()->count())->toBe(2);
 
     $page
         ->fill('Description', 'Fresh coffee beans')

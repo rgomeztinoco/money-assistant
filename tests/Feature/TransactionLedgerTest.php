@@ -37,6 +37,55 @@ test('the owner can record a confirmed manual purchase in the ledger', function 
         );
 });
 
+test('the owner records USD and PEN amounts in currency units without floating point loss', function (string $currency) {
+    $owner = User::factory()->create();
+
+    $this->actingAs($owner)
+        ->post(route('transactions.store'), [
+            'occurred_on' => '2026-07-24',
+            'amount' => '12.50',
+            'currency' => $currency,
+            'kind' => 'purchase',
+            'merchant_description' => "{$currency} purchase",
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(Transaction::query()->sole()->amount_minor)->toBe(1_250);
+})->with(['USD', 'PEN']);
+
+test('manual currency-unit amounts reject ambiguous or inexact values', function (string $amount) {
+    $owner = User::factory()->create();
+
+    $this->actingAs($owner)
+        ->post(route('transactions.store'), [
+            'occurred_on' => '2026-07-24',
+            'amount' => $amount,
+            'currency' => 'USD',
+            'kind' => 'purchase',
+            'merchant_description' => 'Invalid amount',
+        ])
+        ->assertSessionHasErrors('amount');
+
+    expect(Transaction::query()->doesntExist())->toBeTrue();
+})->with(['12.345', '0', '-1.00', '1e2', '12,50']);
+
+test('manual Transaction input cannot mix currency and minor units', function () {
+    $owner = User::factory()->create();
+
+    $this->actingAs($owner)
+        ->post(route('transactions.store'), [
+            'occurred_on' => '2026-07-24',
+            'amount' => '12.50',
+            'amount_minor' => 1_250,
+            'currency' => 'USD',
+            'kind' => 'purchase',
+            'merchant_description' => 'Ambiguous amount',
+        ])
+        ->assertSessionHasErrors(['amount', 'amount_minor']);
+
+    expect(Transaction::query()->doesntExist())->toBeTrue();
+});
+
 test('purchases and Refunds keep positive amounts and retain their kind in the ledger', function () {
     $owner = User::factory()->create();
     $this->actingAs($owner);

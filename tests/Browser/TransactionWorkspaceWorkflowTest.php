@@ -32,6 +32,7 @@ test('filters, selection, and scroll context persist while directly editing a Tr
 
     $page
         ->fill('Merchant or description', 'Neighborhood')
+        ->press('Advanced filters')
         ->select('Filter review state', 'outstanding')
         ->press('Apply filters')
         ->assertQueryStringHas('search', 'Neighborhood')
@@ -52,6 +53,7 @@ test('filters, selection, and scroll context persist while directly editing a Tr
         ->assertQueryStringHas('selected')
         ->assertSee('Edit current Transaction')
         ->assertSee('Included in spending totals')
+        ->press('Advanced details')
         ->assertSee('Provenance')
         ->fill('Edit merchant or description', 'Neighborhood market Lima')
         ->press('Save Transaction')
@@ -62,6 +64,40 @@ test('filters, selection, and scroll context persist while directly editing a Tr
         ->assertSee('Review clear')
         ->press('Close')
         ->assertScript('window.scrollY > 0')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+});
+
+test('the Transaction workspace stays actionable without horizontal scrolling on mobile', function () {
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+        'merchant_description' => 'Mobile market',
+        'amount_minor' => 1_250,
+        'occurred_on' => '2026-08-21',
+    ]);
+    Transaction::factory()->count(25)->for($owner, 'owner')->purchase()->usd()->create([
+        'merchant_description' => 'Earlier mobile market',
+        'occurred_on' => '2026-08-20',
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit('/transactions')->on()->iPhone14Pro();
+
+    $page
+        ->assertSee('Mobile market')
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
+        ->press('Inspect')
+        ->assertSee('Transaction summary')
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
+        ->press('Close')
+        ->press('Void')
+        ->assertSee('Transaction voided.')
+        ->press('Next')
+        ->assertQueryStringHas('page', '2')
+        ->assertSee('Earlier mobile market')
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
+        ->press('Previous')
+        ->assertSee('Mobile market')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

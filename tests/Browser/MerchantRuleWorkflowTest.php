@@ -28,7 +28,7 @@ test('the owner creates a Merchant Rule that categorizes a future Transaction', 
         ->assertNoConsoleLogs();
 
     visit('/transactions')
-        ->fill('Amount in minor units', '1250')
+        ->fill('Amount', '12.50')
         ->fill('Merchant or short description', "cafe\u{0301} central")
         ->select('Currency', 'PEN')
         ->select('Transaction kind', 'purchase')
