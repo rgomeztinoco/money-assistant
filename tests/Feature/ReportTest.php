@@ -93,6 +93,149 @@ test('reports subtract Refunds and exclude Voided Transactions within their curr
             ->where('monthly_history.0.total_minor', '3800'));
 });
 
+test('reports compare the selected range with the preceding range of equal length', function () {
+    $owner = User::factory()->create();
+
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 3_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-06',
+        'amount_minor' => 2_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-03',
+        'amount_minor' => 50_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-16',
+        'amount_minor' => 70_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 90_000,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('reports.show', [
+            'currency' => Currency::Pen,
+            'date_from' => '2026-08-10',
+            'date_to' => '2026-08-15',
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('comparison.period.date_from', '2026-08-04')
+            ->where('comparison.period.date_to', '2026-08-09')
+            ->where('comparison.current_total_minor', '3000')
+            ->where('comparison.previous_total_minor', '2000')
+            ->where('comparison.change_minor', '1000')
+            ->where('comparison.percentage_change', '50')
+            ->where('comparison.direction', 'increased'));
+});
+
+test('reports preserve small decreases and previous-only comparisons without rounding them away', function () {
+    $owner = User::factory()->create();
+
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 9_999,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-06',
+        'amount_minor' => 10_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+        'occurred_on' => '2026-08-06',
+        'amount_minor' => 1_000,
+    ]);
+    $this->actingAs($owner);
+
+    $this->get(route('reports.show', [
+        'currency' => Currency::Pen,
+        'date_from' => '2026-08-10',
+        'date_to' => '2026-08-15',
+    ]))->assertInertia(fn (Assert $page) => $page
+        ->where('comparison.change_minor', '-1')
+        ->where('comparison.percentage_change', '-0.01')
+        ->where('comparison.direction', 'decreased'));
+
+    $this->get(route('reports.show', [
+        'currency' => Currency::Usd,
+        'date_from' => '2026-08-10',
+        'date_to' => '2026-08-15',
+    ]))->assertInertia(fn (Assert $page) => $page
+        ->where('comparison.current_total_minor', '0')
+        ->where('comparison.previous_total_minor', '1000')
+        ->where('comparison.change_minor', '-1000')
+        ->where('comparison.percentage_change', '-100')
+        ->where('comparison.direction', 'decreased'));
+});
+
+test('reports explain empty comparison periods without a percentage', function () {
+    $this->actingAs(User::factory()->create())
+        ->get(route('reports.show', [
+            'currency' => Currency::Usd,
+            'date_from' => '2026-08-10',
+            'date_to' => '2026-08-15',
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('comparison.current_total_minor', '0')
+            ->where('comparison.previous_total_minor', '0')
+            ->where('comparison.percentage_change', null)
+            ->where('comparison.direction', 'no_activity'));
+});
+
+test('reports retain net-zero Transaction activity instead of describing it as empty', function () {
+    $owner = User::factory()->create();
+
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 500,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => '2026-08-11',
+        'amount_minor' => 500,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('reports.show', [
+            'currency' => Currency::Pen,
+            'date_from' => '2026-08-10',
+            'date_to' => '2026-08-15',
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('period.total_minor', '0')
+            ->where('comparison.current_total_minor', '0')
+            ->where('comparison.previous_total_minor', '0')
+            ->where('comparison.direction', 'unchanged')
+            ->where('monthly_history.0.total_minor', '0')
+            ->where('monthly_history.0.transaction_count', 2));
+});
+
+test('reports preserve nonzero percentage changes below one hundredth of a percent', function () {
+    $owner = User::factory()->create();
+
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 99_999,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-06',
+        'amount_minor' => 100_000,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('reports.show', [
+            'currency' => Currency::Pen,
+            'date_from' => '2026-08-10',
+            'date_to' => '2026-08-15',
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('comparison.change_minor', '-1')
+            ->where('comparison.percentage_change', '-0.001')
+            ->where('comparison.direction', 'decreased'));
+});
+
 test('reports provide continuous monthly history through the selected period', function () {
     $owner = User::factory()->create();
 

@@ -7,7 +7,6 @@ use App\ExactInteger;
 use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
-use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -15,14 +14,17 @@ use Illuminate\Database\Eloquent\Collection;
  * @phpstan-type ReportCategoryData array{id: int|null, name: string, archived: bool}
  * @phpstan-type ReportCategoryAmountData array{category: ReportCategoryData, amount_minor: string}
  * @phpstan-type ReportCategoryGroupData array{category: ReportCategoryData, amount_minor: string, children: list<ReportCategoryAmountData>}
- * @phpstan-type ReportMonthData array{month: string, label: string, date_from: string, date_to: string, total_minor: string}
+ * @phpstan-type ReportMonthData array{month: string, label: string, date_from: string, date_to: string, total_minor: string, transaction_count: int}
  */
 final class ReadCurrencyReport
 {
+    public function __construct(private ReadSpendingAnalysis $readSpendingAnalysis) {}
+
     /**
      * @return array{
      *     currency: string,
      *     period: array{label: string, date_from: string, date_to: string, total_minor: string},
+     *     comparison: array{period: array{label: string, date_from: string, date_to: string}, current_total_minor: string, previous_total_minor: string, change_minor: string, percentage_change: string|null, direction: string},
      *     monthly_history: list<ReportMonthData>,
      *     category_groups: list<ReportCategoryGroupData>
      * }
@@ -33,6 +35,12 @@ final class ReadCurrencyReport
         CarbonImmutable $dateFrom,
         CarbonImmutable $dateTo,
     ): array {
+        $comparisonPeriod = SpendingComparisonPeriod::preceding($dateFrom, $dateTo);
+        $analysis = $this->readSpendingAnalysis->handle(
+            owner: $owner,
+            currency: $currency,
+            period: $comparisonPeriod,
+        );
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
             ->orderBy('name')
@@ -56,10 +64,7 @@ final class ReadCurrencyReport
             ->lazyById();
 
         foreach ($transactions as $transaction) {
-            $transactionAmount = $this->signedAmount(
-                (string) $transaction->amount_minor,
-                $transaction->kind,
-            );
+            $transactionAmount = $transaction->kind->signedAmount((string) $transaction->amount_minor);
             $periodTotal = $periodTotal->add($transactionAmount);
             $lineItems = $transaction->receiptBreakdown?->lineItems;
 
@@ -78,7 +83,7 @@ final class ReadCurrencyReport
                 $this->addCategoryAmount(
                     $categoryAmounts,
                     $lineItem->category_id,
-                    $this->signedAmount($lineItem->line_total_minor, $transaction->kind),
+                    $transaction->kind->signedAmount($lineItem->line_total_minor),
                     $categoriesById,
                 );
             }
@@ -92,18 +97,17 @@ final class ReadCurrencyReport
                 'date_to' => $dateTo->toDateString(),
                 'total_minor' => $periodTotal->value(),
             ],
+            'comparison' => [
+                'period' => [
+                    'label' => $this->periodLabel($comparisonPeriod->previousDateFrom, $comparisonPeriod->previousDateTo),
+                    'date_from' => $comparisonPeriod->previousDateFrom->toDateString(),
+                    'date_to' => $comparisonPeriod->previousDateTo->toDateString(),
+                ],
+                ...$analysis['comparison'],
+            ],
             'monthly_history' => $this->monthlyHistory($owner, $currency, $dateFrom, $dateTo),
             'category_groups' => $this->categoryGroups($categories, $categoryAmounts),
         ];
-    }
-
-    private function signedAmount(int|string $amountMinor, TransactionKind $kind): ExactInteger
-    {
-        $amount = ExactInteger::from($amountMinor);
-
-        return $kind === TransactionKind::Refund
-            ? ExactInteger::from(0)->subtract($amount)
-            : $amount;
     }
 
     /**
@@ -156,10 +160,13 @@ final class ReadCurrencyReport
 
         /** @var array<string, ExactInteger> $monthlyAmounts */
         $monthlyAmounts = [];
+        /** @var array<string, int> $monthlyTransactionCounts */
+        $monthlyTransactionCounts = [];
         $month = $historyStart;
 
         while ($month->lessThanOrEqualTo($dateTo)) {
             $monthlyAmounts[$month->format('Y-m')] = ExactInteger::from(0);
+            $monthlyTransactionCounts[$month->format('Y-m')] = 0;
             $month = $month->addMonth();
         }
 
@@ -174,8 +181,9 @@ final class ReadCurrencyReport
         foreach ($transactions as $transaction) {
             $monthKey = $transaction->occurred_on->format('Y-m');
             $monthlyAmounts[$monthKey] = $monthlyAmounts[$monthKey]->add(
-                $this->signedAmount((string) $transaction->amount_minor, $transaction->kind),
+                $transaction->kind->signedAmount((string) $transaction->amount_minor),
             );
+            $monthlyTransactionCounts[$monthKey]++;
         }
 
         $history = [];
@@ -189,6 +197,7 @@ final class ReadCurrencyReport
                 'date_from' => $month->toDateString(),
                 'date_to' => $monthEnd->toDateString(),
                 'total_minor' => $amount->value(),
+                'transaction_count' => $monthlyTransactionCounts[$monthKey],
             ];
         }
 

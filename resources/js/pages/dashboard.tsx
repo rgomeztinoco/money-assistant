@@ -22,6 +22,12 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import { spendingComparisonDescription } from '@/lib/spending-comparison';
+import type { SpendingComparison } from '@/lib/spending-comparison';
+import {
+    categoryTransactionsUrl,
+    periodTransactionsUrl,
+} from '@/lib/transaction-filter-url';
 import { dashboard } from '@/routes';
 import { edit as connectionsEdit } from '@/routes/connections';
 import { index as reviewQueueIndex } from '@/routes/review_queue';
@@ -36,6 +42,18 @@ type DashboardPeriod = {
 
 type DashboardSpending = {
     totals: Record<Currency, string>;
+    comparisons: Record<Currency, SpendingComparison>;
+    category_insights: Record<Currency, CategoryInsight[]>;
+};
+
+type CategoryInsight = {
+    category: {
+        id: number | null;
+        name: string;
+    };
+    current_total_minor: string;
+    previous_total_minor: string;
+    change_minor: string;
 };
 
 type RecentTransaction = {
@@ -89,13 +107,6 @@ const gmailStatePresentation: Record<
     },
 };
 
-function periodQuery(period: DashboardPeriod) {
-    return {
-        date_from: period.date_from,
-        date_to: period.date_to,
-    };
-}
-
 function formatDate(date: string) {
     return new Intl.DateTimeFormat('en', {
         month: 'short',
@@ -125,14 +136,35 @@ function transactionAmount(transaction: RecentTransaction) {
     return formatMinorUnits(amount, transaction.currency);
 }
 
+function categoryChangeDescription({
+    insight,
+    currency,
+}: {
+    insight: CategoryInsight;
+    currency: Currency;
+}) {
+    if (insight.change_minor === '0') {
+        return 'No change';
+    }
+
+    const decreased = insight.change_minor.startsWith('-');
+    const absoluteChange = decreased
+        ? insight.change_minor.slice(1)
+        : insight.change_minor;
+
+    return `${decreased ? 'Down' : 'Up'} ${formatMinorUnits(absoluteChange, currency)}`;
+}
+
 export default function Dashboard({
     period,
+    comparison_period,
     spending,
     review_queue,
     recent_transactions,
     gmail,
 }: {
     period: DashboardPeriod;
+    comparison_period: DashboardPeriod;
     spending: DashboardSpending;
     review_queue: { outstanding_count: number };
     recent_transactions: RecentTransaction[];
@@ -155,75 +187,177 @@ export default function Dashboard({
                     </p>
                 </div>
 
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <section className="grid gap-4 md:grid-cols-2">
                     {(['PEN', 'USD'] as const).map((currency) => (
-                        <Link
-                            key={currency}
-                            href={transactionsIndex({
-                                query: {
-                                    ...periodQuery(period),
-                                    currency,
-                                },
-                            })}
-                            data-test={`dashboard-spending-${currency.toLowerCase()}`}
-                            className="group rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-                        >
-                            <Card className="h-full transition-colors group-hover:border-primary/40 group-hover:bg-muted/20">
-                                <CardHeader>
-                                    <div className="flex items-center justify-between gap-3">
-                                        <WalletCards className="size-5 text-muted-foreground" />
-                                        <Badge variant="secondary">
-                                            {period.label}
-                                        </Badge>
-                                    </div>
+                        <Card key={currency} className="h-full">
+                            <CardHeader>
+                                <div className="flex items-center justify-between gap-3">
+                                    <WalletCards className="size-5 text-muted-foreground" />
+                                    <Badge variant="secondary">
+                                        {period.label}
+                                    </Badge>
+                                </div>
+                                <Link
+                                    href={periodTransactionsUrl({
+                                        currency,
+                                        period,
+                                    })}
+                                    data-test={`dashboard-spending-${currency.toLowerCase()}`}
+                                    className="group grid gap-1 rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                >
                                     <CardDescription>
                                         {currency} current-period total
                                     </CardDescription>
-                                    <CardTitle className="text-3xl tabular-nums">
+                                    <CardTitle className="text-3xl tabular-nums transition-colors group-hover:text-primary">
                                         {formatMinorUnits(
                                             spending.totals[currency],
                                             currency,
                                         )}
                                     </CardTitle>
-                                </CardHeader>
-                            </Card>
-                        </Link>
-                    ))}
-
-                    <Card
-                        className={
-                            review_queue.outstanding_count > 0
-                                ? 'border-amber-300 bg-amber-50/40 md:col-span-2 xl:col-span-1 dark:border-amber-800 dark:bg-amber-950/10'
-                                : 'md:col-span-2 xl:col-span-1'
-                        }
-                    >
-                        <CardHeader>
-                            <div className="flex items-center justify-between gap-3">
-                                <ListChecks className="size-5 text-muted-foreground" />
-                                <Badge variant="outline">Review Queue</Badge>
-                            </div>
-                            <CardDescription>
-                                Details waiting for your review
-                            </CardDescription>
-                            <CardTitle className="text-3xl tabular-nums">
-                                {review_queue.outstanding_count}
-                            </CardTitle>
-                        </CardHeader>
-                        <CardFooter>
-                            <Button
-                                asChild
-                                variant="outline"
-                                className="w-full"
-                            >
-                                <Link
-                                    href={reviewQueueIndex()}
-                                    data-test="dashboard-review-link"
-                                >
-                                    Open Review Queue
-                                    <ArrowRight />
                                 </Link>
-                            </Button>
-                        </CardFooter>
+                                <p className="text-sm font-medium">
+                                    {spendingComparisonDescription({
+                                        comparison:
+                                            spending.comparisons[currency],
+                                        currency,
+                                    })}
+                                </p>
+                                <Link
+                                    href={periodTransactionsUrl({
+                                        currency,
+                                        period: comparison_period,
+                                    })}
+                                    data-test={`dashboard-comparison-${currency.toLowerCase()}`}
+                                    className="flex flex-col gap-1 rounded-lg border bg-muted/20 p-3 text-xs hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <span className="text-muted-foreground">
+                                        {comparison_period.label}
+                                    </span>
+                                    <span className="font-semibold tabular-nums">
+                                        {formatMinorUnits(
+                                            spending.comparisons[currency]
+                                                .previous_total_minor,
+                                            currency,
+                                        )}
+                                    </span>
+                                </Link>
+                            </CardHeader>
+                        </Card>
+                    ))}
+                </section>
+
+                <section>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>What changed</CardTitle>
+                            <CardDescription>
+                                The largest top-level Category changes from{' '}
+                                {comparison_period.label}. Select one to inspect
+                                its Transactions.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-5 md:grid-cols-2">
+                            {(['PEN', 'USD'] as const).map((currency) => (
+                                <div key={currency} className="grid gap-2">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className="text-sm font-semibold">
+                                            {currency}
+                                        </p>
+                                        <Badge variant="outline">
+                                            {currency} only
+                                        </Badge>
+                                    </div>
+                                    {spending.category_insights[currency]
+                                        .length === 0 ? (
+                                        <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                                            Category changes will appear after
+                                            Transactions are recorded.
+                                        </p>
+                                    ) : (
+                                        <div className="grid gap-2">
+                                            {spending.category_insights[
+                                                currency
+                                            ].map((insight) => (
+                                                <div
+                                                    key={
+                                                        insight.category.id ??
+                                                        'uncategorized'
+                                                    }
+                                                    className="grid gap-2 rounded-lg border p-3"
+                                                >
+                                                    <div className="flex items-center justify-between gap-4">
+                                                        <span className="truncate text-sm font-medium">
+                                                            {
+                                                                insight.category
+                                                                    .name
+                                                            }
+                                                        </span>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {categoryChangeDescription(
+                                                                {
+                                                                    insight,
+                                                                    currency,
+                                                                },
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <Link
+                                                            href={categoryTransactionsUrl(
+                                                                {
+                                                                    currency,
+                                                                    period,
+                                                                    categoryId:
+                                                                        insight
+                                                                            .category
+                                                                            .id,
+                                                                },
+                                                            )}
+                                                            data-test={`dashboard-category-${currency.toLowerCase()}-${insight.category.id ?? 'uncategorized'}`}
+                                                            className="grid gap-0.5 rounded-md bg-muted/30 p-2 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                                        >
+                                                            <span className="text-xs text-muted-foreground">
+                                                                This period
+                                                            </span>
+                                                            <span className="text-sm font-semibold tabular-nums">
+                                                                {formatMinorUnits(
+                                                                    insight.current_total_minor,
+                                                                    currency,
+                                                                )}
+                                                            </span>
+                                                        </Link>
+                                                        <Link
+                                                            href={categoryTransactionsUrl(
+                                                                {
+                                                                    currency,
+                                                                    period: comparison_period,
+                                                                    categoryId:
+                                                                        insight
+                                                                            .category
+                                                                            .id,
+                                                                },
+                                                            )}
+                                                            data-test={`dashboard-category-previous-${currency.toLowerCase()}-${insight.category.id ?? 'uncategorized'}`}
+                                                            className="grid gap-0.5 rounded-md bg-muted/30 p-2 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                                        >
+                                                            <span className="text-xs text-muted-foreground">
+                                                                Previous period
+                                                            </span>
+                                                            <span className="text-sm font-semibold tabular-nums">
+                                                                {formatMinorUnits(
+                                                                    insight.previous_total_minor,
+                                                                    currency,
+                                                                )}
+                                                            </span>
+                                                        </Link>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </CardContent>
                     </Card>
                 </section>
 
@@ -306,7 +440,14 @@ export default function Dashboard({
                         </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card
+                        className={
+                            review_queue.outstanding_count > 0 ||
+                            gmail.state !== 'connected'
+                                ? 'border-amber-300 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/10'
+                                : undefined
+                        }
+                    >
                         <CardHeader>
                             <div className="flex items-center justify-between gap-3">
                                 <GmailIcon className="size-5 text-muted-foreground" />
@@ -320,12 +461,40 @@ export default function Dashboard({
                                     {gmailPresentation.label}
                                 </Badge>
                             </div>
-                            <CardTitle>Gmail</CardTitle>
+                            <CardTitle>
+                                {review_queue.outstanding_count > 0 ||
+                                gmail.state !== 'connected'
+                                    ? 'Needs attention'
+                                    : 'All caught up'}
+                            </CardTitle>
                             <CardDescription>
-                                {gmailPresentation.description}
+                                Review work and connection health stay separate
+                                from the financial overview.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="grid gap-2 text-sm">
+                        <CardContent className="grid gap-3 text-sm">
+                            <Link
+                                href={reviewQueueIndex()}
+                                data-test="dashboard-review-link"
+                                className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                            >
+                                <span className="flex items-center gap-2 font-medium">
+                                    <ListChecks className="size-4" />
+                                    Review Queue
+                                </span>
+                                <Badge
+                                    variant={
+                                        review_queue.outstanding_count > 0
+                                            ? 'default'
+                                            : 'secondary'
+                                    }
+                                >
+                                    {review_queue.outstanding_count}
+                                </Badge>
+                            </Link>
+                            <p className="text-muted-foreground">
+                                {gmailPresentation.description}
+                            </p>
                             {gmail.account_identity !== null && (
                                 <p className="truncate font-medium">
                                     {gmail.account_identity}

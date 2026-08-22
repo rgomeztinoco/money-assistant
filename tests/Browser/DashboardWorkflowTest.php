@@ -2,6 +2,8 @@
 
 use App\Models\Category;
 use App\Models\GmailConnection;
+use App\Models\LineItem;
+use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -27,19 +29,36 @@ test('the Dashboard directs attention into filtered owner workflows', function (
         'merchant_description' => 'Neighborhood market',
         'category_id' => $category->id,
     ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+        'occurred_on' => now()->subMonthNoOverflow()->toDateString(),
+        'amount_minor' => 500,
+        'category_id' => $category->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => now()->subMonthNoOverflow()->toDateString(),
+        'amount_minor' => 1_000,
+        'category_id' => $category->id,
+    ]);
     GmailConnection::factory()->for($owner, 'owner')->create([
         'gmail_account_identity' => 'owner@example.com',
     ]);
     $this->actingAs($owner);
 
-    $page = visit('/dashboard');
+    $page = visit('/dashboard')->resize(390, 844);
 
     $page
         ->assertSee('PEN current-period total')
         ->assertSee('USD current-period total')
         ->assertSee('$ 10.00')
         ->assertSee('S/ 25.00')
+        ->assertSee('100% more than the previous period')
+        ->assertSee('150% more than the previous period')
+        ->assertSee('What changed')
+        ->assertSee($category->name)
         ->assertDontSee('Combined spending')
+        ->assertScript(
+            'document.documentElement.scrollWidth <= document.documentElement.clientWidth',
+        )
         ->assertSee('Recent Transactions')
         ->assertSee('Coffee shop')
         ->assertSee('Neighborhood market')
@@ -54,18 +73,65 @@ test('the Dashboard directs attention into filtered owner workflows', function (
             'date_from',
             now()->startOfMonth()->toDateString(),
         )
-        ->assertQueryStringHas('date_to', now()->toDateString())
-        ->script('window.location.assign("/dashboard")');
+        ->assertQueryStringHas('date_to', now()->toDateString());
+
+    $page = visit('/dashboard')->resize(1280, 720);
+
+    $page
+        ->click('[data-test="dashboard-comparison-usd"]')
+        ->assertPathIs('/transactions')
+        ->assertQueryStringHas('currency', 'USD')
+        ->assertQueryStringHas(
+            'date_from',
+            now()->subMonthNoOverflow()->startOfMonth()->toDateString(),
+        )
+        ->assertQueryStringHas(
+            'date_to',
+            now()->subMonthNoOverflow()->toDateString(),
+        );
+
+    $page = visit('/dashboard');
+
+    $page
+        ->click('[data-test="dashboard-category-pen-'.$category->id.'"]')
+        ->assertPathIs('/transactions')
+        ->assertQueryStringHas('currency', 'PEN')
+        ->assertQueryStringHas('category_id', (string) $category->id)
+        ->assertQueryStringHas(
+            'date_from',
+            now()->startOfMonth()->toDateString(),
+        )
+        ->assertQueryStringHas('date_to', now()->toDateString());
+
+    $page = visit('/dashboard');
+
+    $page
+        ->click('[data-test="dashboard-category-previous-pen-'.$category->id.'"]')
+        ->assertPathIs('/transactions')
+        ->assertQueryStringHas('currency', 'PEN')
+        ->assertQueryStringHas('category_id', (string) $category->id)
+        ->assertQueryStringHas(
+            'date_from',
+            now()->subMonthNoOverflow()->startOfMonth()->toDateString(),
+        )
+        ->assertQueryStringHas(
+            'date_to',
+            now()->subMonthNoOverflow()->toDateString(),
+        );
+
+    $page = visit('/dashboard');
 
     $page
         ->click('[data-test="dashboard-review-link"]')
-        ->assertPathIs('/review-queue')
-        ->script('window.location.assign("/dashboard")');
+        ->assertPathIs('/review-queue');
+
+    $page = visit('/dashboard');
 
     $page
         ->click('[data-test="dashboard-gmail-link"]')
-        ->assertPathIs('/settings/connections')
-        ->script('window.location.assign("/dashboard")');
+        ->assertPathIs('/settings/connections');
+
+    $page = visit('/dashboard');
 
     $page
         ->click('[data-test="nav-reports"]')
@@ -116,4 +182,86 @@ test('navigation exposes only retained personal-finance destinations', function 
         ->assertSee('Settings')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
+});
+
+test('Reports explain spending with responsive charts and supporting Transaction links', function () {
+    $owner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
+        'name' => 'Dining',
+    ]);
+    $fees = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
+        'name' => 'Fees',
+    ]);
+    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-07-20',
+        'amount_minor' => 2_000,
+        'category_id' => $food->id,
+    ]);
+    $itemized = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 3_000,
+        'category_id' => $food->id,
+    ]);
+    $breakdown = ReceiptBreakdown::factory()->recycle($owner)->for($itemized)->create();
+    LineItem::factory()->for($breakdown)->create([
+        'description' => 'Lunch',
+        'line_total_minor' => 2_999,
+        'category_id' => $dining->id,
+    ]);
+    LineItem::factory()->for($breakdown)->create([
+        'description' => 'Fee',
+        'line_total_minor' => 1,
+        'category_id' => $fees->id,
+    ]);
+    $this->actingAs($owner);
+    $reportUrl = '/reports/PEN?date_from=2026-08-01&date_to=2026-08-20';
+
+    $page = visit($reportUrl)->resize(390, 844);
+
+    $page
+        ->assertSee('50% more than the previous period')
+        ->assertSee('Monthly history')
+        ->assertSee('Category composition')
+        ->assertSee('August 2026')
+        ->assertSee('Food')
+        ->assertSee('Dining')
+        ->assertSee('Fees')
+        ->assertPresent('[data-test="report-month-2026-08"] [data-test="chart-bar"]')
+        ->assertPresent('[data-test="report-category-'.$food->id.'"] [data-test="chart-bar"]')
+        ->assertScript(
+            'parseFloat(document.querySelector(\'[data-test="report-category-'.$fees->id.'"] [data-test="chart-bar"]\').style.width) > 0',
+        )
+        ->assertScript(
+            'document.documentElement.scrollWidth <= document.documentElement.clientWidth',
+        )
+        ->assertNoAccessibilityIssues()
+        ->click('[data-test="report-month-2026-08"]')
+        ->assertPathIs('/transactions')
+        ->assertQueryStringHas('currency', 'PEN')
+        ->assertQueryStringHas('date_from', '2026-08-01')
+        ->assertQueryStringHas('date_to', '2026-08-20');
+
+    $page = visit($reportUrl);
+
+    $page
+        ->click('[data-test="report-category-'.$dining->id.'"]')
+        ->assertPathIs('/transactions')
+        ->assertQueryStringHas('currency', 'PEN')
+        ->assertQueryStringHas('category_id', (string) $dining->id)
+        ->assertQueryStringHas('date_from', '2026-08-01')
+        ->assertQueryStringHas('date_to', '2026-08-20')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+
+    $page = visit($reportUrl)->resize(1280, 720);
+
+    $page
+        ->assertScript(
+            'document.documentElement.scrollWidth <= document.documentElement.clientWidth',
+        )
+        ->click('[data-test="report-month-2026-07"]')
+        ->assertPathIs('/transactions')
+        ->assertQueryStringHas('date_from', '2026-07-01')
+        ->assertQueryStringHas('date_to', '2026-07-31');
 });
