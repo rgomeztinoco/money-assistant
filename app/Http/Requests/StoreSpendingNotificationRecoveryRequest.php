@@ -49,7 +49,7 @@ class StoreSpendingNotificationRecoveryRequest extends FormRequest
                 TransactionKind::Spending->value,
                 TransactionKind::Refund->value,
             ])],
-            'merchant_description' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:255'],
         ];
     }
 }

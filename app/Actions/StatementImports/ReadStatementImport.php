@@ -25,7 +25,6 @@ final class ReadStatementImport
                 'instrument_label',
                 'instrument_last_four',
                 'reconciliation_values',
-                'movement_count',
                 'confirmed_at',
             ])
             ->with([
@@ -58,7 +57,7 @@ final class ReadStatementImport
             'period_end' => $statementImport->period_end->toDateString(),
             'instrument_label' => $statementImport->instrument_label,
             'instrument_last_four' => $statementImport->instrument_last_four,
-            'movement_count' => $statementImport->movement_count,
+            'movement_count' => $statementImport->movements->count(),
             'confirmed_at' => $statementImport->confirmed_at->toIso8601String(),
             'reconciliation' => $statementImport->reconciliation_values,
             'summary' => $this->summary($statementImport),

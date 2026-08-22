@@ -47,16 +47,16 @@ enum StatementMovementClassification: string
         };
     }
 
-    public function summaryKey(StatementMovementDirection $direction): ?string
+    public function summaryKey(MovementDirection $direction): ?string
     {
         return match ($this) {
             self::Purchase, self::Fee, self::Tax => 'spending_minor',
             self::Refund => 'refunds_minor',
             self::Income => 'income_minor',
-            self::Transfer => $direction === StatementMovementDirection::Credit
+            self::Transfer => $direction === MovementDirection::Credit
                 ? 'transfers_in_minor'
                 : 'transfers_out_minor',
-            self::Savings => $direction === StatementMovementDirection::Credit
+            self::Savings => $direction === MovementDirection::Credit
                 ? 'savings_withdrawals_minor'
                 : 'savings_deposits_minor',
             default => null,

@@ -53,7 +53,7 @@ type ParserProfileTransactionPreview = {
     amount_minor: string;
     currency: 'USD' | 'PEN';
     kind: 'spending' | 'refund';
-    merchant_description: string;
+    description: string;
     provisional_fields: string[];
 };
 
@@ -584,9 +584,9 @@ export default function CreateParserProfile({
                                         />
                                         <CandidateValue
                                             label="Merchant"
-                                            value={preview.merchant_description}
+                                            value={preview.description}
                                             provisional={preview.provisional_fields.includes(
-                                                'merchant_description',
+                                                'description',
                                             )}
                                         />
                                         <CandidateValue

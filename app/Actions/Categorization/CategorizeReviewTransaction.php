@@ -74,7 +74,7 @@ class CategorizeReviewTransaction
             $assignedTransactionCount = 0;
 
             if ($bulkAssign) {
-                $merchantKey = $this->merchantNormalizer->normalize($currentTransaction->merchant_description);
+                $merchantKey = $this->merchantNormalizer->normalize($currentTransaction->description);
                 $transactionsToAssign = Transaction::query()
                     ->whereBelongsTo($owner, 'owner')
                     ->whereNull('voided_at')
@@ -83,7 +83,7 @@ class CategorizeReviewTransaction
                     ->lazyById(200);
 
                 foreach ($transactionsToAssign as $transactionToAssign) {
-                    if ($this->normalizedMerchant($transactionToAssign->merchant_description) !== $merchantKey) {
+                    if ($this->normalizedMerchant($transactionToAssign->description) !== $merchantKey) {
                         continue;
                     }
 
@@ -98,7 +98,7 @@ class CategorizeReviewTransaction
             if ($createMerchantRule) {
                 $this->saveMerchantRule->handle(
                     owner: $owner,
-                    merchant: $currentTransaction->merchant_description,
+                    merchant: $currentTransaction->description,
                     categoryId: $category->id,
                     transactionKind: $ruleTransactionKind,
                     currency: $ruleCurrency,

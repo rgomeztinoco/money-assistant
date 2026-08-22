@@ -81,7 +81,7 @@ function ReceiptBreakdownSection({
             })) ?? [
                 {
                     clientId: crypto.randomUUID(),
-                    description: transaction.merchant_description,
+                    description: transaction.description,
                     quantity: null,
                     unitPrice: '',
                     lineTotal: minorUnitsToCurrencyUnits(
@@ -494,7 +494,7 @@ function TransactionEditForm({
                             <Label
                                 htmlFor={`transaction-${transaction.id}-kind`}
                             >
-                                Edit movement meaning
+                                Edit movement kind
                             </Label>
                             <NativeSelect
                                 id={`transaction-${transaction.id}-kind`}
@@ -568,15 +568,15 @@ function TransactionEditForm({
                         <Label
                             htmlFor={`transaction-${transaction.id}-merchant`}
                         >
-                            Edit merchant or description
+                            Edit description
                         </Label>
                         <Input
                             id={`transaction-${transaction.id}-merchant`}
-                            name="merchant_description"
+                            name="description"
                             maxLength={255}
-                            defaultValue={transaction.merchant_description}
+                            defaultValue={transaction.description}
                         />
-                        <InputError message={errors.merchant_description} />
+                        <InputError message={errors.description} />
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -588,16 +588,14 @@ function TransactionEditForm({
                             </Label>
                             <Input
                                 id={`transaction-${transaction.id}-instrument`}
-                                name="payment_instrument_label"
+                                name="instrument_label"
                                 maxLength={100}
                                 defaultValue={
-                                    transaction.payment_instrument_label ?? ''
+                                    transaction.instrument_label ?? ''
                                 }
                                 placeholder="Visa, cash, checking"
                             />
-                            <InputError
-                                message={errors.payment_instrument_label}
-                            />
+                            <InputError message={errors.instrument_label} />
                         </div>
                         <div className="grid gap-2">
                             <Label
@@ -607,18 +605,15 @@ function TransactionEditForm({
                             </Label>
                             <Input
                                 id={`transaction-${transaction.id}-last-four`}
-                                name="payment_instrument_last_four"
+                                name="instrument_last_four"
                                 inputMode="numeric"
                                 pattern="[0-9]{4}"
                                 maxLength={4}
                                 defaultValue={
-                                    transaction.payment_instrument_last_four ??
-                                    ''
+                                    transaction.instrument_last_four ?? ''
                                 }
                             />
-                            <InputError
-                                message={errors.payment_instrument_last_four}
-                            />
+                            <InputError message={errors.instrument_last_four} />
                         </div>
                     </div>
 
@@ -650,15 +645,15 @@ function TransactionEditForm({
                     {kind === 'refund' && (
                         <div className="grid gap-2">
                             <Label
-                                htmlFor={`transaction-${transaction.id}-purchase`}
+                                htmlFor={`transaction-${transaction.id}-spending`}
                             >
                                 Edit original Spending Transaction
                             </Label>
                             <NativeSelect
-                                id={`transaction-${transaction.id}-purchase`}
-                                name="original_purchase_id"
+                                id={`transaction-${transaction.id}-spending`}
+                                name="original_spending_id"
                                 defaultValue={
-                                    transaction.original_purchase?.id.toString() ??
+                                    transaction.original_spending?.id.toString() ??
                                     ''
                                 }
                                 options={[
@@ -666,15 +661,15 @@ function TransactionEditForm({
                                         value: '',
                                         label: 'No reimbursement link',
                                     },
-                                    ...transaction.purchase_options.map(
-                                        (purchase) => ({
-                                            value: purchase.id.toString(),
-                                            label: `${purchase.occurred_on} · ${purchase.merchant_description} · ${purchase.currency}`,
+                                    ...transaction.spending_options.map(
+                                        (spending) => ({
+                                            value: spending.id.toString(),
+                                            label: `${spending.occurred_on} · ${spending.description} · ${spending.currency}`,
                                         }),
                                     ),
                                 ]}
                             />
-                            <InputError message={errors.original_purchase_id} />
+                            <InputError message={errors.original_spending_id} />
                         </div>
                     )}
 
@@ -752,9 +747,7 @@ export function TransactionInspector({
                 <SheetContent className="w-full overflow-y-auto sm:max-w-xl lg:max-w-2xl">
                     <SheetHeader className="border-b">
                         <div className="flex flex-wrap items-center gap-2 pr-8">
-                            <SheetTitle>
-                                {transaction.merchant_description}
-                            </SheetTitle>
+                            <SheetTitle>{transaction.description}</SheetTitle>
                             <Badge variant="outline">Confirmed</Badge>
                             {transaction.voided_at && (
                                 <Badge variant="secondary">
@@ -809,7 +802,7 @@ export function TransactionInspector({
                                 </div>
                                 <div>
                                     <dt className="text-muted-foreground">
-                                        Meaning
+                                        Kind
                                     </dt>
                                     <dd className="font-medium">
                                         {movementDescription({
@@ -929,9 +922,9 @@ export function TransactionInspector({
                                     </h2>
                                     <p>
                                         {reason.name ===
-                                        'cumulative_refunds_exceed_purchase'
-                                            ? 'The confirmed Refunds remain included. Review the linked purchase and edit the current Refund if needed.'
-                                            : 'The purchase has a Receipt Breakdown. No Line Items were copied or inferred for this Refund.'}
+                                        'cumulative_refunds_exceed_spending'
+                                            ? 'The confirmed Refunds remain included. Review the linked spending and edit the current Refund if needed.'
+                                            : 'The spending has a Receipt Breakdown. No Line Items were copied or inferred for this Refund.'}
                                     </p>
                                 </section>
                             ),
@@ -1010,21 +1003,21 @@ export function TransactionInspector({
                                         links
                                     </h2>
                                     <div className="grid gap-2 rounded-lg border p-4 text-sm">
-                                        {!transaction.original_purchase &&
+                                        {!transaction.original_spending &&
                                             transaction.linked_refunds
                                                 .length === 0 && (
                                                 <p className="text-muted-foreground">
                                                     No Refund links.
                                                 </p>
                                             )}
-                                        {transaction.original_purchase && (
+                                        {transaction.original_spending && (
                                             <p>
-                                                Original purchase:{' '}
+                                                Original spending:{' '}
                                                 <span className="font-medium">
                                                     {
                                                         transaction
-                                                            .original_purchase
-                                                            .merchant_description
+                                                            .original_spending
+                                                            .description
                                                     }
                                                 </span>
                                             </p>
@@ -1034,9 +1027,7 @@ export function TransactionInspector({
                                                 <p key={refund.id}>
                                                     Linked Refund:{' '}
                                                     <span className="font-medium">
-                                                        {
-                                                            refund.merchant_description
-                                                        }
+                                                        {refund.description}
                                                     </span>{' '}
                                                     ·{' '}
                                                     {formatMinorUnits(

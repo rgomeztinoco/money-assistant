@@ -11,7 +11,7 @@ test('the owner can void a Transaction', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
         ->for($owner, 'owner')
-        ->purchase()
+        ->spending()
         ->usd()
         ->create(['amount_minor' => 12345]);
 

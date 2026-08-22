@@ -20,10 +20,6 @@ class ReceiptBreakdownFactory extends Factory
     {
         return [
             'transaction_id' => Transaction::factory(),
-            'user_id' => fn (array $attributes): int => Transaction::query()
-                ->whereKey($attributes['transaction_id'])
-                ->firstOrFail()
-                ->user_id,
         ];
     }
 }

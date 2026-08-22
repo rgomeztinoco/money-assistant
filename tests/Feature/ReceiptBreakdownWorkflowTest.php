@@ -30,7 +30,7 @@ test('the owner atomically saves a reconciled purchase Receipt Breakdown', funct
     $owner = User::factory()->create();
     $fallbackCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
     $groceries = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+    $transaction = Transaction::factory()->recycle($owner)->spending()->pen()->create([
         'amount_minor' => 2_500,
         'category_id' => $fallbackCategory->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
@@ -77,7 +77,7 @@ test('the owner atomically saves a reconciled purchase Receipt Breakdown', funct
 
 test('the owner records signed Line Item totals in currency units', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
+    $transaction = Transaction::factory()->recycle($owner)->spending()->usd()->create([
         'amount_minor' => 2_500,
     ]);
 
@@ -112,7 +112,7 @@ test('the owner records signed Line Item totals in currency units', function () 
 
 test('Receipt Breakdown currency-unit totals reject fractional minor units', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
+    $transaction = Transaction::factory()->recycle($owner)->spending()->usd()->create([
         'amount_minor' => 2_500,
     ]);
 
@@ -131,7 +131,7 @@ test('Receipt Breakdown currency-unit totals reject fractional minor units', fun
 
 test('Receipt Breakdown input cannot mix currency and minor units', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->usd()->create([
+    $transaction = Transaction::factory()->recycle($owner)->spending()->usd()->create([
         'amount_minor' => 2_500,
     ]);
 
@@ -158,7 +158,7 @@ test('Receipt Breakdown input cannot mix currency and minor units', function () 
 
 test('an unreconciled replacement leaves the current Receipt Breakdown unchanged', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+    $transaction = Transaction::factory()->recycle($owner)->spending()->pen()->create([
         'amount_minor' => 2_500,
     ]);
     $this->actingAs($owner);
@@ -195,7 +195,7 @@ test('saving again replaces every Line Item and removal restores Transaction Cat
     $fallbackCategory = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
     $groceries = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
     $dining = Category::factory()->recycle($owner)->create(['name' => 'Dining']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+    $transaction = Transaction::factory()->recycle($owner)->spending()->pen()->create([
         'amount_minor' => 2_500,
         'category_id' => $fallbackCategory->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
@@ -251,14 +251,14 @@ test('the owner saves an independently reviewed Refund Receipt Breakdown', funct
     $owner = User::factory()->create();
     $purchaseCategory = Category::factory()->recycle($owner)->create(['name' => 'Appliances']);
     $refundCategory = Category::factory()->recycle($owner)->create(['name' => 'Returns']);
-    $purchase = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+    $purchase = Transaction::factory()->recycle($owner)->spending()->pen()->create([
         'amount_minor' => 2_500,
         'category_id' => $purchaseCategory->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
     ]);
     $refund = Transaction::factory()->recycle($owner)->refund()->pen()->create([
         'amount_minor' => 800,
-        'original_purchase_id' => $purchase->id,
+        'original_spending_id' => $purchase->id,
     ]);
     $this->actingAs($owner);
 
@@ -282,7 +282,7 @@ test('the owner saves an independently reviewed Refund Receipt Breakdown', funct
 
 test('Uncategorized Line Items remain visible in the Review Queue', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+    $transaction = Transaction::factory()->recycle($owner)->spending()->pen()->create([
         'amount_minor' => 2_500,
     ]);
     $this->actingAs($owner);

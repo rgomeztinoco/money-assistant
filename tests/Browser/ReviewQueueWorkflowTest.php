@@ -22,20 +22,20 @@ test('the owner navigates the guided queue and categorizes matching current and 
     $this->actingAs($owner);
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Coffee']);
     $resolvedCategory = Category::factory()->for($owner, 'owner')->create(['name' => 'Resolved']);
-    $current = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    $current = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-20',
-        'merchant_description' => 'CAFÉ—Central!!!',
+        'description' => 'CAFÉ—Central!!!',
     ]);
-    $matching = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    $matching = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-19',
-        'merchant_description' => " cafe\u{0301} central ",
+        'description' => " cafe\u{0301} central ",
     ]);
     $flagged = Transaction::factory()
         ->for($owner, 'owner')
-        ->provisional([ReviewableTransactionField::MerchantDescription])
+        ->provisional([ReviewableTransactionField::Description])
         ->create([
             'occurred_on' => '2026-08-18',
-            'merchant_description' => 'Flagged merchant',
+            'description' => 'Flagged merchant',
             'category_id' => $resolvedCategory->id,
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
@@ -81,11 +81,11 @@ test('the owner resolves flagged Transaction fields without returning to the led
         amountMinor: 12345,
         currency: Currency::Usd,
         kind: TransactionKind::Spending,
-        merchantDescription: 'Provisional market',
+        description: 'Provisional market',
         provisionalFields: [
             ReviewableTransactionField::OccurredOn,
             ReviewableTransactionField::AmountMinor,
-            ReviewableTransactionField::MerchantDescription,
+            ReviewableTransactionField::Description,
         ],
     );
     $category = Category::factory()->for($owner, 'owner')->create();
@@ -124,11 +124,11 @@ test('categorizing a Transaction with another review reason keeps the owner on t
         ->provisional([ReviewableTransactionField::OccurredOn])
         ->create([
             'occurred_on' => '2026-08-20',
-            'merchant_description' => 'Two decisions market',
+            'description' => 'Two decisions market',
         ]);
     Transaction::factory()->for($owner, 'owner')->create([
         'occurred_on' => '2026-08-19',
-        'merchant_description' => 'Next market',
+        'description' => 'Next market',
     ]);
 
     $page = visit("/review-queue?item=transaction:{$current->id}");
@@ -148,16 +148,16 @@ test('the owner corrects a Refund relationship and continues inside the guided q
     $owner = User::factory()->create();
     $this->actingAs($owner);
     $category = Category::factory()->for($owner, 'owner')->create();
-    $purchase = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    $spending = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'amount_minor' => 10_000,
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
     ]);
-    ReceiptBreakdown::factory()->for($owner, 'owner')->for($purchase)->create();
+    ReceiptBreakdown::factory()->for($spending)->create();
     $refund = Transaction::factory()->for($owner, 'owner')->refund()->usd()->create([
         'occurred_on' => '2026-08-20',
-        'merchant_description' => 'Refund needing allocation',
-        'original_purchase_id' => $purchase->id,
+        'description' => 'Refund needing allocation',
+        'original_spending_id' => $spending->id,
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         'refund_relationship_review_reasons' => [
@@ -166,7 +166,7 @@ test('the owner corrects a Refund relationship and continues inside the guided q
     ]);
     Transaction::factory()->for($owner, 'owner')->create([
         'occurred_on' => '2026-08-19',
-        'merchant_description' => 'Next queue item',
+        'description' => 'Next queue item',
     ]);
 
     $page = visit("/review-queue?item=transaction:{$refund->id}");
@@ -183,6 +183,6 @@ test('the owner corrects a Refund relationship and continues inside the guided q
         ->assertNoConsoleLogs();
 
     expect($refund->fresh())
-        ->original_purchase_id->toBeNull()
+        ->original_spending_id->toBeNull()
         ->refund_relationship_review_reasons->toBe([]);
 });

@@ -8,7 +8,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class LinkRefundToPurchaseRequest extends FormRequest
+class LinkRefundToSpendingRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -29,7 +29,7 @@ class LinkRefundToPurchaseRequest extends FormRequest
         $refund = $this->route('refund');
 
         return [
-            'purchase_id' => [
+            'spending_id' => [
                 'required',
                 'integer',
                 Rule::exists((new Transaction)->getTable(), 'id')

@@ -12,7 +12,7 @@ test('an exact Merchant Rule categorizes only matching future Transactions after
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     $historicalTransaction = Transaction::factory()->for($owner, 'owner')->create([
-        'merchant_description' => 'Café Central',
+        'description' => 'Café Central',
         'kind' => 'spending',
         'currency' => 'PEN',
     ]);
@@ -32,7 +32,7 @@ test('an exact Merchant Rule categorizes only matching future Transactions after
         'amount_minor' => 1_000,
         'currency' => 'PEN',
         'kind' => 'spending',
-        'merchant_description' => "  cafe\u{0301}...central  ",
+        'description' => "  cafe\u{0301}...central  ",
     ])->assertSessionHasNoErrors();
 
     $futureTransaction = Transaction::query()->latest('id')->firstOrFail();
@@ -68,7 +68,7 @@ test('disabled and out-of-scope Merchant Rules leave new Transactions Uncategori
             'amount_minor' => 1_000,
             'currency' => $currency,
             'kind' => $kind,
-            'merchant_description' => 'Scoped Merchant',
+            'description' => 'Scoped Merchant',
         ])->assertSessionHasNoErrors();
 
         return Transaction::query()->latest('id')->firstOrFail();

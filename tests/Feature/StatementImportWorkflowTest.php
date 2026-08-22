@@ -14,11 +14,11 @@ use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\Transaction;
 use App\Models\User;
+use App\MovementDirection;
 use App\StatementImports\StatementImportPreview;
 use App\StatementImports\StatementImportPreviewMovement;
 use App\StatementImports\StatementImportValidationException;
 use App\StatementMovementClassification;
-use App\StatementMovementDirection;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Concurrency;
@@ -248,7 +248,7 @@ test('the Statement Import workflow atomically confirms one Transaction for ever
         ->and($correctedMovement->amount_minor)->toBe(2100)
         ->and($correctedMovement->currency->value)->toBe('USD')
         ->and($correctedMovement->transaction->occurred_on->toDateString())->toBe('2026-02-06')
-        ->and($correctedMovement->transaction->merchant_description)->toBe('Corrected WARDA deposit')
+        ->and($correctedMovement->transaction->description)->toBe('Corrected WARDA deposit')
         ->and($correctedMovement->transaction->amount_minor)->toBe(2100)
         ->and($correctedMovement->transaction->currency->value)->toBe('USD')
         ->and($correctedMovement->transaction->direction->value)->toBe('debit')
@@ -260,8 +260,8 @@ test('the Statement Import workflow atomically confirms one Transaction for ever
         ->and(Transaction::query()->where('kind', 'transfer')->count())->toBe(2)
         ->and(Transaction::query()->whereBelongsTo($taxes, 'category')->count())->toBe(1)
         ->and(Transaction::query()->whereNull('category_id')->count())->toBe(4)
-        ->and(Transaction::query()->where('payment_instrument_label', 'BCP Savings account')->count())->toBe(5)
-        ->and(Transaction::query()->where('payment_instrument_last_four', '1234')->count())->toBe(5)
+        ->and(Transaction::query()->where('instrument_label', 'BCP Savings account')->count())->toBe(5)
+        ->and(Transaction::query()->where('instrument_last_four', '1234')->count())->toBe(5)
         ->and(Transaction::query()->whereNotNull('merchant_rule_id')->doesntExist())->toBeTrue();
 });
 
@@ -319,8 +319,8 @@ test('WARDA rows map to Savings transactions reports and the selected Category',
         $confirmation,
     );
     $savingsMovements = $import->movements->where('classification', StatementMovementClassification::Savings);
-    $deposit = $savingsMovements->firstWhere('direction', StatementMovementDirection::Debit);
-    $withdrawal = $savingsMovements->firstWhere('direction', StatementMovementDirection::Credit);
+    $deposit = $savingsMovements->firstWhere('direction', MovementDirection::Debit);
+    $withdrawal = $savingsMovements->firstWhere('direction', MovementDirection::Credit);
     $report = app(ReadCurrencyReport::class)->handle(
         $owner,
         Currency::Pen,
@@ -339,7 +339,7 @@ test('WARDA rows map to Savings transactions reports and the selected Category',
         ->and($withdrawal->transaction->kind->value)->toBe('transfer')
         ->and($withdrawal->transaction->transfer_purpose->value)->toBe('savings')
         ->and($withdrawal->transaction->category_id)->toBeNull()
-        ->and($withdrawal->transaction->original_purchase_id)->toBeNull()
+        ->and($withdrawal->transaction->original_spending_id)->toBeNull()
         ->and($withdrawal->transaction->refund_relationship_review_reasons)->toBe([])
         ->and($import->movements->firstWhere('classification', StatementMovementClassification::Tax)->transaction->category_id)->toBe($taxes->id)
         ->and($import->movements->firstWhere('classification', StatementMovementClassification::Fee)->transaction->category_id)->toBe($bankFees->id)
@@ -523,7 +523,7 @@ test('owner classifications determine whether an ambiguous Interbank movement cr
     'card payment' => ['card_payment', 'transfer'],
 ]);
 
-test('confirmation requires a real meaning instead of duplicating an already recorded movement', function () {
+test('confirmation requires a real kind instead of duplicating an already recorded movement', function () {
     $owner = User::factory()->create();
     $pdf = SyntheticPdf::fromText(interbankStatementText());
     $workflow = app(StatementImportWorkflow::class);
@@ -641,11 +641,11 @@ test('linked Transaction edits and voiding preserve the immutable confirmed Inte
             'amount_minor' => '2500',
             'currency' => 'PEN',
             'kind' => 'spending',
-            'merchant_description' => 'Edited imported purchase',
-            'payment_instrument_label' => 'Interbank Amex',
-            'payment_instrument_last_four' => '1234',
+            'description' => 'Edited imported purchase',
+            'instrument_label' => 'Interbank Amex',
+            'instrument_last_four' => '1234',
             'category_id' => $category->id,
-            'original_purchase_id' => null,
+            'original_spending_id' => null,
         ])
         ->assertSessionHasNoErrors();
 
@@ -665,10 +665,10 @@ test('linked Transaction edits and voiding preserve the immutable confirmed Inte
         ->and($movement->classification->value)->toBe('purchase')
         ->and($transaction->occurred_on->toDateString())->toBe('2026-02-10')
         ->and($transaction->amount_minor)->toBe(2500)
-        ->and($transaction->merchant_description)->toBe('Edited imported purchase')
+        ->and($transaction->description)->toBe('Edited imported purchase')
         ->and($transaction->category_assignment_provenance)->toBe(CategoryAssignmentProvenance::Owner)
         ->and($transaction->voided_at)->not->toBeNull()
-        ->and($import->movement_count)->toBe(6)
+        ->and($import->movements()->count())->toBe(6)
         ->and($movementDetails['transaction']['voided_at'])->not->toBeNull()
         ->and($movementDetails['transaction']['category']['id'])->toBe($category->id);
 });
@@ -874,7 +874,7 @@ test('only parser candidates can be confirmed as not a movement', function () {
         $confirmation,
     );
 
-    expect($import->movement_count)->toBe(5)
+    expect($import->movements()->count())->toBe(5)
         ->and($import->movements)->toHaveCount(5)
         ->and($import->movements->where('description', 'INFORMACION'))->toBeEmpty();
 

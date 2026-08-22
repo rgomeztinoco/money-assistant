@@ -25,13 +25,13 @@ class ReadReviewQueue
      *         amount_minor: string,
      *         currency: string,
      *         kind: string,
-     *         merchant_description: string,
+     *         description: string,
      *         confirmed_at: string,
      *         fields: list<array{name: string, label: string, value: string}>
      *     }>,
      *     refund_relationships: list<array{
-     *         refund: array{id: int, merchant_description: string, amount_minor: string, currency: string, category_name: string|null},
-     *         purchase: array{id: int, merchant_description: string, amount_minor: string, currency: string},
+     *         refund: array{id: int, description: string, amount_minor: string, currency: string, category_name: string|null},
+     *         spending: array{id: int, description: string, amount_minor: string, currency: string},
      *         reason: string,
      *         reason_label: string,
      *         linked_refund_total_minor: string,
@@ -54,7 +54,7 @@ class ReadReviewQueue
                 'amount_minor',
                 'currency',
                 'kind',
-                'merchant_description',
+                'description',
                 'confirmed_at',
                 'provisional_fields',
             ])
@@ -81,7 +81,7 @@ class ReadReviewQueue
                 'amount_minor' => (string) $transaction->amount_minor,
                 'currency' => $transaction->currency->value,
                 'kind' => $transaction->kind->value,
-                'merchant_description' => $transaction->merchant_description,
+                'description' => $transaction->description,
                 'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
                 'fields' => $fields,
             ];
@@ -94,8 +94,8 @@ class ReadReviewQueue
         $refundsAwaitingRelationshipReview = $relationshipReviewQuery
             ->select([
                 'id',
-                'original_purchase_id',
-                'merchant_description',
+                'original_spending_id',
+                'description',
                 'amount_minor',
                 'currency',
                 'category_id',
@@ -105,27 +105,27 @@ class ReadReviewQueue
             ->orderByDesc('occurred_on')
             ->orderByDesc('id')
             ->get();
-        $purchases = Transaction::query()
-            ->whereIn('id', $refundsAwaitingRelationshipReview->pluck('original_purchase_id')->filter())
+        $spendings = Transaction::query()
+            ->whereIn('id', $refundsAwaitingRelationshipReview->pluck('original_spending_id')->filter())
             ->withSum([
                 'linkedRefunds as linked_refund_total_minor' => fn ($query) => $query
                     ->whereNull('voided_at'),
             ], 'amount_minor')
-            ->get(['id', 'merchant_description', 'amount_minor', 'currency'])
+            ->get(['id', 'description', 'amount_minor', 'currency'])
             ->keyBy('id');
         $refundRelationships = [];
 
         foreach ($refundsAwaitingRelationshipReview as $refund) {
-            $purchase = $purchases->get($refund->original_purchase_id);
+            $spending = $spendings->get($refund->original_spending_id);
 
-            if ($purchase === null) {
+            if ($spending === null) {
                 continue;
             }
 
-            $linkedRefundTotal = ExactInteger::from((string) ($purchase->linked_refund_total_minor ?? '0'));
-            $purchaseAmount = ExactInteger::from($purchase->amount_minor);
-            $overageMinor = $linkedRefundTotal->compare($purchaseAmount) === 1
-                ? $linkedRefundTotal->subtract($purchaseAmount)->value()
+            $linkedRefundTotal = ExactInteger::from((string) ($spending->linked_refund_total_minor ?? '0'));
+            $spendingAmount = ExactInteger::from($spending->amount_minor);
+            $overageMinor = $linkedRefundTotal->compare($spendingAmount) === 1
+                ? $linkedRefundTotal->subtract($spendingAmount)->value()
                 : '0';
 
             foreach ($refund->refund_relationship_review_reasons as $reasonValue) {
@@ -133,16 +133,16 @@ class ReadReviewQueue
                 $refundRelationships[] = [
                     'refund' => [
                         'id' => $refund->id,
-                        'merchant_description' => $refund->merchant_description,
+                        'description' => $refund->description,
                         'amount_minor' => (string) $refund->amount_minor,
                         'currency' => $refund->currency->value,
                         'category_name' => $refund->category?->name,
                     ],
-                    'purchase' => [
-                        'id' => $purchase->id,
-                        'merchant_description' => $purchase->merchant_description,
-                        'amount_minor' => (string) $purchase->amount_minor,
-                        'currency' => $purchase->currency->value,
+                    'spending' => [
+                        'id' => $spending->id,
+                        'description' => $spending->description,
+                        'amount_minor' => (string) $spending->amount_minor,
+                        'currency' => $spending->currency->value,
                     ],
                     'reason' => $reason->value,
                     'reason_label' => $reason->label(),

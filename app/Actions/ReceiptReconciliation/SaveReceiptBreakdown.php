@@ -98,13 +98,11 @@ final class SaveReceiptBreakdown
             }
 
             $breakdown = ReceiptBreakdown::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereBelongsTo($currentTransaction)
                 ->lockForUpdate()
                 ->first();
 
             $breakdown ??= ReceiptBreakdown::query()->create([
-                'user_id' => $owner->getKey(),
                 'transaction_id' => $currentTransaction->getKey(),
             ]);
 

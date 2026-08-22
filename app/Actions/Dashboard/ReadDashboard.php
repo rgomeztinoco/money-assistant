@@ -14,7 +14,7 @@ use Carbon\CarbonImmutable;
 /**
  * @phpstan-type SpendingComparisonData array{current_total_minor: string, previous_total_minor: string, change_minor: string, percentage_change: string|null, direction: 'increased'|'decreased'|'unchanged'|'no_baseline'|'no_activity'}
  * @phpstan-type CategoryInsightData array{category: array{id: int|null, name: string}, current_total_minor: string, previous_total_minor: string, change_minor: string}
- * @phpstan-type RecentTransactionData array{id: int, occurred_on: string, amount_minor: string, currency: string, kind: string, direction: string, transfer_purpose: string|null, merchant_description: string}
+ * @phpstan-type RecentTransactionData array{id: int, occurred_on: string, amount_minor: string, currency: string, kind: string, direction: string, transfer_purpose: string|null, description: string}
  */
 final class ReadDashboard
 {

@@ -26,45 +26,45 @@ test('the Dashboard shows current-period totals, Review Queue workload, recent T
     $this->travelTo(CarbonImmutable::parse('2026-08-18 15:00:00 UTC'));
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    $usdTransaction = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    $usdTransaction = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-08-04',
         'amount_minor' => 100,
-        'merchant_description' => 'Corner shop',
+        'description' => 'Corner shop',
         'category_id' => $category->id,
     ]);
-    $penTransaction = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->provisional([
-        ReviewableTransactionField::MerchantDescription,
+    $penTransaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->provisional([
+        ReviewableTransactionField::Description,
     ])->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 500,
-        'merchant_description' => 'Neighborhood market',
+        'description' => 'Neighborhood market',
         'category_id' => $category->id,
     ]);
     $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
         'occurred_on' => '2026-08-12',
         'amount_minor' => 100,
-        'merchant_description' => 'Market Refund',
+        'description' => 'Market Refund',
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-07-31',
         'amount_minor' => 9_000,
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-06-30',
         'amount_minor' => 7_000,
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-05-31',
         'amount_minor' => 6_000,
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-15',
         'amount_minor' => 8_000,
-        'merchant_description' => 'Voided transfer',
+        'description' => 'Voided transfer',
         'category_id' => $category->id,
         'voided_at' => now(),
     ]);
@@ -101,43 +101,43 @@ test('the Dashboard compares equivalent periods and highlights the largest Categ
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     $transport = Category::factory()->for($owner, 'owner')->create(['name' => 'Transport']);
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-02',
         'amount_minor' => 4_000,
         'category_id' => $food->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-05',
         'amount_minor' => 2_000,
         'category_id' => $transport->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-07-03',
         'amount_minor' => 2_000,
         'category_id' => $food->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-07-10',
         'amount_minor' => 3_500,
         'category_id' => $transport->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-08-06',
         'amount_minor' => 1_000,
         'category_id' => $food->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-07-20',
         'amount_minor' => 50_000,
         'category_id' => $food->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-08',
         'amount_minor' => 70_000,
         'category_id' => $food->id,
         'voided_at' => now(),
     ]);
-    Transaction::factory()->for($otherOwner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($otherOwner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-08',
         'amount_minor' => 90_000,
     ]);

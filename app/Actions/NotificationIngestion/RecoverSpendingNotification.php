@@ -7,8 +7,8 @@ use App\Currency;
 use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
+use App\MovementDirection;
 use App\SpendingNotificationProcessingOutcome;
-use App\TransactionDirection;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -25,9 +25,9 @@ final class RecoverSpendingNotification
         int $amountMinor,
         Currency $currency,
         TransactionKind $kind,
-        string $merchantDescription,
+        string $description,
     ): Transaction {
-        return DB::transaction(function () use ($owner, $reference, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription): Transaction {
+        return DB::transaction(function () use ($owner, $reference, $occurredOn, $amountMinor, $currency, $kind, $description): Transaction {
             $reference = SpendingNotificationReference::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
@@ -46,9 +46,9 @@ final class RecoverSpendingNotification
                 currency: $currency,
                 kind: $kind,
                 direction: $kind === TransactionKind::Refund
-                    ? TransactionDirection::Credit
-                    : TransactionDirection::Debit,
-                merchantDescription: $merchantDescription,
+                    ? MovementDirection::Credit
+                    : MovementDirection::Debit,
+                description: $description,
             );
             $reference->forceFill([
                 'transaction_id' => $transaction->id,

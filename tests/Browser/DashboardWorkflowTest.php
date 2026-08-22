@@ -15,26 +15,26 @@ beforeEach(function () {
 test('the Dashboard directs attention into filtered owner workflows', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => now()->toDateString(),
         'amount_minor' => 1_000,
-        'merchant_description' => 'Coffee shop',
+        'description' => 'Coffee shop',
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->provisional([
-        ReviewableTransactionField::MerchantDescription,
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->provisional([
+        ReviewableTransactionField::Description,
     ])->create([
         'occurred_on' => now()->toDateString(),
         'amount_minor' => 2_500,
-        'merchant_description' => 'Neighborhood market',
+        'description' => 'Neighborhood market',
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => now()->subMonthNoOverflow()->toDateString(),
         'amount_minor' => 500,
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => now()->subMonthNoOverflow()->toDateString(),
         'amount_minor' => 1_000,
         'category_id' => $category->id,
@@ -42,13 +42,13 @@ test('the Dashboard directs attention into filtered owner workflows', function (
     Transaction::factory()->for($owner, 'owner')->income()->pen()->create([
         'occurred_on' => now()->toDateString(),
         'amount_minor' => 5_000,
-        'merchant_description' => 'Salary',
+        'description' => 'Salary',
     ]);
     Transaction::factory()->for($owner, 'owner')->transfer()->pen()->create([
         'occurred_on' => now()->toDateString(),
         'amount_minor' => 1_500,
         'transfer_purpose' => 'savings',
-        'merchant_description' => 'Moved to savings',
+        'description' => 'Moved to savings',
     ]);
     GmailConnection::factory()->for($owner, 'owner')->create([
         'gmail_account_identity' => 'owner@example.com',
@@ -161,8 +161,8 @@ test('the Dashboard directs attention into filtered owner workflows', function (
 test('navigation exposes only retained personal-finance destinations', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    $transactionAwaitingReview = Transaction::factory()->for($owner, 'owner')->purchase()->provisional([
-        ReviewableTransactionField::MerchantDescription,
+    $transactionAwaitingReview = Transaction::factory()->for($owner, 'owner')->spending()->provisional([
+        ReviewableTransactionField::Description,
     ])->create([
         'category_id' => $category->id,
     ]);
@@ -207,12 +207,12 @@ test('Reports explain spending with responsive charts and supporting Transaction
     $fees = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
         'name' => 'Fees',
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-07-20',
         'amount_minor' => 2_000,
         'category_id' => $food->id,
     ]);
-    $itemized = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    $itemized = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 3_000,
         'category_id' => $food->id,

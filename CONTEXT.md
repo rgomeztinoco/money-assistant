@@ -5,23 +5,27 @@ Money Assistant records personal spending and helps its owner understand and imp
 ## Language
 
 **Transaction**:
-A confirmed posted movement of money represented once with an independent Movement Direction and financial meaning: Spending, Refund or reimbursement, Income, or Transfer. A Transaction may come from manual entry, a supported Spending Notification, or a Statement Movement, and it remains confirmed even when details require review.
+A confirmed posted movement of money represented once with an independent Movement Direction and Transaction Kind. A Transaction may come from manual entry, a supported Spending Notification, or a Statement Movement, and it remains confirmed even when details require review.
 _Avoid_: Expense, purchase, cash-flow entry
 
 **Movement Direction**:
-Whether money moved out of an account (debit) or into an account (credit). Direction records what happened to the account and does not determine the movement's financial meaning.
+Whether money moved out of an account (debit) or into an account (credit). Direction records what happened to the account and does not determine the Transaction Kind.
+_Avoid_: Transaction Kind, transaction type
+
+**Transaction Kind**:
+The financial role of a Transaction: Spending, Refund or reimbursement, Income, or Transfer. It is independent from Movement Direction.
 _Avoid_: Transaction type, financial meaning
 
 **Spending**:
-A Transaction meaning for money spent on goods, services, fees, taxes, or obligations. Spending increases Net Spending and may use a Category or Receipt Breakdown. A full mortgage payment may remain Spending under Housing without representing a liability or home-equity ledger.
+A Transaction Kind for money spent on goods, services, fees, taxes, or obligations. Spending increases Net Spending and may use a Category or Receipt Breakdown. A full mortgage payment may remain Spending under Housing without representing a liability or home-equity ledger.
 _Avoid_: Debit, expense record
 
 **Refund or reimbursement**:
-A Transaction meaning for money returned after Spending or reimbursed by another party. It reduces Net Spending and may be linked to the original Spending Transaction without rewriting either movement.
+A Transaction Kind for money returned after Spending or reimbursed by another party. It reduces Net Spending and may be linked to the original Spending Transaction without rewriting either movement.
 _Avoid_: Income, credit
 
 **Income**:
-A Transaction meaning for money earned or otherwise received as income. It is summarized separately from Net Spending and uses an Income Source rather than a Spending Category.
+A Transaction Kind for money earned or otherwise received as income. It is summarized separately from Net Spending and uses an Income Source rather than a Spending Category.
 _Avoid_: Refund, credit
 
 **Income Source**:
@@ -29,7 +33,7 @@ The small owner-facing taxonomy for Income: Salary, Independent work, Investment
 _Avoid_: Category, merchant
 
 **Transfer**:
-A Transaction meaning for money moved between the owner's accounts or used to pay a card. Transfers do not affect Net Spending or Income. Savings Transfers contribute to Moved to Savings; card payments and ordinary internal Transfers do not.
+A Transaction Kind for money moved between the owner's accounts or used to pay a card. Transfers do not affect Net Spending or Income. Savings Transfers contribute to Moved to Savings; card payments and ordinary internal Transfers do not.
 _Avoid_: Spending, Income
 
 **Transfer Purpose**:
@@ -113,7 +117,7 @@ An owner-provided change to a current Transaction value. It takes effect immedia
 _Avoid_: Override
 
 **Merchant Rule**:
-An owner-created exact merchant-to-active-Category mapping for whole Spending or Refund Transactions, optionally scoped by those meanings or currency. Its deterministic merchant key normalizes case, Unicode, punctuation, and whitespace; when enabled, it categorizes only future Uncategorized Transactions, and its complete scope cannot conflict with another enabled Merchant Rule.
+An owner-created exact merchant-to-active-Category mapping for whole Spending or Refund Transactions, optionally scoped by those Kinds or currency. Its deterministic merchant key normalizes case, Unicode, punctuation, and whitespace; when enabled, it categorizes only future Uncategorized Transactions, and its complete scope cannot conflict with another enabled Merchant Rule.
 _Avoid_: Model training, hidden preference
 
 **Receipt Breakdown**:

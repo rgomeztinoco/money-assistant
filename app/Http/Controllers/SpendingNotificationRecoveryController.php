@@ -33,7 +33,7 @@ class SpendingNotificationRecoveryController extends Controller
                 amountMinor: (int) $validated['amount_minor'],
                 currency: Currency::from($validated['currency']),
                 kind: TransactionKind::from($validated['kind']),
-                merchantDescription: $validated['merchant_description'],
+                description: $validated['description'],
             );
         } catch (InvalidArgumentException $exception) {
             throw ValidationException::withMessages([

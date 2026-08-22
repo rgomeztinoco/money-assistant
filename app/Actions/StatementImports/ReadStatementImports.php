@@ -23,9 +23,9 @@ final class ReadStatementImports
                 'instrument_label',
                 'instrument_last_four',
                 'reconciliation_values',
-                'movement_count',
                 'confirmed_at',
             ])
+            ->withCount('movements')
             ->latest('confirmed_at')
             ->latest('id')
             ->paginate(25);
@@ -37,7 +37,7 @@ final class ReadStatementImports
                 periodEnd: $import->period_end->toDateString(),
                 instrumentLabel: $import->instrument_label,
                 instrumentLastFour: $import->instrument_last_four,
-                movementCount: $import->movement_count,
+                movementCount: $import->movements_count,
                 confirmedAt: $import->confirmed_at->toIso8601String(),
                 totals: $import->reconciliation_values,
             ));

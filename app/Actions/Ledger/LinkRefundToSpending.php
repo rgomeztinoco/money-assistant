@@ -10,20 +10,20 @@ use App\TransactionKind;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
-class LinkRefundToPurchase
+class LinkRefundToSpending
 {
     public function handle(
         User $owner,
         Transaction $refund,
-        Transaction $purchase,
+        Transaction $spending,
     ): Transaction {
         return DB::transaction(function () use (
             $owner,
             $refund,
-            $purchase,
+            $spending,
         ): Transaction {
-            $currentPurchase = Transaction::query()
-                ->whereKey($purchase->getKey())
+            $currentSpending = Transaction::query()
+                ->whereKey($spending->getKey())
                 ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -34,26 +34,26 @@ class LinkRefundToPurchase
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $this->ensureTransactionsCanBeLinked($currentRefund, $currentPurchase);
+            $this->ensureTransactionsCanBeLinked($currentRefund, $currentSpending);
 
             $linkedRefundTotal = ExactInteger::from((string) Transaction::query()
-                ->where('original_purchase_id', $currentPurchase->getKey())
+                ->where('original_spending_id', $currentSpending->getKey())
                 ->whereNull('voided_at')
                 ->sum('amount_minor'))
                 ->add(ExactInteger::from($currentRefund->amount_minor));
-            $hasReceiptBreakdown = $currentPurchase
+            $hasReceiptBreakdown = $currentSpending
                 ->receiptBreakdown()
                 ->exists();
-            $currentRefund->original_purchase_id = $currentPurchase->getKey();
+            $currentRefund->original_spending_id = $currentSpending->getKey();
 
             $reviewReasons = [];
 
             if (
                 $linkedRefundTotal->compare(
-                    ExactInteger::from($currentPurchase->amount_minor),
+                    ExactInteger::from($currentSpending->amount_minor),
                 ) === 1
             ) {
-                $reviewReasons[] = RefundRelationshipReviewReason::CumulativeRefundsExceedPurchase->value;
+                $reviewReasons[] = RefundRelationshipReviewReason::CumulativeRefundsExceedSpending->value;
             }
 
             if ($hasReceiptBreakdown) {
@@ -69,30 +69,30 @@ class LinkRefundToPurchase
 
     private function ensureTransactionsCanBeLinked(
         Transaction $refund,
-        Transaction $purchase,
+        Transaction $spending,
     ): void {
         if ($refund->kind !== TransactionKind::Refund) {
-            throw new InvalidArgumentException('Only a Refund can link to an original purchase.');
+            throw new InvalidArgumentException('Only a Refund can link to an original spending.');
         }
 
-        if ($purchase->kind !== TransactionKind::Spending) {
-            throw new InvalidArgumentException('A Refund can link only to a purchase.');
+        if ($spending->kind !== TransactionKind::Spending) {
+            throw new InvalidArgumentException('A Refund can link only to a spending.');
         }
 
-        if ($refund->is($purchase)) {
+        if ($refund->is($spending)) {
             throw new InvalidArgumentException('A Transaction cannot link to itself.');
         }
 
-        if ($refund->currency !== $purchase->currency) {
-            throw new InvalidArgumentException('A Refund and its original purchase must use the same currency.');
+        if ($refund->currency !== $spending->currency) {
+            throw new InvalidArgumentException('A Refund and its original spending must use the same currency.');
         }
 
-        if ($refund->voided_at !== null || $purchase->voided_at !== null) {
+        if ($refund->voided_at !== null || $spending->voided_at !== null) {
             throw new InvalidArgumentException('Voided Transactions cannot be linked.');
         }
 
-        if ($refund->original_purchase_id !== null) {
-            throw new InvalidArgumentException('This Refund is already linked to a purchase.');
+        if ($refund->original_spending_id !== null) {
+            throw new InvalidArgumentException('This Refund is already linked to a spending.');
         }
     }
 }

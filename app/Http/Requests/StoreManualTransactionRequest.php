@@ -5,7 +5,7 @@ namespace App\Http\Requests;
 use App\Currency;
 use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
 use App\IncomeSource;
-use App\TransactionDirection;
+use App\MovementDirection;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -19,8 +19,8 @@ class StoreManualTransactionRequest extends FormRequest
         if ($this->missing('direction')) {
             $this->merge([
                 'direction' => match ($this->input('kind')) {
-                    TransactionKind::Refund->value, TransactionKind::Income->value => TransactionDirection::Credit->value,
-                    default => TransactionDirection::Debit->value,
+                    TransactionKind::Refund->value, TransactionKind::Income->value => MovementDirection::Credit->value,
+                    default => MovementDirection::Debit->value,
                 },
             ]);
         }
@@ -48,7 +48,7 @@ class StoreManualTransactionRequest extends FormRequest
             ...$this->currencyAmountInputRules(),
             'currency' => ['required', Rule::enum(Currency::class)],
             'kind' => ['required', Rule::enum(TransactionKind::class)],
-            'direction' => ['required', Rule::enum(TransactionDirection::class)],
+            'direction' => ['required', Rule::enum(MovementDirection::class)],
             'income_source' => [
                 Rule::requiredIf($this->input('kind') === TransactionKind::Income->value),
                 'nullable',
@@ -59,9 +59,9 @@ class StoreManualTransactionRequest extends FormRequest
                 'nullable',
                 Rule::enum(TransferPurpose::class),
             ],
-            'merchant_description' => ['required', 'string', 'max:255'],
-            'payment_instrument_label' => ['nullable', 'string', 'max:100'],
-            'payment_instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
+            'description' => ['required', 'string', 'max:255'],
+            'instrument_label' => ['nullable', 'string', 'max:100'],
+            'instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
         ];
     }
 

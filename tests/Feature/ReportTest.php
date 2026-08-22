@@ -18,11 +18,11 @@ test('PEN and USD reports expose independent currency-only datasets', function (
     $this->travelTo(CarbonImmutable::parse('2026-08-12 15:00:00 UTC'));
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-02',
         'amount_minor' => 5_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-08-03',
         'amount_minor' => 7_000,
     ]);
@@ -64,7 +64,7 @@ test('PEN and USD reports expose independent currency-only datasets', function (
 test('reports subtract Refunds and exclude Voided Transactions within their currency', function () {
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-02',
         'amount_minor' => 5_000,
     ]);
@@ -72,7 +72,7 @@ test('reports subtract Refunds and exclude Voided Transactions within their curr
         'occurred_on' => '2026-08-03',
         'amount_minor' => 1_200,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-04',
         'amount_minor' => 9_000,
         'voided_at' => now(),
@@ -96,23 +96,23 @@ test('reports subtract Refunds and exclude Voided Transactions within their curr
 test('reports compare the selected range with the preceding range of equal length', function () {
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 3_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-06',
         'amount_minor' => 2_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-03',
         'amount_minor' => 50_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-16',
         'amount_minor' => 70_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 90_000,
     ]);
@@ -136,15 +136,15 @@ test('reports compare the selected range with the preceding range of equal lengt
 test('reports preserve small decreases and previous-only comparisons without rounding them away', function () {
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 9_999,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-06',
         'amount_minor' => 10_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-08-06',
         'amount_minor' => 1_000,
     ]);
@@ -188,7 +188,7 @@ test('reports explain empty comparison periods without a percentage', function (
 test('reports retain net-zero Transaction activity instead of describing it as empty', function () {
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 500,
     ]);
@@ -215,11 +215,11 @@ test('reports retain net-zero Transaction activity instead of describing it as e
 test('reports preserve nonzero percentage changes below one hundredth of a percent', function () {
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 99_999,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-06',
         'amount_minor' => 100_000,
     ]);
@@ -239,11 +239,11 @@ test('reports preserve nonzero percentage changes below one hundredth of a perce
 test('reports provide continuous monthly history through the selected period', function () {
     $owner = User::factory()->create();
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-01-10',
         'amount_minor' => 1_000,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-03-05',
         'amount_minor' => 3_000,
     ]);
@@ -251,7 +251,7 @@ test('reports provide continuous monthly history through the selected period', f
         'occurred_on' => '2026-03-12',
         'amount_minor' => 500,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-03-20',
         'amount_minor' => 8_000,
     ]);
@@ -282,12 +282,12 @@ test('Category groups roll children up once and current Receipt Breakdowns repla
     ]);
     $shopping = Category::factory()->for($owner, 'owner')->create(['name' => 'Shopping']);
 
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-02',
         'amount_minor' => 2_000,
         'category_id' => $dining->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-03',
         'amount_minor' => 1_000,
         'category_id' => $food->id,
@@ -297,14 +297,14 @@ test('Category groups roll children up once and current Receipt Breakdowns repla
         'amount_minor' => 500,
         'category_id' => $dining->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-05',
         'amount_minor' => 9_000,
         'category_id' => $dining->id,
         'voided_at' => now(),
     ]);
 
-    $itemizedTransaction = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
+    $itemizedTransaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-06',
         'amount_minor' => 3_000,
         'category_id' => $shopping->id,

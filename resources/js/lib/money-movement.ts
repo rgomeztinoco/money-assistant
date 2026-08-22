@@ -1,6 +1,6 @@
 import type {
     IncomeSource,
-    TransactionDirection,
+    MovementDirection,
     TransactionKind,
     TransferPurpose,
 } from '@/types';
@@ -16,7 +16,7 @@ export const movementKindOptions: ReadonlyArray<{
 ];
 
 export const movementDirectionOptions: ReadonlyArray<{
-    value: TransactionDirection;
+    value: MovementDirection;
     label: string;
 }> = [
     { value: 'debit', label: 'Money out' },

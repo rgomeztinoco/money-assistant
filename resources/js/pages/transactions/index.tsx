@@ -477,7 +477,7 @@ function RecordTransactionForm({ today }: { today: string }) {
             <CardContent>
                 <Form
                     {...recordTransaction.form()}
-                    resetOnSuccess={['amount', 'merchant_description']}
+                    resetOnSuccess={['amount', 'description']}
                     className="grid gap-4"
                 >
                     {({ errors, processing }) => (
@@ -519,9 +519,7 @@ function RecordTransactionForm({ today }: { today: string }) {
                                     ]}
                                 />
                                 <div className="grid gap-2">
-                                    <Label htmlFor="kind">
-                                        Movement meaning
-                                    </Label>
+                                    <Label htmlFor="kind">Movement kind</Label>
                                     <NativeSelect
                                         id="kind"
                                         name="kind"
@@ -564,18 +562,16 @@ function RecordTransactionForm({ today }: { today: string }) {
                                 />
                             )}
                             <div className="grid gap-2">
-                                <Label htmlFor="merchant_description">
+                                <Label htmlFor="description">
                                     Merchant or short description
                                 </Label>
                                 <Input
-                                    id="merchant_description"
-                                    name="merchant_description"
+                                    id="description"
+                                    name="description"
                                     maxLength={255}
                                     autoComplete="off"
                                 />
-                                <InputError
-                                    message={errors.merchant_description}
-                                />
+                                <InputError message={errors.description} />
                             </div>
                             <Button type="submit" disabled={processing}>
                                 {processing && <Spinner />}
@@ -606,7 +602,7 @@ function LedgerList({
         <ul className="grid gap-3">
             {transactions.map((transaction) => {
                 const isMoneyIn = transaction.direction === 'credit';
-                const KindIcon = isMoneyIn ? ArrowDownLeft : ArrowUpRight;
+                const DirectionIcon = isMoneyIn ? ArrowDownLeft : ArrowUpRight;
 
                 return (
                     <li
@@ -616,7 +612,7 @@ function LedgerList({
                         <div className="grid min-w-0 gap-2">
                             <div className="flex flex-wrap items-baseline justify-between gap-2">
                                 <p className="min-w-0 font-medium break-words">
-                                    {transaction.merchant_description}
+                                    {transaction.description}
                                 </p>
                                 <p
                                     className={`font-semibold whitespace-nowrap tabular-nums ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
@@ -637,7 +633,7 @@ function LedgerList({
                                         isMoneyIn ? 'secondary' : 'outline'
                                     }
                                 >
-                                    <KindIcon />
+                                    <DirectionIcon />
                                     {movementDescription({
                                         kind: transaction.kind,
                                         transferPurpose:

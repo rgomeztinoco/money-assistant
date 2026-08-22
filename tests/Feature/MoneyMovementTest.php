@@ -2,40 +2,39 @@
 
 use App\Actions\Ledger\CountOutstandingReviews;
 use App\Models\Category;
-use App\Models\SpendingNotificationReference;
-use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('the owner records every supported money movement meaning', function () {
+test('the owner records every supported money movement kind', function () {
     $owner = User::factory()->create();
 
     $movements = [
         [
             'kind' => 'spending',
             'direction' => 'debit',
-            'merchant_description' => 'Mortgage payment',
+            'description' => 'Mortgage payment',
         ],
         [
             'kind' => 'refund',
             'direction' => 'credit',
-            'merchant_description' => 'Travel reimbursement',
+            'description' => 'Travel reimbursement',
         ],
         [
             'kind' => 'income',
             'direction' => 'credit',
             'income_source' => 'salary',
-            'merchant_description' => 'Monthly salary',
+            'description' => 'Monthly salary',
         ],
         [
             'kind' => 'transfer',
             'direction' => 'debit',
             'transfer_purpose' => 'savings',
-            'merchant_description' => 'Moved to savings',
+            'description' => 'Moved to savings',
         ],
     ];
 
@@ -65,7 +64,7 @@ test('the owner records every supported money movement meaning', function () {
             ->where('transactions.3.kind', 'spending'));
 });
 
-test('period summaries keep movement meanings and currencies separate', function () {
+test('period summaries keep movement kinds and currencies separate', function () {
     $this->travelTo('2026-08-21 12:00:00');
     $owner = User::factory()->create();
     $base = [
@@ -110,12 +109,12 @@ test('period summaries keep movement meanings and currencies separate', function
             ->missing('summaries.PEN.net_external_cash_flow_minor'));
 });
 
-test('the owner edits a Transaction financial meaning and its matching details', function () {
+test('the owner edits a Transaction kind and its matching details', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create([
         'kind' => 'spending',
         'direction' => 'debit',
-        'merchant_description' => 'Client payment',
+        'description' => 'Client payment',
     ]);
 
     $this->actingAs($owner)
@@ -126,7 +125,7 @@ test('the owner edits a Transaction financial meaning and its matching details',
             'kind' => 'income',
             'direction' => 'credit',
             'income_source' => 'independent_work',
-            'merchant_description' => 'Client payment',
+            'description' => 'Client payment',
         ])
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('transactions.index'));
@@ -158,94 +157,20 @@ test('Income and Transfers stay outside Spending Category review', function () {
     expect($income->refresh()->category_id)->toBeNull();
 });
 
-test('the money movement migration preserves legacy records and backfills statement Transactions', function () {
-    $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    $purchase = Transaction::factory()->for($owner, 'owner')->create([
-        'kind' => 'spending',
-        'amount_minor' => 45_678,
-        'currency' => 'USD',
-        'category_id' => $category->id,
-        'voided_at' => now(),
-    ]);
-    $refund = Transaction::factory()->for($owner, 'owner')->create([
-        'kind' => 'refund',
-        'amount_minor' => 1_234,
-        'currency' => 'USD',
-        'original_purchase_id' => $purchase->id,
-    ]);
-    $reference = SpendingNotificationReference::factory()
-        ->for($owner, 'owner')
-        ->for($purchase)
-        ->create();
-    $statementImport = StatementImport::factory()->for($owner, 'owner')->create();
-    $purchaseMovement = StatementMovement::factory()->for($statementImport)->create([
-        'transaction_id' => $purchase->id,
-        'position' => 1,
-        'amount_minor' => 45_678,
-        'currency' => 'USD',
-        'direction' => 'debit',
-        'classification' => 'purchase',
-        'source_metadata' => ['source' => 'legacy-pdf'],
-    ]);
-    $incomeMovement = StatementMovement::factory()->for($statementImport)->create([
-        'transaction_id' => null,
-        'position' => 2,
-        'amount_minor' => 80_000,
-        'currency' => 'PEN',
-        'direction' => 'credit',
-        'classification' => 'income',
-        'description' => 'Legacy salary',
-        'source_metadata' => ['source' => 'legacy-pdf'],
-    ]);
-    $alreadyRecordedMovement = StatementMovement::factory()->for($statementImport)->create([
-        'transaction_id' => null,
-        'position' => 3,
-        'classification' => 'already_recorded',
-        'description' => 'Legacy movement represented elsewhere',
-    ]);
-    DB::table('transactions')->where('id', $purchase->id)->update(['kind' => 'purchase']);
+test('every persisted Statement Movement belongs to exactly one Transaction', function () {
+    $movement = StatementMovement::factory()->create();
 
-    $migrationPath = collect(glob(database_path('migrations/*_migrate_existing_money_movements.php')))->sole();
-    $migration = require $migrationPath;
-    $migration->up();
-
-    expect($purchase->refresh()->kind->value)->toBe('spending')
-        ->and($purchase->direction->value)->toBe('debit')
-        ->and($purchase->amount_minor)->toBe(45_678)
-        ->and($purchase->currency->value)->toBe('USD')
-        ->and($purchase->category_id)->toBe($category->id)
-        ->and($purchase->voided_at)->not->toBeNull()
-        ->and($refund->refresh()->original_purchase_id)->toBe($purchase->id)
-        ->and($reference->refresh()->transaction_id)->toBe($purchase->id)
-        ->and($purchaseMovement->refresh()->source_metadata)->toBe(['source' => 'legacy-pdf'])
-        ->and($incomeMovement->refresh()->transaction)->not->toBeNull()
-        ->and($incomeMovement->transaction->kind->value)->toBe('income')
-        ->and($incomeMovement->transaction->direction->value)->toBe('credit')
-        ->and($incomeMovement->transaction->income_source->value)->toBe('other')
-        ->and($incomeMovement->transaction->amount_minor)->toBe(80_000)
-        ->and($incomeMovement->transaction->currency->value)->toBe('PEN')
-        ->and($incomeMovement->source_metadata)->toBe(['source' => 'legacy-pdf'])
-        ->and($alreadyRecordedMovement->refresh()->transaction_id)->toBeNull();
+    expect($movement->transaction)->toBeInstanceOf(Transaction::class)
+        ->and(fn () => DB::table('statement_movements')
+            ->where('id', $movement->id)
+            ->update(['transaction_id' => null]))
+        ->toThrow(QueryException::class);
 });
 
-test('money movement migrations downgrade unsupported manual meanings by direction', function () {
-    $semanticMigrationPath = collect(glob(database_path('migrations/*_migrate_existing_money_movements.php')))->sole();
-    $fieldsMigrationPath = collect(glob(database_path('migrations/*_add_money_movement_fields_to_transactions_table.php')))->sole();
-    $semanticMigration = require $semanticMigrationPath;
-    $fieldsMigration = require $fieldsMigrationPath;
+test('Movement Direction is required without an implicit default', function () {
+    $directionColumn = collect(Schema::getColumns('transactions'))
+        ->firstWhere('name', 'direction');
 
-    $semanticMigration->up();
-    $income = Transaction::factory()->income()->create();
-    $transfer = Transaction::factory()->transfer()->create();
-
-    $semanticMigration->down();
-
-    expect(DB::table('transactions')->where('id', $income->id)->value('kind'))->toBe('refund')
-        ->and(DB::table('transactions')->where('id', $transfer->id)->value('kind'))->toBe('purchase');
-
-    $fieldsMigration->down();
-
-    expect(Schema::hasColumns('transactions', ['direction', 'income_source', 'transfer_purpose']))
-        ->toBeFalse();
+    expect($directionColumn['nullable'])->toBeFalse()
+        ->and($directionColumn['default'])->toBeNull();
 });

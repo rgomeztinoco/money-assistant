@@ -14,9 +14,9 @@ test('the owner saves replaces and removes a Receipt Breakdown in the Transactio
     $owner = User::factory()->create();
     $shopping = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
     $groceries = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
-    $transaction = Transaction::factory()->recycle($owner)->purchase()->pen()->create([
+    $transaction = Transaction::factory()->recycle($owner)->spending()->pen()->create([
         'amount_minor' => 2_500,
-        'merchant_description' => 'Neighborhood market',
+        'description' => 'Neighborhood market',
         'category_id' => $shopping->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
     ]);

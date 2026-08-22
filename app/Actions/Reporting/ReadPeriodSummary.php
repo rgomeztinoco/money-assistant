@@ -6,7 +6,7 @@ use App\Currency;
 use App\ExactInteger;
 use App\Models\Transaction;
 use App\Models\User;
-use App\TransactionDirection;
+use App\MovementDirection;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Carbon\CarbonImmutable;
@@ -44,7 +44,7 @@ final class ReadPeriodSummary
 
             if ($transaction->kind === TransactionKind::Transfer
                 && $transaction->transfer_purpose === TransferPurpose::Savings) {
-                $movedToSavings = $transaction->direction === TransactionDirection::Credit
+                $movedToSavings = $transaction->direction === MovementDirection::Credit
                     ? $movedToSavings->subtract($amount)
                     : $movedToSavings->add($amount);
             }

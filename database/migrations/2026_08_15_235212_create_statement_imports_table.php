@@ -22,7 +22,6 @@ return new class extends Migration
             $table->string('instrument_label', 100);
             $table->string('instrument_last_four', 4)->nullable();
             $table->jsonb('reconciliation_values');
-            $table->unsignedSmallInteger('movement_count');
             $table->timestamp('confirmed_at');
             $table->timestamps();
 
@@ -33,7 +32,7 @@ return new class extends Migration
         Schema::create('statement_movements', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('statement_import_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('transaction_id')->nullable()->unique()->constrained()->restrictOnDelete();
+            $table->foreignId('transaction_id')->unique()->constrained()->restrictOnDelete();
             $table->char('source_row_id', 64);
             $table->unsignedSmallInteger('position');
             $table->date('occurred_on');
@@ -42,8 +41,6 @@ return new class extends Migration
             $table->string('direction', 8);
             $table->string('classification', 32);
             $table->string('description');
-            $table->string('instrument_label', 100);
-            $table->string('instrument_last_four', 4)->nullable();
             $table->jsonb('source_metadata')->default('{}');
             $table->timestamps();
 

@@ -49,7 +49,7 @@ final class SpendingNotificationParser
             rule: $definition['date'] ?? null,
             receivedAt: $message->receivedAt,
         );
-        [$merchantDescription, $merchantNeedsReview] = $this->merchant(
+        [$description, $merchantNeedsReview] = $this->merchant(
             body: $body,
             rule: $definition['merchant'] ?? null,
         );
@@ -60,7 +60,7 @@ final class SpendingNotificationParser
         }
 
         if ($merchantNeedsReview) {
-            $provisionalFields[] = ReviewableTransactionField::MerchantDescription;
+            $provisionalFields[] = ReviewableTransactionField::Description;
         }
 
         return new SpendingNotificationExtraction(
@@ -68,7 +68,7 @@ final class SpendingNotificationParser
             amountMinor: $amountMinor,
             currency: $currency,
             kind: $kind,
-            merchantDescription: $merchantDescription,
+            description: $description,
             provisionalFields: $provisionalFields,
         );
     }

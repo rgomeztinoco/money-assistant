@@ -35,7 +35,7 @@ import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type {
     Currency,
-    TransactionDirection,
+    MovementDirection,
     TransactionKind,
     TransferPurpose,
 } from '@/types';
@@ -74,9 +74,9 @@ type RecentTransaction = {
     amount_minor: string;
     currency: Currency;
     kind: TransactionKind;
-    direction: TransactionDirection;
+    direction: MovementDirection;
     transfer_purpose: TransferPurpose | null;
-    merchant_description: string;
+    description: string;
 };
 
 type GmailStatus = {
@@ -437,7 +437,7 @@ export default function Dashboard({
                                     {recent_transactions.map((transaction) => {
                                         const isMoneyIn =
                                             transaction.direction === 'credit';
-                                        const KindIcon = isMoneyIn
+                                        const DirectionIcon = isMoneyIn
                                             ? ArrowDownLeft
                                             : ArrowUpRight;
 
@@ -453,12 +453,12 @@ export default function Dashboard({
                                                 className="flex items-center gap-3 py-3 first:pt-0 last:pb-0 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                                             >
                                                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                                                    <KindIcon className="size-4" />
+                                                    <DirectionIcon className="size-4" />
                                                 </span>
                                                 <span className="min-w-0 flex-1">
                                                     <span className="block truncate text-sm font-medium">
                                                         {
-                                                            transaction.merchant_description
+                                                            transaction.description
                                                         }
                                                     </span>
                                                     <span className="block text-xs text-muted-foreground">

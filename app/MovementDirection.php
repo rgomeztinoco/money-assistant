@@ -2,7 +2,7 @@
 
 namespace App;
 
-enum StatementMovementDirection: string
+enum MovementDirection: string
 {
     case Debit = 'debit';
     case Credit = 'credit';

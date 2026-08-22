@@ -68,7 +68,7 @@ test('the owner creates a current Parser Profile only after transient validation
         ->and($format->profile->is($profile))->toBeTrue()
         ->and($format->enabled_at)->not->toBeNull()
         ->and($transaction->amount_minor)->toBe(12540)
-        ->and($transaction->merchant_description)->toBe('MARKET ONE')
+        ->and($transaction->description)->toBe('MARKET ONE')
         ->and(ParserProfile::query()->first()->getAttributes())
         ->not->toHaveKeys(['current_version'])
         ->and(json_encode($profile->getAttributes()))

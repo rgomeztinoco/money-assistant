@@ -13,11 +13,11 @@ use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\Transaction;
 use App\Models\User;
+use App\MovementDirection;
 use App\StatementImports\StatementImportPreview;
 use App\StatementImports\StatementImportPreviewMovement;
 use App\StatementImports\StatementImportValidationException;
 use App\StatementMovementClassification;
-use App\StatementMovementDirection;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
@@ -154,7 +154,6 @@ final class StatementImportWorkflow
                     'instrument_label' => $instrumentLabel,
                     'instrument_last_four' => $instrumentLastFour,
                     'reconciliation_values' => $preview->reconciliation,
-                    'movement_count' => count($editedMovements),
                     'confirmed_at' => now(),
                 ]);
 
@@ -189,8 +188,6 @@ final class StatementImportWorkflow
                         'direction' => $sourceMovement->direction,
                         'classification' => $classification,
                         'description' => $editedMovement['description'],
-                        'instrument_label' => $instrumentLabel,
-                        'instrument_last_four' => $instrumentLastFour,
                         'source_metadata' => $sourceMovement->sourceMetadata,
                     ]);
                 }
@@ -329,7 +326,7 @@ final class StatementImportWorkflow
     private function createTransaction(
         User $owner,
         array $movement,
-        StatementMovementDirection $direction,
+        MovementDirection $direction,
         ?Category $category,
         string $instrumentLabel,
         ?string $instrumentLastFour,
@@ -338,7 +335,7 @@ final class StatementImportWorkflow
         $kind = $classification->transactionKind();
 
         if ($kind === null) {
-            throw $this->invalid('Every confirmed movement needs a financial meaning.', 'movement_needs_classification');
+            throw $this->invalid('Every confirmed movement needs a transaction kind.', 'movement_needs_classification');
         }
 
         return Transaction::create([
@@ -352,9 +349,9 @@ final class StatementImportWorkflow
                 ? IncomeSource::Other
                 : null,
             'transfer_purpose' => $classification->transferPurpose(),
-            'merchant_description' => $movement['description'],
-            'payment_instrument_label' => $instrumentLabel,
-            'payment_instrument_last_four' => $instrumentLastFour,
+            'description' => $movement['description'],
+            'instrument_label' => $instrumentLabel,
+            'instrument_last_four' => $instrumentLastFour,
             'confirmed_at' => now(),
             'provisional_fields' => [],
             'category_id' => $category?->getKey(),
@@ -516,8 +513,8 @@ final class StatementImportWorkflow
 
             $directionBoundary ??= $this->bcpDirectionBoundary($lines, $debitColumn, $creditColumn);
             $direction = $amountOffset >= $directionBoundary
-                    ? StatementMovementDirection::Credit
-                    : StatementMovementDirection::Debit;
+                    ? MovementDirection::Credit
+                    : MovementDirection::Debit;
             $position = count($movements) + 1;
             $occurredOn = $this->bcpMovementDate(
                 (int) $dateMatch[1],
@@ -549,8 +546,8 @@ final class StatementImportWorkflow
             throw $this->invalid('The BCP statement totals could not be read.', 'missing_reconciliation');
         }
 
-        $parsedDebits = $this->sumMovements($movements, StatementMovementDirection::Debit);
-        $parsedCredits = $this->sumMovements($movements, StatementMovementDirection::Credit);
+        $parsedDebits = $this->sumMovements($movements, MovementDirection::Debit);
+        $parsedCredits = $this->sumMovements($movements, MovementDirection::Credit);
         $expectedClosing = ExactInteger::from($openingBalance)
             ->add(ExactInteger::from($printedCredits))
             ->subtract(ExactInteger::from($printedDebits))
@@ -782,8 +779,8 @@ final class StatementImportWorkflow
                 default => StatementMovementClassification::Purchase,
             };
             $direction = ExactInteger::from($printedAmount)->compare(ExactInteger::from(0)) === -1
-                ? StatementMovementDirection::Credit
-                : StatementMovementDirection::Debit;
+                ? MovementDirection::Credit
+                : MovementDirection::Debit;
 
             $movements[] = new StatementImportPreviewMovement(
                 sourceRowId: hash('sha256', "interbank|{$position}|{$line}"),
@@ -1125,7 +1122,7 @@ final class StatementImportWorkflow
     /**
      * @param  list<StatementImportPreviewMovement>  $movements
      */
-    private function sumMovements(array $movements, StatementMovementDirection $direction): string
+    private function sumMovements(array $movements, MovementDirection $direction): string
     {
         return collect($movements)
             ->filter(fn (StatementImportPreviewMovement $movement): bool => $movement->direction === $direction)

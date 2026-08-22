@@ -15,19 +15,19 @@ use Inertia\Testing\AssertableInertia as Assert;
 test('the owner can combine current-state ledger filters before pagination', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
-    $purchase = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    $purchase = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-06-10',
-        'merchant_description' => 'Original market purchase',
+        'description' => 'Original market purchase',
     ]);
     $matchingRefund = Transaction::factory()
         ->for($owner, 'owner')
         ->refund()
         ->usd()
-        ->provisional([ReviewableTransactionField::MerchantDescription])
+        ->provisional([ReviewableTransactionField::Description])
         ->create([
             'occurred_on' => '2026-07-20',
-            'merchant_description' => 'Neighborhood market Refund',
-            'original_purchase_id' => $purchase->id,
+            'description' => 'Neighborhood market Refund',
+            'original_spending_id' => $purchase->id,
             'category_id' => $category->id,
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
@@ -61,7 +61,7 @@ test('the owner can combine current-state ledger filters before pagination', fun
 test('ledger filters distinguish category, Refund relationship, review, and void state', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    $clearPurchase = Transaction::factory()->for($owner, 'owner')->purchase()->create([
+    $clearPurchase = Transaction::factory()->for($owner, 'owner')->spending()->create([
         'occurred_on' => '2026-07-10',
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
@@ -69,13 +69,13 @@ test('ledger filters distinguish category, Refund relationship, review, and void
     $unlinkedReviewRefund = Transaction::factory()
         ->for($owner, 'owner')
         ->refund()
-        ->provisional([ReviewableTransactionField::MerchantDescription])
+        ->provisional([ReviewableTransactionField::Description])
         ->create(['occurred_on' => '2026-07-12']);
     $linkedRefund = Transaction::factory()->for($owner, 'owner')->refund()->create([
         'occurred_on' => '2026-07-13',
-        'original_purchase_id' => $clearPurchase->id,
+        'original_spending_id' => $clearPurchase->id,
     ]);
-    $voidedTransaction = Transaction::factory()->for($owner, 'owner')->purchase()->create([
+    $voidedTransaction = Transaction::factory()->for($owner, 'owner')->spending()->create([
         'occurred_on' => '2026-07-14',
         'voided_at' => now(),
     ]);
@@ -170,14 +170,14 @@ test('the selected Transaction inspector exposes only current state and relation
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
     $transaction = Transaction::factory()
         ->for($owner, 'owner')
-        ->purchase()
+        ->spending()
         ->provisional([ReviewableTransactionField::OccurredOn])
         ->create([
             'category_id' => $category->id,
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
         ]);
     $refund = Transaction::factory()->for($owner, 'owner')->refund()->create([
-        'original_purchase_id' => $transaction->id,
+        'original_spending_id' => $transaction->id,
     ]);
     SpendingNotificationReference::factory()->for($transaction)->create();
 
@@ -200,7 +200,7 @@ test('the Review Queue is the outstanding ledger preset', function () {
         ->for($owner, 'owner')
         ->provisional([
             ReviewableTransactionField::OccurredOn,
-            ReviewableTransactionField::MerchantDescription,
+            ReviewableTransactionField::Description,
         ])
         ->create();
     $clearCategory = Category::factory()->for($owner, 'owner')->create();
@@ -210,7 +210,7 @@ test('the Review Queue is the outstanding ledger preset', function () {
     ]);
     Transaction::factory()->for($owner, 'owner')->refund()->create([
         'refund_relationship_review_reasons' => [
-            RefundRelationshipReviewReason::CumulativeRefundsExceedPurchase->value,
+            RefundRelationshipReviewReason::CumulativeRefundsExceedSpending->value,
         ],
     ]);
 

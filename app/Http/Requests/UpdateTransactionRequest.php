@@ -7,7 +7,7 @@ use App\ExactInteger;
 use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
 use App\IncomeSource;
 use App\Models\Transaction;
-use App\TransactionDirection;
+use App\MovementDirection;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -51,7 +51,7 @@ class UpdateTransactionRequest extends FormRequest
             ...$this->currencyAmountInputRules(),
             'currency' => ['required', Rule::enum(Currency::class)],
             'kind' => ['required', Rule::enum(TransactionKind::class)],
-            'direction' => ['required', Rule::enum(TransactionDirection::class)],
+            'direction' => ['required', Rule::enum(MovementDirection::class)],
             'income_source' => [
                 Rule::requiredIf($this->input('kind') === TransactionKind::Income->value),
                 'nullable',
@@ -62,9 +62,9 @@ class UpdateTransactionRequest extends FormRequest
                 'nullable',
                 Rule::enum(TransferPurpose::class),
             ],
-            'merchant_description' => ['required', 'string', 'max:255'],
-            'payment_instrument_label' => ['nullable', 'string', 'max:100'],
-            'payment_instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
+            'description' => ['required', 'string', 'max:255'],
+            'instrument_label' => ['nullable', 'string', 'max:100'],
+            'instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
             'category_id' => [
                 'nullable',
                 'integer',
@@ -72,7 +72,7 @@ class UpdateTransactionRequest extends FormRequest
                     ->where('user_id', $this->user()->getKey())
                     ->whereNull('archived_at'),
             ],
-            'original_purchase_id' => [
+            'original_spending_id' => [
                 'nullable',
                 'integer',
                 Rule::exists('transactions', 'id')
@@ -97,23 +97,23 @@ class UpdateTransactionRequest extends FormRequest
             assert($transaction instanceof Transaction);
             $kind = TransactionKind::from($this->string('kind')->toString());
             $currency = Currency::from($this->string('currency')->toString());
-            $originalPurchaseId = $this->integer('original_purchase_id') ?: null;
+            $originalSpendingId = $this->integer('original_spending_id') ?: null;
 
-            if ($kind !== TransactionKind::Refund && $originalPurchaseId !== null) {
-                $validator->errors()->add('original_purchase_id', 'Only a Refund can link to an original purchase.');
+            if ($kind !== TransactionKind::Refund && $originalSpendingId !== null) {
+                $validator->errors()->add('original_spending_id', 'Only a Refund can link to an original spending.');
 
                 return;
             }
 
-            if ($originalPurchaseId !== null) {
-                $purchase = Transaction::query()->find($originalPurchaseId);
+            if ($originalSpendingId !== null) {
+                $spending = Transaction::query()->find($originalSpendingId);
 
-                if ($purchase?->currency !== $currency) {
-                    $validator->errors()->add('original_purchase_id', 'A Refund and its original purchase must use the same currency.');
+                if ($spending?->currency !== $currency) {
+                    $validator->errors()->add('original_spending_id', 'A Refund and its original spending must use the same currency.');
                 }
 
-                if ($purchase?->is($transaction)) {
-                    $validator->errors()->add('original_purchase_id', 'A Transaction cannot link to itself.');
+                if ($spending?->is($transaction)) {
+                    $validator->errors()->add('original_spending_id', 'A Transaction cannot link to itself.');
                 }
             }
 
@@ -126,7 +126,7 @@ class UpdateTransactionRequest extends FormRequest
                 ->exists();
 
             if (($kind !== TransactionKind::Spending && $hasActiveLinkedRefunds) || $hasLinkedRefundInAnotherCurrency) {
-                $validator->errors()->add('kind', 'Unlink active Refunds before changing this purchase kind or currency.');
+                $validator->errors()->add('kind', 'Unlink active Refunds before changing this spending kind or currency.');
             }
 
             $receiptBreakdown = $transaction->receiptBreakdown()->first();

@@ -23,7 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string $instrument_label
  * @property string|null $instrument_last_four
  * @property array<string, string> $reconciliation_values
- * @property int $movement_count
+ * @property-read int $movements_count
  * @property CarbonImmutable $confirmed_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -38,7 +38,6 @@ use Illuminate\Support\Carbon;
     'instrument_label',
     'instrument_last_four',
     'reconciliation_values',
-    'movement_count',
     'confirmed_at',
 ])]
 class StatementImport extends Model
@@ -66,7 +65,6 @@ class StatementImport extends Model
             'period_start' => 'immutable_date',
             'period_end' => 'immutable_date',
             'reconciliation_values' => 'array',
-            'movement_count' => 'integer',
             'confirmed_at' => 'immutable_datetime',
         ];
     }

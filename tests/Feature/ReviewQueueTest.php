@@ -23,7 +23,7 @@ test('the Review Queue presents an ordered sequence of Transaction and Line Item
     $category = Category::factory()->for($owner, 'owner')->create();
     $flaggedTransaction = Transaction::factory()
         ->for($owner, 'owner')
-        ->provisional([ReviewableTransactionField::MerchantDescription])
+        ->provisional([ReviewableTransactionField::Description])
         ->create([
             'occurred_on' => '2026-08-20',
             'category_id' => $category->id,
@@ -52,7 +52,7 @@ test('the Review Queue presents an ordered sequence of Transaction and Line Item
             ->where('queue.items.0.type', 'transaction')
             ->where('queue.items.0.transaction.id', $flaggedTransaction->id)
             ->where('queue.items.0.reasons.0.type', 'field')
-            ->where('queue.items.0.reasons.0.field.name', 'merchant_description')
+            ->where('queue.items.0.reasons.0.field.name', 'description')
             ->where('queue.items.1.type', 'line_item')
             ->where('queue.items.1.line_item.id', $lineItem->id)
             ->where('queue.items.1.reasons.0.type', 'category'));
@@ -63,11 +63,11 @@ test('assigning a Transaction Category saves and advances to the next Review Que
     $category = Category::factory()->for($owner, 'owner')->create();
     $current = Transaction::factory()->for($owner, 'owner')->create([
         'occurred_on' => '2026-08-20',
-        'merchant_description' => 'Current merchant',
+        'description' => 'Current merchant',
     ]);
     $next = Transaction::factory()->for($owner, 'owner')->create([
         'occurred_on' => '2026-08-19',
-        'merchant_description' => 'Next merchant',
+        'description' => 'Next merchant',
     ]);
 
     $this->actingAs($owner)
@@ -93,7 +93,7 @@ test('plain Transaction categorization does not require a normalizable merchant'
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create([
-        'merchant_description' => '!!!',
+        'description' => '!!!',
     ]);
 
     $this->actingAs($owner)
@@ -118,22 +118,22 @@ test('the owner can independently create a future Merchant Rule and bulk assign 
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Coffee']);
     $existingCategory = Category::factory()->for($owner, 'owner')->create(['name' => 'Owner choice']);
-    $current = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'merchant_description' => 'CAFÉ—Central!!!',
+    $current = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => 'CAFÉ—Central!!!',
     ]);
-    $matching = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'merchant_description' => " cafe\u{0301} central ",
+    $matching = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => " cafe\u{0301} central ",
     ]);
-    $ownerAssigned = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'merchant_description' => 'Café Central',
+    $ownerAssigned = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => 'Café Central',
         'category_id' => $existingCategory->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
     ]);
-    $nonMatching = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'merchant_description' => 'Different merchant',
+    $nonMatching = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => 'Different merchant',
     ]);
-    $unnormalizable = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'merchant_description' => '!!!',
+    $unnormalizable = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => '!!!',
     ]);
 
     $this->actingAs($owner)
@@ -179,8 +179,8 @@ test('the owner can independently create a future Merchant Rule and bulk assign 
 test('future Merchant Rule creation rejects an existing exact disabled scope without changing current work', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'merchant_description' => 'Scoped merchant',
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => 'Scoped merchant',
     ]);
     MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create([
         'merchant' => 'Scoped merchant',
@@ -206,11 +206,11 @@ test('future Merchant Rule creation rejects an existing exact disabled scope wit
 test('categorization rolls back started bulk assignments when Merchant Rule creation fails', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    $current = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'merchant_description' => 'Rollback merchant',
+    $current = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => 'Rollback merchant',
     ]);
-    $matching = Transaction::factory()->for($owner, 'owner')->purchase()->pen()->create([
-        'merchant_description' => 'rollback merchant',
+    $matching = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => 'rollback merchant',
     ]);
     MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create([
         'merchant' => 'Rollback merchant',
@@ -238,10 +238,10 @@ test('Review Queue categorization validates ownership and leaves all Transaction
     $owner = User::factory()->create();
     $otherOwner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create([
-        'merchant_description' => 'Atomic merchant',
+        'description' => 'Atomic merchant',
     ]);
     $matching = Transaction::factory()->for($owner, 'owner')->create([
-        'merchant_description' => 'Atomic merchant',
+        'description' => 'Atomic merchant',
     ]);
     $otherCategory = Category::factory()->for($otherOwner, 'owner')->create();
 
@@ -318,10 +318,10 @@ test('a confirmed Transaction with provisional fields remains in totals and appe
         amountMinor: 12345,
         currency: Currency::Usd,
         kind: TransactionKind::Spending,
-        merchantDescription: 'Neighborhood market',
+        description: 'Neighborhood market',
         provisionalFields: [
             ReviewableTransactionField::OccurredOn,
-            ReviewableTransactionField::MerchantDescription,
+            ReviewableTransactionField::Description,
         ],
     );
 
@@ -344,20 +344,20 @@ test('a confirmed Transaction with provisional fields remains in totals and appe
             ->where('transactions.0.confirmed_at', fn (mixed $confirmedAt) => is_string($confirmedAt))
             ->where('transactions.0.fields.0.name', 'occurred_on')
             ->where('transactions.0.fields.0.value', '2026-07-22')
-            ->where('transactions.0.fields.1.name', 'merchant_description')
+            ->where('transactions.0.fields.1.name', 'description')
             ->where('transactions.0.fields.1.value', 'Neighborhood market'));
 });
 
 test('the shared navigation count uses the Review Queue workload breakdown', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    Transaction::factory()->for($owner, 'owner')->purchase()->provisional([
+    Transaction::factory()->for($owner, 'owner')->spending()->provisional([
         ReviewableTransactionField::OccurredOn,
-        ReviewableTransactionField::MerchantDescription,
+        ReviewableTransactionField::Description,
     ])->create([
         'category_id' => $category->id,
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->create();
+    Transaction::factory()->for($owner, 'owner')->spending()->create();
 
     $this->actingAs($owner)
         ->get(route('review_queue.index'))
@@ -371,7 +371,7 @@ test('the shared navigation count uses the Review Queue workload breakdown', fun
 test('the Review Queue workload is aggregated once per request', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    Transaction::factory()->for($owner, 'owner')->purchase()->provisional([
+    Transaction::factory()->for($owner, 'owner')->spending()->provisional([
         ReviewableTransactionField::OccurredOn,
     ])->create([
         'category_id' => $category->id,
@@ -398,11 +398,11 @@ test('the Review Queue workload is aggregated once per request', function () {
 test('an Uncategorized Transaction remains in totals, reports in its system bucket, and enters the Review Queue', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
-    $uncategorized = Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    $uncategorized = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'amount_minor' => 10_000,
-        'merchant_description' => 'Needs a Category',
+        'description' => 'Needs a Category',
     ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'amount_minor' => 5_000,
         'category_id' => $category->id,
         'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
@@ -444,9 +444,9 @@ test('the owner can accept one provisional field and replace another value', fun
         amountMinor: 12345,
         currency: Currency::Usd,
         kind: TransactionKind::Spending,
-        merchantDescription: 'Neighborhood market',
+        description: 'Neighborhood market',
         provisionalFields: [
-            ReviewableTransactionField::MerchantDescription,
+            ReviewableTransactionField::Description,
             ReviewableTransactionField::AmountMinor,
         ],
     );
@@ -454,7 +454,7 @@ test('the owner can accept one provisional field and replace another value', fun
     $this->actingAs($owner)
         ->patch(route('review_queue.fields.update', [
             'transaction' => $transaction,
-            'field' => ReviewableTransactionField::MerchantDescription,
+            'field' => ReviewableTransactionField::Description,
         ]), ['resolution' => 'accept'])
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('review_queue.index'));
@@ -484,7 +484,7 @@ test('resolving the last flagged Transaction field advances to the next Review Q
     $category = Category::factory()->for($owner, 'owner')->create();
     $current = Transaction::factory()
         ->for($owner, 'owner')
-        ->provisional([ReviewableTransactionField::MerchantDescription])
+        ->provisional([ReviewableTransactionField::Description])
         ->create([
             'category_id' => $category->id,
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
@@ -494,7 +494,7 @@ test('resolving the last flagged Transaction field advances to the next Review Q
     $this->actingAs($owner)
         ->patch(route('review_queue.fields.update', [
             'transaction' => $current,
-            'field' => ReviewableTransactionField::MerchantDescription,
+            'field' => ReviewableTransactionField::Description,
         ]), [
             'resolution' => 'accept',
             'next_review_item' => "transaction:{$next->id}",
@@ -517,7 +517,7 @@ test('direct edits replace the current value for every reviewable Transaction fi
         amountMinor: 12345,
         currency: Currency::Usd,
         kind: TransactionKind::Spending,
-        merchantDescription: 'Provisional market',
+        description: 'Provisional market',
         provisionalFields: [$field],
     );
 
@@ -540,20 +540,20 @@ test('direct edits replace the current value for every reviewable Transaction fi
     'amount' => [ReviewableTransactionField::AmountMinor, '9000', '9000'],
     'currency' => [ReviewableTransactionField::Currency, 'PEN', 'PEN'],
     'kind' => [ReviewableTransactionField::Kind, 'refund', 'refund'],
-    'merchant or description' => [ReviewableTransactionField::MerchantDescription, 'Neighborhood market', 'Neighborhood market'],
+    'merchant or description' => [ReviewableTransactionField::Description, 'Neighborhood market', 'Neighborhood market'],
 ]);
 
 test('Review Queue routes require an authenticated owner', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
         ->for($owner, 'owner')
-        ->provisional([ReviewableTransactionField::MerchantDescription])
+        ->provisional([ReviewableTransactionField::Description])
         ->create();
 
     $this->get(route('review_queue.index'))->assertRedirect(route('login'));
     $this->patch(route('review_queue.fields.update', [
         'transaction' => $transaction,
-        'field' => ReviewableTransactionField::MerchantDescription,
+        'field' => ReviewableTransactionField::Description,
     ]), ['resolution' => 'accept'])->assertRedirect(route('login'));
 });
 
@@ -583,14 +583,14 @@ test('invalid field review input leaves the confirmed Transaction unchanged', fu
 
     expect($transaction->refresh()->provisional_fields)->toBe([$field->value]);
 })->with([
-    'missing corrected value' => [ReviewableTransactionField::MerchantDescription, ['value' => null], 'value'],
+    'missing corrected value' => [ReviewableTransactionField::Description, ['value' => null], 'value'],
     'invalid occurrence date' => [ReviewableTransactionField::OccurredOn, ['value' => '2026-02-30'], 'value'],
     'fractional amount' => [ReviewableTransactionField::AmountMinor, ['value' => '1.5'], 'value'],
     'unsupported currency' => [ReviewableTransactionField::Currency, ['value' => 'EUR'], 'value'],
     'unsupported kind' => [ReviewableTransactionField::Kind, ['value' => 'unsupported'], 'value'],
     'kind requiring full movement details' => [ReviewableTransactionField::Kind, ['value' => 'transfer'], 'value'],
-    'merchant above maximum length' => [ReviewableTransactionField::MerchantDescription, ['value' => str_repeat('a', 256)], 'value'],
-    'unsupported resolution' => [ReviewableTransactionField::MerchantDescription, ['resolution' => 'revise'], 'resolution'],
+    'merchant above maximum length' => [ReviewableTransactionField::Description, ['value' => str_repeat('a', 256)], 'value'],
+    'unsupported resolution' => [ReviewableTransactionField::Description, ['resolution' => 'revise'], 'resolution'],
 ]);
 
 test('the Review Queue exposes every unresolved Transaction field', function () {
@@ -598,7 +598,7 @@ test('the Review Queue exposes every unresolved Transaction field', function () 
     Transaction::factory()
         ->count(101)
         ->for($owner, 'owner')
-        ->provisional([ReviewableTransactionField::MerchantDescription])
+        ->provisional([ReviewableTransactionField::Description])
         ->create();
 
     $this->actingAs($owner)

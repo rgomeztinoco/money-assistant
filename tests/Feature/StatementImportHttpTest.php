@@ -175,10 +175,10 @@ test('semantic confirmation failures identify the affected preview row', functio
 test('the Statement Import index is owner scoped and exposes safe metadata', function () {
     $owner = User::factory()->create();
     $otherOwner = User::factory()->create();
-    StatementImport::factory()->for($owner, 'owner')->create([
+    $statementImport = StatementImport::factory()->for($owner, 'owner')->create([
         'instrument_label' => 'Safe account',
-        'movement_count' => 3,
     ]);
+    StatementMovement::factory()->count(3)->for($statementImport)->create();
     StatementImport::factory()->for($otherOwner, 'owner')->create();
 
     $response = $this->actingAs($owner)

@@ -14,7 +14,7 @@ final readonly class SpendingNotificationExtraction
         public int $amountMinor,
         public Currency $currency,
         public TransactionKind $kind,
-        public string $merchantDescription,
+        public string $description,
         public array $provisionalFields,
     ) {}
 }

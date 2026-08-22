@@ -7,7 +7,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the owner records every money movement meaning in plain language', function () {
+test('the owner records every money movement kind in plain language', function () {
     $owner = User::factory()->create();
     $this->actingAs($owner);
 
@@ -17,11 +17,11 @@ test('the owner records every money movement meaning in plain language', functio
         ->assertSee('No Transactions yet')
         ->press('Record Transaction')
         ->assertSee('The amount field is required.')
-        ->assertSee('The merchant description field is required.')
+        ->assertSee('The description field is required.')
         ->fill('Amount', '123.45')
         ->fill('Merchant or short description', 'Mortgage payment')
         ->select('Currency', 'PEN')
-        ->select('Movement meaning', 'spending')
+        ->select('Movement kind', 'spending')
         ->select('Money direction', 'debit')
         ->press('Record Transaction')
         ->assertSee('S/ 123.45')
@@ -29,21 +29,21 @@ test('the owner records every money movement meaning in plain language', functio
         ->assertSee('Spending')
         ->fill('Amount', '23.45')
         ->fill('Merchant or short description', 'Travel reimbursement')
-        ->select('Movement meaning', 'refund')
+        ->select('Movement kind', 'refund')
         ->select('Money direction', 'credit')
         ->press('Record Transaction')
         ->assertSee('Travel reimbursement')
         ->assertSee('Refund or reimbursement')
         ->fill('Amount', '98.76')
         ->fill('Merchant or short description', 'Monthly salary')
-        ->select('Movement meaning', 'income')
+        ->select('Movement kind', 'income')
         ->select('Income source', 'salary')
         ->press('Record Transaction')
         ->assertSee('Monthly salary')
         ->assertSee('Income')
         ->fill('Amount', '8.76')
         ->fill('Merchant or short description', 'Moved to savings')
-        ->select('Movement meaning', 'transfer')
+        ->select('Movement kind', 'transfer')
         ->select('Money direction', 'debit')
         ->select('Transfer purpose', 'savings')
         ->press('Record Transaction')
@@ -58,11 +58,11 @@ test('the owner can void and restore a Transaction explicitly from the ledger', 
     $owner = User::factory()->create();
     Transaction::factory()
         ->for($owner, 'owner')
-        ->purchase()
+        ->spending()
         ->usd()
         ->create([
             'amount_minor' => 12345,
-            'merchant_description' => 'Mistaken market entry',
+            'description' => 'Mistaken market entry',
         ]);
     $this->actingAs($owner);
 

@@ -16,7 +16,7 @@ final class ReadRecentTransactions
      *     kind: string,
      *     direction: string,
      *     transfer_purpose: string|null,
-     *     merchant_description: string
+     *     description: string
      * }>
      */
     public function handle(User $owner): array
@@ -32,7 +32,7 @@ final class ReadRecentTransactions
                 'kind',
                 'direction',
                 'transfer_purpose',
-                'merchant_description',
+                'description',
             ])
             ->orderByDesc('occurred_on')
             ->orderByDesc('id')
@@ -46,7 +46,7 @@ final class ReadRecentTransactions
                 'kind' => $transaction->kind->value,
                 'direction' => $transaction->direction->value,
                 'transfer_purpose' => $transaction->transfer_purpose?->value,
-                'merchant_description' => $transaction->merchant_description,
+                'description' => $transaction->description,
             ])
             ->all();
 

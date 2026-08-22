@@ -45,7 +45,7 @@ type ReviewTransaction = {
     amount_minor: string;
     currency: Currency;
     kind: TransactionKind;
-    merchant_description: string;
+    description: string;
     confirmed_at: string;
     category: { id: number; name: string } | null;
 };
@@ -64,7 +64,7 @@ type FieldReason = {
 type RefundRelationshipReason = {
     type: 'refund_relationship';
     name:
-        | 'cumulative_refunds_exceed_purchase'
+        | 'cumulative_refunds_exceed_spending'
         | 'receipt_breakdown_allocation_requires_review';
     label: string;
 };
@@ -135,7 +135,7 @@ function TransactionSummary({
                     Merchant or description
                 </p>
                 <p className="font-semibold break-words">
-                    {transaction.merchant_description}
+                    {transaction.description}
                 </p>
             </div>
             <div>
@@ -437,7 +437,7 @@ function FieldCorrectionInput({
                     )}
                 />
             );
-        case 'merchant_description':
+        case 'description':
             return (
                 <Input
                     id={id}
@@ -610,9 +610,9 @@ function TransactionDecision({
                             >
                                 <p className="text-sm text-muted-foreground">
                                     {reason.name ===
-                                    'cumulative_refunds_exceed_purchase'
-                                        ? 'Review the linked purchase and correct the Refund relationship before continuing.'
-                                        : 'This Refund needs an explicit allocation because its purchase has a Receipt Breakdown.'}
+                                    'cumulative_refunds_exceed_spending'
+                                        ? 'Review the linked spending and correct the Refund relationship before continuing.'
+                                        : 'This Refund needs an explicit allocation because its spending has a Receipt Breakdown.'}
                                 </p>
                                 <Button asChild variant="outline">
                                     <Link
@@ -748,7 +748,7 @@ function QueueOverview({ queue }: { queue: ReviewQueue }) {
                             </div>
                             <p className="font-semibold break-words">
                                 {item.type === 'transaction'
-                                    ? item.transaction.merchant_description
+                                    ? item.transaction.description
                                     : item.line_item.description}
                             </p>
                             <p className="text-sm text-muted-foreground">

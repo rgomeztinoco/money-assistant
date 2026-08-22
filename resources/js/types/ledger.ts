@@ -1,6 +1,6 @@
 export type Currency = 'USD' | 'PEN';
 export type TransactionKind = 'spending' | 'refund' | 'income' | 'transfer';
-export type TransactionDirection = 'debit' | 'credit';
+export type MovementDirection = 'debit' | 'credit';
 export type IncomeSource =
     'salary' | 'independent_work' | 'investments' | 'other';
 export type TransferPurpose = 'savings' | 'card_payment' | 'internal';
@@ -8,28 +8,24 @@ export type TransferPurpose = 'savings' | 'card_payment' | 'internal';
 export type MoneyMovementDetails =
     | {
           kind: 'spending' | 'refund';
-          direction: TransactionDirection;
+          direction: MovementDirection;
           income_source: null;
           transfer_purpose: null;
       }
     | {
           kind: 'income';
-          direction: TransactionDirection;
+          direction: MovementDirection;
           income_source: IncomeSource;
           transfer_purpose: null;
       }
     | {
           kind: 'transfer';
-          direction: TransactionDirection;
+          direction: MovementDirection;
           income_source: null;
           transfer_purpose: TransferPurpose;
       };
 export type ReviewableFieldName =
-    | 'occurred_on'
-    | 'amount_minor'
-    | 'currency'
-    | 'kind'
-    | 'merchant_description';
+    'occurred_on' | 'amount_minor' | 'currency' | 'kind' | 'description';
 
 export type ReviewField = {
     name: ReviewableFieldName;
@@ -60,7 +56,7 @@ export type RelatedTransaction = {
     amount_minor: string;
     currency: Currency;
     kind: TransactionKind;
-    merchant_description: string;
+    description: string;
     category_name: string | null;
 };
 
@@ -87,9 +83,9 @@ type SelectedTransactionBase = {
     occurred_on: string;
     amount_minor: string;
     currency: Currency;
-    merchant_description: string;
-    payment_instrument_label: string | null;
-    payment_instrument_last_four: string | null;
+    description: string;
+    instrument_label: string | null;
+    instrument_last_four: string | null;
     confirmed_at: string;
     voided_at: string | null;
     category: LedgerCategory | null;
@@ -98,12 +94,12 @@ type SelectedTransactionBase = {
         fields: ReviewField[];
         refund_relationship_reasons: Array<{
             name:
-                | 'cumulative_refunds_exceed_purchase'
+                | 'cumulative_refunds_exceed_spending'
                 | 'receipt_breakdown_allocation_requires_review';
             label: string;
         }>;
     };
-    original_purchase: RelatedTransaction | null;
+    original_spending: RelatedTransaction | null;
     linked_refunds: RelatedTransaction[];
     source_reference_count: number;
     source_references: Array<{
@@ -112,10 +108,10 @@ type SelectedTransactionBase = {
         created_at: string | null;
     }>;
     receipt_breakdown: ReceiptBreakdown | null;
-    purchase_options: Array<{
+    spending_options: Array<{
         id: number;
         occurred_on: string;
-        merchant_description: string;
+        description: string;
         currency: Currency;
     }>;
 };
@@ -128,10 +124,10 @@ type LedgerTransactionBase = {
     occurred_on: string;
     amount_minor: string;
     currency: Currency;
-    merchant_description: string;
-    original_purchase: {
+    description: string;
+    original_spending: {
         id: number;
-        merchant_description: string;
+        description: string;
     } | null;
     category: LedgerCategory | null;
     review_state: 'outstanding' | 'clear';

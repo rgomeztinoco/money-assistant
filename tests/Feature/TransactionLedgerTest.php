@@ -17,7 +17,7 @@ test('the owner can record a confirmed manual purchase in the ledger', function 
             'amount_minor' => 12345,
             'currency' => 'USD',
             'kind' => 'spending',
-            'merchant_description' => 'Neighborhood market',
+            'description' => 'Neighborhood market',
         ])
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('transactions.index'));
@@ -32,7 +32,7 @@ test('the owner can record a confirmed manual purchase in the ledger', function 
             ->where('transactions.0.amount_minor', '12345')
             ->where('transactions.0.currency', 'USD')
             ->where('transactions.0.kind', 'spending')
-            ->where('transactions.0.merchant_description', 'Neighborhood market')
+            ->where('transactions.0.description', 'Neighborhood market')
             ->where('transactions.0.confirmed_at', fn (mixed $confirmedAt) => is_string($confirmedAt)),
         );
 });
@@ -46,7 +46,7 @@ test('the owner records USD and PEN amounts in currency units without floating p
             'amount' => '12.50',
             'currency' => $currency,
             'kind' => 'spending',
-            'merchant_description' => "{$currency} purchase",
+            'description' => "{$currency} purchase",
         ])
         ->assertSessionHasNoErrors();
 
@@ -62,7 +62,7 @@ test('manual currency-unit amounts reject ambiguous or inexact values', function
             'amount' => $amount,
             'currency' => 'USD',
             'kind' => 'spending',
-            'merchant_description' => 'Invalid amount',
+            'description' => 'Invalid amount',
         ])
         ->assertSessionHasErrors('amount');
 
@@ -79,7 +79,7 @@ test('manual Transaction input cannot mix currency and minor units', function ()
             'amount_minor' => 1_250,
             'currency' => 'USD',
             'kind' => 'spending',
-            'merchant_description' => 'Ambiguous amount',
+            'description' => 'Ambiguous amount',
         ])
         ->assertSessionHasErrors(['amount', 'amount_minor']);
 
@@ -91,10 +91,10 @@ test('purchases and Refunds keep positive amounts and retain their kind in the l
     $this->actingAs($owner);
 
     foreach ([
-        ['amount_minor' => 12345, 'currency' => 'USD', 'kind' => 'spending', 'merchant_description' => 'USD purchase'],
-        ['amount_minor' => 2345, 'currency' => 'USD', 'kind' => 'refund', 'merchant_description' => 'USD Refund'],
-        ['amount_minor' => 9876, 'currency' => 'PEN', 'kind' => 'spending', 'merchant_description' => 'PEN purchase'],
-        ['amount_minor' => 876, 'currency' => 'PEN', 'kind' => 'refund', 'merchant_description' => 'PEN Refund'],
+        ['amount_minor' => 12345, 'currency' => 'USD', 'kind' => 'spending', 'description' => 'USD purchase'],
+        ['amount_minor' => 2345, 'currency' => 'USD', 'kind' => 'refund', 'description' => 'USD Refund'],
+        ['amount_minor' => 9876, 'currency' => 'PEN', 'kind' => 'spending', 'description' => 'PEN purchase'],
+        ['amount_minor' => 876, 'currency' => 'PEN', 'kind' => 'refund', 'description' => 'PEN Refund'],
     ] as $transaction) {
         $this->post(route('transactions.store'), [
             'occurred_on' => '2026-07-24',
@@ -118,8 +118,8 @@ test('ledger amounts remain exact beyond floating point safe integers', function
     $this->actingAs($owner);
 
     foreach ([
-        ['amount_minor' => '9007199254740992', 'kind' => 'spending', 'merchant_description' => 'Large purchase'],
-        ['amount_minor' => '1', 'kind' => 'refund', 'merchant_description' => 'Small Refund'],
+        ['amount_minor' => '9007199254740992', 'kind' => 'spending', 'description' => 'Large purchase'],
+        ['amount_minor' => '1', 'kind' => 'refund', 'description' => 'Small Refund'],
     ] as $transaction) {
         $this->post(route('transactions.store'), [
             'occurred_on' => '2026-07-24',
@@ -146,7 +146,7 @@ test('manual Transaction routes require an authenticated owner', function () {
         'amount_minor' => 12345,
         'currency' => 'USD',
         'kind' => 'spending',
-        'merchant_description' => 'Neighborhood market',
+        'description' => 'Neighborhood market',
     ])->assertRedirect(route('login'));
 });
 
@@ -159,7 +159,7 @@ test('the shared Ledger Action rejects invalid minor units', function (mixed $am
         amountMinor: $amountMinor,
         currency: Currency::Usd,
         kind: TransactionKind::Spending,
-        merchantDescription: 'Neighborhood market',
+        description: 'Neighborhood market',
     ))->toThrow(InvalidArgumentException::class);
 })->with([
     'floating point' => 1.5,
@@ -176,7 +176,7 @@ test('the shared Ledger Action rejects a blank merchant or description', functio
         amountMinor: 1,
         currency: Currency::Usd,
         kind: TransactionKind::Spending,
-        merchantDescription: '   ',
+        description: '   ',
     ))->toThrow(InvalidArgumentException::class);
 });
 
@@ -189,10 +189,10 @@ test('the shared Ledger Action normalizes the merchant or description', function
         amountMinor: 1,
         currency: Currency::Usd,
         kind: TransactionKind::Spending,
-        merchantDescription: '  Neighborhood   market  ',
+        description: '  Neighborhood   market  ',
     );
 
-    expect($transaction->merchant_description)->toBe('Neighborhood market');
+    expect($transaction->description)->toBe('Neighborhood market');
 });
 
 test('the ledger read path returns its first 25 Transactions with pagination metadata', function () {
@@ -223,7 +223,7 @@ test('the Transaction workflow rejects invalid values before persistence', funct
         'amount_minor' => 1,
         'currency' => 'USD',
         'kind' => 'spending',
-        'merchant_description' => 'Neighborhood market',
+        'description' => 'Neighborhood market',
     ];
     $payload[$invalidField] = $invalidValue;
 
@@ -249,7 +249,7 @@ test('invalid manual Transaction input is rejected without affecting the ledger'
         'amount_minor' => 12345,
         'currency' => 'USD',
         'kind' => 'spending',
-        'merchant_description' => 'Neighborhood market',
+        'description' => 'Neighborhood market',
     ];
     $payload[$invalidField] = $invalidValue;
 
@@ -274,6 +274,6 @@ test('invalid manual Transaction input is rejected without affecting the ledger'
     'amount above PostgreSQL bigint range' => ['amount_minor', '9223372036854775808'],
     'unsupported currency' => ['currency', 'EUR'],
     'unsupported kind' => ['kind', 'unsupported'],
-    'missing merchant or description' => ['merchant_description', ''],
-    'merchant or description above maximum length' => ['merchant_description', str_repeat('a', 256)],
+    'missing merchant or description' => ['description', ''],
+    'merchant or description above maximum length' => ['description', str_repeat('a', 256)],
 ]);

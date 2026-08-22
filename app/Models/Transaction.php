@@ -5,7 +5,7 @@ namespace App\Models;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\IncomeSource;
-use App\TransactionDirection;
+use App\MovementDirection;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Carbon\CarbonImmutable;
@@ -26,16 +26,16 @@ use Illuminate\Support\Carbon;
  * @property int $amount_minor
  * @property Currency $currency
  * @property TransactionKind $kind
- * @property TransactionDirection $direction
+ * @property MovementDirection $direction
  * @property IncomeSource|null $income_source
  * @property TransferPurpose|null $transfer_purpose
- * @property string $merchant_description
- * @property string|null $payment_instrument_label
- * @property string|null $payment_instrument_last_four
+ * @property string $description
+ * @property string|null $instrument_label
+ * @property string|null $instrument_last_four
  * @property CarbonImmutable $confirmed_at
  * @property list<string> $provisional_fields
  * @property CarbonImmutable|null $voided_at
- * @property int|null $original_purchase_id
+ * @property int|null $original_spending_id
  * @property list<string> $refund_relationship_review_reasons
  * @property int|null $category_id
  * @property CategoryAssignmentProvenance|null $category_assignment_provenance
@@ -55,13 +55,13 @@ use Illuminate\Support\Carbon;
     'direction',
     'income_source',
     'transfer_purpose',
-    'merchant_description',
-    'payment_instrument_label',
-    'payment_instrument_last_four',
+    'description',
+    'instrument_label',
+    'instrument_last_four',
     'confirmed_at',
     'provisional_fields',
     'voided_at',
-    'original_purchase_id',
+    'original_spending_id',
     'refund_relationship_review_reasons',
     'category_id',
     'category_assignment_provenance',
@@ -76,7 +76,6 @@ class Transaction extends Model
      * @var array<string, mixed>
      */
     protected $attributes = [
-        'direction' => 'debit',
         'provisional_fields' => '[]',
         'refund_relationship_review_reasons' => '[]',
     ];
@@ -106,9 +105,9 @@ class Transaction extends Model
     /**
      * @return BelongsTo<Transaction, $this>
      */
-    public function originalPurchase(): BelongsTo
+    public function originalSpending(): BelongsTo
     {
-        return $this->belongsTo(self::class, 'original_purchase_id');
+        return $this->belongsTo(self::class, 'original_spending_id');
     }
 
     /**
@@ -116,7 +115,7 @@ class Transaction extends Model
      */
     public function linkedRefunds(): HasMany
     {
-        return $this->hasMany(self::class, 'original_purchase_id');
+        return $this->hasMany(self::class, 'original_spending_id');
     }
 
     /**
@@ -180,7 +179,7 @@ class Transaction extends Model
             'amount_minor' => 'integer',
             'currency' => Currency::class,
             'kind' => TransactionKind::class,
-            'direction' => TransactionDirection::class,
+            'direction' => MovementDirection::class,
             'income_source' => IncomeSource::class,
             'transfer_purpose' => TransferPurpose::class,
             'confirmed_at' => 'immutable_datetime',

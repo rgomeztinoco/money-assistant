@@ -16,7 +16,8 @@ class AssignCategoryToLineItem
             $currentLineItem = LineItem::query()
                 ->whereKey($lineItem->getKey())
                 ->whereHas('receiptBreakdown', fn ($query) => $query
-                    ->whereBelongsTo($owner, 'owner'))
+                    ->whereHas('transaction', fn ($query) => $query
+                        ->whereBelongsTo($owner, 'owner')))
                 ->lockForUpdate()
                 ->firstOrFail();
 

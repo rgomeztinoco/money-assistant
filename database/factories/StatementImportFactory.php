@@ -29,7 +29,6 @@ class StatementImportFactory extends Factory
             'instrument_label' => 'Synthetic statement',
             'instrument_last_four' => fake()->numerify('####'),
             'reconciliation_values' => [],
-            'movement_count' => 0,
             'confirmed_at' => now(),
         ];
     }

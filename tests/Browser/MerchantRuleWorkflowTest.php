@@ -31,7 +31,7 @@ test('the owner creates a Merchant Rule that categorizes a future Transaction', 
         ->fill('Amount', '12.50')
         ->fill('Merchant or short description', "cafe\u{0301} central")
         ->select('Currency', 'PEN')
-        ->select('Movement meaning', 'spending')
+        ->select('Movement kind', 'spending')
         ->press('Record Transaction')
         ->assertSee('Transaction recorded.')
         ->assertNoJavaScriptErrors()

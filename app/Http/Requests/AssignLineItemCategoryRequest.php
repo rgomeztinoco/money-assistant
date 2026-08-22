@@ -19,7 +19,8 @@ class AssignLineItemCategoryRequest extends FormRequest
         return $this->user() !== null
             && $lineItem instanceof LineItem
             && $lineItem->receiptBreakdown()
-                ->whereBelongsTo($this->user(), 'owner')
+                ->whereHas('transaction', fn ($query) => $query
+                    ->whereBelongsTo($this->user(), 'owner'))
                 ->exists();
     }
 

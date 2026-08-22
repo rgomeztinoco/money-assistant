@@ -20,7 +20,7 @@ final class PreviewParserProfile
      *     amount_minor: string,
      *     currency: string,
      *     kind: string,
-     *     merchant_description: string,
+     *     description: string,
      *     provisional_fields: list<string>
      * }|array{purpose: 'ignore'}
      */
@@ -45,7 +45,7 @@ final class PreviewParserProfile
             'amount_minor' => (string) $extraction->amountMinor,
             'currency' => $extraction->currency->value,
             'kind' => $extraction->kind->value,
-            'merchant_description' => $extraction->merchantDescription,
+            'description' => $extraction->description,
             'provisional_fields' => array_map(
                 static fn ($field): string => $field->value,
                 $extraction->provisionalFields,

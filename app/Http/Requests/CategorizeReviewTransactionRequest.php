@@ -66,7 +66,7 @@ class CategorizeReviewTransactionRequest extends FormRequest
             }
 
             try {
-                $merchantKey = $merchantNormalizer->normalize($transaction->merchant_description);
+                $merchantKey = $merchantNormalizer->normalize($transaction->description);
             } catch (InvalidArgumentException $exception) {
                 $validator->errors()->add('merchant_context', $exception->getMessage());
 

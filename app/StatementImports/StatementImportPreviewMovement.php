@@ -3,8 +3,8 @@
 namespace App\StatementImports;
 
 use App\Currency;
+use App\MovementDirection;
 use App\StatementMovementClassification;
-use App\StatementMovementDirection;
 use Carbon\CarbonImmutable;
 
 final readonly class StatementImportPreviewMovement
@@ -17,7 +17,7 @@ final readonly class StatementImportPreviewMovement
         public string $description,
         public string $amountMinor,
         public Currency $currency,
-        public StatementMovementDirection $direction,
+        public MovementDirection $direction,
         public StatementMovementClassification $classification,
         public bool $contributesToSpending,
         public bool $canBeExcluded,

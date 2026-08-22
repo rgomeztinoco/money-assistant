@@ -68,8 +68,8 @@ class CountOutstandingReviews
         $lineItemCategoryCount = LineItem::query()
             ->whereNull('category_id')
             ->whereHas('receiptBreakdown', fn ($query) => $query
-                ->whereBelongsTo($owner, 'owner')
                 ->whereHas('transaction', fn ($query) => $query
+                    ->whereBelongsTo($owner, 'owner')
                     ->whereNull('voided_at')
                     ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])))
             ->count();

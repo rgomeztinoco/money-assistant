@@ -3,8 +3,8 @@
 namespace App\Models;
 
 use App\Currency;
+use App\MovementDirection;
 use App\StatementMovementClassification;
-use App\StatementMovementDirection;
 use Carbon\CarbonImmutable;
 use Database\Factories\StatementMovementFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -16,17 +16,15 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $statement_import_id
- * @property int|null $transaction_id
+ * @property int $transaction_id
  * @property string $source_row_id
  * @property int $position
  * @property CarbonImmutable $occurred_on
  * @property int $amount_minor
  * @property Currency $currency
- * @property StatementMovementDirection $direction
+ * @property MovementDirection $direction
  * @property StatementMovementClassification $classification
  * @property string $description
- * @property string $instrument_label
- * @property string|null $instrument_last_four
  * @property array<string, mixed> $source_metadata
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -42,8 +40,6 @@ use Illuminate\Support\Carbon;
     'direction',
     'classification',
     'description',
-    'instrument_label',
-    'instrument_last_four',
     'source_metadata',
 ])]
 class StatementMovement extends Model
@@ -71,7 +67,7 @@ class StatementMovement extends Model
             'occurred_on' => 'immutable_date',
             'amount_minor' => 'integer',
             'currency' => Currency::class,
-            'direction' => StatementMovementDirection::class,
+            'direction' => MovementDirection::class,
             'classification' => StatementMovementClassification::class,
             'source_metadata' => 'array',
         ];

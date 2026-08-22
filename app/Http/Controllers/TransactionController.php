@@ -13,7 +13,7 @@ use App\Http\Requests\StoreManualTransactionRequest;
 use App\Http\Requests\UpdateTransactionRequest;
 use App\IncomeSource;
 use App\Models\Transaction;
-use App\TransactionDirection;
+use App\MovementDirection;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Carbon\CarbonImmutable;
@@ -64,16 +64,16 @@ class TransactionController extends Controller
             amountMinor: $request->amountMinor(),
             currency: Currency::from($validated['currency']),
             kind: TransactionKind::from($validated['kind']),
-            direction: TransactionDirection::from($validated['direction']),
-            merchantDescription: $validated['merchant_description'],
+            direction: MovementDirection::from($validated['direction']),
+            description: $validated['description'],
             incomeSource: isset($validated['income_source'])
                 ? IncomeSource::from($validated['income_source'])
                 : null,
             transferPurpose: isset($validated['transfer_purpose'])
                 ? TransferPurpose::from($validated['transfer_purpose'])
                 : null,
-            paymentInstrumentLabel: $validated['payment_instrument_label'] ?? null,
-            paymentInstrumentLastFour: $validated['payment_instrument_last_four'] ?? null,
+            instrumentLabel: $validated['instrument_label'] ?? null,
+            instrumentLastFour: $validated['instrument_last_four'] ?? null,
         );
 
         Inertia::flash('toast', [
@@ -95,18 +95,18 @@ class TransactionController extends Controller
             amountMinor: $request->amountMinor(),
             currency: Currency::from($validated['currency']),
             kind: TransactionKind::from($validated['kind']),
-            direction: TransactionDirection::from($validated['direction']),
-            merchantDescription: $validated['merchant_description'],
+            direction: MovementDirection::from($validated['direction']),
+            description: $validated['description'],
             incomeSource: isset($validated['income_source'])
                 ? IncomeSource::from($validated['income_source'])
                 : null,
             transferPurpose: isset($validated['transfer_purpose'])
                 ? TransferPurpose::from($validated['transfer_purpose'])
                 : null,
-            paymentInstrumentLabel: $validated['payment_instrument_label'] ?? null,
-            paymentInstrumentLastFour: $validated['payment_instrument_last_four'] ?? null,
+            instrumentLabel: $validated['instrument_label'] ?? null,
+            instrumentLastFour: $validated['instrument_last_four'] ?? null,
             categoryId: isset($validated['category_id']) ? (int) $validated['category_id'] : null,
-            originalPurchaseId: isset($validated['original_purchase_id']) ? (int) $validated['original_purchase_id'] : null,
+            originalSpendingId: isset($validated['original_spending_id']) ? (int) $validated['original_spending_id'] : null,
             removeReceiptBreakdown: (bool) ($validated['remove_receipt_breakdown'] ?? false),
         );
 

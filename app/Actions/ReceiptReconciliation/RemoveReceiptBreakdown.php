@@ -19,7 +19,6 @@ final class RemoveReceiptBreakdown
                 ->firstOrFail();
 
             ReceiptBreakdown::query()
-                ->whereBelongsTo($owner, 'owner')
                 ->whereBelongsTo($currentTransaction)
                 ->lockForUpdate()
                 ->firstOrFail()

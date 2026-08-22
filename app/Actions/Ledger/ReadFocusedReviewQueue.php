@@ -10,7 +10,7 @@ use App\ReviewableTransactionField;
 use InvalidArgumentException;
 
 /**
- * @phpstan-type ReviewTransactionData array{id: int, occurred_on: string, amount_minor: string, currency: string, kind: string, merchant_description: string, confirmed_at: string, category: array{id: int, name: string}|null}
+ * @phpstan-type ReviewTransactionData array{id: int, occurred_on: string, amount_minor: string, currency: string, kind: string, description: string, confirmed_at: string, category: array{id: int, name: string}|null}
  * @phpstan-type CategoryReasonData array{type: 'category', label: string}
  * @phpstan-type ReviewFieldData array{name: string, label: string, value: string}
  * @phpstan-type FieldReasonData array{type: 'field', label: string, field: ReviewFieldData}
@@ -48,7 +48,7 @@ class ReadFocusedReviewQueue
                 'amount_minor',
                 'currency',
                 'kind',
-                'merchant_description',
+                'description',
                 'confirmed_at',
                 'provisional_fields',
                 'refund_relationship_review_reasons',
@@ -100,7 +100,7 @@ class ReadFocusedReviewQueue
             }
 
             if ($transactionReasons !== []) {
-                $normalizedMerchant = $this->normalizedMerchant($transaction->merchant_description);
+                $normalizedMerchant = $this->normalizedMerchant($transaction->description);
                 $items[] = [
                     'key' => 'transaction:'.$transaction->id,
                     'type' => 'transaction',
@@ -162,11 +162,11 @@ class ReadFocusedReviewQueue
             ->whereBelongsTo($owner, 'owner')
             ->whereNull('voided_at')
             ->whereCategoryRequiresReview()
-            ->get(['merchant_description']);
+            ->get(['description']);
         $counts = [];
 
         foreach ($uncategorizedTransactions as $transaction) {
-            $normalizedMerchant = $this->normalizedMerchant($transaction->merchant_description);
+            $normalizedMerchant = $this->normalizedMerchant($transaction->description);
 
             if ($normalizedMerchant !== null) {
                 $counts[$normalizedMerchant] = ($counts[$normalizedMerchant] ?? 0) + 1;
@@ -194,7 +194,7 @@ class ReadFocusedReviewQueue
             'amount_minor' => (string) $transaction->amount_minor,
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
-            'merchant_description' => $transaction->merchant_description,
+            'description' => $transaction->description,
             'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
             'category' => $transaction->category === null
                 ? null

@@ -51,9 +51,9 @@ use Illuminate\Support\Str;
  *     direction: string,
  *     income_source: string|null,
  *     transfer_purpose: string|null,
- *     merchant_description: string,
+ *     description: string,
  *     confirmed_at: string,
- *     original_purchase: array{id: int, merchant_description: string}|null,
+ *     original_spending: array{id: int, description: string}|null,
  *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
  *     review_state: string,
  *     review_field_count: int,
@@ -73,9 +73,9 @@ class ReadLedger
         'direction',
         'income_source',
         'transfer_purpose',
-        'merchant_description',
+        'description',
         'confirmed_at',
-        'original_purchase_id',
+        'original_spending_id',
         'category_id',
         'category_assignment_provenance',
         'merchant_rule_id',
@@ -110,7 +110,7 @@ class ReadLedger
             ->when($filters['void_state'] === 'voided', fn (Builder $query) => $query->whereNotNull('voided_at'))
             ->select([...self::TRANSACTION_COLUMNS, 'voided_at'])
             ->with([
-                'originalPurchase:id,merchant_description',
+                'originalSpending:id,description',
                 'category:id,name',
                 'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id',
             ])
@@ -157,9 +157,9 @@ class ReadLedger
      *     direction: string,
      *     income_source: string|null,
      *     transfer_purpose: string|null,
-     *     merchant_description: string,
+     *     description: string,
      *     confirmed_at: string,
-     *     original_purchase: array{id: int, merchant_description: string}|null,
+     *     original_spending: array{id: int, description: string}|null,
      *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
      *     review_state: string,
      *     review_field_count: int,
@@ -208,13 +208,13 @@ class ReadLedger
             'direction' => $transaction->direction->value,
             'income_source' => $transaction->income_source?->value,
             'transfer_purpose' => $transaction->transfer_purpose?->value,
-            'merchant_description' => $transaction->merchant_description,
+            'description' => $transaction->description,
             'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
-            'original_purchase' => $transaction->originalPurchase === null
+            'original_spending' => $transaction->originalSpending === null
                 ? null
                 : [
-                    'id' => $transaction->originalPurchase->id,
-                    'merchant_description' => $transaction->originalPurchase->merchant_description,
+                    'id' => $transaction->originalSpending->id,
+                    'description' => $transaction->originalSpending->description,
                 ],
             'category' => $category,
             'review_state' => $unresolvedCategoryCount > 0
@@ -257,7 +257,7 @@ class ReadLedger
     private function applyFilters(Builder $query, array $filters, ?array $categoryIds): Builder
     {
         if ($filters['search'] !== '') {
-            $query->where('merchant_description', 'ilike', '%'.$filters['search'].'%');
+            $query->where('description', 'ilike', '%'.$filters['search'].'%');
         }
 
         $query
@@ -268,10 +268,10 @@ class ReadLedger
             ->when($categoryIds !== null, fn (Builder $query) => $this->whereHasCategoryContribution($query, $categoryIds))
             ->when($filters['refund_relationship'] === 'linked', fn (Builder $query) => $query
                 ->where('kind', TransactionKind::Refund)
-                ->whereNotNull('original_purchase_id'))
+                ->whereNotNull('original_spending_id'))
             ->when($filters['refund_relationship'] === 'unlinked', fn (Builder $query) => $query
                 ->where('kind', TransactionKind::Refund)
-                ->whereNull('original_purchase_id'))
+                ->whereNull('original_spending_id'))
             ->when($filters['refund_relationship'] === 'not_applicable', fn (Builder $query) => $query
                 ->where('kind', '<>', TransactionKind::Refund));
 

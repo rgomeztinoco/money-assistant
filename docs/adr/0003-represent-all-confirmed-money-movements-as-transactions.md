@@ -2,7 +2,7 @@
 
 Status: Accepted.
 
-Every confirmed posted movement is represented by one Transaction with two independent facts: Movement Direction records whether money moved out or in, while financial meaning records Spending, Refund or reimbursement, Income, or Transfer. Statement confirmation links every actual Statement Movement to a Transaction and continues to exclude balances, limits, headings, and other informational values.
+Every confirmed posted movement is represented by one Transaction with two independent facts: Movement Direction records whether money moved out or in, while Transaction Kind records Spending, Refund or reimbursement, Income, or Transfer. Statement confirmation links every actual Statement Movement to a Transaction and continues to exclude balances, limits, headings, and other informational values.
 
 Period reporting keeps currencies separate and exposes three summaries: Net Spending is Spending minus Refunds and reimbursements; Income is separate; and Moved to Savings is outbound Savings Transfers minus inbound Savings Transfers. Card payments and ordinary internal Transfers affect none of these summaries. The model does not calculate net external cash flow.
 
