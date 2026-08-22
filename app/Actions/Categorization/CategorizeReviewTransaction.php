@@ -46,6 +46,12 @@ class CategorizeReviewTransaction
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            if (! $currentTransaction->kind->supportsCategory()) {
+                throw ValidationException::withMessages([
+                    'category_id' => 'Categories are available only for Spending and Refund Transactions.',
+                ]);
+            }
+
             if ($currentTransaction->category_id !== null) {
                 throw ValidationException::withMessages([
                     'category_id' => 'This Transaction already has a Category.',

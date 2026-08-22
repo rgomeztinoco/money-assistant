@@ -1,5 +1,29 @@
 export type Currency = 'USD' | 'PEN';
-export type TransactionKind = 'purchase' | 'refund';
+export type TransactionKind = 'spending' | 'refund' | 'income' | 'transfer';
+export type TransactionDirection = 'debit' | 'credit';
+export type IncomeSource =
+    'salary' | 'independent_work' | 'investments' | 'other';
+export type TransferPurpose = 'savings' | 'card_payment' | 'internal';
+
+export type MoneyMovementDetails =
+    | {
+          kind: 'spending' | 'refund';
+          direction: TransactionDirection;
+          income_source: null;
+          transfer_purpose: null;
+      }
+    | {
+          kind: 'income';
+          direction: TransactionDirection;
+          income_source: IncomeSource;
+          transfer_purpose: null;
+      }
+    | {
+          kind: 'transfer';
+          direction: TransactionDirection;
+          income_source: null;
+          transfer_purpose: TransferPurpose;
+      };
 export type ReviewableFieldName =
     | 'occurred_on'
     | 'amount_minor'
@@ -58,12 +82,11 @@ export type ReceiptBreakdown = {
     line_items: ReceiptLineItem[];
 };
 
-export type SelectedTransaction = {
+type SelectedTransactionBase = {
     id: number;
     occurred_on: string;
     amount_minor: string;
     currency: Currency;
-    kind: TransactionKind;
     merchant_description: string;
     payment_instrument_label: string | null;
     payment_instrument_last_four: string | null;
@@ -96,6 +119,28 @@ export type SelectedTransaction = {
         currency: Currency;
     }>;
 };
+
+export type SelectedTransaction = SelectedTransactionBase &
+    MoneyMovementDetails;
+
+type LedgerTransactionBase = {
+    id: number;
+    occurred_on: string;
+    amount_minor: string;
+    currency: Currency;
+    merchant_description: string;
+    original_purchase: {
+        id: number;
+        merchant_description: string;
+    } | null;
+    category: LedgerCategory | null;
+    review_state: 'outstanding' | 'clear';
+    review_field_count: number;
+    refund_relationship_review_count: number;
+    voided_at: string | null;
+};
+
+export type LedgerTransaction = LedgerTransactionBase & MoneyMovementDetails;
 
 export type LedgerFilters = {
     search: string;

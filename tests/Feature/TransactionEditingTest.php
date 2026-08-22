@@ -146,7 +146,7 @@ test('editing a purchase recalculates its Refund review state from current amoun
             'occurred_on' => $purchase->occurred_on->toDateString(),
             'amount_minor' => 15_000,
             'currency' => 'USD',
-            'kind' => 'purchase',
+            'kind' => 'spending',
             'merchant_description' => $purchase->merchant_description,
             'category_id' => $category->id,
         ])
@@ -225,7 +225,7 @@ test('a Transaction cannot be edited without the authenticated owner', function 
         'occurred_on' => '2026-08-10',
         'amount_minor' => 2_500,
         'currency' => 'PEN',
-        'kind' => 'purchase',
+        'kind' => 'spending',
         'merchant_description' => 'Not allowed',
     ])
         ->assertRedirect(route('login'));

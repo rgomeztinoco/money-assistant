@@ -14,6 +14,8 @@ final class ReadRecentTransactions
      *     amount_minor: string,
      *     currency: string,
      *     kind: string,
+     *     direction: string,
+     *     transfer_purpose: string|null,
      *     merchant_description: string
      * }>
      */
@@ -28,6 +30,8 @@ final class ReadRecentTransactions
                 'amount_minor',
                 'currency',
                 'kind',
+                'direction',
+                'transfer_purpose',
                 'merchant_description',
             ])
             ->orderByDesc('occurred_on')
@@ -40,6 +44,8 @@ final class ReadRecentTransactions
                 'amount_minor' => (string) $transaction->amount_minor,
                 'currency' => $transaction->currency->value,
                 'kind' => $transaction->kind->value,
+                'direction' => $transaction->direction->value,
+                'transfer_purpose' => $transaction->transfer_purpose?->value,
                 'merchant_description' => $transaction->merchant_description,
             ])
             ->all();

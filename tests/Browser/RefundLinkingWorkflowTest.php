@@ -33,7 +33,7 @@ test('the owner links a Refund and sees an excessive relationship in the Review 
 
     $page
         ->press('Inspect')
-        ->select('Edit original purchase', (string) $purchase->id)
+        ->select('Edit original Spending Transaction', (string) $purchase->id)
         ->press('Save Transaction')
         ->assertSee('Transaction updated.');
 

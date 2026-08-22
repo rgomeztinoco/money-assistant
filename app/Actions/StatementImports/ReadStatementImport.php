@@ -42,7 +42,10 @@ final class ReadStatementImport
                         'classification',
                         'description',
                     ])
-                    ->with(['transaction:id,kind,voided_at,category_id', 'transaction.category:id,name'])
+                    ->with([
+                        'transaction:id,kind,income_source,transfer_purpose,voided_at,category_id',
+                        'transaction.category:id,name',
+                    ])
                     ->orderBy('position'),
             ])
             ->firstOrFail();
@@ -72,6 +75,8 @@ final class ReadStatementImport
                     'transaction' => $movement->transaction === null ? null : [
                         'id' => $movement->transaction->id,
                         'kind' => $movement->transaction->kind->value,
+                        'income_source' => $movement->transaction->income_source?->value,
+                        'transfer_purpose' => $movement->transaction->transfer_purpose?->value,
                         'voided_at' => $movement->transaction->voided_at?->toIso8601String(),
                         'category' => $movement->transaction->category === null ? null : [
                             'id' => $movement->transaction->category->id,

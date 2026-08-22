@@ -5,6 +5,7 @@ namespace App\Actions\Ledger;
 use App\Models\LineItem;
 use App\Models\Transaction;
 use App\Models\User;
+use App\TransactionKind;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -38,6 +39,7 @@ class CountOutstandingReviews
             ->whereNull('voided_at')
             ->select([
                 'transactions.category_id',
+                'transactions.kind',
                 'transactions.provisional_fields',
                 'transactions.refund_relationship_review_reasons',
             ])
@@ -55,7 +57,10 @@ class CountOutstandingReviews
          */
         $transactionCounts = DB::query()
             ->fromSub($reviewableTransactions, 'reviewable_transactions')
-            ->selectRaw('COUNT(*) FILTER (WHERE category_id IS NULL AND NOT receipt_has_line_items) AS category_count')
+            ->selectRaw(
+                'COUNT(*) FILTER (WHERE kind IN (?, ?) AND category_id IS NULL AND NOT receipt_has_line_items) AS category_count',
+                [TransactionKind::Spending->value, TransactionKind::Refund->value],
+            )
             ->selectRaw('COALESCE(SUM(jsonb_array_length(provisional_fields)), 0) AS field_count')
             ->selectRaw('COALESCE(SUM(jsonb_array_length(refund_relationship_review_reasons)), 0) AS refund_relationship_count')
             ->firstOrFail();
@@ -64,7 +69,9 @@ class CountOutstandingReviews
             ->whereNull('category_id')
             ->whereHas('receiptBreakdown', fn ($query) => $query
                 ->whereBelongsTo($owner, 'owner')
-                ->whereHas('transaction', fn ($query) => $query->whereNull('voided_at')))
+                ->whereHas('transaction', fn ($query) => $query
+                    ->whereNull('voided_at')
+                    ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])))
             ->count();
 
         return [

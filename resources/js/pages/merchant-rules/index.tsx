@@ -75,7 +75,7 @@ function RuleFields({
                     defaultValue={rule?.transaction_kind ?? ''}
                     options={[
                         { value: '', label: 'Any kind' },
-                        { value: 'purchase', label: 'Purchase' },
+                        { value: 'spending', label: 'Spending' },
                         { value: 'refund', label: 'Refund' },
                     ]}
                 />

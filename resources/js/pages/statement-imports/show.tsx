@@ -10,12 +10,18 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import {
+    incomeSourceLabel,
+    movementKindLabel,
+    transferPurposeLabel,
+} from '@/lib/money-movement';
 import { statementMovementClassificationLabel } from '@/lib/statement-movement-classification';
 import { index, show } from '@/routes/statement_imports';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type {
     Currency,
     FinancialStatementFormat,
+    MoneyMovementDetails,
     StatementClassification,
     StatementDirection,
 } from '@/types';
@@ -33,6 +39,12 @@ type Summary = Record<
         net_savings_minor: string;
     }
 >;
+
+type LinkedTransaction = {
+    id: number;
+    voided_at: string | null;
+    category: { id: number; name: string } | null;
+} & MoneyMovementDetails;
 
 type StatementImportDetail = {
     id: number;
@@ -55,12 +67,7 @@ type StatementImportDetail = {
         direction: StatementDirection;
         classification: StatementClassification;
         description: string;
-        transaction: {
-            id: number;
-            kind: 'purchase' | 'refund';
-            voided_at: string | null;
-            category: { id: number; name: string } | null;
-        } | null;
+        transaction: LinkedTransaction | null;
     }>;
 };
 
@@ -78,6 +85,18 @@ const summaryCurrencies = ['PEN', 'USD'] satisfies Currency[];
 
 function reconciliationCurrency(key: string): Currency {
     return key.includes('_usd_') ? 'USD' : 'PEN';
+}
+
+function transactionTaxonomy(transaction: LinkedTransaction): string {
+    switch (transaction.kind) {
+        case 'spending':
+        case 'refund':
+            return transaction.category?.name ?? 'Uncategorized';
+        case 'income':
+            return incomeSourceLabel(transaction.income_source);
+        case 'transfer':
+            return transferPurposeLabel(transaction.transfer_purpose);
+    }
 }
 
 export default function StatementImportShow({
@@ -268,7 +287,9 @@ export default function StatementImportShow({
                                                 {movement.transaction.voided_at
                                                     ? 'Voided '
                                                     : ''}
-                                                {movement.transaction.kind}
+                                                {movementKindLabel(
+                                                    movement.transaction.kind,
+                                                )}
                                                 <ExternalLink className="size-3" />
                                             </Link>
                                         ) : (
@@ -278,8 +299,9 @@ export default function StatementImportShow({
                                         )}
                                         {movement.transaction && (
                                             <span className="text-xs text-muted-foreground">
-                                                {movement.transaction.category
-                                                    ?.name ?? 'Uncategorized'}
+                                                {transactionTaxonomy(
+                                                    movement.transaction,
+                                                )}
                                             </span>
                                         )}
                                     </div>

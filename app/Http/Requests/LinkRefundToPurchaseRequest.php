@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Transaction;
+use App\TransactionKind;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -33,7 +34,7 @@ class LinkRefundToPurchaseRequest extends FormRequest
                 'integer',
                 Rule::exists((new Transaction)->getTable(), 'id')
                     ->where('user_id', $this->user()?->getKey())
-                    ->where('kind', 'purchase')
+                    ->where('kind', TransactionKind::Spending->value)
                     ->where(
                         'currency',
                         $refund instanceof Transaction

@@ -52,7 +52,7 @@ type ParserProfileTransactionPreview = {
     occurred_on: string;
     amount_minor: string;
     currency: 'USD' | 'PEN';
-    kind: 'purchase' | 'refund';
+    kind: 'spending' | 'refund';
     merchant_description: string;
     provisional_fields: string[];
 };
@@ -459,7 +459,7 @@ export default function CreateParserProfile({
                                             options={[
                                                 {
                                                     value: 'fixed_purchase',
-                                                    label: 'Always purchase',
+                                                    label: 'Always spending',
                                                 },
                                                 {
                                                     value: 'fixed_refund',
@@ -570,8 +570,8 @@ export default function CreateParserProfile({
                                         <CandidateValue
                                             label="Kind"
                                             value={
-                                                preview.kind === 'purchase'
-                                                    ? 'Purchase'
+                                                preview.kind === 'spending'
+                                                    ? 'Spending'
                                                     : 'Refund'
                                             }
                                         />

@@ -34,7 +34,20 @@ import {
     formatMinorUnits,
     minorUnitsToCurrencyUnits,
 } from '@/lib/format-minor-units';
-import type { CategoryOption, SelectedTransaction } from '@/types';
+import {
+    incomeSourceOptions,
+    movementDescription,
+    movementDirectionOptions,
+    movementKindFromValue,
+    movementKindOptions,
+    movementSupportsCategory,
+    transferPurposeOptions,
+} from '@/lib/money-movement';
+import type {
+    CategoryOption,
+    SelectedTransaction,
+    TransactionKind,
+} from '@/types';
 
 type EditableLineItem = {
     clientId: string;
@@ -408,6 +421,8 @@ function TransactionEditForm({
     categoryOptions: CategoryOption[];
     nextReviewItem?: string;
 }) {
+    const [kind, setKind] = useState<TransactionKind>(transaction.kind);
+
     return (
         <Form
             key={transaction.id}
@@ -479,19 +494,74 @@ function TransactionEditForm({
                             <Label
                                 htmlFor={`transaction-${transaction.id}-kind`}
                             >
-                                Edit Transaction kind
+                                Edit movement meaning
                             </Label>
                             <NativeSelect
                                 id={`transaction-${transaction.id}-kind`}
                                 name="kind"
-                                defaultValue={transaction.kind}
-                                options={[
-                                    { value: 'purchase', label: 'Purchase' },
-                                    { value: 'refund', label: 'Refund' },
-                                ]}
+                                value={kind}
+                                onChange={(event) =>
+                                    setKind(
+                                        movementKindFromValue(
+                                            event.target.value,
+                                        ),
+                                    )
+                                }
+                                options={movementKindOptions}
                             />
                             <InputError message={errors.kind} />
                         </div>
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-direction`}
+                            >
+                                Edit money direction
+                            </Label>
+                            <NativeSelect
+                                id={`transaction-${transaction.id}-direction`}
+                                name="direction"
+                                defaultValue={transaction.direction}
+                                options={movementDirectionOptions}
+                            />
+                            <InputError message={errors.direction} />
+                        </div>
+                        {kind === 'income' && (
+                            <div className="grid gap-2">
+                                <Label
+                                    htmlFor={`transaction-${transaction.id}-income-source`}
+                                >
+                                    Edit income source
+                                </Label>
+                                <NativeSelect
+                                    id={`transaction-${transaction.id}-income-source`}
+                                    name="income_source"
+                                    defaultValue={
+                                        transaction.income_source ?? 'other'
+                                    }
+                                    options={incomeSourceOptions}
+                                />
+                                <InputError message={errors.income_source} />
+                            </div>
+                        )}
+                        {kind === 'transfer' && (
+                            <div className="grid gap-2">
+                                <Label
+                                    htmlFor={`transaction-${transaction.id}-transfer-purpose`}
+                                >
+                                    Edit transfer purpose
+                                </Label>
+                                <NativeSelect
+                                    id={`transaction-${transaction.id}-transfer-purpose`}
+                                    name="transfer_purpose"
+                                    defaultValue={
+                                        transaction.transfer_purpose ??
+                                        'internal'
+                                    }
+                                    options={transferPurposeOptions}
+                                />
+                                <InputError message={errors.transfer_purpose} />
+                            </div>
+                        )}
                     </div>
 
                     <div className="grid gap-2">
@@ -552,7 +622,7 @@ function TransactionEditForm({
                         </div>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    {movementSupportsCategory(kind) && (
                         <div className="grid gap-2">
                             <Label
                                 htmlFor={`transaction-${transaction.id}-category`}
@@ -575,11 +645,14 @@ function TransactionEditForm({
                             />
                             <InputError message={errors.category_id} />
                         </div>
+                    )}
+
+                    {kind === 'refund' && (
                         <div className="grid gap-2">
                             <Label
                                 htmlFor={`transaction-${transaction.id}-purchase`}
                             >
-                                Edit original purchase
+                                Edit original Spending Transaction
                             </Label>
                             <NativeSelect
                                 id={`transaction-${transaction.id}-purchase`}
@@ -589,7 +662,10 @@ function TransactionEditForm({
                                     ''
                                 }
                                 options={[
-                                    { value: '', label: 'No Refund link' },
+                                    {
+                                        value: '',
+                                        label: 'No reimbursement link',
+                                    },
                                     ...transaction.purchase_options.map(
                                         (purchase) => ({
                                             value: purchase.id.toString(),
@@ -600,7 +676,7 @@ function TransactionEditForm({
                             />
                             <InputError message={errors.original_purchase_id} />
                         </div>
-                    </div>
+                    )}
 
                     {transaction.review.fields.length > 0 && (
                         <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
@@ -609,33 +685,36 @@ function TransactionEditForm({
                         </p>
                     )}
 
-                    {transaction.receipt_breakdown !== null && (
-                        <div className="flex items-start gap-2 rounded-md border p-3">
-                            <input
-                                id={`transaction-${transaction.id}-remove-breakdown`}
-                                name="remove_receipt_breakdown"
-                                type="checkbox"
-                                value="1"
-                                className="mt-0.5 size-4 rounded border-input"
-                            />
-                            <div className="grid gap-1">
-                                <Label
-                                    htmlFor={`transaction-${transaction.id}-remove-breakdown`}
-                                >
-                                    Remove Receipt Breakdown if the amount
-                                    changes
-                                </Label>
-                                <p className="text-xs text-muted-foreground">
-                                    This explicitly removes the current Line
-                                    Items because they would no longer
-                                    reconcile.
-                                </p>
-                                <InputError
-                                    message={errors.remove_receipt_breakdown}
+                    {movementSupportsCategory(kind) &&
+                        transaction.receipt_breakdown !== null && (
+                            <div className="flex items-start gap-2 rounded-md border p-3">
+                                <input
+                                    id={`transaction-${transaction.id}-remove-breakdown`}
+                                    name="remove_receipt_breakdown"
+                                    type="checkbox"
+                                    value="1"
+                                    className="mt-0.5 size-4 rounded border-input"
                                 />
+                                <div className="grid gap-1">
+                                    <Label
+                                        htmlFor={`transaction-${transaction.id}-remove-breakdown`}
+                                    >
+                                        Remove Receipt Breakdown if the amount
+                                        changes
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        This explicitly removes the current Line
+                                        Items because they would no longer
+                                        reconcile.
+                                    </p>
+                                    <InputError
+                                        message={
+                                            errors.remove_receipt_breakdown
+                                        }
+                                    />
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
                     <Button type="submit" disabled={processing}>
                         {processing && <Spinner />}
@@ -730,28 +809,77 @@ export function TransactionInspector({
                                 </div>
                                 <div>
                                     <dt className="text-muted-foreground">
-                                        Kind
+                                        Meaning
                                     </dt>
                                     <dd className="font-medium">
-                                        {transaction.kind === 'refund'
-                                            ? 'Refund'
-                                            : 'Purchase'}
+                                        {movementDescription({
+                                            kind: transaction.kind,
+                                            transferPurpose:
+                                                transaction.transfer_purpose,
+                                        })}
                                     </dd>
                                 </div>
                                 <div>
                                     <dt className="text-muted-foreground">
-                                        Category
+                                        Direction
                                     </dt>
                                     <dd className="font-medium">
-                                        {transaction.category?.name ??
-                                            'Uncategorized'}
+                                        {transaction.direction === 'debit'
+                                            ? 'Money out'
+                                            : 'Money in'}
                                     </dd>
                                 </div>
+                                {movementSupportsCategory(transaction.kind) && (
+                                    <div>
+                                        <dt className="text-muted-foreground">
+                                            Category
+                                        </dt>
+                                        <dd className="font-medium">
+                                            {transaction.category?.name ??
+                                                'Uncategorized'}
+                                        </dd>
+                                    </div>
+                                )}
+                                {transaction.kind === 'income' && (
+                                    <div>
+                                        <dt className="text-muted-foreground">
+                                            Income Source
+                                        </dt>
+                                        <dd className="font-medium">
+                                            {incomeSourceOptions.find(
+                                                (option) =>
+                                                    option.value ===
+                                                    transaction.income_source,
+                                            )?.label ?? 'Other income'}
+                                        </dd>
+                                    </div>
+                                )}
+                                {transaction.kind === 'transfer' && (
+                                    <div>
+                                        <dt className="text-muted-foreground">
+                                            Transfer Purpose
+                                        </dt>
+                                        <dd className="font-medium">
+                                            {transferPurposeOptions.find(
+                                                (option) =>
+                                                    option.value ===
+                                                    transaction.transfer_purpose,
+                                            )?.label ?? 'Other transfer'}
+                                        </dd>
+                                    </div>
+                                )}
                             </dl>
                             <p className="text-xs text-muted-foreground">
                                 {transaction.voided_at
-                                    ? 'Excluded from spending totals while Voided.'
-                                    : 'Included in spending totals.'}{' '}
+                                    ? 'Excluded from all period summaries while Voided.'
+                                    : movementSupportsCategory(transaction.kind)
+                                      ? 'Included in Net Spending.'
+                                      : transaction.kind === 'income'
+                                        ? 'Included in Income.'
+                                        : transaction.transfer_purpose ===
+                                            'savings'
+                                          ? 'Included in Moved to Savings.'
+                                          : 'Excluded from spending and income summaries.'}{' '}
                                 Confirmed{' '}
                                 {transaction.confirmed_at.slice(0, 10)}.
                             </p>
@@ -762,17 +890,20 @@ export function TransactionInspector({
                                 Edit current Transaction
                             </h2>
                             <TransactionEditForm
+                                key={transaction.id}
                                 transaction={transaction}
                                 categoryOptions={categoryOptions}
                                 nextReviewItem={nextReviewItem}
                             />
                         </section>
 
-                        <ReceiptBreakdownSection
-                            key={`${transaction.currency}-${transaction.amount_minor}-${transaction.receipt_breakdown?.id ?? 'none'}-${transaction.receipt_breakdown?.line_items.map((lineItem) => lineItem.id).join('-') ?? ''}`}
-                            transaction={transaction}
-                            categoryOptions={categoryOptions}
-                        />
+                        {movementSupportsCategory(transaction.kind) && (
+                            <ReceiptBreakdownSection
+                                key={`${transaction.currency}-${transaction.amount_minor}-${transaction.receipt_breakdown?.id ?? 'none'}-${transaction.receipt_breakdown?.line_items.map((lineItem) => lineItem.id).join('-') ?? ''}`}
+                                transaction={transaction}
+                                categoryOptions={categoryOptions}
+                            />
+                        )}
 
                         {transaction.review.category && (
                             <section className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/20">

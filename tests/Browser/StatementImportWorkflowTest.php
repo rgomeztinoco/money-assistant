@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Category;
 use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\Transaction;
@@ -51,7 +50,7 @@ test('the owner selects a statement once resolves exceptions and revisits the co
 
         $page->select(
             'select[aria-label="Classification for Mercado Pago"]',
-            'already_recorded',
+            'transfer',
         );
         $page
             ->assertSee('0 unresolved')
@@ -64,7 +63,7 @@ test('the owner selects a statement once resolves exceptions and revisits the co
             ->assertSee('Source reconciliation')
             ->assertSee('payment total usd')
             ->assertSee('Mercado Pago')
-            ->assertSee('Already recorded');
+            ->assertSee('Transfer or payment');
 
         $page->resize(390, 844);
         expect($page->script("document.querySelector('[data-test=statement-movements]').scrollWidth <= document.querySelector('[data-test=statement-movements]').clientWidth"))
@@ -82,8 +81,8 @@ test('the owner selects a statement once resolves exceptions and revisits the co
 
         expect(StatementImport::query()->count())->toBe(1)
             ->and(StatementMovement::query()->count())->toBe(6)
-            ->and(StatementMovement::query()->whereNull('transaction_id')->count())->toBe(2)
-            ->and(Transaction::query()->count())->toBe(4);
+            ->and(StatementMovement::query()->whereNull('transaction_id')->count())->toBe(0)
+            ->and(Transaction::query()->count())->toBe(6);
     } finally {
         $server->stop();
     }
@@ -91,7 +90,6 @@ test('the owner selects a statement once resolves exceptions and revisits the co
 
 test('BCP WARDA rows preview and confirm as Savings', function () {
     $owner = User::factory()->create();
-    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'Savings']);
     $pdf = SyntheticPdf::fromText((string) file_get_contents(
         base_path('tests/Fixtures/Statements/bcp.txt'),
     ));
@@ -109,14 +107,13 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
         $page
             ->press('Preview statement')
             ->assertSee('BCP')
-            ->assertSee('Category for Savings movements');
+            ->assertDontSee('Category for Savings movements');
 
-        expect($page->value('#movement-0-classification'))->toBe('savings')
-            ->and($page->value('#savings-category'))->toBe((string) $savings->id);
+        expect($page->value('#movement-0-classification'))->toBe('savings');
 
         $page->select(
             'select[aria-label="Classification for DEPOSITO"]',
-            'already_recorded',
+            'transfer',
         );
         $page
             ->press('Confirm Statement Import')
@@ -124,12 +121,12 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
             ->assertSee('Savings deposits')
             ->assertSee('Savings withdrawals')
             ->assertSee('Net savings')
-            ->assertSee('Savings')
             ->assertNoJavaScriptErrors()
             ->assertNoConsoleLogs();
 
         expect(StatementMovement::query()->where('classification', 'savings')->count())->toBe(2)
-            ->and(Transaction::query()->whereBelongsTo($savings, 'category')->count())->toBe(2);
+            ->and(Transaction::query()->where('kind', 'transfer')->where('transfer_purpose', 'savings')->count())->toBe(2)
+            ->and(Transaction::query()->whereNotNull('category_id')->doesntExist())->toBeTrue();
     } finally {
         $server->stop();
     }

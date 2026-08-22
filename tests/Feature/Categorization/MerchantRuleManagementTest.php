@@ -21,7 +21,7 @@ test('the owner can view and create an exact Merchant Rule', function () {
     $this->post(route('merchant_rules.store'), [
         'merchant' => '  CAFÉ—Central!!!  ',
         'category_id' => $category->id,
-        'transaction_kind' => 'purchase',
+        'transaction_kind' => 'spending',
         'currency' => 'PEN',
         'enabled' => true,
     ])->assertRedirect(route('merchant_rules.index'))
@@ -108,7 +108,7 @@ test('the complete normalized merchant kind and currency scope is unique', funct
     $this->post(route('merchant_rules.store'), [
         'merchant' => 'Café Central',
         'category_id' => $category->id,
-        'transaction_kind' => 'purchase',
+        'transaction_kind' => 'spending',
         'currency' => 'PEN',
         'enabled' => true,
     ])->assertSessionHasNoErrors();
@@ -116,7 +116,7 @@ test('the complete normalized merchant kind and currency scope is unique', funct
     $this->post(route('merchant_rules.store'), [
         'merchant' => "CAFE\u{0301}---CENTRAL",
         'category_id' => $category->id,
-        'transaction_kind' => 'purchase',
+        'transaction_kind' => 'spending',
         'currency' => 'PEN',
         'enabled' => false,
     ])->assertSessionHasErrors('merchant');
@@ -144,7 +144,7 @@ test('overlapping scopes cannot be enabled at the same time', function () {
     $scopedRule = MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create([
         'merchant' => 'Overlap Merchant',
         'merchant_key' => 'overlap merchant',
-        'transaction_kind' => 'purchase',
+        'transaction_kind' => 'spending',
         'currency' => 'PEN',
     ]);
 
@@ -152,7 +152,7 @@ test('overlapping scopes cannot be enabled at the same time', function () {
         ->patch(route('merchant_rules.update', $scopedRule), [
             'merchant' => 'Overlap Merchant',
             'category_id' => $category->id,
-            'transaction_kind' => 'purchase',
+            'transaction_kind' => 'spending',
             'currency' => 'PEN',
             'enabled' => true,
         ])->assertSessionHasErrors('enabled');

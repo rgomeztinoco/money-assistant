@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\StatementImports\ReadStatementImport;
 use App\Actions\StatementImports\ReadStatementImports;
 use App\Actions\StatementImports\StatementImportWorkflow;
@@ -21,7 +20,6 @@ class StatementImportController extends Controller
     public function __construct(
         private ReadStatementImports $readStatementImports,
         private ReadStatementImport $readStatementImport,
-        private ReadCategoryTaxonomy $readCategoryTaxonomy,
         private StatementImportWorkflow $statementImportWorkflow,
     ) {}
 
@@ -34,12 +32,7 @@ class StatementImportController extends Controller
 
     public function create(Request $request): Response
     {
-        $owner = $request->user();
-
-        return Inertia::render('statement-imports/create', [
-            'category_options' => $this->readCategoryTaxonomy->activeOptions($owner),
-            'suggested_savings_category_id' => $this->readCategoryTaxonomy->activeCategoryIdNamed($owner, 'Savings'),
-        ]);
+        return Inertia::render('statement-imports/create');
     }
 
     public function store(ConfirmStatementImportRequest $request): RedirectResponse

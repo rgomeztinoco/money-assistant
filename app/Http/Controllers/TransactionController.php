@@ -11,8 +11,11 @@ use App\Currency;
 use App\Http\Requests\IndexTransactionsRequest;
 use App\Http\Requests\StoreManualTransactionRequest;
 use App\Http\Requests\UpdateTransactionRequest;
+use App\IncomeSource;
 use App\Models\Transaction;
+use App\TransactionDirection;
 use App\TransactionKind;
+use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
@@ -61,7 +64,14 @@ class TransactionController extends Controller
             amountMinor: $request->amountMinor(),
             currency: Currency::from($validated['currency']),
             kind: TransactionKind::from($validated['kind']),
+            direction: TransactionDirection::from($validated['direction']),
             merchantDescription: $validated['merchant_description'],
+            incomeSource: isset($validated['income_source'])
+                ? IncomeSource::from($validated['income_source'])
+                : null,
+            transferPurpose: isset($validated['transfer_purpose'])
+                ? TransferPurpose::from($validated['transfer_purpose'])
+                : null,
             paymentInstrumentLabel: $validated['payment_instrument_label'] ?? null,
             paymentInstrumentLastFour: $validated['payment_instrument_last_four'] ?? null,
         );
@@ -85,7 +95,14 @@ class TransactionController extends Controller
             amountMinor: $request->amountMinor(),
             currency: Currency::from($validated['currency']),
             kind: TransactionKind::from($validated['kind']),
+            direction: TransactionDirection::from($validated['direction']),
             merchantDescription: $validated['merchant_description'],
+            incomeSource: isset($validated['income_source'])
+                ? IncomeSource::from($validated['income_source'])
+                : null,
+            transferPurpose: isset($validated['transfer_purpose'])
+                ? TransferPurpose::from($validated['transfer_purpose'])
+                : null,
             paymentInstrumentLabel: $validated['payment_instrument_label'] ?? null,
             paymentInstrumentLastFour: $validated['payment_instrument_last_four'] ?? null,
             categoryId: isset($validated['category_id']) ? (int) $validated['category_id'] : null,

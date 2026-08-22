@@ -80,7 +80,7 @@ test('the owner resolves flagged Transaction fields without returning to the led
         occurredOn: CarbonImmutable::parse('2026-07-22'),
         amountMinor: 12345,
         currency: Currency::Usd,
-        kind: TransactionKind::Purchase,
+        kind: TransactionKind::Spending,
         merchantDescription: 'Provisional market',
         provisionalFields: [
             ReviewableTransactionField::OccurredOn,
@@ -175,7 +175,7 @@ test('the owner corrects a Refund relationship and continues inside the guided q
         ->assertSee('Receipt Breakdown allocation requires review')
         ->click('Correct this relationship')
         ->assertSee('Edit current Transaction')
-        ->select('Edit original purchase', 'No Refund link')
+        ->select('Edit original Spending Transaction', 'No reimbursement link')
         ->press('Save Transaction')
         ->assertSee('Next queue item')
         ->assertDontSee('Refund needing allocation')

@@ -68,7 +68,9 @@ class ReadFocusedReviewQueue
             $transactionReasons = [];
             $hasReceiptLineItems = $transaction->receiptBreakdown?->lineItems->isNotEmpty() === true;
 
-            if ($transaction->category_id === null && ! $hasReceiptLineItems) {
+            if ($transaction->kind->supportsCategory()
+                && $transaction->category_id === null
+                && ! $hasReceiptLineItems) {
                 $transactionReasons[] = [
                     'type' => 'category',
                     'label' => 'This Transaction needs a Category.',

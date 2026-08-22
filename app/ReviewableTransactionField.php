@@ -96,7 +96,11 @@ enum ReviewableTransactionField: string
     {
         $kind = is_string($value) ? TransactionKind::tryFrom($value) : null;
 
-        return $kind ?? throw new InvalidArgumentException('The replacement Transaction kind is not supported.');
+        if (! in_array($kind, [TransactionKind::Spending, TransactionKind::Refund], true)) {
+            throw new InvalidArgumentException('Review Queue kind corrections support only Spending or Refund.');
+        }
+
+        return $kind;
     }
 
     private function normalizeMerchantDescription(mixed $value): string

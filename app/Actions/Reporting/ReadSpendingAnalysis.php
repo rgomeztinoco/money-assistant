@@ -7,6 +7,7 @@ use App\ExactInteger;
 use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
+use App\TransactionKind;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
@@ -57,6 +58,7 @@ final class ReadSpendingAnalysis
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
+            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->where(function (Builder $query) use ($period): void {
                 $query
                     ->whereBetween('occurred_on', [$period->currentDateFrom->toDateString(), $period->currentDateTo->toDateString()])
@@ -74,7 +76,7 @@ final class ReadSpendingAnalysis
             $periodName = $transaction->occurred_on->betweenIncluded($period->currentDateFrom, $period->currentDateTo)
                 ? 'current'
                 : 'previous';
-            $transactionAmount = $transaction->kind->signedAmount((string) $transaction->amount_minor);
+            $transactionAmount = $transaction->kind->netSpendingAmount((string) $transaction->amount_minor);
             $totals[$periodName] = $totals[$periodName]->add($transactionAmount);
             $lineItems = $transaction->receiptBreakdown?->lineItems;
 
@@ -94,7 +96,7 @@ final class ReadSpendingAnalysis
                 $this->addCategoryAmount(
                     categoryAmounts: $categoryAmounts,
                     categoryId: $lineItem->category_id,
-                    amount: $transaction->kind->signedAmount($lineItem->line_total_minor),
+                    amount: $transaction->kind->netSpendingAmount($lineItem->line_total_minor),
                     period: $periodName,
                     categoriesById: $categoriesById,
                 );

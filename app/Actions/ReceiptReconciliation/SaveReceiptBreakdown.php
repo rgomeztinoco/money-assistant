@@ -32,6 +32,12 @@ final class SaveReceiptBreakdown
                 ]);
             }
 
+            if (! $currentTransaction->kind->supportsCategory()) {
+                throw ValidationException::withMessages([
+                    'transaction' => 'Receipt Breakdowns are available only for Spending and Refund Transactions.',
+                ]);
+            }
+
             $normalizedLineItems = collect($lineItems)->map(function (array $lineItem): array {
                 $description = Str::squish($lineItem['description']);
 
