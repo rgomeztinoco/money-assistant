@@ -16,7 +16,6 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\MovementDirection;
 use App\StatementImports\StatementImportPreview;
-use App\StatementImports\StatementImportPreviewMovement;
 use App\StatementImports\StatementImportValidationException;
 use App\StatementMovementClassification;
 use Carbon\CarbonImmutable;
@@ -42,23 +41,17 @@ function interbankStatementText(): string
 
 function confirmationPayload(StatementImportPreview $preview): array
 {
-    return [
-        'file_hash' => $preview->fileHash,
-        'instrument_label' => $preview->instrumentLabel,
-        'instrument_last_four' => $preview->instrumentLastFour,
-        'movements' => collect($preview->movements)
-            ->map(fn (StatementImportPreviewMovement $movement): array => [
-                'source_row_id' => $movement->sourceRowId,
-                'occurred_on' => $movement->occurredOn->toDateString(),
-                'description' => $movement->description,
-                'amount_minor' => $movement->amountMinor,
-                'currency' => $movement->currency->value,
-                'classification' => $movement->classification->value === 'needs_classification'
+    $confirmation = $preview->confirmationData();
+    $confirmation['movements'] = collect($confirmation['movements'])
+        ->map(fn (array $movement): array => [
+            ...$movement,
+            'classification' => $movement['classification'] === 'needs_classification'
                     ? 'transfer'
-                    : $movement->classification->value,
-            ])
-            ->all(),
-    ];
+                    : $movement['classification'],
+        ])
+        ->all();
+
+    return $confirmation;
 }
 
 function expectStatementImportError(Closure $callback, string $errorCode): void
@@ -210,16 +203,12 @@ test('the Statement Import workflow atomically confirms one Transaction for ever
         $owner,
         UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
     );
-    $editedMovements = collect($preview->movements)
-        ->map(fn (StatementImportPreviewMovement $movement): array => [
-            'source_row_id' => $movement->sourceRowId,
-            'occurred_on' => $movement->occurredOn->toDateString(),
-            'description' => $movement->description,
-            'amount_minor' => $movement->amountMinor,
-            'currency' => $movement->currency->value,
-            'classification' => $movement->classification->value === 'needs_classification'
+    $editedMovements = collect($preview->confirmationData()['movements'])
+        ->map(fn (array $movement): array => [
+            ...$movement,
+            'classification' => $movement['classification'] === 'needs_classification'
                 ? 'income'
-                : $movement->classification->value,
+                : $movement['classification'],
         ])
         ->all();
     $editedMovements[0]['occurred_on'] = '2026-02-06';

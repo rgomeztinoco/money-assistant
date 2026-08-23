@@ -5,7 +5,6 @@ use App\Models\Category;
 use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\User;
-use App\StatementImports\StatementImportPreviewMovement;
 use Illuminate\Http\UploadedFile;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\SyntheticPdf;
@@ -38,6 +37,8 @@ test('the owner can preview a statement through the standalone HTTP endpoint', f
         ->assertJsonPath('financial_statement_format', 'interbank')
         ->assertJsonPath('movements.0.contributes_to_spending', false)
         ->assertJsonPath('movements.0.can_be_excluded', false)
+        ->assertJsonPath('confirmation.file_hash', fn (string $hash): bool => strlen($hash) === 64)
+        ->assertJsonPath('confirmation.movements.0.source_row_id', fn (string $sourceRowId): bool => strlen($sourceRowId) === 64)
         ->assertJsonPath('reconciliation.payment_total_pen_minor', '2700')
         ->assertJsonCount(6, 'movements');
 });
@@ -83,26 +84,20 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
         $owner,
         UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
     );
-    $movements = collect($preview->movements)
-        ->map(fn (StatementImportPreviewMovement $movement): array => [
-            'source_row_id' => $movement->sourceRowId,
-            'occurred_on' => $movement->occurredOn->toDateString(),
-            'description' => $movement->description,
-            'amount_minor' => $movement->amountMinor,
-            'currency' => $movement->currency->value,
-            'classification' => $movement->classification->value === 'needs_classification'
+    $confirmation = $preview->confirmationData();
+    $confirmation['movements'] = collect($confirmation['movements'])
+        ->map(fn (array $movement): array => [
+            ...$movement,
+            'classification' => $movement['classification'] === 'needs_classification'
                 ? 'transfer'
-                : $movement->classification->value,
+                : $movement['classification'],
         ])
         ->all();
 
     $response = $this->actingAs($owner)
         ->post(route('statement_imports.store'), [
             'statement' => UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
-            'file_hash' => $preview->fileHash,
-            'instrument_label' => $preview->instrumentLabel,
-            'instrument_last_four' => $preview->instrumentLastFour,
-            'movements' => $movements,
+            ...$confirmation,
         ]);
 
     $import = StatementImport::query()->sole();
@@ -143,25 +138,13 @@ test('semantic confirmation failures identify the affected preview row', functio
         $owner,
         UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
     );
-    $movements = collect($preview->movements)
-        ->map(fn (StatementImportPreviewMovement $movement): array => [
-            'source_row_id' => $movement->sourceRowId,
-            'occurred_on' => $movement->occurredOn->toDateString(),
-            'description' => $movement->description,
-            'amount_minor' => $movement->amountMinor,
-            'currency' => $movement->currency->value,
-            'classification' => $movement->classification->value,
-        ])
-        ->all();
+    $confirmation = $preview->confirmationData();
 
     $this->actingAs($owner)
         ->from(route('statement_imports.create'))
         ->post(route('statement_imports.store'), [
             'statement' => UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
-            'file_hash' => $preview->fileHash,
-            'instrument_label' => $preview->instrumentLabel,
-            'instrument_last_four' => $preview->instrumentLastFour,
-            'movements' => $movements,
+            ...$confirmation,
         ])
         ->assertRedirect(route('statement_imports.create'))
         ->assertSessionHasErrors([
@@ -217,24 +200,15 @@ test('BCP and Interbank imports coexist in safe history with complete movement s
             $owner,
             UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
         );
-        $movements = collect($preview->movements)
-            ->map(fn (StatementImportPreviewMovement $movement): array => [
-                'source_row_id' => $movement->sourceRowId,
-                'occurred_on' => $movement->occurredOn->toDateString(),
-                'description' => $movement->description,
-                'amount_minor' => $movement->amountMinor,
-                'currency' => $movement->currency->value,
-                'classification' => $movement->classification->value === 'needs_classification'
+        $confirmation = $preview->confirmationData();
+        $confirmation['movements'] = collect($confirmation['movements'])
+            ->map(fn (array $movement): array => [
+                ...$movement,
+                'classification' => $movement['classification'] === 'needs_classification'
                     ? 'transfer'
-                    : $movement->classification->value,
+                    : $movement['classification'],
             ])
             ->all();
-        $confirmation = [
-            'file_hash' => $preview->fileHash,
-            'instrument_label' => $preview->instrumentLabel,
-            'instrument_last_four' => $preview->instrumentLastFour,
-            'movements' => $movements,
-        ];
 
         if ($savingsCategoryId !== null) {
             $confirmation['savings_category_id'] = $savingsCategoryId;

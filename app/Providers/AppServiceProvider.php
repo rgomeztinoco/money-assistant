@@ -6,9 +6,13 @@ use App\Actions\Ledger\CountOutstandingReviews;
 use App\Contracts\Gmail;
 use App\Contracts\StatementPdfExtractor;
 use App\Integrations\Gmail\GoogleGmail;
+use App\StatementImports\FinancialStatementFormatRegistry;
+use App\StatementImports\Formats\BcpFinancialStatementAdapter;
+use App\StatementImports\Formats\InterbankFinancialStatementAdapter;
 use App\StatementImports\ProcessStatementPdfExtractor;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
@@ -34,6 +38,14 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(CountOutstandingReviews::class);
 
         $this->app->bind(StatementPdfExtractor::class, ProcessStatementPdfExtractor::class);
+
+        $this->app->singleton(
+            FinancialStatementFormatRegistry::class,
+            fn (Application $application): FinancialStatementFormatRegistry => new FinancialStatementFormatRegistry([
+                $application->make(BcpFinancialStatementAdapter::class),
+                $application->make(InterbankFinancialStatementAdapter::class),
+            ]),
+        );
     }
 
     /**

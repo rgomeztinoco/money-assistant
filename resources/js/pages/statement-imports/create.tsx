@@ -387,17 +387,9 @@ export default function CreateStatementImport() {
                 setPreview(response);
                 confirmation.setData({
                     statement: selectedStatement,
-                    file_hash: response.file_hash,
-                    instrument_label: response.instrument_label,
-                    instrument_last_four: response.instrument_last_four ?? '',
-                    movements: response.movements.map((movement) => ({
-                        source_row_id: movement.source_row_id,
-                        occurred_on: movement.occurred_on,
-                        description: movement.description,
-                        amount_minor: movement.amount_minor,
-                        currency: movement.currency,
-                        classification: movement.classification,
-                    })),
+                    ...response.confirmation,
+                    instrument_last_four:
+                        response.confirmation.instrument_last_four ?? '',
                 });
             },
         });

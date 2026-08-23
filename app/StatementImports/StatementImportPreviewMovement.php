@@ -24,6 +24,28 @@ final readonly class StatementImportPreviewMovement
         public array $sourceMetadata,
     ) {}
 
+    /**
+     * @return array{
+     *     source_row_id: string,
+     *     occurred_on: string,
+     *     description: string,
+     *     amount_minor: string,
+     *     currency: string,
+     *     classification: string
+     * }
+     */
+    public function confirmationData(): array
+    {
+        return [
+            'source_row_id' => $this->sourceRowId,
+            'occurred_on' => $this->occurredOn->toDateString(),
+            'description' => $this->description,
+            'amount_minor' => $this->amountMinor,
+            'currency' => $this->currency->value,
+            'classification' => $this->classification->value,
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function toArray(): array
     {

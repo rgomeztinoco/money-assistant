@@ -29,6 +29,23 @@ export type StatementPreviewMovement = {
     source_metadata: Record<string, unknown>;
 };
 
+export type StatementImportConfirmation = {
+    file_hash: string;
+    instrument_label: string;
+    instrument_last_four: string | null;
+    movements: Array<
+        Pick<
+            StatementPreviewMovement,
+            | 'source_row_id'
+            | 'occurred_on'
+            | 'description'
+            | 'amount_minor'
+            | 'currency'
+            | 'classification'
+        >
+    >;
+};
+
 export type StatementImportPreview = {
     financial_statement_format: FinancialStatementFormat;
     parser_version: string;
@@ -44,4 +61,5 @@ export type StatementImportPreview = {
         currency: Currency;
     }>;
     reconciliation: Record<string, string>;
+    confirmation: StatementImportConfirmation;
 };
