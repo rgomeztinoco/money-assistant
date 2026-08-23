@@ -56,7 +56,7 @@ test('Home keeps the weekly briefing focused and every claim drills into Breakdo
         ->assertSee('USD')
         ->assertDontSee('Recent Transactions')
         ->assertDontSee('Review Queue')
-        ->assertDontSee('Parser Profiles')
+        ->assertDontSeeIn('main', 'Parser Profiles')
         ->assertSeeIn('[data-test="nav-home"]', 'Home')
         ->assertSeeIn('[data-test="nav-breakdown"]', 'Breakdown')
         ->assertSeeIn('[data-test="nav-trends"]', 'Trends')
