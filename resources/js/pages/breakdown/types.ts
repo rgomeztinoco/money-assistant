@@ -81,6 +81,9 @@ export type BreakdownProps = {
     filters: {
         category: string | null;
         day: string | null;
+        focus: 'net_spending' | 'income' | 'savings' | null;
+        merchant: string | null;
+        attention: boolean;
         selected: number | null;
     };
     category_groups: BreakdownCategoryGroup[];

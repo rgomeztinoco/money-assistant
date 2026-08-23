@@ -75,6 +75,9 @@ function TransactionRow({
         period: props.period,
         category: props.filters.category,
         day: props.filters.day,
+        focus: props.filters.focus,
+        merchant: props.filters.merchant,
+        attention: props.filters.attention,
         selected: null,
     });
 
@@ -91,6 +94,9 @@ function TransactionRow({
                               period: props.period,
                               category: props.filters.category,
                               day: props.filters.day,
+                              focus: props.filters.focus,
+                              merchant: props.filters.merchant,
+                              attention: props.filters.attention,
                               selected: transaction.id,
                           })
                 }
@@ -245,6 +251,15 @@ function selectedCategoryLabel(props: BreakdownProps): string | null {
     );
 }
 
+const focusLabels: Record<
+    NonNullable<BreakdownProps['filters']['focus']>,
+    string
+> = {
+    net_spending: 'Net Spending',
+    income: 'Income',
+    savings: 'Moved to Savings',
+};
+
 export default function BreakdownIndex(props: BreakdownProps) {
     const {
         currency,
@@ -259,7 +274,12 @@ export default function BreakdownIndex(props: BreakdownProps) {
         today,
     } = props;
     const categoryLabel = selectedCategoryLabel(props);
-    const hasFilters = filters.category !== null || filters.day !== null;
+    const hasFilters =
+        filters.category !== null ||
+        filters.day !== null ||
+        filters.focus !== null ||
+        filters.merchant !== null ||
+        filters.attention;
 
     return (
         <>
@@ -324,6 +344,19 @@ export default function BreakdownIndex(props: BreakdownProps) {
                                 Day: {filters.day}
                             </Badge>
                         )}
+                        {filters.focus !== null && (
+                            <Badge variant="secondary">
+                                Focus: {focusLabels[filters.focus]}
+                            </Badge>
+                        )}
+                        {filters.merchant !== null && (
+                            <Badge variant="secondary">
+                                Merchant: {filters.merchant}
+                            </Badge>
+                        )}
+                        {filters.attention && (
+                            <Badge variant="secondary">Needs your input</Badge>
+                        )}
                         <Button asChild variant="ghost" size="sm">
                             <Link
                                 href={selectionUrl({
@@ -331,6 +364,9 @@ export default function BreakdownIndex(props: BreakdownProps) {
                                     period,
                                     category: null,
                                     day: null,
+                                    focus: null,
+                                    merchant: null,
+                                    attention: false,
                                     selected: null,
                                 })}
                                 preserveScroll
@@ -363,15 +399,14 @@ export default function BreakdownIndex(props: BreakdownProps) {
                         <CardHeader>
                             <div className="flex items-center justify-between gap-3">
                                 <Store className="size-5 text-muted-foreground" />
-                                {(filters.category !== null ||
-                                    filters.day !== null) && (
+                                {hasFilters && (
                                     <Badge variant="secondary">Filtered</Badge>
                                 )}
                             </div>
                             <CardTitle>Merchants</CardTitle>
                             <CardDescription>
                                 Exact merchant descriptions in the current
-                                Category and day selection.
+                                supporting selection.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>

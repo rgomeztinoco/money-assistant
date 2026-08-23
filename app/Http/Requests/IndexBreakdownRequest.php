@@ -31,6 +31,9 @@ class IndexBreakdownRequest extends FormRequest
             'date_to' => [Rule::requiredIf($this->input('preset') === 'custom'), 'nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
             'category' => ['nullable', 'string', 'regex:/^(uncategorized|[1-9][0-9]*)$/'],
             'day' => ['nullable', 'date_format:Y-m-d'],
+            'focus' => ['nullable', Rule::in(['net_spending', 'income', 'savings'])],
+            'merchant' => ['nullable', 'string', 'max:255'],
+            'attention' => ['nullable', 'boolean'],
             'selected' => ['nullable', 'integer', 'min:1'],
         ];
     }

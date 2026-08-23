@@ -24,7 +24,7 @@ class ReadBreakdown
     ) {}
 
     /**
-     * @param  array{preset?: string, date_from?: string, date_to?: string, category?: string, day?: string, selected?: int}  $filters
+     * @param  array{preset?: string, date_from?: string, date_to?: string, category?: string, day?: string, focus?: string, merchant?: string, attention?: bool, selected?: int}  $filters
      * @return array<string, mixed>
      */
     public function handle(User $owner, Currency $currency, array $filters): array
@@ -71,6 +71,9 @@ class ReadBreakdown
             ->get();
         $categoryFilter = $filters['category'] ?? null;
         $dayFilter = $filters['day'] ?? null;
+        $focusFilter = $filters['focus'] ?? null;
+        $merchantFilter = $filters['merchant'] ?? null;
+        $attentionFilter = (bool) ($filters['attention'] ?? false);
         $chartTransactions = $dayFilter === null
             ? $transactions
             : $transactions->where('occurred_on', CarbonImmutable::parse($dayFilter));
@@ -89,7 +92,23 @@ class ReadBreakdown
                     $transaction,
                     $categoryFilter,
                     $categoriesById,
-                )));
+                )))
+            ->when($focusFilter !== null, fn (Collection $transactions): Collection => $transactions
+                ->filter(fn (Transaction $transaction): bool => $this->matchesFocus($transaction, $focusFilter)))
+            ->when($merchantFilter !== null, fn (Collection $transactions): Collection => $transactions
+                ->filter(fn (Transaction $transaction): bool => $this->merchantNormalizer->normalize($transaction->description)
+                    === $this->merchantNormalizer->normalize($merchantFilter)))
+            ->when($attentionFilter, function (Collection $transactions) use ($owner, $currency, $dateFrom, $dateTo): Collection {
+                $attentionIds = Transaction::query()
+                    ->whereBelongsTo($owner, 'owner')
+                    ->where('currency', $currency)
+                    ->whereNull('voided_at')
+                    ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
+                    ->whereRequiresReview()
+                    ->pluck('id');
+
+                return $transactions->whereIn('id', $attentionIds);
+            });
         $summary = $this->readPeriodSummary->handle($owner, $currency, $dateFrom, $dateTo);
         $coverageDates = $transactions->pluck('occurred_on');
         $merchantMatchCounts = $this->merchantMatchCounts($owner, $currency);
@@ -111,6 +130,9 @@ class ReadBreakdown
             'filters' => [
                 'category' => $categoryFilter,
                 'day' => $dayFilter,
+                'focus' => $focusFilter,
+                'merchant' => $merchantFilter,
+                'attention' => $attentionFilter,
                 'selected' => isset($filters['selected'])
                     ? (int) $filters['selected']
                     : null,
@@ -123,6 +145,17 @@ class ReadBreakdown
             'income_source_options' => $this->incomeSourceOptions($owner),
             'today' => now()->toDateString(),
         ];
+    }
+
+    private function matchesFocus(Transaction $transaction, string $focus): bool
+    {
+        return match ($focus) {
+            'net_spending' => in_array($transaction->kind, [TransactionKind::Spending, TransactionKind::Refund], true),
+            'income' => $transaction->kind === TransactionKind::Income,
+            'savings' => $transaction->kind === TransactionKind::Transfer
+                && $transaction->transfer_purpose === TransferPurpose::Savings,
+            default => false,
+        };
     }
 
     /**

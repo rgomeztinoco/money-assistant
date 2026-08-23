@@ -25,8 +25,8 @@ test('the owner selects a statement once resolves exceptions and revisits the co
             ->type('#email', $owner->email)
             ->type('#password', 'password')
             ->click('[data-test="login-button"]')
-            ->assertPathIs('/dashboard')
-            ->click('Statement Imports')
+            ->assertPathIs('/')
+            ->navigate($applicationUrl.'/statement-imports')
             ->assertPathIs('/statement-imports')
             ->click('Import statement')
             ->assertPathIs('/statement-imports/create');
@@ -101,7 +101,7 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
             ->type('#email', $owner->email)
             ->type('#password', 'password')
             ->click('[data-test="login-button"]')
-            ->assertPathIs('/dashboard')
+            ->assertPathIs('/')
             ->navigate($applicationUrl.'/statement-imports/create');
         selectPdfInBrowser($page, '#preview-statement', $pdf);
         $page
@@ -145,7 +145,7 @@ test('an abandoned preview remains transient and is editable on a mobile viewpor
             ->type('#email', $owner->email)
             ->type('#password', 'password')
             ->click('[data-test="login-button"]')
-            ->assertPathIs('/dashboard')
+            ->assertPathIs('/')
             ->navigate($applicationUrl.'/statement-imports/create')
             ->resize(390, 844);
 

@@ -1,13 +1,5 @@
 import { Link } from '@inertiajs/react';
-import {
-    BarChart3,
-    LayoutGrid,
-    MailSearch,
-    Store,
-    ReceiptText,
-    Files,
-    Tags,
-} from 'lucide-react';
+import { House, ReceiptText, TrendingUp } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -20,21 +12,17 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
+import { home } from '@/routes';
 import { index as breakdownIndex } from '@/routes/breakdown';
-import { index as categoriesIndex } from '@/routes/categories';
-import { index as merchantRulesIndex } from '@/routes/merchant_rules';
-import { index as parserProfilesIndex } from '@/routes/parser_profiles';
-import { show as reportShow } from '@/routes/reports';
-import { index as statementImportsIndex } from '@/routes/statement_imports';
+import { index as trendsIndex } from '@/routes/trends';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
     const mainNavItems: NavItem[] = [
         {
-            title: 'Dashboard',
-            href: dashboard(),
-            icon: LayoutGrid,
+            title: 'Home',
+            href: home(),
+            icon: House,
         },
         {
             title: 'Breakdown',
@@ -42,31 +30,9 @@ export function AppSidebar() {
             icon: ReceiptText,
         },
         {
-            title: 'Reports',
-            href: reportShow('PEN'),
-            icon: BarChart3,
-        },
-    ];
-    const manageNavItems: NavItem[] = [
-        {
-            title: 'Statement Imports',
-            href: statementImportsIndex(),
-            icon: Files,
-        },
-        {
-            title: 'Categories',
-            href: categoriesIndex(),
-            icon: Tags,
-        },
-        {
-            title: 'Merchant Rules',
-            href: merchantRulesIndex(),
-            icon: Store,
-        },
-        {
-            title: 'Parser Profiles',
-            href: parserProfilesIndex(),
-            icon: MailSearch,
+            title: 'Trends',
+            href: trendsIndex(),
+            icon: TrendingUp,
         },
     ];
 
@@ -76,7 +42,7 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href={dashboard()} prefetch>
+                            <Link href={home()} prefetch>
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>
@@ -85,12 +51,7 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} label="Everyday" />
-                <NavMain
-                    items={manageNavItems}
-                    label="Manage & automate"
-                    priority="secondary"
-                />
+                <NavMain items={mainNavItems} label="Money" />
             </SidebarContent>
 
             <SidebarFooter>

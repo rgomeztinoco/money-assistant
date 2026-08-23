@@ -84,8 +84,9 @@ test('period summaries keep movement kinds and currencies separate', function ()
     Transaction::factory()->create([...$base, 'currency' => 'USD', 'kind' => 'spending', 'amount_minor' => 3_000]);
 
     $this->actingAs($owner)
-        ->get(route('reports.show', [
+        ->get(route('breakdown.index', [
             'currency' => 'PEN',
+            'preset' => 'custom',
             'date_from' => '2026-08-01',
             'date_to' => '2026-08-21',
         ]))
@@ -97,16 +98,16 @@ test('period summaries keep movement kinds and currencies separate', function ()
             ->where('summary.moved_to_savings_minor', '10000')
             ->missing('summary.net_external_cash_flow_minor'));
 
-    $this->get(route('dashboard'))
+    $this->get(route('home'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('summaries.PEN.net_spending_minor', '7500')
-            ->where('summaries.PEN.income_minor', '70000')
-            ->where('summaries.PEN.moved_to_savings_minor', '10000')
-            ->where('summaries.USD.net_spending_minor', '3000')
-            ->where('summaries.USD.income_minor', '0')
-            ->where('summaries.USD.moved_to_savings_minor', '0')
-            ->missing('summaries.PEN.net_external_cash_flow_minor'));
+            ->where('primary.summary.net_spending_minor', '7500')
+            ->where('primary.summary.income_minor', '70000')
+            ->where('primary.summary.moved_to_savings_minor', '10000')
+            ->where('secondary.summary.net_spending_minor', '3000')
+            ->where('secondary.summary.income_minor', '0')
+            ->where('secondary.summary.moved_to_savings_minor', '0')
+            ->missing('primary.summary.net_external_cash_flow_minor'));
 });
 
 test('the owner edits a Transaction kind and its matching details', function () {

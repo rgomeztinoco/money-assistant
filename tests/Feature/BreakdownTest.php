@@ -252,6 +252,63 @@ test('used classifications come first and zero-spend Categories stay out of the 
             ->where('income_source_options.0.used', true));
 });
 
+test('briefing and Trend links focus Breakdown on their exact supporting Transactions', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $merchant = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'description' => 'Café Central',
+        'category_id' => $category->id,
+    ]);
+    $income = Transaction::factory()->for($owner, 'owner')->income()->pen()->create([
+        'occurred_on' => '2026-08-11',
+    ]);
+    $savings = Transaction::factory()->for($owner, 'owner')->transfer()->pen()->create([
+        'occurred_on' => '2026-08-12',
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+    ]);
+    $attention = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-13',
+        'category_id' => null,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-14',
+        'description' => 'Different merchant',
+        'category_id' => $category->id,
+    ]);
+    $this->actingAs($owner);
+    $period = [
+        'preset' => 'custom',
+        'date_from' => '2026-08-01',
+        'date_to' => '2026-08-22',
+    ];
+
+    $this->get(route('breakdown.index', [...$period, 'merchant' => 'café central']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.merchant', 'café central')
+            ->has('transaction_days', 1)
+            ->where('transaction_days.0.transactions.0.id', $merchant->id));
+
+    $this->get(route('breakdown.index', [...$period, 'focus' => 'income']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.focus', 'income')
+            ->has('transaction_days', 1)
+            ->where('transaction_days.0.transactions.0.id', $income->id));
+
+    $this->get(route('breakdown.index', [...$period, 'focus' => 'savings']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.focus', 'savings')
+            ->has('transaction_days', 1)
+            ->where('transaction_days.0.transactions.0.id', $savings->id));
+
+    $this->get(route('breakdown.index', [...$period, 'attention' => 1]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.attention', true)
+            ->has('transaction_days', 1)
+            ->where('transaction_days.0.transactions.0.id', $attention->id));
+});
+
 test('the owner changes a Category once or confirms the exact merchant for history and future activity', function () {
     $owner = User::factory()->create();
     $groceries = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);

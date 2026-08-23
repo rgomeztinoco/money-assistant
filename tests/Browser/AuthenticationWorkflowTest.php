@@ -113,7 +113,7 @@ test('the owner can register a passkey and use it for normal sign-in', function 
 
     recoverAccessWithPassword($page, $owner);
 
-    $page->assertPathIs('/dashboard');
+    $page->assertPathIs('/');
 
     markBrowserSessionAsPasswordConfirmed($owner);
     $page->script('window.location.assign("/settings/security")');
@@ -140,8 +140,8 @@ test('the owner can register a passkey and use it for normal sign-in', function 
         ->click(['noWaitAfter' => true]);
 
     $page
-        ->assertPathIs('/dashboard')
-        ->assertSee('Dashboard')
+        ->assertPathIs('/')
+        ->assertSee('Home')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
@@ -153,8 +153,8 @@ test('the owner can recover access using the recovery password', function () {
     recoverAccessWithPassword($page, $owner);
 
     $page
-        ->assertPathIs('/dashboard')
-        ->assertSee('Dashboard')
+        ->assertPathIs('/')
+        ->assertSee('Home')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
@@ -176,7 +176,7 @@ test('a browser without passkey support offers only recovery password sign-in', 
     recoverAccessWithPassword($page, $owner);
 
     $page
-        ->assertPathIs('/dashboard')
+        ->assertPathIs('/')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
@@ -198,7 +198,7 @@ test('the owner session expires after two hours of inactivity', function () {
 
     recoverAccessWithPassword($page, $owner);
 
-    $page->assertPathIs('/dashboard');
+    $page->assertPathIs('/');
 
     $this->travel(121)->minutes();
 
@@ -220,7 +220,7 @@ test('sensitive operations reject stale authentication', function () {
     recoverAccessWithPassword($page, $owner);
 
     $page
-        ->assertPathIs('/dashboard')
+        ->assertPathIs('/')
         ->script('window.location.assign("/settings/security")');
 
     $page

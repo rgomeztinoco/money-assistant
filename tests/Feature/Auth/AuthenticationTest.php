@@ -26,7 +26,7 @@ test('users can authenticate using the login screen', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect(route('home', absolute: false));
 });
 
 test('remembered authentication is unavailable', function () {
@@ -50,7 +50,7 @@ test('sessions expire after two idle hours', function () {
         'password' => 'password',
     ]);
 
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect(route('home', absolute: false));
 
     $sessionCookie = $response->getCookie(config('session.cookie'));
 

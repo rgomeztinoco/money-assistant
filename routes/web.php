@@ -4,14 +4,13 @@ use App\Http\Controllers\BreakdownController;
 use App\Http\Controllers\BreakdownTransactionClassificationController;
 use App\Http\Controllers\CategoryArchivalController;
 use App\Http\Controllers\CategoryController;
-use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\HomeController;
 use App\Http\Controllers\MerchantRuleController;
 use App\Http\Controllers\ParserProfileActivationController;
 use App\Http\Controllers\ParserProfileController;
 use App\Http\Controllers\ParserProfilePreviewController;
 use App\Http\Controllers\ParserProfileSourceMessageController;
 use App\Http\Controllers\ReceiptBreakdownController;
-use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\ReviewQueueLineItemCategoryController;
 use App\Http\Controllers\ReviewQueueTransactionCategoryController;
@@ -26,20 +25,20 @@ use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionFieldReviewController;
 use App\Http\Controllers\TransactionRefundLinkController;
 use App\Http\Controllers\TransactionVoidController;
+use App\Http\Controllers\TrendsController;
 use Illuminate\Support\Facades\Route;
 
-Route::redirect('/', '/dashboard')
+Route::get('/', HomeController::class)
     ->middleware('auth')
     ->name('home');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('breakdown', BreakdownController::class)->name('breakdown.index');
+    Route::get('trends', TrendsController::class)->name('trends.index');
     Route::put(
         'breakdown/transactions/{transaction}/classification',
         [BreakdownTransactionClassificationController::class, 'update'],
     )->name('breakdown.transactions.classification.update');
-    Route::get('dashboard', DashboardController::class)->name('dashboard');
-    Route::get('reports/{currency}', ReportController::class)->name('reports.show');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store', 'update']);
     Route::resource('statement-imports', StatementImportController::class)

@@ -7,10 +7,10 @@ test('the root URL directs unauthenticated visitors to login', function () {
         ->assertRedirectToRoute('login');
 });
 
-test('the root URL directs the authenticated owner to the dashboard', function () {
+test('the root URL is the authenticated owner Home', function () {
     $owner = User::factory()->create();
 
     $this->actingAs($owner)
         ->get(route('home'))
-        ->assertRedirectToRoute('dashboard');
+        ->assertOk();
 });
