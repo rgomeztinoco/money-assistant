@@ -76,13 +76,14 @@ test('the Dashboard directs attention into filtered owner workflows', function (
         ->assertSee('Recent Transactions')
         ->assertSee('Coffee shop')
         ->assertSee('Neighborhood market')
-        ->assertSee('Review Queue')
+        ->assertSee('Open Breakdown')
         ->assertSee('Gmail')
         ->assertSee('Connected')
         ->assertSee('owner@example.com')
         ->click('[data-test="dashboard-spending-usd"]')
-        ->assertPathIs('/transactions')
+        ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'USD')
+        ->assertQueryStringHas('preset', 'custom')
         ->assertQueryStringHas(
             'date_from',
             now()->startOfMonth()->toDateString(),
@@ -93,8 +94,9 @@ test('the Dashboard directs attention into filtered owner workflows', function (
 
     $page
         ->click('[data-test="dashboard-comparison-usd"]')
-        ->assertPathIs('/transactions')
+        ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'USD')
+        ->assertQueryStringHas('preset', 'custom')
         ->assertQueryStringHas(
             'date_from',
             now()->subMonthNoOverflow()->startOfMonth()->toDateString(),
@@ -108,9 +110,10 @@ test('the Dashboard directs attention into filtered owner workflows', function (
 
     $page
         ->click('[data-test="dashboard-category-pen-'.$category->id.'"]')
-        ->assertPathIs('/transactions')
+        ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'PEN')
-        ->assertQueryStringHas('category_id', (string) $category->id)
+        ->assertQueryStringHas('category', (string) $category->id)
+        ->assertQueryStringHas('preset', 'custom')
         ->assertQueryStringHas(
             'date_from',
             now()->startOfMonth()->toDateString(),
@@ -121,9 +124,10 @@ test('the Dashboard directs attention into filtered owner workflows', function (
 
     $page
         ->click('[data-test="dashboard-category-previous-pen-'.$category->id.'"]')
-        ->assertPathIs('/transactions')
+        ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'PEN')
-        ->assertQueryStringHas('category_id', (string) $category->id)
+        ->assertQueryStringHas('category', (string) $category->id)
+        ->assertQueryStringHas('preset', 'custom')
         ->assertQueryStringHas(
             'date_from',
             now()->subMonthNoOverflow()->startOfMonth()->toDateString(),
@@ -137,7 +141,7 @@ test('the Dashboard directs attention into filtered owner workflows', function (
 
     $page
         ->click('[data-test="dashboard-review-link"]')
-        ->assertPathIs('/review-queue');
+        ->assertPathIs('/breakdown');
 
     $page = visit('/dashboard');
 
@@ -174,24 +178,22 @@ test('navigation exposes only retained personal-finance destinations', function 
         ->assertTitle('Dashboard - Money Assistant')
         ->assertSee('Everyday')
         ->assertSee('Dashboard')
-        ->assertSee('Transactions')
-        ->assertSee('Review Queue')
+        ->assertSeeIn('[data-test="nav-breakdown"]', 'Breakdown')
         ->assertSee('Reports')
         ->assertSee('Manage & automate')
         ->assertSee('Statement Imports')
         ->assertSee('Categories')
         ->assertSee('Merchant Rules')
-        ->assertSee('Parser Profiles')
-        ->assertSeeIn('[data-test="nav-review-queue-count"]', '1');
+        ->assertSee('Parser Profiles');
 
     $transactionAwaitingReview->update(['provisional_fields' => []]);
 
     $page
-        ->click('[data-test="nav-review-queue"]')
-        ->assertPathIs('/review-queue')
-        ->assertTitle('Review Queue - Money Assistant')
-        ->assertAttribute('[data-test="nav-review-queue"]', 'data-active', 'true')
-        ->assertSeeIn('[data-slot="breadcrumb-page"]', 'Review Queue')
+        ->click('[data-test="nav-breakdown"]')
+        ->assertPathIs('/breakdown')
+        ->assertTitle('Breakdown - Money Assistant')
+        ->assertAttribute('[data-test="nav-breakdown"]', 'data-active', 'true')
+        ->assertSeeIn('[data-slot="breadcrumb-page"]', 'Breakdown')
         ->click('[data-test="sidebar-menu-button"]')
         ->assertSee('Settings')
         ->assertNoJavaScriptErrors()
@@ -251,8 +253,9 @@ test('Reports explain spending with responsive charts and supporting Transaction
         )
         ->assertNoAccessibilityIssues()
         ->click('[data-test="report-month-2026-08"]')
-        ->assertPathIs('/transactions')
+        ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'PEN')
+        ->assertQueryStringHas('preset', 'custom')
         ->assertQueryStringHas('date_from', '2026-08-01')
         ->assertQueryStringHas('date_to', '2026-08-20');
 
@@ -260,9 +263,10 @@ test('Reports explain spending with responsive charts and supporting Transaction
 
     $page
         ->click('[data-test="report-category-'.$dining->id.'"]')
-        ->assertPathIs('/transactions')
+        ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'PEN')
-        ->assertQueryStringHas('category_id', (string) $dining->id)
+        ->assertQueryStringHas('category', (string) $dining->id)
+        ->assertQueryStringHas('preset', 'custom')
         ->assertQueryStringHas('date_from', '2026-08-01')
         ->assertQueryStringHas('date_to', '2026-08-20')
         ->assertNoJavaScriptErrors()
@@ -275,7 +279,8 @@ test('Reports explain spending with responsive charts and supporting Transaction
             'document.documentElement.scrollWidth <= document.documentElement.clientWidth',
         )
         ->click('[data-test="report-month-2026-07"]')
-        ->assertPathIs('/transactions')
+        ->assertPathIs('/breakdown')
+        ->assertQueryStringHas('preset', 'custom')
         ->assertQueryStringHas('date_from', '2026-07-01')
         ->assertQueryStringHas('date_to', '2026-07-31');
 });

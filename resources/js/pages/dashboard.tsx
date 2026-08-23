@@ -5,7 +5,6 @@ import {
     ArrowUpRight,
     CircleCheck,
     Clock3,
-    ListChecks,
     Mail,
     ReceiptText,
     RefreshCw,
@@ -26,13 +25,12 @@ import { movementDescription } from '@/lib/money-movement';
 import { spendingComparisonDescription } from '@/lib/spending-comparison';
 import type { SpendingComparison } from '@/lib/spending-comparison';
 import {
-    categoryTransactionsUrl,
-    periodTransactionsUrl,
+    categoryBreakdownUrl,
+    periodBreakdownUrl,
 } from '@/lib/transaction-filter-url';
 import { dashboard } from '@/routes';
+import { index as breakdownIndex } from '@/routes/breakdown';
 import { edit as connectionsEdit } from '@/routes/connections';
-import { index as reviewQueueIndex } from '@/routes/review_queue';
-import { index as transactionsIndex } from '@/routes/transactions';
 import type {
     Currency,
     MovementDirection,
@@ -213,7 +211,7 @@ export default function Dashboard({
                                 </div>
                                 <dl className="grid gap-3 sm:grid-cols-2">
                                     <Link
-                                        href={periodTransactionsUrl({
+                                        href={periodBreakdownUrl({
                                             currency,
                                             period,
                                         })}
@@ -264,7 +262,7 @@ export default function Dashboard({
                                     })}
                                 </p>
                                 <Link
-                                    href={periodTransactionsUrl({
+                                    href={periodBreakdownUrl({
                                         currency,
                                         period: comparison_period,
                                     })}
@@ -344,7 +342,7 @@ export default function Dashboard({
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <Link
-                                                            href={categoryTransactionsUrl(
+                                                            href={categoryBreakdownUrl(
                                                                 {
                                                                     currency,
                                                                     period,
@@ -368,7 +366,7 @@ export default function Dashboard({
                                                             </span>
                                                         </Link>
                                                         <Link
-                                                            href={categoryTransactionsUrl(
+                                                            href={categoryBreakdownUrl(
                                                                 {
                                                                     currency,
                                                                     period: comparison_period,
@@ -412,8 +410,8 @@ export default function Dashboard({
                                 </CardDescription>
                             </div>
                             <Button asChild size="sm" variant="ghost">
-                                <Link href={transactionsIndex()}>
-                                    View all
+                                <Link href={breakdownIndex()}>
+                                    Open Breakdown
                                     <ArrowRight />
                                 </Link>
                             </Button>
@@ -427,8 +425,8 @@ export default function Dashboard({
                                             No Transactions yet
                                         </p>
                                         <p className="text-sm text-muted-foreground">
-                                            Record one from the Transactions
-                                            page or connect Gmail.
+                                            Add one from Breakdown or connect
+                                            Gmail.
                                         </p>
                                     </div>
                                 </div>
@@ -444,8 +442,15 @@ export default function Dashboard({
                                         return (
                                             <Link
                                                 key={transaction.id}
-                                                href={transactionsIndex({
+                                                href={breakdownIndex({
                                                     query: {
+                                                        currency:
+                                                            transaction.currency,
+                                                        preset: 'custom',
+                                                        date_from:
+                                                            transaction.occurred_on,
+                                                        date_to:
+                                                            transaction.occurred_on,
                                                         selected:
                                                             transaction.id,
                                                     },
@@ -516,19 +521,19 @@ export default function Dashboard({
                                     : 'All caught up'}
                             </CardTitle>
                             <CardDescription>
-                                Review work and connection health stay separate
-                                from the financial overview.
+                                Transactions needing attention now stay in
+                                Breakdown. Connection health remains here.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="grid gap-3 text-sm">
                             <Link
-                                href={reviewQueueIndex()}
+                                href={breakdownIndex()}
                                 data-test="dashboard-review-link"
                                 className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                             >
                                 <span className="flex items-center gap-2 font-medium">
-                                    <ListChecks className="size-4" />
-                                    Review Queue
+                                    <ReceiptText className="size-4" />
+                                    Open Breakdown
                                 </span>
                                 <Badge
                                     variant={

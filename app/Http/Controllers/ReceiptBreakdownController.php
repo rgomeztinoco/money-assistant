@@ -21,7 +21,7 @@ final class ReceiptBreakdownController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => __('Receipt Breakdown saved.'),
+            'message' => __('Category split saved.'),
         ]);
 
         return $this->redirectToWorkspace('transactions.index');
@@ -36,7 +36,7 @@ final class ReceiptBreakdownController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => __('Receipt Breakdown removed.'),
+            'message' => __('Category split removed.'),
         ]);
 
         return $this->redirectToWorkspace('transactions.index');

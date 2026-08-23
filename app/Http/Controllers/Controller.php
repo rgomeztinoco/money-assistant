@@ -11,6 +11,7 @@ abstract class Controller
     {
         $previousUrl = request()->header('referer');
         $workspaceUrls = [
+            route('breakdown.index'),
             route('transactions.index'),
             route('review_queue.index'),
             route('categories.index'),

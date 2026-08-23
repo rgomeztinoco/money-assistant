@@ -35,7 +35,7 @@ test('the owner saves replaces and removes a Receipt Breakdown in the Transactio
         ->assertSee('Reconciled exactly')
         ->select('[name="line_items[0][category_id]"]', (string) $groceries->id)
         ->press('Save Receipt Breakdown')
-        ->assertSee('Receipt Breakdown saved.')
+        ->assertSee('Category split saved.')
         ->assertSee('Current itemization')
         ->assertSee('Replace Receipt Breakdown')
         ->assertQueryStringHas('search', 'Neighborhood');
@@ -47,9 +47,9 @@ test('the owner saves replaces and removes a Receipt Breakdown in the Transactio
         ->fill('Description', 'Fresh coffee beans')
         ->press('Replace Receipt Breakdown')
         ->wait(1)
-        ->assertSee('Receipt Breakdown saved.')
+        ->assertSee('Category split saved.')
         ->press('Remove Receipt Breakdown')
-        ->assertSee('Receipt Breakdown removed.')
+        ->assertSee('Category split removed.')
         ->assertSee('Manual itemization')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();

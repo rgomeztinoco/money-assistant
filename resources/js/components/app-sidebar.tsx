@@ -1,8 +1,7 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import {
     BarChart3,
     LayoutGrid,
-    ListChecks,
     MailSearch,
     Store,
     ReceiptText,
@@ -22,17 +21,15 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as breakdownIndex } from '@/routes/breakdown';
 import { index as categoriesIndex } from '@/routes/categories';
 import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import { index as parserProfilesIndex } from '@/routes/parser_profiles';
 import { show as reportShow } from '@/routes/reports';
-import { index as reviewQueueIndex } from '@/routes/review_queue';
 import { index as statementImportsIndex } from '@/routes/statement_imports';
-import { index as transactionsIndex } from '@/routes/transactions';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
-    const { navigation } = usePage().props;
     const mainNavItems: NavItem[] = [
         {
             title: 'Dashboard',
@@ -40,15 +37,9 @@ export function AppSidebar() {
             icon: LayoutGrid,
         },
         {
-            title: 'Transactions',
-            href: transactionsIndex(),
+            title: 'Breakdown',
+            href: breakdownIndex(),
             icon: ReceiptText,
-        },
-        {
-            title: 'Review Queue',
-            href: reviewQueueIndex(),
-            icon: ListChecks,
-            badgeCount: navigation.review_queue_count,
         },
         {
             title: 'Reports',

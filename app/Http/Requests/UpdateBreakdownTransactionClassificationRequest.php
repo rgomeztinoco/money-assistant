@@ -1,0 +1,53 @@
+<?php
+
+namespace App\Http\Requests;
+
+use App\IncomeSource;
+use App\Models\Transaction;
+use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class UpdateBreakdownTransactionClassificationRequest extends FormRequest
+{
+    /**
+     * Determine if the user is authorized to make this request.
+     */
+    public function authorize(): bool
+    {
+        $transaction = $this->route('transaction');
+
+        return $transaction instanceof Transaction
+            && $transaction->user_id === $this->user()?->getKey();
+    }
+
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, ValidationRule|array<mixed>|string>
+     */
+    public function rules(): array
+    {
+        $transaction = $this->route('transaction');
+        $supportsCategory = $transaction instanceof Transaction
+            && $transaction->kind->supportsCategory();
+
+        return [
+            'category_id' => [
+                ...($supportsCategory ? ['present'] : ['prohibited']),
+                'nullable',
+                'integer',
+                Rule::exists('categories', 'id')
+                    ->where('user_id', $this->user()->getKey())
+                    ->whereNull('archived_at'),
+            ],
+            'income_source' => [
+                Rule::requiredIf($transaction instanceof Transaction && $transaction->kind->value === 'income'),
+                Rule::prohibitedIf(! ($transaction instanceof Transaction && $transaction->kind->value === 'income')),
+                'nullable',
+                Rule::enum(IncomeSource::class),
+            ],
+            'apply_to_matching' => ['sometimes', 'boolean'],
+        ];
+    }
+}

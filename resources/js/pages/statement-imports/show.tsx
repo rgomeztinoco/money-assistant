@@ -16,8 +16,8 @@ import {
     transferPurposeLabel,
 } from '@/lib/money-movement';
 import { statementMovementClassificationLabel } from '@/lib/statement-movement-classification';
+import { index as breakdownIndex } from '@/routes/breakdown';
 import { index, show } from '@/routes/statement_imports';
-import { index as transactionsIndex } from '@/routes/transactions';
 import type {
     Currency,
     FinancialStatementFormat,
@@ -275,8 +275,15 @@ export default function StatementImportShow({
                                         </span>
                                         {movement.transaction ? (
                                             <Link
-                                                href={transactionsIndex({
+                                                href={breakdownIndex({
                                                     query: {
+                                                        currency:
+                                                            movement.currency,
+                                                        preset: 'custom',
+                                                        date_from:
+                                                            movement.occurred_on,
+                                                        date_to:
+                                                            movement.occurred_on,
                                                         selected:
                                                             movement.transaction
                                                                 .id,

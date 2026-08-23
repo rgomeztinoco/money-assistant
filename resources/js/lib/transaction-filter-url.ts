@@ -1,4 +1,4 @@
-import { index as transactionsIndex } from '@/routes/transactions';
+import { index as breakdownIndex } from '@/routes/breakdown';
 import type { Currency } from '@/types';
 
 type TransactionFilterPeriod = {
@@ -6,23 +6,24 @@ type TransactionFilterPeriod = {
     date_to: string;
 };
 
-export function periodTransactionsUrl({
+export function periodBreakdownUrl({
     currency,
     period,
 }: {
     currency: Currency;
     period: TransactionFilterPeriod;
 }) {
-    return transactionsIndex({
+    return breakdownIndex({
         query: {
             currency,
+            preset: 'custom',
             date_from: period.date_from,
             date_to: period.date_to,
         },
     });
 }
 
-export function categoryTransactionsUrl({
+export function categoryBreakdownUrl({
     currency,
     period,
     categoryId,
@@ -31,14 +32,14 @@ export function categoryTransactionsUrl({
     period: TransactionFilterPeriod;
     categoryId: number | null;
 }) {
-    return transactionsIndex({
+    return breakdownIndex({
         query: {
             currency,
+            preset: 'custom',
             date_from: period.date_from,
             date_to: period.date_to,
-            ...(categoryId === null
-                ? { category_state: 'uncategorized' }
-                : { category_id: categoryId }),
+            category:
+                categoryId === null ? 'uncategorized' : categoryId.toString(),
         },
     });
 }

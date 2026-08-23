@@ -26,8 +26,8 @@ test('the owner selects a statement once resolves exceptions and revisits the co
             ->type('#password', 'password')
             ->click('[data-test="login-button"]')
             ->assertPathIs('/dashboard')
-            ->click('Transactions')
-            ->assertPathIs('/transactions')
+            ->click('Statement Imports')
+            ->assertPathIs('/statement-imports')
             ->click('Import statement')
             ->assertPathIs('/statement-imports/create');
         selectPdfInBrowser($page, '#preview-statement', $pdf);

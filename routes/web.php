@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\BreakdownController;
+use App\Http\Controllers\BreakdownTransactionClassificationController;
 use App\Http\Controllers\CategoryArchivalController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
@@ -31,6 +33,11 @@ Route::redirect('/', '/dashboard')
     ->name('home');
 
 Route::middleware(['auth'])->group(function () {
+    Route::get('breakdown', BreakdownController::class)->name('breakdown.index');
+    Route::put(
+        'breakdown/transactions/{transaction}/classification',
+        [BreakdownTransactionClassificationController::class, 'update'],
+    )->name('breakdown.transactions.classification.update');
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('reports/{currency}', ReportController::class)->name('reports.show');
     Route::resource('transactions', TransactionController::class)

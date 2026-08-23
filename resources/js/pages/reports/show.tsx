@@ -16,8 +16,8 @@ import { formatMinorUnits } from '@/lib/format-minor-units';
 import { spendingComparisonDescription } from '@/lib/spending-comparison';
 import type { SpendingComparison } from '@/lib/spending-comparison';
 import {
-    categoryTransactionsUrl,
-    periodTransactionsUrl,
+    categoryBreakdownUrl,
+    periodBreakdownUrl,
 } from '@/lib/transaction-filter-url';
 import { show as reportShow } from '@/routes/reports';
 import type { Currency } from '@/types';
@@ -255,18 +255,18 @@ export default function ReportShow({
                                 </div>
                                 <Button asChild variant="outline">
                                     <Link
-                                        href={periodTransactionsUrl({
+                                        href={periodBreakdownUrl({
                                             currency,
                                             period,
                                         })}
                                     >
-                                        View Transactions
+                                        View Breakdown
                                         <ChevronRight />
                                     </Link>
                                 </Button>
                             </div>
                             <Link
-                                href={periodTransactionsUrl({
+                                href={periodBreakdownUrl({
                                     currency,
                                     period: comparison.period,
                                 })}
@@ -386,7 +386,7 @@ export default function ReportShow({
                             {monthlyHistory.map((month) => (
                                 <Link
                                     key={month.month}
-                                    href={periodTransactionsUrl({
+                                    href={periodBreakdownUrl({
                                         currency,
                                         period: month,
                                     })}
@@ -438,7 +438,7 @@ export default function ReportShow({
                                         className="grid gap-2 rounded-lg border p-3"
                                     >
                                         <Link
-                                            href={categoryTransactionsUrl({
+                                            href={categoryBreakdownUrl({
                                                 currency,
                                                 period,
                                                 categoryId: group.category.id,
@@ -476,7 +476,7 @@ export default function ReportShow({
                                                 {group.children.map((child) => (
                                                     <Link
                                                         key={child.category.id}
-                                                        href={categoryTransactionsUrl(
+                                                        href={categoryBreakdownUrl(
                                                             {
                                                                 currency,
                                                                 period,
