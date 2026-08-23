@@ -3,6 +3,7 @@
 namespace App\Actions\Trends;
 
 use App\Actions\Reporting\EquivalentMonthPeriods;
+use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
 use App\Currency;
 use App\ExactInteger;
@@ -12,7 +13,6 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 
 /**
@@ -31,6 +31,7 @@ final class ReadTrends
     public function __construct(
         private ReadPeriodSummary $readPeriodSummary,
         private MerchantNormalizer $merchantNormalizer,
+        private NetSpendingAllocation $netSpendingAllocation,
     ) {}
 
     /**
@@ -155,7 +156,7 @@ final class ReadTrends
                 continue;
             }
 
-            foreach ($this->categoryAllocations($transaction, $categoriesById) as $categoryKey => $allocation) {
+            foreach ($this->netSpendingAllocation->byTopLevelCategory($transaction, $categoriesById) as $categoryKey => $allocation) {
                 $category = $categoryKey === 'uncategorized'
                     ? ['id' => null, 'name' => 'Uncategorized']
                     : [
@@ -228,45 +229,6 @@ final class ReadTrends
         }
 
         return $findings;
-    }
-
-    /**
-     * @param  Collection<int, Category>  $categoriesById
-     * @return array<int|string, ExactInteger>
-     */
-    private function categoryAllocations(Transaction $transaction, Collection $categoriesById): array
-    {
-        /** @var array<int|string, ExactInteger> $allocations */
-        $allocations = [];
-        $lineItems = $transaction->receiptBreakdown?->lineItems;
-
-        if ($lineItems === null || $lineItems->isEmpty()) {
-            $categoryKey = $this->topLevelCategoryKey($transaction->category_id, $categoriesById);
-            $allocations[$categoryKey] = $transaction->kind->netSpendingAmount($transaction->amount_minor);
-
-            return $allocations;
-        }
-
-        foreach ($lineItems as $lineItem) {
-            $categoryKey = $this->topLevelCategoryKey($lineItem->category_id, $categoriesById);
-            $allocations[$categoryKey] = ($allocations[$categoryKey] ?? ExactInteger::from(0))->add(
-                $transaction->kind->netSpendingAmount($lineItem->line_total_minor),
-            );
-        }
-
-        return $allocations;
-    }
-
-    /** @param Collection<int, Category> $categoriesById */
-    private function topLevelCategoryKey(?int $categoryId, Collection $categoriesById): int|string
-    {
-        if ($categoryId === null || ! $categoriesById->has($categoryId)) {
-            return 'uncategorized';
-        }
-
-        $category = $categoriesById->get($categoryId);
-
-        return $category->parent_id ?? $category->id;
     }
 
     /** @param TrendBucket $bucket */

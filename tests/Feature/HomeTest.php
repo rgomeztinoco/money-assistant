@@ -2,6 +2,8 @@
 
 use App\IncomeSource;
 use App\Models\Category;
+use App\Models\LineItem;
+use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
 use App\MovementDirection;
@@ -111,6 +113,56 @@ test('Home uses the latest meaningful period and omits an empty USD card', funct
             ->where('primary.summary.net_spending_minor', '1000')
             ->where('secondary', null)
             ->where('primary.input_request.transaction_count', 1));
+});
+
+test('Home uses receipt splits instead of the transaction category for material changes', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
+    $owner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create(['name' => 'Dining']);
+    $transport = Category::factory()->for($owner, 'owner')->create(['name' => 'Transport']);
+
+    foreach (['2026-05-10', '2026-06-10', '2026-07-10'] as $occurredOn) {
+        $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+            'occurred_on' => $occurredOn,
+            'amount_minor' => 2_000,
+            'category_id' => $transport->id,
+        ]);
+        $receiptBreakdown = ReceiptBreakdown::factory()->for($transaction)->create();
+        LineItem::factory()->for($receiptBreakdown)->create([
+            'category_id' => $dining->id,
+            'line_total_minor' => 1_000,
+        ]);
+        LineItem::factory()->for($receiptBreakdown)->create([
+            'category_id' => null,
+            'line_total_minor' => 1_000,
+        ]);
+    }
+
+    $currentTransaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 4_000,
+        'category_id' => $transport->id,
+    ]);
+    $currentBreakdown = ReceiptBreakdown::factory()->for($currentTransaction)->create();
+    LineItem::factory()->for($currentBreakdown)->create([
+        'category_id' => $dining->id,
+        'line_total_minor' => 3_000,
+    ]);
+    LineItem::factory()->for($currentBreakdown)->create([
+        'category_id' => null,
+        'line_total_minor' => 1_000,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('home'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('primary.summary.net_spending_minor', '4000')
+            ->where('primary.material_change.category.id', $food->id)
+            ->where('primary.material_change.category.name', 'Food')
+            ->where('primary.material_change.current_total_minor', '3000')
+            ->where('primary.material_change.typical_total_minor', '1000')
+            ->where('primary.material_change.change_minor', '2000'));
 });
 
 test('Home does not invent empty totals when the owner has no Transactions', function () {

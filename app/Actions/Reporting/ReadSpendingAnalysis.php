@@ -30,6 +30,8 @@ use Illuminate\Support\Str;
  */
 final class ReadSpendingAnalysis
 {
+    public function __construct(private NetSpendingAllocation $netSpendingAllocation) {}
+
     /**
      * @return array{
      *     comparison: SpendingComparisonData,
@@ -78,28 +80,13 @@ final class ReadSpendingAnalysis
                 : 'previous';
             $transactionAmount = $transaction->kind->netSpendingAmount((string) $transaction->amount_minor);
             $totals[$periodName] = $totals[$periodName]->add($transactionAmount);
-            $lineItems = $transaction->receiptBreakdown?->lineItems;
 
-            if ($lineItems === null || $lineItems->isEmpty()) {
-                $this->addCategoryAmount(
-                    categoryAmounts: $categoryAmounts,
-                    categoryId: $transaction->category_id,
-                    amount: $transactionAmount,
-                    period: $periodName,
-                    categoriesById: $categoriesById,
-                );
-
-                continue;
-            }
-
-            foreach ($lineItems as $lineItem) {
-                $this->addCategoryAmount(
-                    categoryAmounts: $categoryAmounts,
-                    categoryId: $lineItem->category_id,
-                    amount: $transaction->kind->netSpendingAmount($lineItem->line_total_minor),
-                    period: $periodName,
-                    categoriesById: $categoriesById,
-                );
+            foreach ($this->netSpendingAllocation->byTopLevelCategory($transaction, $categoriesById) as $categoryKey => $amount) {
+                $categoryAmounts[$categoryKey] ??= [
+                    'current' => ExactInteger::from(0),
+                    'previous' => ExactInteger::from(0),
+                ];
+                $categoryAmounts[$categoryKey][$periodName] = $categoryAmounts[$categoryKey][$periodName]->add($amount);
             }
         }
 
@@ -111,31 +98,6 @@ final class ReadSpendingAnalysis
             ),
             'category_insights' => $this->categoryInsights($categoryAmounts, $categoriesById),
         ];
-    }
-
-    /**
-     * @param  array<int|string, array{current: ExactInteger, previous: ExactInteger}>  $categoryAmounts
-     * @param  'current'|'previous'  $period
-     * @param  Collection<int, Category>  $categoriesById
-     */
-    private function addCategoryAmount(
-        array &$categoryAmounts,
-        ?int $categoryId,
-        ExactInteger $amount,
-        string $period,
-        Collection $categoriesById,
-    ): void {
-        if ($categoryId === null) {
-            $categoryKey = 'uncategorized';
-        } else {
-            $category = $categoriesById->get($categoryId);
-            $categoryKey = $category->parent_id ?? $category->id;
-        }
-        $categoryAmounts[$categoryKey] ??= [
-            'current' => ExactInteger::from(0),
-            'previous' => ExactInteger::from(0),
-        ];
-        $categoryAmounts[$categoryKey][$period] = $categoryAmounts[$categoryKey][$period]->add($amount);
     }
 
     /** @return SpendingComparisonData */

@@ -3,6 +3,7 @@
 namespace App\Actions\Home;
 
 use App\Actions\Reporting\EquivalentMonthPeriods;
+use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
 use App\Currency;
 use App\ExactInteger;
@@ -11,7 +12,6 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Collection;
 
 /**
  * @phpstan-type AnalysisPeriod array{label: string, date_from: string, date_to: string}
@@ -22,7 +22,10 @@ use Illuminate\Database\Eloquent\Collection;
  */
 final class ReadHome
 {
-    public function __construct(private ReadPeriodSummary $readPeriodSummary) {}
+    public function __construct(
+        private ReadPeriodSummary $readPeriodSummary,
+        private NetSpendingAllocation $netSpendingAllocation,
+    ) {}
 
     /** @return array{primary: Briefing|null, secondary: Briefing|null} */
     public function handle(User $owner): array
@@ -155,28 +158,9 @@ final class ReadHome
                 continue;
             }
 
-            $lineItems = $transaction->receiptBreakdown?->lineItems;
-
-            if ($lineItems === null || $lineItems->isEmpty()) {
-                $this->addCategoryAmount(
-                    $amounts,
-                    $transaction->category_id,
-                    $periodIndex,
-                    $transaction->kind->netSpendingAmount($transaction->amount_minor),
-                    $categoriesById,
-                );
-
-                continue;
-            }
-
-            foreach ($lineItems as $lineItem) {
-                $this->addCategoryAmount(
-                    $amounts,
-                    $lineItem->category_id,
-                    $periodIndex,
-                    $transaction->kind->netSpendingAmount($lineItem->line_total_minor),
-                    $categoriesById,
-                );
+            foreach ($this->netSpendingAllocation->byTopLevelCategory($transaction, $categoriesById) as $categoryKey => $amount) {
+                $amounts[$categoryKey][$periodIndex] = ($amounts[$categoryKey][$periodIndex] ?? ExactInteger::from(0))
+                    ->add($amount);
             }
         }
 
@@ -223,28 +207,6 @@ final class ReadHome
             'date_from' => $dateFrom->toDateString(),
             'date_to' => $dateTo->toDateString(),
         ];
-    }
-
-    /**
-     * @param  array<int|string, array<int, ExactInteger>>  $amounts
-     * @param  Collection<int, Category>  $categoriesById
-     */
-    private function addCategoryAmount(
-        array &$amounts,
-        ?int $categoryId,
-        int $periodIndex,
-        ExactInteger $amount,
-        Collection $categoriesById,
-    ): void {
-        $categoryKey = 'uncategorized';
-
-        if ($categoryId !== null && $categoriesById->has($categoryId)) {
-            $category = $categoriesById->get($categoryId);
-            $categoryKey = $category->parent_id ?? $category->id;
-        }
-
-        $amounts[$categoryKey][$periodIndex] = ($amounts[$categoryKey][$periodIndex] ?? ExactInteger::from(0))
-            ->add($amount);
     }
 
     private function absolute(string $amount): ExactInteger

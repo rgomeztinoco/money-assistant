@@ -2,6 +2,7 @@
 
 namespace App\Actions\Breakdown;
 
+use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
 use App\Currency;
 use App\ExactInteger;
@@ -21,6 +22,7 @@ class ReadBreakdown
     public function __construct(
         private ReadPeriodSummary $readPeriodSummary,
         private MerchantNormalizer $merchantNormalizer,
+        private NetSpendingAllocation $netSpendingAllocation,
     ) {}
 
     /**
@@ -232,26 +234,8 @@ class ReadBreakdown
                 continue;
             }
 
-            $lineItems = $transaction->receiptBreakdown?->lineItems;
-
-            if ($lineItems === null || $lineItems->isEmpty()) {
-                $this->addCategoryAmount(
-                    $amounts,
-                    $transaction->category_id,
-                    $transaction->kind->netSpendingAmount($transaction->amount_minor),
-                    $categoriesById,
-                );
-
-                continue;
-            }
-
-            foreach ($lineItems as $lineItem) {
-                $this->addCategoryAmount(
-                    $amounts,
-                    $lineItem->category_id,
-                    $transaction->kind->netSpendingAmount($lineItem->line_total_minor),
-                    $categoriesById,
-                );
+            foreach ($this->netSpendingAllocation->byCategory($transaction, $categoriesById) as $categoryKey => $amount) {
+                $amounts[$categoryKey] = ($amounts[$categoryKey] ?? ExactInteger::from(0))->add($amount);
             }
         }
 
@@ -310,26 +294,6 @@ class ReadBreakdown
             ->compare($this->absolute($left['amount_minor'])));
 
         return $groups;
-    }
-
-    /**
-     * @param  array<int|string, ExactInteger>  $amounts
-     * @param  Collection<int, Category>  $categoriesById
-     */
-    private function addCategoryAmount(array &$amounts, ?int $categoryId, ExactInteger $amount, Collection $categoriesById): void
-    {
-        if ($categoryId === null || ! $categoriesById->has($categoryId)) {
-            $amounts['uncategorized'] = ($amounts['uncategorized'] ?? ExactInteger::from(0))->add($amount);
-
-            return;
-        }
-
-        $category = $categoriesById->get($categoryId);
-        $amounts[$category->id] = ($amounts[$category->id] ?? ExactInteger::from(0))->add($amount);
-
-        if ($category->parent_id !== null) {
-            $amounts[$category->parent_id] = ($amounts[$category->parent_id] ?? ExactInteger::from(0))->add($amount);
-        }
     }
 
     /**

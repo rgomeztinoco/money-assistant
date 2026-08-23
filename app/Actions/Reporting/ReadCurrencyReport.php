@@ -22,6 +22,7 @@ final class ReadCurrencyReport
     public function __construct(
         private ReadSpendingAnalysis $readSpendingAnalysis,
         private ReadPeriodSummary $readPeriodSummary,
+        private NetSpendingAllocation $netSpendingAllocation,
     ) {}
 
     /**
@@ -70,27 +71,9 @@ final class ReadCurrencyReport
             ->lazyById();
 
         foreach ($transactions as $transaction) {
-            $transactionAmount = $transaction->kind->netSpendingAmount((string) $transaction->amount_minor);
-            $lineItems = $transaction->receiptBreakdown?->lineItems;
-
-            if ($lineItems === null || $lineItems->isEmpty()) {
-                $this->addCategoryAmount(
-                    $categoryAmounts,
-                    $transaction->category_id,
-                    $transactionAmount,
-                    $categoriesById,
-                );
-
-                continue;
-            }
-
-            foreach ($lineItems as $lineItem) {
-                $this->addCategoryAmount(
-                    $categoryAmounts,
-                    $lineItem->category_id,
-                    $transaction->kind->netSpendingAmount($lineItem->line_total_minor),
-                    $categoriesById,
-                );
+            foreach ($this->netSpendingAllocation->byCategory($transaction, $categoriesById) as $categoryKey => $amount) {
+                $categoryAmounts[$categoryKey] = ($categoryAmounts[$categoryKey] ?? ExactInteger::from(0))
+                    ->add($amount);
             }
         }
 
@@ -114,34 +97,6 @@ final class ReadCurrencyReport
             'monthly_history' => $this->monthlyHistory($owner, $currency, $dateFrom, $dateTo),
             'category_groups' => $this->categoryGroups($categories, $categoryAmounts),
         ];
-    }
-
-    /**
-     * @param  array<int|string, ExactInteger>  $categoryAmounts
-     * @param  Collection<int, Category>  $categoriesById
-     */
-    private function addCategoryAmount(
-        array &$categoryAmounts,
-        ?int $categoryId,
-        ExactInteger $amount,
-        Collection $categoriesById,
-    ): void {
-        $category = $categoryId === null ? null : $categoriesById->get($categoryId);
-
-        if ($category === null) {
-            $categoryAmounts['uncategorized'] = ($categoryAmounts['uncategorized'] ?? ExactInteger::from(0))
-                ->add($amount);
-
-            return;
-        }
-
-        $categoryAmounts[$category->id] = ($categoryAmounts[$category->id] ?? ExactInteger::from(0))
-            ->add($amount);
-
-        if ($category->parent_id !== null) {
-            $categoryAmounts[$category->parent_id] = ($categoryAmounts[$category->parent_id] ?? ExactInteger::from(0))
-                ->add($amount);
-        }
     }
 
     /** @return list<ReportMonthData> */
