@@ -4,6 +4,7 @@ use App\Actions\StatementImports\StatementImportWorkflow;
 use App\Models\Category;
 use App\Models\StatementImport;
 use App\Models\StatementMovement;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -21,6 +22,7 @@ test('Statement Import pages and mutations require an authenticated owner', func
     $this->get('/statement-imports/create')->assertRedirect(route('login'));
     $this->post('/statement-import-previews')->assertRedirect(route('login'));
     $this->post('/statement-imports')->assertRedirect(route('login'));
+    $this->put('/statement-imports/1/movements/1/classification')->assertRedirect(route('login'));
 });
 
 test('the owner can preview a statement through the standalone HTTP endpoint', function () {
@@ -129,6 +131,53 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
         ->assertMethodNotAllowed();
 
     expect(StatementMovement::query()->where('classification', 'transfer')->count())->toBe(1);
+});
+
+test('the owner can correct a confirmed Statement Movement classification', function () {
+    $owner = User::factory()->create();
+    $otherOwner = User::factory()->create();
+    $statementImport = StatementImport::factory()->for($owner, 'owner')->create();
+    $transaction = Transaction::factory()
+        ->for($owner, 'owner')
+        ->transfer()
+        ->create();
+    $statementMovement = StatementMovement::factory()
+        ->for($statementImport)
+        ->for($transaction)
+        ->create([
+            'direction' => 'debit',
+            'classification' => 'transfer',
+        ]);
+
+    $this->actingAs($owner)
+        ->put(route('statement_imports.movements.classification.update', [
+            $statementImport,
+            $statementMovement,
+        ]), [
+            'classification' => 'purchase',
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('statement_imports.show', $statementImport));
+
+    expect($statementMovement->refresh()->classification->value)->toBe('purchase')
+        ->and($transaction->refresh()->kind->value)->toBe('spending')
+        ->and($transaction->transfer_purpose)->toBeNull();
+
+    $this->put(route('statement_imports.movements.classification.update', [
+        $statementImport,
+        $statementMovement,
+    ]), [
+        'classification' => 'needs_classification',
+    ])->assertSessionHasErrors('classification');
+
+    $this->actingAs($otherOwner)
+        ->put(route('statement_imports.movements.classification.update', [
+            $statementImport,
+            $statementMovement,
+        ]), [
+            'classification' => 'refund',
+        ])
+        ->assertForbidden();
 });
 
 test('semantic confirmation failures identify the affected preview row', function () {

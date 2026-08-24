@@ -1,5 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
-import { FilePlus2, FileText } from 'lucide-react';
+import { ArrowRight, FilePlus2, FileText } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,6 +9,14 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { create, index, show } from '@/routes/statement_imports';
 
@@ -47,6 +55,10 @@ function totalCurrency(key: string): 'PEN' | 'USD' {
     return key.includes('_usd_') ? 'USD' : 'PEN';
 }
 
+function totalLabel(key: string): string {
+    return key.replaceAll('_minor', '').replaceAll('_', ' ');
+}
+
 export default function StatementImportsIndex({
     statement_imports,
 }: {
@@ -73,17 +85,26 @@ export default function StatementImportsIndex({
                     </Button>
                 </div>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Confirmed statements</CardTitle>
-                        <CardDescription>
+                <Card className="min-w-0">
+                    <CardHeader className="flex-row items-start justify-between gap-3">
+                        <div className="grid gap-1.5">
+                            <CardTitle>Confirmed statements</CardTitle>
+                            <CardDescription>
+                                Open an import to review its totals, movements,
+                                and linked transactions.
+                            </CardDescription>
+                        </div>
+                        <Badge variant="secondary">
                             {statement_imports.total}{' '}
                             {statement_imports.total === 1
                                 ? 'import'
                                 : 'imports'}
-                        </CardDescription>
+                        </Badge>
                     </CardHeader>
-                    <CardContent className="grid gap-4">
+                    <CardContent
+                        className="grid min-w-0 gap-4"
+                        data-test="statement-import-list"
+                    >
                         {statement_imports.data.length === 0 ? (
                             <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-6 text-center">
                                 <FileText className="size-9 text-muted-foreground" />
@@ -96,128 +117,264 @@ export default function StatementImportsIndex({
                                         its complete financial activity.
                                     </p>
                                 </div>
+                                <Button asChild size="sm" className="mt-1">
+                                    <Link href={create()}>
+                                        <FilePlus2 /> Import statement
+                                    </Link>
+                                </Button>
                             </div>
                         ) : (
-                            <div
-                                className="grid min-w-0 gap-3 lg:grid-cols-2"
-                                data-test="statement-import-list"
-                            >
-                                {statement_imports.data.map(
-                                    (statementImport) => (
-                                        <article
-                                            key={statementImport.id}
-                                            className="grid min-w-0 gap-4 rounded-lg border p-4"
-                                        >
-                                            <div className="flex min-w-0 items-start justify-between gap-3">
-                                                <div className="grid min-w-0 gap-1">
-                                                    <Link
-                                                        href={show(
-                                                            statementImport.id,
-                                                        )}
-                                                        className="font-medium break-words hover:underline"
-                                                        aria-label={`View ${statementImport.instrument_label} statement from ${statementImport.period_start} through ${statementImport.period_end}`}
-                                                    >
-                                                        {
-                                                            statementImport.instrument_label
-                                                        }
-                                                    </Link>
-                                                    <p className="text-sm text-muted-foreground tabular-nums">
-                                                        {
-                                                            statementImport.period_start
-                                                        }{' '}
-                                                        through{' '}
-                                                        {
-                                                            statementImport.period_end
-                                                        }
-                                                    </p>
-                                                </div>
-                                                <Badge
-                                                    variant="outline"
-                                                    className="uppercase"
-                                                >
-                                                    {
-                                                        statementImport.financial_statement_format
-                                                    }
-                                                </Badge>
-                                            </div>
-
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div className="grid gap-1 rounded-md bg-muted/40 p-3">
-                                                    <span className="text-xs text-muted-foreground">
-                                                        Movements
+                            <>
+                                <div
+                                    className="grid gap-3 md:hidden"
+                                    data-test="statement-import-mobile-list"
+                                >
+                                    {statement_imports.data.map(
+                                        (statementImport) => (
+                                            <article
+                                                key={statementImport.id}
+                                                className="grid min-w-0 gap-4 rounded-lg border p-4"
+                                            >
+                                                <div className="flex min-w-0 items-start gap-3">
+                                                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                                                        <FileText className="size-4" />
                                                     </span>
-                                                    <span className="font-medium tabular-nums">
-                                                        {
-                                                            statementImport.movement_count
-                                                        }
-                                                    </span>
-                                                </div>
-                                                <div className="grid gap-1 rounded-md bg-muted/40 p-3">
-                                                    <span className="text-xs text-muted-foreground">
-                                                        Instrument
-                                                    </span>
-                                                    <span className="font-medium tabular-nums">
-                                                        {statementImport.instrument_last_four
-                                                            ? `Ending ${statementImport.instrument_last_four}`
-                                                            : 'No last four'}
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            <div className="grid gap-1">
-                                                <span className="text-xs text-muted-foreground">
-                                                    Statement totals
-                                                </span>
-                                                {identifyingTotals(
-                                                    statementImport,
-                                                ).map(([key, value]) => (
-                                                    <span
-                                                        key={key}
-                                                        className="text-sm capitalize tabular-nums"
-                                                    >
-                                                        {key
-                                                            .replaceAll(
-                                                                '_minor',
-                                                                '',
-                                                            )
-                                                            .replaceAll(
-                                                                '_',
-                                                                ' ',
+                                                    <div className="grid min-w-0 flex-1 gap-1">
+                                                        <Link
+                                                            href={show(
+                                                                statementImport.id,
                                                             )}
-                                                        :{' '}
-                                                        {formatMinorUnits(
-                                                            value,
-                                                            totalCurrency(key),
-                                                        )}
-                                                    </span>
-                                                ))}
-                                            </div>
+                                                            prefetch
+                                                            className="font-medium break-words hover:underline"
+                                                        >
+                                                            {
+                                                                statementImport.instrument_label
+                                                            }
+                                                        </Link>
+                                                        <p className="text-sm text-muted-foreground tabular-nums">
+                                                            {
+                                                                statementImport.period_start
+                                                            }{' '}
+                                                            through{' '}
+                                                            {
+                                                                statementImport.period_end
+                                                            }
+                                                        </p>
+                                                    </div>
+                                                    <Badge variant="outline">
+                                                        {statementImport.financial_statement_format.toUpperCase()}
+                                                    </Badge>
+                                                </div>
 
-                                            <div className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
-                                                <p className="text-xs text-muted-foreground tabular-nums">
-                                                    Confirmed{' '}
-                                                    {new Date(
-                                                        statementImport.confirmed_at,
-                                                    ).toLocaleString()}
-                                                </p>
-                                                <Button
-                                                    asChild
-                                                    variant="outline"
-                                                    size="sm"
-                                                >
-                                                    <Link
-                                                        href={show(
-                                                            statementImport.id,
-                                                        )}
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="grid gap-1 rounded-lg border p-3">
+                                                        <span className="text-xs text-muted-foreground">
+                                                            Movements
+                                                        </span>
+                                                        <span className="font-medium tabular-nums">
+                                                            {
+                                                                statementImport.movement_count
+                                                            }
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid gap-1 rounded-lg border p-3">
+                                                        <span className="text-xs text-muted-foreground">
+                                                            Last four digits
+                                                        </span>
+                                                        <span className="font-medium tabular-nums">
+                                                            {statementImport.instrument_last_four ??
+                                                                'Not provided'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid gap-1">
+                                                    <span className="text-xs text-muted-foreground">
+                                                        Statement totals
+                                                    </span>
+                                                    {identifyingTotals(
+                                                        statementImport,
+                                                    ).map(([key, value]) => (
+                                                        <span
+                                                            key={key}
+                                                            className="text-sm capitalize tabular-nums"
+                                                        >
+                                                            {totalLabel(key)}:{' '}
+                                                            {formatMinorUnits(
+                                                                value,
+                                                                totalCurrency(
+                                                                    key,
+                                                                ),
+                                                            )}
+                                                        </span>
+                                                    ))}
+                                                </div>
+
+                                                <div className="flex items-end justify-between gap-3 border-t pt-3">
+                                                    <p className="text-xs text-muted-foreground tabular-nums">
+                                                        Confirmed{' '}
+                                                        {new Date(
+                                                            statementImport.confirmed_at,
+                                                        ).toLocaleString()}
+                                                    </p>
+                                                    <Button
+                                                        asChild
+                                                        variant="outline"
+                                                        size="sm"
                                                     >
-                                                        View details
-                                                    </Link>
-                                                </Button>
-                                            </div>
-                                        </article>
-                                    ),
-                                )}
-                            </div>
+                                                        <Link
+                                                            href={show(
+                                                                statementImport.id,
+                                                            )}
+                                                            prefetch
+                                                        >
+                                                            View details
+                                                            <ArrowRight />
+                                                        </Link>
+                                                    </Button>
+                                                </div>
+                                            </article>
+                                        ),
+                                    )}
+                                </div>
+
+                                <div
+                                    className="hidden min-w-0 overflow-hidden rounded-lg border md:block"
+                                    data-test="statement-import-table"
+                                >
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow className="hover:bg-transparent">
+                                                <TableHead className="pl-6">
+                                                    Statement
+                                                </TableHead>
+                                                <TableHead>Period</TableHead>
+                                                <TableHead className="text-center">
+                                                    Movements
+                                                </TableHead>
+                                                <TableHead>
+                                                    Statement totals
+                                                </TableHead>
+                                                <TableHead>Confirmed</TableHead>
+                                                <TableHead className="pr-6 text-right">
+                                                    <span className="sr-only">
+                                                        Actions
+                                                    </span>
+                                                </TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {statement_imports.data.map(
+                                                (statementImport) => (
+                                                    <TableRow
+                                                        key={statementImport.id}
+                                                    >
+                                                        <TableCell className="min-w-52 py-4 pl-6 whitespace-normal">
+                                                            <div className="flex min-w-0 items-start gap-3">
+                                                                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                                                                    <FileText className="size-4" />
+                                                                </span>
+                                                                <div className="grid min-w-0 gap-1">
+                                                                    <Link
+                                                                        href={show(
+                                                                            statementImport.id,
+                                                                        )}
+                                                                        prefetch
+                                                                        className="font-medium break-words hover:underline"
+                                                                    >
+                                                                        {
+                                                                            statementImport.instrument_label
+                                                                        }
+                                                                    </Link>
+                                                                    <div className="flex flex-wrap items-center gap-2">
+                                                                        <Badge variant="outline">
+                                                                            {statementImport.financial_statement_format.toUpperCase()}
+                                                                        </Badge>
+                                                                        {statementImport.instrument_last_four && (
+                                                                            <span className="text-xs text-muted-foreground tabular-nums">
+                                                                                Ending{' '}
+                                                                                {
+                                                                                    statementImport.instrument_last_four
+                                                                                }
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell className="min-w-48 tabular-nums">
+                                                            {
+                                                                statementImport.period_start
+                                                            }{' '}
+                                                            through{' '}
+                                                            {
+                                                                statementImport.period_end
+                                                            }
+                                                        </TableCell>
+                                                        <TableCell className="text-center font-medium tabular-nums">
+                                                            {
+                                                                statementImport.movement_count
+                                                            }
+                                                        </TableCell>
+                                                        <TableCell className="min-w-52 whitespace-normal">
+                                                            <div className="grid gap-1">
+                                                                {identifyingTotals(
+                                                                    statementImport,
+                                                                ).map(
+                                                                    ([
+                                                                        key,
+                                                                        value,
+                                                                    ]) => (
+                                                                        <span
+                                                                            key={
+                                                                                key
+                                                                            }
+                                                                            className="text-sm capitalize tabular-nums"
+                                                                        >
+                                                                            {totalLabel(
+                                                                                key,
+                                                                            )}
+                                                                            :{' '}
+                                                                            {formatMinorUnits(
+                                                                                value,
+                                                                                totalCurrency(
+                                                                                    key,
+                                                                                ),
+                                                                            )}
+                                                                        </span>
+                                                                    ),
+                                                                )}
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell className="min-w-44 text-sm text-muted-foreground tabular-nums">
+                                                            {new Date(
+                                                                statementImport.confirmed_at,
+                                                            ).toLocaleString()}
+                                                        </TableCell>
+                                                        <TableCell className="pr-6 text-right">
+                                                            <Button
+                                                                asChild
+                                                                variant="outline"
+                                                                size="sm"
+                                                            >
+                                                                <Link
+                                                                    href={show(
+                                                                        statementImport.id,
+                                                                    )}
+                                                                    prefetch
+                                                                >
+                                                                    View
+                                                                    <ArrowRight />
+                                                                </Link>
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ),
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </>
                         )}
 
                         {statement_imports.last_page > 1 && (

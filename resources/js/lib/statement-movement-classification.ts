@@ -10,14 +10,18 @@ export const statementMovementClassificationOptions: Array<{
         label: 'Needs classification',
         contributesToSpending: false,
     },
-    { value: 'purchase', label: 'Purchase', contributesToSpending: true },
-    { value: 'refund', label: 'Refund', contributesToSpending: true },
+    { value: 'purchase', label: 'Spending', contributesToSpending: true },
+    {
+        value: 'refund',
+        label: 'Refund or reimbursement',
+        contributesToSpending: true,
+    },
     { value: 'fee', label: 'Bank fee', contributesToSpending: true },
     { value: 'tax', label: 'Tax', contributesToSpending: true },
     { value: 'income', label: 'Income', contributesToSpending: false },
     {
         value: 'transfer',
-        label: 'Transfer or payment',
+        label: 'Transfer between my accounts',
         contributesToSpending: false,
     },
     {
@@ -25,7 +29,11 @@ export const statementMovementClassificationOptions: Array<{
         label: 'Card payment',
         contributesToSpending: false,
     },
-    { value: 'savings', label: 'Savings', contributesToSpending: false },
+    {
+        value: 'savings',
+        label: 'Savings',
+        contributesToSpending: false,
+    },
     {
         value: 'not_a_movement',
         label: 'Not a movement',

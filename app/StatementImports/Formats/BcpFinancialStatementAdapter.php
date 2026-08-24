@@ -115,7 +115,7 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
             $canBeExcluded = $amountMinor === '0';
             $classification = $canBeExcluded
                 ? StatementMovementClassification::NotAMovement
-                : $this->classification($description);
+                : $this->classification($description, $direction);
 
             $movements[] = new StatementImportPreviewMovement(
                 sourceRowId: hash('sha256', "bcp|{$position}|{$line}"),
@@ -157,7 +157,7 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
 
         return new StatementImportPreview(
             financialStatementFormat: FinancialStatementFormat::Bcp,
-            parserVersion: 'bcp-v1',
+            parserVersion: 'bcp-v2',
             fileHash: $fileHash,
             periodStart: $periodStart,
             periodEnd: $periodEnd,
@@ -251,8 +251,10 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
         }
     }
 
-    private function classification(string $description): StatementMovementClassification
-    {
+    private function classification(
+        string $description,
+        MovementDirection $direction,
+    ): StatementMovementClassification {
         $normalized = Str::upper($description);
 
         if ($normalized === 'WARDA') {
@@ -267,28 +269,51 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
             return StatementMovementClassification::Fee;
         }
 
-        if (Str::startsWith($normalized, [
-            'PAGO YAPE A ',
-            'PLIN-',
-            'IZI*',
-            'GOOGLE YOUTUBE',
-            'SISTEMAS ORACLE',
-            'MFAG83 ',
-            'YQ-',
-        ])) {
-            return StatementMovementClassification::Purchase;
+        if (Str::startsWith($normalized, 'DE TK BUSINESS ONL')) {
+            return StatementMovementClassification::Income;
+        }
+
+        if (Str::startsWith($normalized, 'TRANSF.BCO.FINANCI')) {
+            return StatementMovementClassification::Savings;
         }
 
         if (Str::startsWith($normalized, [
             'TRANSF.BCO.INTERBA',
+            'TRANSF.BCO.BBVA',
             'TRAN.CTAS.PROP.BM',
-            'TRAN.CTAS.TERC.BM',
-            'PAGO YAPE DE ',
+            'RETIRO EFECTIVO',
         ])) {
             return StatementMovementClassification::Transfer;
         }
 
+        if (Str::contains($normalized, 'YAPE') || Str::startsWith($normalized, 'YQ-')) {
+            return $this->thirdPartyClassification($direction);
+        }
+
+        if (Str::startsWith($normalized, [
+            'PLIN-',
+            'ABON PLIN-',
+            'EXT PLIN-',
+            'IZI*',
+            'GOOGLE YOUTUBE',
+            'SISTEMAS ORACLE',
+            'EXT SISTEMAS ORACL',
+            'MFAG83 ',
+            'TRAN.CEL.BM.',
+            'TRAN.CTAS.TERC.BM',
+        ])) {
+            return $this->thirdPartyClassification($direction);
+        }
+
         return StatementMovementClassification::NeedsClassification;
+    }
+
+    private function thirdPartyClassification(
+        MovementDirection $direction,
+    ): StatementMovementClassification {
+        return $direction === MovementDirection::Debit
+            ? StatementMovementClassification::Purchase
+            : StatementMovementClassification::Refund;
     }
 
     /** @param list<StatementImportPreviewMovement> $movements */

@@ -195,6 +195,40 @@ test('BCP automatically classifies only supported narrow labels', function (
     'unsupported fee suffix' => ['MANT. CUENTA EXTRA', 'needs_classification'],
 ]);
 
+test('BCP distinguishes third-party movements from transfers between owner accounts', function (
+    string $description,
+    string $direction,
+    string $classification,
+) {
+    $sourceDescription = $direction === 'debit'
+        ? 'Pago YAPE a 123456'
+        : 'DEPOSITO';
+    $statementText = str_replace(
+        $sourceDescription,
+        $description,
+        bcpStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText($statementText)),
+    );
+    $movement = $direction === 'debit'
+        ? $preview->movements[3]
+        : $preview->movements[4];
+
+    expect($movement->direction->value)->toBe($direction)
+        ->and($movement->classification->value)->toBe($classification)
+        ->and($movement->contributesToSpending)->toBe(in_array($classification, ['purchase', 'refund'], true));
+})->with([
+    'Yape money out is Spending' => ['Pago YAPE a 1234', 'debit', 'purchase'],
+    'Yape money in is a Refund' => ['Pago YAPE de 1234', 'credit', 'refund'],
+    'third-party account money out is Spending' => ['TRAN.CTAS.TERC.BM', 'debit', 'purchase'],
+    'third-party account money in is a Refund' => ['TRAN.CTAS.TERC.BM', 'credit', 'refund'],
+    'owner account transfer remains a Transfer' => ['TRAN.CTAS.PROP.BM', 'credit', 'transfer'],
+    'known income remains Income' => ['DE TK BUSINESS ONL', 'credit', 'income'],
+]);
+
 test('the Statement Import workflow atomically confirms one Transaction for every BCP movement', function () {
     $owner = User::factory()->create();
     $taxes = Category::factory()->for($owner, 'owner')->create(['name' => 'taxes']);

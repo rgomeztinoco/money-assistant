@@ -36,16 +36,29 @@ test('the owner selects a statement once resolves exceptions and revisits the co
         $page
             ->assertSee('INTERBANK')
             ->assertSee('Reconciled')
-            ->assertSee('Statement checks and information')
-            ->click('[data-test="statement-checks"]')
+            ->assertSee('Reconciliation')
             ->assertSee('Minimum payment')
-            ->click('[data-test="statement-checks"]')
-            ->assertDontSee('Minimum payment')
             ->assertSee('1 unresolved')
-            ->assertSee('5 classified movements')
+            ->assertSee('Unresolved')
+            ->assertSee('Affects Net Spending')
+            ->assertSee('Outside Net Spending')
             ->assertButtonDisabled('Confirm Statement Import');
         expect($page->value('select[aria-label="Classification for Mercado Pago"]'))
-            ->toBe('needs_classification');
+            ->toBe('needs_classification')
+            ->and($page->script("document.querySelector('[data-test=statement-movement-status-0]').textContent.trim()"))
+            ->toBe('Unresolved')
+            ->and($page->script("document.querySelector('[data-test=statement-movement-status-0]').closest('td').cellIndex !== document.querySelector('#movement-0-classification').closest('td').cellIndex"))
+            ->toBeTrue()
+            ->and($page->script("document.querySelector('[data-test=statement-movement-0]').classList.contains('bg-destructive/5')"))
+            ->toBeTrue()
+            ->and($page->script("document.querySelector('[data-test=statement-movements] table') !== null"))
+            ->toBeTrue()
+            ->and($page->script("document.querySelector('[data-test=statement-movements]').textContent.includes('Statement Movement 1')"))
+            ->toBeFalse()
+            ->and($page->script("document.querySelector('#instrument-label').closest('[data-slot=card]').querySelector('button[type=submit]') !== null"))
+            ->toBeTrue()
+            ->and($page->script("Math.abs(document.querySelector('[data-test=statement-import-overview]').getBoundingClientRect().height - document.querySelector('[data-test=statement-movements-column]').getBoundingClientRect().height) <= 1"))
+            ->toBeTrue();
         expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
 
         $page->select(
@@ -55,6 +68,15 @@ test('the owner selects a statement once resolves exceptions and revisits the co
         $page
             ->assertSee('0 unresolved')
             ->assertButtonEnabled('Confirm Statement Import');
+        expect($page->script("document.querySelector('[data-test=statement-movement-status-0]').textContent.trim()"))
+            ->toBe('Outside Net Spending')
+            ->and($page->script("document.querySelector('[data-test=statement-movement-0]').classList.contains('bg-destructive/5')"))
+            ->toBeFalse();
+        $page
+            ->click('[data-test="statement-movement-0"] button')
+            ->assertVisible('#movement-0-description');
+        expect($page->value('#movement-0-description'))->toBe('Mercado Pago');
+        $page->press('Close');
         expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
         $page
             ->press('Confirm Statement Import')
@@ -63,10 +85,35 @@ test('the owner selects a statement once resolves exceptions and revisits the co
             ->assertSee('Source reconciliation')
             ->assertSee('payment total usd')
             ->assertSee('Mercado Pago')
-            ->assertSee('Transfer or payment');
+            ->assertSee('Transfer between my accounts');
+        expect($page->script("document.querySelector('[data-test=statement-movements] table') !== null"))
+            ->toBeTrue()
+            ->and($page->script("document.querySelector('[data-test=confirmed-statement-movement-1]').tagName"))
+            ->toBe('TR')
+            ->and($page->script("document.querySelector('[data-test=statement-import-overview]').dataset.slot"))
+            ->toBe('card')
+            ->and($page->script("document.querySelectorAll('[data-test=statement-summary] thead th').length"))
+            ->toBe(3)
+            ->and($page->script("Math.abs(document.querySelector('[data-test=statement-import-overview]').getBoundingClientRect().height - document.querySelector('[data-test=statement-movements-column]').getBoundingClientRect().height) <= 1"))
+            ->toBeTrue()
+            ->and($page->script("getComputedStyle(document.querySelector('[data-test=statement-movements] [data-slot=table-container]')).overflowY"))
+            ->toBe('auto');
+        $page
+            ->click('[data-test="confirmed-statement-movement-1"] button')
+            ->select(
+                'select[aria-label="Classification for Mercado Pago"]',
+                'purchase',
+            )
+            ->press('Save classification')
+            ->assertSee('Spending');
+
+        expect(StatementMovement::query()->where('position', 1)->sole()->classification->value)
+            ->toBe('purchase');
 
         $page->resize(390, 844);
         expect($page->script("document.querySelector('[data-test=statement-movements]').scrollWidth <= document.querySelector('[data-test=statement-movements]').clientWidth"))
+            ->toBeTrue()
+            ->and($page->script("document.querySelector('[data-test=statement-movements] [data-slot=table-container]').scrollWidth > document.querySelector('[data-test=statement-movements] [data-slot=table-container]').clientWidth"))
             ->toBeTrue();
 
         $page
@@ -74,7 +121,11 @@ test('the owner selects a statement once resolves exceptions and revisits the co
             ->assertPathIs('/statement-imports')
             ->assertSee('Interbank American Express');
         expect($page->script("document.querySelector('[data-test=statement-import-list]').scrollWidth <= document.querySelector('[data-test=statement-import-list]').clientWidth"))
-            ->toBeTrue();
+            ->toBeTrue()
+            ->and($page->script("getComputedStyle(document.querySelector('[data-test=statement-import-mobile-list]')).display"))
+            ->toBe('grid')
+            ->and($page->script("getComputedStyle(document.querySelector('[data-test=statement-import-table]')).display"))
+            ->toBe('none');
         $page
             ->assertNoJavaScriptErrors()
             ->assertNoConsoleLogs();
@@ -109,7 +160,12 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
             ->assertSee('BCP')
             ->assertDontSee('Category for Savings movements');
 
-        expect($page->value('#movement-0-classification'))->toBe('savings');
+        expect($page->value('#movement-0-classification'))
+            ->toBe('savings')
+            ->and($page->script("document.querySelector('#movement-0-classification').selectedOptions[0].textContent"))
+            ->toBe('Savings')
+            ->and($page->script("document.querySelector('[data-test=statement-movements]').textContent.includes('Suggested exclusion')"))
+            ->toBeFalse();
 
         $page->select(
             'select[aria-label="Classification for DEPOSITO"]',
@@ -123,6 +179,13 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
             ->assertSee('Net savings')
             ->assertNoJavaScriptErrors()
             ->assertNoConsoleLogs();
+
+        expect($page->script("document.querySelectorAll('[data-test=statement-summary] thead th').length"))
+            ->toBe(2)
+            ->and($page->script("document.querySelector('[data-test=statement-summary] thead').textContent.includes('PEN')"))
+            ->toBeTrue()
+            ->and($page->script("document.querySelector('[data-test=statement-summary] thead').textContent.includes('USD')"))
+            ->toBeFalse();
 
         expect(StatementMovement::query()->where('classification', 'savings')->count())->toBe(2)
             ->and(Transaction::query()->where('kind', 'transfer')->where('transfer_purpose', 'savings')->count())->toBe(2)
@@ -160,6 +223,8 @@ test('an abandoned preview remains transient and is editable on a mobile viewpor
             ->assertNoJavaScriptErrors();
 
         expect($page->script('document.documentElement.scrollWidth <= document.documentElement.clientWidth'))
+            ->toBeTrue()
+            ->and($page->script("document.querySelector('[data-test=statement-movements] [data-slot=table-container]').scrollWidth > document.querySelector('[data-test=statement-movements] [data-slot=table-container]').clientWidth"))
             ->toBeTrue()
             ->and(StatementImport::query()->doesntExist())->toBeTrue();
 

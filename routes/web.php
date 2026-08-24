@@ -20,6 +20,7 @@ use App\Http\Controllers\SpendingNotificationRecoveryController;
 use App\Http\Controllers\SpendingNotificationRetryController;
 use App\Http\Controllers\StatementImportController;
 use App\Http\Controllers\StatementImportPreviewController;
+use App\Http\Controllers\StatementMovementClassificationController;
 use App\Http\Controllers\TransactionCategoryController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionFieldReviewController;
@@ -51,6 +52,10 @@ Route::middleware(['auth'])->group(function () {
         ]);
     Route::post('statement-import-previews', [StatementImportPreviewController::class, 'store'])
         ->name('statement_import_previews.store');
+    Route::put(
+        'statement-imports/{statement_import}/movements/{movement}/classification',
+        [StatementMovementClassificationController::class, 'update'],
+    )->scopeBindings()->name('statement_imports.movements.classification.update');
     Route::resource('merchant-rules', MerchantRuleController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->names([
