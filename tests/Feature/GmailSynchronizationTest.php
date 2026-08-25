@@ -6,6 +6,7 @@ use App\Contracts\Gmail;
 use App\GmailSynchronizationType;
 use App\Integrations\Gmail\GmailHistoryExpired;
 use App\Integrations\Gmail\GmailHistoryPage;
+use App\Integrations\Gmail\GmailMessage;
 use App\Integrations\Gmail\GmailMessageIdentity;
 use App\Integrations\Gmail\GmailMessagePage;
 use App\Integrations\Gmail\GmailProfile;
@@ -14,6 +15,8 @@ use App\Jobs\ProcessGmailMessage;
 use App\Jobs\SynchronizeGmail;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
+use App\Models\SpendingNotificationReference;
+use App\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Http;
@@ -25,13 +28,14 @@ beforeEach(function () {
     Http::preventStrayRequests();
 });
 
-test('the initial synchronization scans from connection time with overlap and persists only new immutable identities', function () {
+test('the initial synchronization imports the selected lookback window with an overlap', function () {
     CarbonImmutable::setTestNow('2026-07-28 18:05:00 UTC');
     Queue::fake();
     $connection = GmailConnection::factory()->create([
         'access_token' => 'current-access-token',
         'access_token_expires_at' => now()->addHour(),
         'connected_at' => '2026-07-28 18:00:00 UTC',
+        'initial_sync_starts_at' => '2026-07-28 17:00:00 UTC',
         'history_id' => '100',
         'initial_sync_completed_at' => null,
         'last_successful_sync_at' => null,
@@ -39,22 +43,22 @@ test('the initial synchronization scans from connection time with overlap and pe
     $gmail = new FakeGmail;
     $gmail->messagePages = [
         new GmailMessagePage(
-            messageIds: ['before-connection', 'new-message-1'],
+            messageIds: ['before-import-window', 'existing-message-1'],
             nextPageToken: 'second-page',
         ),
         new GmailMessagePage(
-            messageIds: ['new-message-1', 'new-message-2'],
+            messageIds: ['existing-message-1', 'new-message-2'],
             nextPageToken: null,
         ),
     ];
     $gmail->messageIdentities = [
-        'before-connection' => new GmailMessageIdentity(
-            messageId: 'before-connection',
-            receivedAt: CarbonImmutable::parse('2026-07-28 17:59:59 UTC'),
+        'before-import-window' => new GmailMessageIdentity(
+            messageId: 'before-import-window',
+            receivedAt: CarbonImmutable::parse('2026-07-28 16:59:59 UTC'),
         ),
-        'new-message-1' => new GmailMessageIdentity(
-            messageId: 'new-message-1',
-            receivedAt: CarbonImmutable::parse('2026-07-28 18:00:00 UTC'),
+        'existing-message-1' => new GmailMessageIdentity(
+            messageId: 'existing-message-1',
+            receivedAt: CarbonImmutable::parse('2026-07-28 17:00:00 UTC'),
         ),
         'new-message-2' => new GmailMessageIdentity(
             messageId: 'new-message-2',
@@ -73,12 +77,12 @@ test('the initial synchronization scans from connection time with overlap and pe
     expect($gmail->messagesAfterCalls)->toBe([
         [
             'access_token' => 'current-access-token',
-            'after_epoch_seconds' => 1785261300,
+            'after_epoch_seconds' => CarbonImmutable::parse('2026-07-28 16:55:00 UTC')->getTimestamp(),
             'page_token' => null,
         ],
         [
             'access_token' => 'current-access-token',
-            'after_epoch_seconds' => 1785261300,
+            'after_epoch_seconds' => CarbonImmutable::parse('2026-07-28 16:55:00 UTC')->getTimestamp(),
             'page_token' => 'second-page',
         ],
     ])
@@ -87,7 +91,7 @@ test('the initial synchronization scans from connection time with overlap and pe
         ->and(GmailMessageDiscovery::query()
             ->orderBy('message_id')
             ->pluck('message_id')
-            ->all())->toBe(['new-message-1', 'new-message-2'])
+            ->all())->toBe(['existing-message-1', 'new-message-2'])
         ->and(GmailMessageDiscovery::query()
             ->whereNull('processed_at')
             ->count())->toBe(2)
@@ -99,7 +103,7 @@ test('the initial synchronization scans from connection time with overlap and pe
     Queue::assertPushed(
         ProcessGmailMessage::class,
         fn (ProcessGmailMessage $job): bool => $job->discoveryId === GmailMessageDiscovery::query()
-            ->where('message_id', 'new-message-1')
+            ->where('message_id', 'existing-message-1')
             ->value('id'),
     );
 });
@@ -111,6 +115,7 @@ test('an uninitialized connection captures its current history cursor before the
         'access_token' => 'current-access-token',
         'access_token_expires_at' => now()->addHour(),
         'connected_at' => now(),
+        'initial_sync_starts_at' => now()->subDays(30),
         'history_id' => null,
         'initial_sync_completed_at' => null,
         'last_successful_sync_at' => null,
@@ -129,7 +134,7 @@ test('an uninitialized connection captures its current history cursor before the
     $gmail->messageIdentities = [
         'new-message' => new GmailMessageIdentity(
             messageId: 'new-message',
-            receivedAt: now(),
+            receivedAt: now()->subDay(),
         ),
     ];
     app()->instance(Gmail::class, $gmail);
@@ -149,6 +154,63 @@ test('an uninitialized connection captures its current history cursor before the
         ->and($connection->history_id)->toBe('captured-history-700')
         ->and($connection->initial_sync_completed_at)->not->toBeNull()
         ->and(GmailMessageDiscovery::query()->sole()->message_id)->toBe('new-message');
+});
+
+test('an existing supported inbox message in the selected window creates a Transaction', function () {
+    CarbonImmutable::setTestNow('2026-08-01 12:00:00 UTC');
+    Queue::fake();
+    $connection = GmailConnection::factory()->create([
+        'access_token' => 'current-access-token',
+        'access_token_expires_at' => now()->addHour(),
+        'connected_at' => now(),
+        'initial_sync_starts_at' => now()->subDays(7),
+        'history_id' => '100',
+        'initial_sync_completed_at' => null,
+        'last_successful_sync_at' => null,
+    ]);
+    $fixture = json_decode(
+        (string) file_get_contents(resource_path('notification-formats/bcp-debit-card-spending.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $message = $fixture['message'];
+    $gmailMessage = new GmailMessage(
+        messageId: $message['message_id'],
+        receivedAt: CarbonImmutable::parse($message['received_at']),
+        fromAddress: $message['from_address'],
+        subject: $message['subject'],
+        authentication: $message['authentication'],
+        textBody: null,
+        htmlBody: $message['html_body'],
+    );
+    $gmail = new FakeGmail;
+    $gmail->messagePages = [new GmailMessagePage(
+        messageIds: [$gmailMessage->messageId],
+        nextPageToken: null,
+    )];
+    $gmail->messageIdentities = [
+        $gmailMessage->messageId => new GmailMessageIdentity(
+            messageId: $gmailMessage->messageId,
+            receivedAt: $gmailMessage->receivedAt,
+        ),
+    ];
+    $gmail->messages = [$gmailMessage->messageId => $gmailMessage];
+    app()->instance(Gmail::class, $gmail);
+
+    app(SynchronizeGmailConnection::class)->handle(
+        $connection->id,
+        GmailSynchronizationType::Incremental,
+    );
+
+    $discovery = GmailMessageDiscovery::query()->sole();
+    app()->call([(new ProcessGmailMessage($discovery->id)), 'handle']);
+
+    expect(Transaction::query()->sole())
+        ->description->toBe('SAMPLE MARKET')
+        ->amount_minor->toBe(4590)
+        ->and(SpendingNotificationReference::query()->sole())
+        ->processing_outcome->toBe('created')
+        ->and($discovery->fresh()->processed_at)->not->toBeNull();
 });
 
 test('incremental synchronization paginates added messages and advances to the final cursor idempotently', function () {
@@ -250,6 +312,7 @@ test('an expired cursor captures a fresh cursor before a bounded idempotent reco
         'access_token' => 'current-access-token',
         'access_token_expires_at' => now()->addHour(),
         'connected_at' => now()->subDays(10),
+        'initial_sync_starts_at' => now()->subDays(30),
         'history_id' => 'expired-history-100',
         'initial_sync_completed_at' => now()->subDays(10),
         'last_successful_sync_at' => '2026-07-28 19:50:00 UTC',
@@ -319,6 +382,7 @@ test('reconciliation scans an overlapping seven-day window without duplicating d
         'access_token' => 'current-access-token',
         'access_token_expires_at' => now()->addHour(),
         'connected_at' => now()->subMonth(),
+        'initial_sync_starts_at' => now()->subMonths(2),
         'history_id' => 'current-history-600',
         'initial_sync_completed_at' => now()->subMonth(),
         'last_successful_sync_at' => now()->subMinute(),
@@ -357,6 +421,32 @@ test('reconciliation scans an overlapping seven-day window without duplicating d
             ->all())->toBe(['already-discovered', 'reconciled-message'])
         ->and($connection->history_id)->toBe('current-history-600')
         ->and($connection->last_successful_sync_at?->toIso8601String())->toBe(now()->toIso8601String());
+});
+
+test('reconciliation does not scan before the selected initial import window', function () {
+    CarbonImmutable::setTestNow('2026-07-29 12:00:00 UTC');
+    $connection = GmailConnection::factory()->create([
+        'access_token' => 'current-access-token',
+        'access_token_expires_at' => now()->addHour(),
+        'connected_at' => now()->subDay(),
+        'initial_sync_starts_at' => now()->subDays(2),
+        'history_id' => 'current-history-700',
+        'initial_sync_completed_at' => now()->subDay(),
+    ]);
+    $gmail = new FakeGmail;
+    $gmail->messagePages = [new GmailMessagePage(messageIds: [], nextPageToken: null)];
+    app()->instance(Gmail::class, $gmail);
+
+    app(SynchronizeGmailConnection::class)->handle(
+        $connection->id,
+        GmailSynchronizationType::Reconciliation,
+    );
+
+    expect($gmail->messagesAfterCalls)->toBe([[
+        'access_token' => 'current-access-token',
+        'after_epoch_seconds' => now()->subDays(2)->getTimestamp(),
+        'page_token' => null,
+    ]]);
 });
 
 test('synchronization dispatch queues active connections with content-free unique jobs', function () {

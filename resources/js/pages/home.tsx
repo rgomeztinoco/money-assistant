@@ -7,6 +7,8 @@ import {
     PiggyBank,
     ReceiptText,
 } from 'lucide-react';
+import { SourceCoverage } from '@/components/source-coverage';
+import type { RecordedCoverageSource } from '@/components/source-coverage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,6 +24,7 @@ import {
     periodBreakdownUrl,
 } from '@/lib/transaction-filter-url';
 import { home } from '@/routes';
+import { create as createStatementImport } from '@/routes/statement_imports';
 import { index as trendsIndex } from '@/routes/trends';
 import type { Currency } from '@/types';
 
@@ -52,6 +55,7 @@ type Briefing = {
         date_from: string;
         date_to: string;
         transaction_count: number;
+        source: RecordedCoverageSource;
     };
     summary: Summary;
     material_change: MaterialChange | null;
@@ -128,10 +132,15 @@ function PrimaryBriefing({ briefing }: { briefing: Briefing }) {
                     className="w-fit rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                 >
                     <span className="font-medium text-foreground">
-                        Coverage
+                        Recorded
                     </span>{' '}
                     {coverageText(briefing)}
                 </Link>
+                <SourceCoverage
+                    source={briefing.coverage.source}
+                    className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground"
+                    gmailMissingLabel="Gmail has not been checked"
+                />
             </header>
 
             <section className="grid gap-3 md:grid-cols-3">
@@ -373,10 +382,16 @@ export default function Home({
                                     No PEN briefing yet
                                 </p>
                                 <p className="text-sm text-muted-foreground">
-                                    Add or import a Transaction to start your
-                                    first meaningful period.
+                                    Import a recent statement first. You will
+                                    check exceptions, confirm it, and open the
+                                    resulting Breakdown.
                                 </p>
                             </div>
+                            <Button asChild>
+                                <Link href={createStatementImport()}>
+                                    Import a recent statement
+                                </Link>
+                            </Button>
                         </CardContent>
                     </Card>
                 ) : (

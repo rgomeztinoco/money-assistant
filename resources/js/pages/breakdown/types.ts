@@ -1,3 +1,4 @@
+import type { RecordedCoverageSource } from '@/components/source-coverage';
 import type {
     CategoryOption,
     Currency,
@@ -72,6 +73,7 @@ export type BreakdownProps = {
         date_from: string | null;
         date_to: string | null;
         transaction_count: number;
+        source: RecordedCoverageSource;
     };
     summary: {
         net_spending_minor: string;

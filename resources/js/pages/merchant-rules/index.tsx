@@ -123,7 +123,7 @@ function EditRuleDialog({
                     <PencilLine /> Edit
                 </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Edit {rule.merchant}</DialogTitle>
                     <DialogDescription>

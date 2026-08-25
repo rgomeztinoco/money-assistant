@@ -34,6 +34,8 @@ class StatementMovementFactory extends Factory
             'classification' => StatementMovementClassification::Purchase,
             'description' => fake()->sentence(3),
             'source_metadata' => [],
+            'resolution' => 'created',
+            'match_evidence' => [],
         ];
     }
 }

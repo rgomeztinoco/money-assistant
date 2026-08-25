@@ -22,6 +22,7 @@ return new class extends Migration
             $table->string('instrument_label', 100);
             $table->string('instrument_last_four', 4)->nullable();
             $table->jsonb('reconciliation_values');
+            $table->jsonb('excluded_values')->default('[]');
             $table->timestamp('confirmed_at');
             $table->timestamps();
 
@@ -42,11 +43,14 @@ return new class extends Migration
             $table->string('classification', 32);
             $table->string('description');
             $table->jsonb('source_metadata')->default('{}');
+            $table->string('resolution', 16);
+            $table->jsonb('match_evidence')->default('{}');
             $table->timestamps();
 
             $table->unique(['statement_import_id', 'source_row_id']);
             $table->unique(['statement_import_id', 'position']);
             $table->index(['statement_import_id', 'occurred_on', 'id']);
+            $table->index(['statement_import_id', 'resolution']);
         });
     }
 

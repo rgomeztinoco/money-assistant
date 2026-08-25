@@ -854,7 +854,7 @@ test('Interbank retains a posted movement before the cycle start using the infer
         ->and($preview->movements[2]->occurredOn->toDateString())->toBe('2026-01-20');
 });
 
-test('Interbank exposes payment minimums as informational values', function () {
+test('Interbank excludes payment minimums from the Import Preview', function () {
     $preview = app(StatementImportWorkflow::class)->preview(
         User::factory()->create(),
         UploadedFile::fake()->createWithContent(
@@ -863,13 +863,10 @@ test('Interbank exposes payment minimums as informational values', function () {
         ),
     );
 
-    expect($preview->informationalValues)->toBe([
-        ['label' => 'Minimum payment', 'value' => '500', 'currency' => 'PEN'],
-        ['label' => 'Minimum payment', 'value' => '100', 'currency' => 'USD'],
-    ]);
+    expect($preview->informationalValues)->toBe([]);
 });
 
-test('only parser candidates can be confirmed as not a movement', function () {
+test('only parser candidates can be explicitly excluded from a verified period', function () {
     $owner = User::factory()->create();
     $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'Savings']);
     $statementText = str_replace(
@@ -899,7 +896,12 @@ test('only parser candidates can be confirmed as not a movement', function () {
 
     expect($import->movements()->count())->toBe(5)
         ->and($import->movements)->toHaveCount(5)
-        ->and($import->movements->where('description', 'INFORMACION'))->toBeEmpty();
+        ->and($import->excluded_values)->toHaveCount(1)
+        ->and($import->excluded_values[0])->toMatchArray([
+            'description' => 'INFORMACION',
+            'amount_minor' => '0',
+            'currency' => 'PEN',
+        ]);
 
     $otherOwner = User::factory()->create();
     $ordinaryPreview = $workflow->preview(

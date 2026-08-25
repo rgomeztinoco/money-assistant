@@ -16,5 +16,10 @@ final readonly class SpendingNotificationExtraction
         public TransactionKind $kind,
         public string $description,
         public array $provisionalFields,
+        public ?MovementDirection $direction = null,
+        public ?IncomeSource $incomeSource = null,
+        public ?TransferPurpose $transferPurpose = null,
+        public ?string $instrumentLabel = null,
+        public ?string $instrumentLastFour = null,
     ) {}
 }

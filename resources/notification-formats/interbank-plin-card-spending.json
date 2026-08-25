@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-interbank-plin-card-spending",
+        "received_at": "2026-08-24T01:00:00Z",
+        "from_address": "servicioalcliente@netinterbank.com.pe",
+        "subject": "Constancia de Pago Plin TC",
+        "authentication": {
+            "spf": { "result": "pass", "domain": null },
+            "dkim": { "result": "pass", "domain": null },
+            "dmarc": { "result": "pass", "domain": null }
+        },
+        "html_body": "<html><body><h1>Interbank | Confirmación de Constancia de Pago Plin</h1><p>Hola CLIENTE EJEMPLO,</p><p>Constancia de Pago Plin</p><p>23 Ago 2026 07:22 PM</p><p>Código de operación: 100001</p><p>Tarjeta cargo: Tarjeta Platinum ****0680</p><p>Detalle de pago: Pago único</p><p>Destinatario: SAMPLE USER</p><p>Destino: PLIN</p><p>Moneda y monto: S/ 24.00</p></body></html>"
+    },
+    "expected": {
+        "format_identifier": "interbank.plin_card_spending",
+        "occurred_on": "2026-08-23",
+        "amount_minor": 2400,
+        "currency": "PEN",
+        "kind": "spending",
+        "direction": "debit",
+        "income_source": null,
+        "transfer_purpose": null,
+        "description": "PLIN to SAMPLE USER",
+        "instrument_label": "Interbank card",
+        "instrument_last_four": "0680"
+    }
+}

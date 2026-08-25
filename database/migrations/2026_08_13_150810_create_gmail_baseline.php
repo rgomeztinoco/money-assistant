@@ -17,6 +17,7 @@ return new class extends Migration
             $table->timestampTz('access_token_expires_at');
             $table->jsonb('granted_scopes');
             $table->timestampTz('connected_at');
+            $table->timestampTz('initial_sync_starts_at');
             $table->timestampTz('last_successful_check_at');
             $table->timestampTz('last_check_failed_at')->nullable();
             $table->timestampTz('reauthorization_required_at')->nullable()->index();
@@ -49,8 +50,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->foreignId('transaction_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignId('spending_notification_format_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('gmail_message_discovery_id')->nullable()->unique()->constrained()->nullOnDelete();
+            $table->string('format_identifier', 100)->nullable()->index();
             $table->string('gmail_account_identity');
             $table->string('message_id');
             $table->string('processing_outcome', 32);

@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-bcp-debit-card-spending",
+        "received_at": "2026-07-31T20:08:00Z",
+        "from_address": "notificaciones@notificacionesbcp.com.pe",
+        "subject": "Realizaste un consumo con tu Tarjeta de Débito BCP - Servicio de Notificaciones BCP",
+        "authentication": {
+            "spf": { "result": "pass", "domain": null },
+            "dkim": { "result": "pass", "domain": null },
+            "dmarc": { "result": "pass", "domain": null }
+        },
+        "html_body": "<html><style>.hidden { display:none }</style><body><p>Hola CLIENTE EJEMPLO,</p><p>Realizaste un consumo de S/ 45.90 con tu Tarjeta de Débito BCP en SAMPLE MARKET.</p><h2>Monto</h2><p>Total del consumo</p><p>S/ 45.90</p><h2>Datos de la operación</h2><p>Operación realizada</p><p>Consumo Tarjeta de Débito</p><p>Fecha y hora</p><p>31 de julio de 2026 - 03:07 PM</p><p>Número de Tarjeta de Débito</p><p>************1234</p><p>Empresa</p><p>SAMPLE MARKET</p><p>Número de operación</p><p>100001</p></body></html>"
+    },
+    "expected": {
+        "format_identifier": "bcp.debit_card_spending",
+        "occurred_on": "2026-07-31",
+        "amount_minor": 4590,
+        "currency": "PEN",
+        "kind": "spending",
+        "direction": "debit",
+        "income_source": null,
+        "transfer_purpose": null,
+        "description": "SAMPLE MARKET",
+        "instrument_label": "BCP debit card",
+        "instrument_last_four": "1234"
+    }
+}

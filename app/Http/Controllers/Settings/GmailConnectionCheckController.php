@@ -25,14 +25,14 @@ class GmailConnectionCheckController extends Controller
                 'message' => __('Gmail authorization expired. Reauthorize to resume ingestion.'),
             ]);
 
-            return to_route('connections.edit');
+            return to_route('data_sources.gmail');
         } catch (GmailRequestFailed) {
             Inertia::flash('toast', [
                 'type' => 'error',
                 'message' => __('Gmail could not be checked. Try again.'),
             ]);
 
-            return to_route('connections.edit');
+            return to_route('data_sources.gmail');
         }
 
         Inertia::flash('toast', [
@@ -42,6 +42,6 @@ class GmailConnectionCheckController extends Controller
                 : __('Gmail connection is healthy.'),
         ]);
 
-        return to_route('connections.edit');
+        return to_route('data_sources.gmail');
     }
 }

@@ -42,6 +42,7 @@ test('the owner can preview a statement through the standalone HTTP endpoint', f
         ->assertJsonPath('confirmation.file_hash', fn (string $hash): bool => strlen($hash) === 64)
         ->assertJsonPath('confirmation.movements.0.source_row_id', fn (string $sourceRowId): bool => strlen($sourceRowId) === 64)
         ->assertJsonPath('reconciliation.payment_total_pen_minor', '2700')
+        ->assertJsonCount(0, 'informational_values')
         ->assertJsonCount(6, 'movements');
 });
 
@@ -104,7 +105,7 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
 
     $import = StatementImport::query()->sole();
     $response->assertSessionHasNoErrors()
-        ->assertRedirect(route('statement_imports.show', $import));
+        ->assertRedirectToRoute('statement_imports.show', $import);
 
     $this->get(route('statement_imports.show', $import))
         ->assertOk()
@@ -204,6 +205,67 @@ test('semantic confirmation failures identify the affected preview row', functio
         ->and(StatementMovement::query()->doesntExist())->toBeTrue();
 });
 
+test('the owner can link a statement movement when multipart form data serializes the Transaction ID as a string', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->spending()->create([
+        'occurred_on' => '2026-07-31',
+        'amount_minor' => 1500,
+        'description' => 'PLIN-PABLO JESUS CAMOGL',
+    ]);
+    $statementText = str_replace(
+        [
+            '01/02/26  AL  28/02/26',
+            'FEB',
+            '04JUL 04JUL Pago YAPE a 123456                     10.00',
+            '30.01    55.00',
+            '124.99',
+        ],
+        [
+            '01/07/26  AL  31/07/26',
+            'JUL',
+            '31JUL 31JUL PLIN-PABLO JESUS C                     15.00',
+            '35.01    55.00',
+            '119.99',
+        ],
+        (string) file_get_contents(__DIR__.'/../Fixtures/Statements/bcp.txt'),
+    );
+    $pdf = SyntheticPdf::fromText($statementText);
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = $preview->confirmationData();
+    $movementIndex = collect($preview->movements)->search(
+        fn ($movement): bool => $movement->description === 'PLIN-PABLO JESUS C',
+    );
+
+    expect($movementIndex)->toBeInt()
+        ->and($preview->movements[$movementIndex]->match?->status->value)->toBe('ambiguous')
+        ->and($preview->movements[$movementIndex]->match?->candidates)->toHaveCount(1)
+        ->and($preview->movements[$movementIndex]->match?->candidates[0]['id'])->toBe($transaction->id);
+
+    $confirmation['movements'] = collect($confirmation['movements'])
+        ->map(fn (array $movement): array => [
+            ...$movement,
+            'classification' => $movement['classification'] === 'needs_classification'
+                ? 'income'
+                : $movement['classification'],
+        ])
+        ->all();
+    $confirmation['movements'][$movementIndex]['resolution'] = 'link';
+    $confirmation['movements'][$movementIndex]['transaction_id'] = (string) $transaction->id;
+
+    $this->actingAs($owner)
+        ->post(route('statement_imports.store'), [
+            'statement' => UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+            ...$confirmation,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($transaction->statementMovement()->sole()->description)->toBe('PLIN-PABLO JESUS C')
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->count())->toBe(5);
+});
+
 test('the Statement Import index is owner scoped and exposes safe metadata', function () {
     $owner = User::factory()->create();
     $otherOwner = User::factory()->create();
@@ -232,6 +294,9 @@ test('the Statement Import index is owner scoped and exposes safe metadata', fun
         'instrument_last_four',
         'movement_count',
         'confirmed_at',
+        'linked_movement_count',
+        'created_movement_count',
+        'excluded_movement_count',
         'totals',
     ]);
 });
@@ -293,9 +358,11 @@ test('BCP and Interbank imports coexist in safe history with complete movement s
             ->where('statement_import.summary.PEN.savings_deposits_minor', '2000')
             ->where('statement_import.summary.PEN.savings_withdrawals_minor', '500')
             ->where('statement_import.summary.PEN.net_savings_minor', '1500')
+            ->has('statement_import.excluded_values')
             ->missing('statement_import.file_hash')
             ->missing('statement_import.movements.0.source_row_id')
-            ->missing('statement_import.movements.0.source_metadata'),
+            ->has('statement_import.movements.0.source_metadata')
+            ->has('statement_import.movements.0.match_evidence'),
         );
     $movement = $detailResponse->inertiaProps('statement_import.movements.0');
 
@@ -308,6 +375,9 @@ test('BCP and Interbank imports coexist in safe history with complete movement s
         'direction',
         'classification',
         'description',
+        'resolution',
+        'source_metadata',
+        'match_evidence',
         'transaction',
     ]);
 });

@@ -3,12 +3,18 @@ import {
     ArrowDownLeft,
     ArrowLeft,
     ArrowUpRight,
+    Ban,
     CheckCircle2,
     CircleAlert,
+    CircleDollarSign,
+    CircleOff,
     FileCheck2,
+    Link2,
     PencilLine,
+    Plus,
     Upload,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { store as confirmStatementImport } from '@/actions/App/Http/Controllers/StatementImportController';
 import { store as previewStatementImport } from '@/actions/App/Http/Controllers/StatementImportPreviewController';
@@ -20,7 +26,6 @@ import {
     Card,
     CardContent,
     CardDescription,
-    CardFooter,
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
@@ -45,27 +50,25 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import {
     statementMovementClassificationOptions,
     statementMovementContributesToSpending,
 } from '@/lib/statement-movement-classification';
-import { index } from '@/routes/statement_imports';
+import { index as statementImportsIndex } from '@/routes/statement_imports';
 import type {
+    StatementConfirmationMovement,
     StatementClassification,
     StatementImportPreview,
     StatementPreviewMovement,
 } from '@/types';
 
-type ConfirmationMovement = Pick<
-    StatementPreviewMovement,
-    | 'source_row_id'
-    | 'occurred_on'
-    | 'description'
-    | 'amount_minor'
-    | 'currency'
-    | 'classification'
->;
+type ConfirmationMovement = StatementConfirmationMovement;
 
 type ConfirmationData = {
     statement: File | null;
@@ -81,13 +84,104 @@ type MovementEditorProps = {
     sourceMovement: StatementPreviewMovement;
     updateMovement: (
         movementIndex: number,
-        values: Partial<ConfirmationMovement>,
+        movement: ConfirmationMovement,
     ) => void;
     movementError: (
         movementIndex: number,
         field: keyof ConfirmationMovement,
     ) => string | undefined;
 };
+
+type MovementStatus =
+    | 'needs_classification'
+    | 'needs_transaction'
+    | 'linked'
+    | 'created'
+    | 'excluded'
+    | 'affects_spending'
+    | 'outside_spending';
+
+const movementStatusDetails = {
+    needs_classification: {
+        label: 'Needs classification',
+        detail: 'Choose what kind of movement this is before confirming.',
+        icon: CircleAlert,
+        className:
+            'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300',
+    },
+    needs_transaction: {
+        label: 'Needs Transaction association',
+        detail: 'Choose a recorded Transaction or add this movement as a new one.',
+        icon: Link2,
+        className:
+            'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300',
+    },
+    linked: {
+        label: 'Linked to recorded Transaction',
+        detail: 'This movement will use an existing recorded Transaction.',
+        icon: Link2,
+        className:
+            'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300',
+    },
+    created: {
+        label: 'Will be added',
+        detail: 'A new Transaction will be added for this movement.',
+        icon: Plus,
+        className:
+            'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300',
+    },
+    excluded: {
+        label: 'Excluded from Transactions',
+        detail: 'This informational value will not create a Transaction.',
+        icon: Ban,
+        className:
+            'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300',
+    },
+    affects_spending: {
+        label: 'Affects Net Spending',
+        detail: 'This movement affects Net Spending.',
+        icon: CircleDollarSign,
+        className:
+            'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-300',
+    },
+    outside_spending: {
+        label: 'Outside Net Spending',
+        detail: 'This movement does not affect Net Spending.',
+        icon: CircleOff,
+        className:
+            'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300',
+    },
+} satisfies Record<
+    MovementStatus,
+    {
+        label: string;
+        detail: string;
+        icon: LucideIcon;
+        className: string;
+    }
+>;
+
+function MovementStatusBadge({ status }: { status: MovementStatus }) {
+    const details = movementStatusDetails[status];
+    const StatusIcon = details.icon;
+
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Badge
+                    variant="outline"
+                    className={`size-5 justify-center rounded-full p-0 shadow-none [&>svg]:size-2.5 ${details.className}`}
+                    aria-label={details.label}
+                    data-status={status}
+                    tabIndex={0}
+                >
+                    <StatusIcon />
+                </Badge>
+            </TooltipTrigger>
+            <TooltipContent>{details.detail}</TooltipContent>
+        </Tooltip>
+    );
+}
 
 function humanizeKey(key: string): string {
     return key.replaceAll('_minor', '').replaceAll('_', ' ');
@@ -126,20 +220,46 @@ function MovementEditor({
             option.value !== 'not_a_movement' || sourceMovement.can_be_excluded,
     );
     const isMoneyIn = sourceMovement.direction === 'credit';
-    const isUnresolved = movement.classification === 'needs_classification';
+    const needsClassification =
+        movement.classification === 'needs_classification';
+    const needsMatchDecision = movement.resolution === 'needs_resolution';
+    const isUnresolved = needsClassification || needsMatchDecision;
     const affectsNetSpending = statementMovementContributesToSpending(
         movement.classification,
     );
-    const netSpendingStatus = affectsNetSpending
-        ? 'Affects Net Spending'
-        : 'Outside Net Spending';
-    const statusBadgeVariant = isUnresolved
-        ? 'destructive'
-        : affectsNetSpending
-          ? 'default'
-          : 'secondary';
     const DirectionIcon = isMoneyIn ? ArrowDownLeft : ArrowUpRight;
     const classificationError = movementError(movementIndex, 'classification');
+    const resolutionError = movementError(movementIndex, 'resolution');
+    const compatibleCandidates = sourceMovement.match.candidates.filter(
+        (candidate) =>
+            candidate.compatible_classifications.includes(
+                movement.classification,
+            ),
+    );
+    const matchSelection =
+        movement.resolution === 'link' && movement.transaction_id !== null
+            ? `link:${movement.transaction_id}`
+            : movement.resolution === 'create'
+              ? 'create'
+              : '';
+    const resolutionStatus: MovementStatus = needsMatchDecision
+        ? 'needs_transaction'
+        : movement.resolution === 'link'
+          ? 'linked'
+          : movement.resolution === 'exclude'
+            ? 'excluded'
+            : 'created';
+    const movementStatuses: MovementStatus[] = [
+        ...(needsClassification
+            ? (['needs_classification'] satisfies MovementStatus[])
+            : []),
+        resolutionStatus,
+        ...(!needsClassification
+            ? ([
+                  affectsNetSpending ? 'affects_spending' : 'outside_spending',
+              ] satisfies MovementStatus[])
+            : []),
+    ];
 
     return (
         <Dialog>
@@ -166,9 +286,25 @@ function MovementEditor({
                         <span className="font-medium break-words">
                             {movement.description}
                         </span>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                            {movement.occurred_on}
-                        </span>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <span
+                                className="tabular-nums"
+                                data-test={`statement-movement-date-${movementIndex}`}
+                            >
+                                {movement.occurred_on}
+                            </span>
+                            <div
+                                className="flex items-center gap-1"
+                                data-test={`statement-movement-status-${movementIndex}`}
+                            >
+                                {movementStatuses.map((status) => (
+                                    <MovementStatusBadge
+                                        key={status}
+                                        status={status}
+                                    />
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 </TableCell>
                 <TableCell
@@ -198,7 +334,32 @@ function MovementEditor({
 
                             if (classification !== null) {
                                 updateMovement(movementIndex, {
+                                    ...movement,
                                     classification,
+                                    ...(classification === 'not_a_movement'
+                                        ? {
+                                              resolution: 'exclude',
+                                              transaction_id: null,
+                                          }
+                                        : sourceMovement.match.status ===
+                                            'matched'
+                                          ? {
+                                                resolution: 'link',
+                                                transaction_id:
+                                                    sourceMovement.match
+                                                        .transaction_id,
+                                            }
+                                          : sourceMovement.match.status ===
+                                              'ambiguous'
+                                            ? {
+                                                  resolution:
+                                                      'needs_resolution',
+                                                  transaction_id: null,
+                                              }
+                                            : {
+                                                  resolution: 'create',
+                                                  transaction_id: null,
+                                              }),
                                 });
                             }
                         }}
@@ -216,16 +377,76 @@ function MovementEditor({
                         className="mt-1"
                     />
                 </TableCell>
-                <TableCell className="min-w-44 whitespace-normal">
-                    <div
-                        className="flex flex-col items-start gap-2"
-                        data-test={`statement-movement-status-${movementIndex}`}
-                    >
-                        <Badge variant={statusBadgeVariant} className="w-fit">
-                            {isUnresolved && <CircleAlert />}
-                            {isUnresolved ? 'Unresolved' : netSpendingStatus}
-                        </Badge>
-                    </div>
+                <TableCell className="min-w-64 whitespace-normal">
+                    {sourceMovement.match.status === 'ambiguous' &&
+                    !needsClassification ? (
+                        <div className="grid gap-1">
+                            <Label
+                                htmlFor={`movement-${movementIndex}-resolution`}
+                                className="sr-only"
+                            >
+                                Match decision for {movement.description}
+                            </Label>
+                            <NativeSelect
+                                id={`movement-${movementIndex}-resolution`}
+                                aria-label={`Match decision for ${movement.description}`}
+                                value={matchSelection}
+                                onChange={(event) => {
+                                    const selection = event.currentTarget.value;
+
+                                    if (selection === 'create') {
+                                        updateMovement(movementIndex, {
+                                            ...movement,
+                                            resolution: 'create',
+                                            transaction_id: null,
+                                        });
+
+                                        return;
+                                    }
+
+                                    if (selection.startsWith('link:')) {
+                                        updateMovement(movementIndex, {
+                                            ...movement,
+                                            resolution: 'link',
+                                            transaction_id: Number(
+                                                selection.slice(5),
+                                            ),
+                                        });
+                                    }
+                                }}
+                                options={[
+                                    {
+                                        value: '',
+                                        label: 'Choose a match',
+                                    },
+                                    ...compatibleCandidates.map(
+                                        (candidate) => ({
+                                            value: `link:${candidate.id}`,
+                                            label: `${candidate.occurred_on} · ${candidate.description}`,
+                                        }),
+                                    ),
+                                    {
+                                        value: 'create',
+                                        label: 'Add as new Transaction',
+                                    },
+                                ]}
+                                aria-invalid={Boolean(resolutionError)}
+                                aria-describedby={
+                                    resolutionError
+                                        ? `movement-${movementIndex}-resolution-error`
+                                        : undefined
+                                }
+                            />
+                            <InputError
+                                id={`movement-${movementIndex}-resolution-error`}
+                                message={resolutionError}
+                            />
+                        </div>
+                    ) : (
+                        <span className="text-muted-foreground" aria-hidden>
+                            —
+                        </span>
+                    )}
                 </TableCell>
                 <TableCell className="pr-6 text-right">
                     <DialogTrigger asChild>
@@ -256,6 +477,7 @@ function MovementEditor({
                             value={movement.occurred_on}
                             onChange={(event) =>
                                 updateMovement(movementIndex, {
+                                    ...movement,
                                     occurred_on: event.currentTarget.value,
                                 })
                             }
@@ -285,6 +507,7 @@ function MovementEditor({
                             maxLength={255}
                             onChange={(event) =>
                                 updateMovement(movementIndex, {
+                                    ...movement,
                                     description: event.currentTarget.value,
                                 })
                             }
@@ -313,6 +536,7 @@ function MovementEditor({
                             pattern="\d+"
                             onChange={(event) =>
                                 updateMovement(movementIndex, {
+                                    ...movement,
                                     amount_minor: event.currentTarget.value,
                                 })
                             }
@@ -355,6 +579,7 @@ function MovementEditor({
 
                                 if (currency === 'PEN' || currency === 'USD') {
                                     updateMovement(movementIndex, {
+                                        ...movement,
                                         currency,
                                     });
                                 }
@@ -395,7 +620,8 @@ export default function CreateStatementImport() {
         .map((movement, movementIndex) => ({ movement, movementIndex }))
         .filter(
             ({ movement }) =>
-                movement.classification === 'needs_classification',
+                movement.classification === 'needs_classification' ||
+                movement.resolution === 'needs_resolution',
         )
         .map(({ movementIndex }) => movementIndex);
     const unresolvedCount = unresolvedMovementIndexes.length;
@@ -436,15 +662,13 @@ export default function CreateStatementImport() {
 
     function updateMovement(
         movementIndex: number,
-        values: Partial<ConfirmationMovement>,
+        updatedMovement: ConfirmationMovement,
     ): void {
         confirmation.clearErrors();
         confirmation.setData(
             'movements',
             confirmation.data.movements.map((movement, currentIndex) =>
-                currentIndex === movementIndex
-                    ? { ...movement, ...values }
-                    : movement,
+                currentIndex === movementIndex ? updatedMovement : movement,
             ),
         );
     }
@@ -490,11 +714,12 @@ export default function CreateStatementImport() {
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             Choose a supported BCP or Interbank text PDF once,
-                            then resolve only the movements that need attention.
+                            then review every parsed movement. Rows that need a
+                            decision are marked for your attention.
                         </p>
                     </div>
                     <Button asChild variant="outline">
-                        <Link href={index()}>
+                        <Link href={statementImportsIndex()}>
                             <ArrowLeft /> Statement Imports
                         </Link>
                     </Button>
@@ -502,87 +727,116 @@ export default function CreateStatementImport() {
 
                 <div className="grid min-h-0 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-stretch">
                     <div
-                        className="grid min-w-0 gap-4 lg:grid-cols-2"
+                        className="min-w-0"
                         data-test="statement-import-overview"
                     >
-                        <Card>
+                        <Card className="min-w-0">
                             <CardHeader>
-                                <CardTitle>1. Choose PDF</CardTitle>
-                                <CardDescription>
-                                    The file and extracted text stay transient.
-                                    Refreshing or leaving this page discards
-                                    them.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <form
-                                    onSubmit={requestPreview}
-                                    className="grid gap-4"
-                                >
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="preview-statement">
-                                            Statement PDF
-                                        </Label>
-                                        <Input
-                                            id="preview-statement"
-                                            name="statement"
-                                            type="file"
-                                            accept="application/pdf,.pdf"
-                                            onChange={(event) => {
-                                                const statement =
-                                                    event.currentTarget
-                                                        .files?.[0] ?? null;
-
-                                                setPreview(null);
-                                                setSelectedStatement(statement);
-                                                previewRequest.clearErrors(
-                                                    'statement',
-                                                );
-                                                previewRequest.setData(
-                                                    'statement',
-                                                    statement,
-                                                );
-                                            }}
-                                            required
-                                        />
-                                        <InputError
-                                            message={
-                                                previewRequest.errors.statement
-                                            }
-                                        />
-                                    </div>
-                                    <Button
-                                        type="submit"
-                                        disabled={
-                                            previewRequest.processing ||
-                                            selectedStatement === null
-                                        }
-                                    >
-                                        {previewRequest.processing ? (
-                                            <Spinner />
-                                        ) : (
-                                            <Upload />
-                                        )}
-                                        Preview statement
-                                    </Button>
-                                </form>
-                            </CardContent>
-                        </Card>
-
-                        {preview && (
-                            <>
-                                <Card data-test="statement-checks">
-                                    <CardHeader>
-                                        <CardTitle>Reconciliation</CardTitle>
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div className="grid gap-1">
+                                        <CardTitle>Statement details</CardTitle>
                                         <CardDescription>
-                                            Printed statement totals verified
-                                            against every parsed Statement
-                                            Movement.
+                                            The PDF and extracted text stay in
+                                            this tab until you confirm or leave.
                                         </CardDescription>
-                                    </CardHeader>
-                                    <CardContent className="grid gap-6">
-                                        <section className="grid gap-3">
-                                            <div className="grid gap-3 sm:grid-cols-2">
+                                    </div>
+                                    {preview && (
+                                        <div className="flex flex-wrap gap-2">
+                                            <Badge variant="outline">
+                                                {preview.financial_statement_format.toUpperCase()}
+                                            </Badge>
+                                            <Badge variant="secondary">
+                                                <FileCheck2 /> Reconciled
+                                            </Badge>
+                                        </div>
+                                    )}
+                                </div>
+                            </CardHeader>
+                            <CardContent className="grid gap-6">
+                                <section className="grid gap-3">
+                                    <div className="grid gap-1">
+                                        <h2 className="font-semibold">
+                                            1. Upload
+                                        </h2>
+                                        <p className="text-sm text-muted-foreground">
+                                            Refreshing or leaving this page
+                                            discards the preview.
+                                        </p>
+                                    </div>
+                                    <form
+                                        onSubmit={requestPreview}
+                                        className="grid gap-4"
+                                    >
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="preview-statement">
+                                                Statement PDF
+                                            </Label>
+                                            <Input
+                                                id="preview-statement"
+                                                name="statement"
+                                                type="file"
+                                                accept="application/pdf,.pdf"
+                                                onChange={(event) => {
+                                                    const statement =
+                                                        event.currentTarget
+                                                            .files?.[0] ?? null;
+
+                                                    setPreview(null);
+                                                    setSelectedStatement(
+                                                        statement,
+                                                    );
+                                                    previewRequest.clearErrors(
+                                                        'statement',
+                                                    );
+                                                    previewRequest.setData(
+                                                        'statement',
+                                                        statement,
+                                                    );
+                                                }}
+                                                required
+                                            />
+                                            <InputError
+                                                message={
+                                                    previewRequest.errors
+                                                        .statement
+                                                }
+                                            />
+                                        </div>
+                                        <Button
+                                            type="submit"
+                                            disabled={
+                                                previewRequest.processing ||
+                                                selectedStatement === null
+                                            }
+                                        >
+                                            {previewRequest.processing ? (
+                                                <Spinner />
+                                            ) : (
+                                                <Upload />
+                                            )}
+                                            Upload and check
+                                        </Button>
+                                    </form>
+                                </section>
+
+                                {preview && (
+                                    <>
+                                        <Separator />
+                                        <section
+                                            className="grid gap-4"
+                                            data-test="statement-checks"
+                                        >
+                                            <div className="grid gap-1">
+                                                <h2 className="font-semibold">
+                                                    Reconciliation
+                                                </h2>
+                                                <p className="text-sm text-muted-foreground">
+                                                    Printed statement totals
+                                                    verified against every
+                                                    parsed Statement Movement.
+                                                </p>
+                                            </div>
+                                            <dl className="grid gap-x-6 sm:grid-cols-2">
                                                 {Object.entries(
                                                     preview.reconciliation,
                                                 ).map(([key, value]) => {
@@ -594,134 +848,82 @@ export default function CreateStatementImport() {
                                                     return (
                                                         <div
                                                             key={key}
-                                                            className="grid gap-1 rounded-lg border p-3"
+                                                            className="flex items-center justify-between gap-3 border-b py-2.5"
                                                         >
-                                                            <span className="text-xs text-muted-foreground capitalize">
+                                                            <dt className="text-xs text-muted-foreground capitalize">
                                                                 {humanizeKey(
                                                                     key,
                                                                 )}
-                                                            </span>
-                                                            <span className="font-medium tabular-nums">
+                                                            </dt>
+                                                            <dd className="text-sm font-medium tabular-nums">
                                                                 {formatMinorUnits(
                                                                     value,
                                                                     currency,
                                                                 )}
-                                                            </span>
+                                                            </dd>
                                                         </div>
                                                     );
                                                 })}
-                                            </div>
+                                            </dl>
                                         </section>
 
-                                        {preview.informational_values.length >
-                                            0 && (
-                                            <section className="grid gap-3">
-                                                <div className="grid gap-1">
-                                                    <h2 className="font-semibold">
-                                                        Informational values
-                                                    </h2>
-                                                    <p className="text-sm text-muted-foreground">
-                                                        These values support
-                                                        review but are not
-                                                        posted movements.
-                                                    </p>
-                                                </div>
-                                                <div className="grid gap-3 sm:grid-cols-2">
-                                                    {preview.informational_values.map(
-                                                        (value, valueIndex) => (
-                                                            <div
-                                                                key={`${value.label}-${valueIndex}`}
-                                                                className="grid gap-1 rounded-lg border p-3"
-                                                            >
-                                                                <span className="text-xs text-muted-foreground">
-                                                                    {
-                                                                        value.label
-                                                                    }
-                                                                </span>
-                                                                <span className="font-medium tabular-nums">
-                                                                    {formatMinorUnits(
-                                                                        value.value,
-                                                                        value.currency,
-                                                                    )}
-                                                                </span>
-                                                            </div>
-                                                        ),
-                                                    )}
-                                                </div>
-                                            </section>
-                                        )}
-                                    </CardContent>
-                                </Card>
-
-                                <form
-                                    onSubmit={confirm}
-                                    className="col-span-full"
-                                >
-                                    <Card>
-                                        <CardHeader>
-                                            <div className="flex flex-wrap items-start justify-between gap-3">
-                                                <div className="grid gap-1">
-                                                    <CardTitle>
-                                                        Proposed import
-                                                    </CardTitle>
-                                                    <CardDescription>
-                                                        {preview.period_start}{' '}
-                                                        through{' '}
-                                                        {preview.period_end}
-                                                    </CardDescription>
-                                                </div>
-                                                <div className="flex flex-wrap gap-2">
-                                                    <Badge variant="outline">
-                                                        {preview.financial_statement_format.toUpperCase()}
-                                                    </Badge>
-                                                    <Badge variant="secondary">
-                                                        <FileCheck2 />{' '}
-                                                        Reconciled
-                                                    </Badge>
-                                                </div>
+                                        <form
+                                            onSubmit={confirm}
+                                            className="grid gap-5 border-t pt-6"
+                                        >
+                                            <div className="grid gap-1">
+                                                <h2 className="font-semibold">
+                                                    3. Confirm
+                                                </h2>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {preview.period_start}{' '}
+                                                    through {preview.period_end}
+                                                </p>
                                             </div>
-                                        </CardHeader>
-                                        <CardContent className="grid gap-5">
-                                            <div className="grid grid-cols-4 gap-3">
-                                                <div className="grid gap-1 rounded-lg border p-3">
-                                                    <span className="text-xs text-muted-foreground">
+                                            <dl
+                                                className="grid grid-cols-4 divide-x rounded-lg bg-muted/50 py-4"
+                                                aria-label="Import totals"
+                                                data-test="statement-import-totals"
+                                            >
+                                                <div className="grid gap-1 px-3">
+                                                    <dt className="text-xs text-muted-foreground">
                                                         Proposed movements
-                                                    </span>
-                                                    <span className="text-xl font-semibold tabular-nums">
+                                                    </dt>
+                                                    <dd className="text-xl font-semibold tabular-nums">
                                                         {
                                                             confirmation.data
                                                                 .movements
                                                                 .length
                                                         }
-                                                    </span>
+                                                    </dd>
                                                 </div>
-                                                <div className="grid gap-1 rounded-lg border p-3">
-                                                    <span className="text-xs text-muted-foreground">
+                                                <div className="grid gap-1 px-3">
+                                                    <dt className="text-xs text-muted-foreground">
                                                         Affect Net Spending
-                                                    </span>
-                                                    <span className="text-xl font-semibold tabular-nums">
+                                                    </dt>
+                                                    <dd className="text-xl font-semibold tabular-nums">
                                                         {spendingMovementCount}
-                                                    </span>
+                                                    </dd>
                                                 </div>
-                                                <div className="grid gap-1 rounded-lg border p-3">
-                                                    <span className="text-xs text-muted-foreground">
+                                                <div className="grid gap-1 px-3">
+                                                    <dt className="text-xs text-muted-foreground">
                                                         Outside Net Spending
-                                                    </span>
-                                                    <span className="text-xl font-semibold tabular-nums">
+                                                    </dt>
+                                                    <dd className="text-xl font-semibold tabular-nums">
                                                         {
                                                             outsideNetSpendingCount
                                                         }
-                                                    </span>
+                                                    </dd>
                                                 </div>
-                                                <div className="grid gap-1 rounded-lg border p-3">
-                                                    <span className="text-xs text-muted-foreground">
+                                                <div className="grid gap-1 px-3">
+                                                    <dt className="text-xs text-muted-foreground">
                                                         Unresolved
-                                                    </span>
-                                                    <span className="text-xl font-semibold tabular-nums">
+                                                    </dt>
+                                                    <dd className="text-xl font-semibold tabular-nums">
                                                         {unresolvedCount}
-                                                    </span>
+                                                    </dd>
                                                 </div>
-                                            </div>
+                                            </dl>
 
                                             <div className="grid gap-4 md:grid-cols-3">
                                                 <div className="grid gap-2 md:col-span-2">
@@ -798,41 +1000,42 @@ export default function CreateStatementImport() {
                                                     )}
                                                 />
                                             )}
-                                        </CardContent>
-                                        <Separator />
-                                        <CardFooter className="flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-center">
-                                            <div className="grid gap-1">
-                                                <p className="font-medium">
-                                                    {unresolvedCount === 0
-                                                        ? 'Ready for confirmation'
-                                                        : `${unresolvedCount} movement${unresolvedCount === 1 ? '' : 's'} still need a decision`}
-                                                </p>
-                                                <p className="text-sm text-muted-foreground">
-                                                    The PDF remains in this
-                                                    tab's memory. Confirmation
-                                                    reparses it and checks every
-                                                    reconciliation invariant.
-                                                </p>
+                                            <div className="flex flex-col items-stretch justify-between gap-4 border-t pt-5 sm:flex-row sm:items-center">
+                                                <div className="grid gap-1">
+                                                    <p className="font-medium">
+                                                        {unresolvedCount === 0
+                                                            ? 'Ready for confirmation'
+                                                            : `${unresolvedCount} movement${unresolvedCount === 1 ? '' : 's'} still need a decision`}
+                                                    </p>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        The PDF remains in this
+                                                        tab's memory.
+                                                        Confirmation reparses it
+                                                        and checks every
+                                                        reconciliation
+                                                        invariant.
+                                                    </p>
+                                                </div>
+                                                <Button
+                                                    type="submit"
+                                                    disabled={
+                                                        confirmation.processing ||
+                                                        selectedStatement ===
+                                                            null ||
+                                                        unresolvedCount > 0
+                                                    }
+                                                >
+                                                    {confirmation.processing && (
+                                                        <Spinner />
+                                                    )}
+                                                    Confirm import
+                                                </Button>
                                             </div>
-                                            <Button
-                                                type="submit"
-                                                disabled={
-                                                    confirmation.processing ||
-                                                    selectedStatement ===
-                                                        null ||
-                                                    unresolvedCount > 0
-                                                }
-                                            >
-                                                {confirmation.processing && (
-                                                    <Spinner />
-                                                )}
-                                                Confirm Statement Import
-                                            </Button>
-                                        </CardFooter>
-                                    </Card>
-                                </form>
-                            </>
-                        )}
+                                        </form>
+                                    </>
+                                )}
+                            </CardContent>
+                        </Card>
                     </div>
 
                     {preview && (
@@ -844,11 +1047,13 @@ export default function CreateStatementImport() {
                                 <CardHeader className="shrink-0">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div className="grid gap-1">
-                                            <CardTitle>2. Movements</CardTitle>
+                                            <CardTitle>
+                                                2. Review movements
+                                            </CardTitle>
                                             <CardDescription>
-                                                Change categorization in the
-                                                table, or edit the remaining
-                                                details from each row.
+                                                Review the full statement. Rows
+                                                that need a classification or
+                                                match decision are marked.
                                             </CardDescription>
                                         </div>
                                         <Badge
@@ -871,7 +1076,7 @@ export default function CreateStatementImport() {
                                     className="min-w-0 p-0 lg:min-h-0 lg:flex-1 lg:[&>[data-slot=table-container]]:h-full lg:[&>[data-slot=table-container]]:overflow-auto"
                                     data-test="statement-movements"
                                 >
-                                    <Table className="min-w-[54rem]">
+                                    <Table className="min-w-[64rem]">
                                         <TableHeader className="sticky top-0 z-10 bg-card">
                                             <TableRow className="hover:bg-transparent">
                                                 <TableHead className="w-14 px-6">
@@ -886,7 +1091,9 @@ export default function CreateStatementImport() {
                                                 <TableHead>
                                                     Categorization
                                                 </TableHead>
-                                                <TableHead>Status</TableHead>
+                                                <TableHead>
+                                                    Recorded Transaction
+                                                </TableHead>
                                                 <TableHead className="pr-6 text-right">
                                                     Actions
                                                 </TableHead>
@@ -931,7 +1138,7 @@ export default function CreateStatementImport() {
 
 CreateStatementImport.layout = {
     breadcrumbs: [
-        { title: 'Statement Imports', href: index() },
+        { title: 'Statement Imports', href: statementImportsIndex() },
         { title: 'Import statement', href: '#' },
     ],
 };

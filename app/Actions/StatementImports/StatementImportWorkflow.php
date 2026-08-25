@@ -16,7 +16,9 @@ use App\StatementImports\FinancialStatementFormatRegistry;
 use App\StatementImports\StatementImportPreview;
 use App\StatementImports\StatementImportPreviewMovement;
 use App\StatementImports\StatementImportValidationException;
+use App\StatementImports\StatementMovementMatcher;
 use App\StatementMovementClassification;
+use App\StatementMovementResolution;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
@@ -31,7 +33,10 @@ use Illuminate\Support\Str;
  *     amount_minor: string,
  *     currency: Currency,
  *     classification: StatementMovementClassification,
- *     description: string
+ *     description: string,
+ *     resolution: StatementMovementResolution,
+ *     transaction_id: int|null,
+ *     match_evidence: array<string, mixed>
  * }
  */
 final class StatementImportWorkflow
@@ -39,12 +44,11 @@ final class StatementImportWorkflow
     public function __construct(
         private StatementPdfExtractor $pdfExtractor,
         private FinancialStatementFormatRegistry $financialStatementFormats,
+        private StatementMovementMatcher $statementMovementMatcher,
     ) {}
 
     public function preview(User $owner, UploadedFile $statement): StatementImportPreview
     {
-        unset($owner);
-
         $path = $statement->getRealPath();
 
         if ($path === false || ! is_readable($path)) {
@@ -81,7 +85,10 @@ final class StatementImportWorkflow
                 throw $this->invalid('The uploaded statement could not be identified.', 'unreadable_pdf');
             }
 
-            return $this->financialStatementFormats->preview($text, $fileHash);
+            return $this->statementMovementMatcher->match(
+                $owner,
+                $this->financialStatementFormats->preview($text, $fileHash),
+            );
         } finally {
             unset($text);
         }
@@ -115,6 +122,7 @@ final class StatementImportWorkflow
                     'instrument_label' => $instrumentLabel,
                     'instrument_last_four' => $instrumentLastFour,
                     'reconciliation_values' => $preview->reconciliation,
+                    'excluded_values' => $this->excludedValues($editedMovements),
                     'confirmed_at' => now(),
                 ]);
 
@@ -124,19 +132,32 @@ final class StatementImportWorkflow
                 foreach ($editedMovements as $editedMovement) {
                     $sourceMovement = $editedMovement['source'];
                     $classification = $editedMovement['classification'];
+
+                    if ($editedMovement['resolution'] === StatementMovementResolution::Excluded) {
+                        continue;
+                    }
+
                     $category = match ($classification) {
                         StatementMovementClassification::Tax => $taxCategory,
                         StatementMovementClassification::Fee => $feeCategory,
                         default => null,
                     };
-                    $transaction = $this->createTransaction(
-                        owner: $owner,
-                        movement: $editedMovement,
-                        direction: $sourceMovement->direction,
-                        category: $category,
-                        instrumentLabel: $instrumentLabel,
-                        instrumentLastFour: $instrumentLastFour,
-                    );
+                    $transaction = match ($editedMovement['resolution']) {
+                        StatementMovementResolution::Linked => Transaction::query()
+                            ->whereBelongsTo($owner, 'owner')
+                            ->whereKey($editedMovement['transaction_id'])
+                            ->whereDoesntHave('statementMovement')
+                            ->lockForUpdate()
+                            ->firstOrFail(),
+                        StatementMovementResolution::Created => $this->createTransaction(
+                            owner: $owner,
+                            movement: $editedMovement,
+                            direction: $sourceMovement->direction,
+                            category: $category,
+                            instrumentLabel: $instrumentLabel,
+                            instrumentLastFour: $instrumentLastFour,
+                        ),
+                    };
 
                     StatementMovement::create([
                         'statement_import_id' => $statementImport->getKey(),
@@ -150,6 +171,8 @@ final class StatementImportWorkflow
                         'classification' => $classification,
                         'description' => $editedMovement['description'],
                         'source_metadata' => $sourceMovement->sourceMetadata,
+                        'resolution' => $editedMovement['resolution'],
+                        'match_evidence' => $editedMovement['match_evidence'],
                     ]);
                 }
 
@@ -162,6 +185,29 @@ final class StatementImportWorkflow
 
             throw $exception;
         }
+    }
+
+    /**
+     * @param  list<ValidatedMovement>  $movements
+     * @return list<array{position: int, occurred_on: string, amount_minor: string, currency: string, direction: string, description: string, source_metadata: array<string, mixed>}>
+     */
+    private function excludedValues(array $movements): array
+    {
+        return array_values(array_map(
+            fn (array $movement): array => [
+                'position' => $movement['source']->position,
+                'occurred_on' => $movement['occurred_on']->toDateString(),
+                'amount_minor' => $movement['amount_minor'],
+                'currency' => $movement['currency']->value,
+                'direction' => $movement['source']->direction->value,
+                'description' => $movement['description'],
+                'source_metadata' => $movement['source']->sourceMetadata,
+            ],
+            array_filter(
+                $movements,
+                fn (array $movement): bool => $movement['resolution'] === StatementMovementResolution::Excluded,
+            ),
+        ));
     }
 
     /** @param ValidatedMovement $movement */

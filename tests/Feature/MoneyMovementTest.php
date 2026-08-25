@@ -2,11 +2,10 @@
 
 use App\Actions\Ledger\CountOutstandingReviews;
 use App\Models\Category;
+use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\Transaction;
 use App\Models\User;
-use Illuminate\Database\QueryException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -158,14 +157,20 @@ test('Income and Transfers stay outside Spending Category review', function () {
     expect($income->refresh()->category_id)->toBeNull();
 });
 
-test('every persisted Statement Movement belongs to exactly one Transaction', function () {
+test('real Statement Movements belong to a Transaction while informational exclusions stay on the import', function () {
     $movement = StatementMovement::factory()->create();
+    $statementImport = StatementImport::factory()->create([
+        'excluded_values' => [[
+            'position' => 2,
+            'description' => 'INFORMACION',
+        ]],
+    ]);
 
     expect($movement->transaction)->toBeInstanceOf(Transaction::class)
-        ->and(fn () => DB::table('statement_movements')
-            ->where('id', $movement->id)
-            ->update(['transaction_id' => null]))
-        ->toThrow(QueryException::class);
+        ->and($statementImport->excluded_values)->toBe([[
+            'position' => 2,
+            'description' => 'INFORMACION',
+        ]]);
 });
 
 test('Movement Direction is required without an implicit default', function () {

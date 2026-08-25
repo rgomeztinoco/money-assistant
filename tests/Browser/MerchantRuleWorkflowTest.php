@@ -15,7 +15,9 @@ test('the owner creates a Merchant Rule that categorizes a future Transaction', 
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
     $this->actingAs($owner);
 
-    visit('/merchant-rules')
+    visit('/')
+        ->click('[data-test="nav-merchant-rules"]')
+        ->assertPathIs('/merchant-rules')
         ->assertSee('Existing Transactions never change.')
         ->fill('Merchant', 'CAFÉ—Central')
         ->select('Category', 'Groceries')

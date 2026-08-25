@@ -18,14 +18,13 @@ test('the account menu retains Settings outside the permanent product navigation
         ->assertNoConsoleLogs();
 });
 
-test('secondary navigation keeps management destinations reachable', function () {
+test('secondary navigation keeps data sources and management destinations reachable', function () {
     $this->actingAs(User::factory()->create());
 
     foreach ([
-        ['nav-statement-imports', 'Statement Imports', '/statement-imports'],
-        ['nav-categories', 'Categories', '/categories'],
-        ['nav-merchant-rules', 'Merchant Rules', '/merchant-rules'],
-        ['nav-parser-profiles', 'Parser Profiles', '/parser-profiles'],
+        ['nav-home', 'Home', '/'],
+        ['nav-breakdown', 'Breakdown', '/breakdown'],
+        ['nav-trends', 'Trends', '/trends'],
     ] as [$testId, $label, $path]) {
         visit('/')
             ->assertSeeIn('[data-test="'.$testId.'"]', $label)
@@ -34,4 +33,23 @@ test('secondary navigation keeps management destinations reachable', function ()
             ->assertNoJavaScriptErrors()
             ->assertNoConsoleLogs();
     }
+
+    foreach ([
+        ['nav-gmail', 'Gmail', '/data-sources/gmail'],
+        ['nav-statement-imports', 'Statement Imports', '/statement-imports'],
+        ['nav-categories', 'Categories', '/categories'],
+        ['nav-merchant-rules', 'Merchant Rules', '/merchant-rules'],
+    ] as [$testId, $label, $path]) {
+        visit('/')
+            ->assertSeeIn('[data-test="'.$testId.'"]', $label)
+            ->click('[data-test="'.$testId.'"]')
+            ->assertPathIs($path)
+            ->assertNoJavaScriptErrors()
+            ->assertNoConsoleLogs();
+    }
+
+    visit('/')
+        ->assertDontSee('Parser Profiles')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
 });

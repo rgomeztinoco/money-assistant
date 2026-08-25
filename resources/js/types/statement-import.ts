@@ -1,4 +1,5 @@
 import type { Currency } from './ledger';
+import type { TransactionKind, TransferPurpose } from './ledger';
 
 export type FinancialStatementFormat = 'bcp' | 'interbank';
 export type StatementDirection = 'debit' | 'credit';
@@ -15,6 +16,39 @@ export type StatementClassification =
     | 'already_recorded'
     | 'not_a_movement';
 
+export type StatementMatchCandidate = {
+    id: number;
+    occurred_on: string;
+    description: string;
+    instrument_label: string | null;
+    instrument_last_four: string | null;
+    kind: TransactionKind;
+    transfer_purpose: TransferPurpose | null;
+    compatible_classifications: StatementClassification[];
+    date_difference_days: number;
+    evidence: Record<string, boolean>;
+};
+
+export type StatementMovementMatch =
+    | {
+          status: 'new';
+          transaction_id: null;
+          candidates: StatementMatchCandidate[];
+          evidence: Record<string, boolean | number | string | null>;
+      }
+    | {
+          status: 'matched';
+          transaction_id: number;
+          candidates: StatementMatchCandidate[];
+          evidence: Record<string, boolean | number | string | null>;
+      }
+    | {
+          status: 'ambiguous';
+          transaction_id: null;
+          candidates: StatementMatchCandidate[];
+          evidence: Record<string, boolean | number | string | null>;
+      };
+
 export type StatementPreviewMovement = {
     source_row_id: string;
     position: number;
@@ -27,23 +61,34 @@ export type StatementPreviewMovement = {
     contributes_to_spending: boolean;
     can_be_excluded: boolean;
     source_metadata: Record<string, unknown>;
+    match: StatementMovementMatch;
 };
+
+type StatementConfirmationMovementDetails = Pick<
+    StatementPreviewMovement,
+    | 'source_row_id'
+    | 'occurred_on'
+    | 'description'
+    | 'amount_minor'
+    | 'currency'
+    | 'classification'
+>;
+
+export type StatementConfirmationMovement =
+    StatementConfirmationMovementDetails &
+        (
+            | { resolution: 'link'; transaction_id: number }
+            | {
+                  resolution: 'create' | 'exclude' | 'needs_resolution';
+                  transaction_id: null;
+              }
+        );
 
 export type StatementImportConfirmation = {
     file_hash: string;
     instrument_label: string;
     instrument_last_four: string | null;
-    movements: Array<
-        Pick<
-            StatementPreviewMovement,
-            | 'source_row_id'
-            | 'occurred_on'
-            | 'description'
-            | 'amount_minor'
-            | 'currency'
-            | 'classification'
-        >
-    >;
+    movements: StatementConfirmationMovement[];
 };
 
 export type StatementImportPreview = {

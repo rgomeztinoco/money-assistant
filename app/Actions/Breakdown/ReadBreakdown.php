@@ -5,6 +5,7 @@ namespace App\Actions\Breakdown;
 use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
 use App\Currency;
+use App\DataSources\ReadRecordedCoverage;
 use App\ExactInteger;
 use App\IncomeSource;
 use App\MerchantNormalizer;
@@ -23,6 +24,7 @@ class ReadBreakdown
         private ReadPeriodSummary $readPeriodSummary,
         private MerchantNormalizer $merchantNormalizer,
         private NetSpendingAllocation $netSpendingAllocation,
+        private ReadRecordedCoverage $readRecordedCoverage,
     ) {}
 
     /**
@@ -127,6 +129,7 @@ class ReadBreakdown
                 'date_from' => $coverageDates->min()?->toDateString(),
                 'date_to' => $coverageDates->max()?->toDateString(),
                 'transaction_count' => $transactions->count(),
+                'source' => $this->readRecordedCoverage->handle($owner, $dateFrom, $dateTo),
             ],
             'summary' => $summary,
             'filters' => [

@@ -6,6 +6,7 @@ use App\Actions\Reporting\EquivalentMonthPeriods;
 use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
 use App\Currency;
+use App\DataSources\ReadRecordedCoverage;
 use App\ExactInteger;
 use App\Models\Category;
 use App\Models\Transaction;
@@ -25,6 +26,7 @@ final class ReadHome
     public function __construct(
         private ReadPeriodSummary $readPeriodSummary,
         private NetSpendingAllocation $netSpendingAllocation,
+        private ReadRecordedCoverage $readRecordedCoverage,
     ) {}
 
     /** @return array{primary: Briefing|null, secondary: Briefing|null} */
@@ -67,6 +69,7 @@ final class ReadHome
                 'date_from' => (string) $coverage->date_from,
                 'date_to' => (string) $coverage->date_to,
                 'transaction_count' => (int) $coverage->transaction_count,
+                'source' => $this->readRecordedCoverage->handle($owner, $dateFrom, $dateTo),
             ],
             'summary' => $this->readPeriodSummary->handle($owner, $currency, $dateFrom, $dateTo),
             'material_change' => $includeGuidance

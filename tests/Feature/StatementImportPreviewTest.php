@@ -6,10 +6,12 @@ use App\MovementDirection;
 use App\StatementImports\StatementImportPreview;
 use App\StatementImports\StatementImportPreviewMovement;
 use App\StatementImports\StatementImportValidationException;
+use App\StatementImports\StatementMovementMatch;
 use App\StatementMovementClassification;
+use App\StatementMovementMatchStatus;
 use Carbon\CarbonImmutable;
 
-function statementImportPreviewForLifecycle(): StatementImportPreview
+function statementImportPreviewForLifecycle(?StatementMovementMatch $match = null): StatementImportPreview
 {
     return new StatementImportPreview(
         financialStatementFormat: FinancialStatementFormat::Bcp,
@@ -32,6 +34,7 @@ function statementImportPreviewForLifecycle(): StatementImportPreview
                 contributesToSpending: true,
                 canBeExcluded: false,
                 sourceMetadata: [],
+                match: $match,
             ),
         ],
         informationalValues: [],
@@ -66,6 +69,8 @@ test('Import Preview prepares confirmation data without exposing parser metadata
             'amount_minor' => '2500',
             'currency' => 'PEN',
             'classification' => 'purchase',
+            'resolution' => 'create',
+            'transaction_id' => null,
         ]],
     ]);
 });
@@ -106,4 +111,48 @@ test('Import Preview rejects source substitution and unsafe exclusion', function
         fn () => $preview->validateConfirmation($excluded),
         'movement_cannot_be_excluded',
     );
+});
+
+test('Import Preview explains why a proposed Transaction is incompatible with the movement classification', function () {
+    $preview = statementImportPreviewForLifecycle(new StatementMovementMatch(
+        status: StatementMovementMatchStatus::Ambiguous,
+        transactionId: null,
+        candidates: [[
+            'id' => 42,
+            'occurred_on' => '2026-08-10',
+            'description' => 'Market purchase',
+            'instrument_label' => null,
+            'instrument_last_four' => null,
+            'kind' => 'spending',
+            'transfer_purpose' => null,
+            'compatible_classifications' => ['purchase', 'fee', 'tax'],
+            'date_difference_days' => 0,
+            'evidence' => [
+                'amount_currency' => true,
+                'direction' => true,
+                'date_proximity' => true,
+                'instrument' => false,
+                'description' => false,
+                'card_payment_counterpart' => false,
+            ],
+        ]],
+        evidence: [],
+    ));
+    $confirmation = $preview->confirmationData();
+    $confirmation['movements'][0]['classification'] = 'transfer';
+    $confirmation['movements'][0]['resolution'] = 'link';
+    $confirmation['movements'][0]['transaction_id'] = 42;
+
+    try {
+        $preview->validateConfirmation($confirmation);
+    } catch (StatementImportValidationException $exception) {
+        expect($exception->errorCode)->toBe('invalid_movement_match')
+            ->and($exception->getMessage())->toBe(
+                'The selected Transaction is recorded as Spending, but this statement movement is classified as a Transfer between your accounts. Change the classification or choose a Transaction recorded as a Transfer.',
+            );
+
+        return;
+    }
+
+    throw new RuntimeException('Expected an incompatible Transaction error.');
 });

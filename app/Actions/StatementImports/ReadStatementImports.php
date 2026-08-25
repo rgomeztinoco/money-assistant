@@ -23,9 +23,14 @@ final class ReadStatementImports
                 'instrument_label',
                 'instrument_last_four',
                 'reconciliation_values',
+                'excluded_values',
                 'confirmed_at',
             ])
             ->withCount('movements')
+            ->withCount([
+                'movements as linked_movement_count' => fn ($query) => $query->where('resolution', 'linked'),
+                'movements as created_movement_count' => fn ($query) => $query->where('resolution', 'created'),
+            ])
             ->latest('confirmed_at')
             ->latest('id')
             ->paginate(25);
@@ -39,6 +44,9 @@ final class ReadStatementImports
                 instrumentLastFour: $import->instrument_last_four,
                 movementCount: $import->movements_count,
                 confirmedAt: $import->confirmed_at->toIso8601String(),
+                linkedMovementCount: $import->linked_movement_count,
+                createdMovementCount: $import->created_movement_count,
+                excludedMovementCount: count($import->excluded_values),
                 totals: $import->reconciliation_values,
             ));
 

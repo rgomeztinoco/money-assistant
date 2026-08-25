@@ -15,7 +15,9 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { edit } from '@/routes/connections';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { gmail as gmailDataSource } from '@/routes/data_sources';
 
 type GmailStatus = {
     configured: boolean;
@@ -64,22 +66,21 @@ function formatTimestamp(
     }).format(new Date(timestamp));
 }
 
-export default function Connections({ gmail }: { gmail: GmailStatus }) {
+export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
     const needsAuthorization =
         gmail.state === 'disconnected' ||
         gmail.state === 'reauthorization_required';
 
     return (
         <>
-            <Head title="Connection settings" />
+            <Head title="Gmail" />
 
-            <h1 className="sr-only">Connection settings</h1>
+            <h1 className="sr-only">Gmail</h1>
 
-            <div className="space-y-6">
+            <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <Heading
-                    variant="small"
-                    title="Connections"
-                    description="Manage private, owner-authorized data sources"
+                    title="Gmail"
+                    description="Monitor ongoing activity recorded from supported bank notifications"
                 />
 
                 {!gmail.configured && (
@@ -143,7 +144,7 @@ export default function Connections({ gmail }: { gmail: GmailStatus }) {
                                 <div className="grid gap-1">
                                     <CardTitle>Gmail</CardTitle>
                                     <CardDescription>
-                                        Dedicated Spending Notification inbox
+                                        Read-only connection
                                     </CardDescription>
                                 </div>
                             </div>
@@ -304,33 +305,60 @@ export default function Connections({ gmail }: { gmail: GmailStatus }) {
                             </Form>
                         )}
 
-                        {gmail.configured ? (
-                            <Button asChild>
-                                <a href={createGmailAuthorization.url()}>
+                        <form
+                            action={createGmailAuthorization.url()}
+                            method="get"
+                            className="grid w-full gap-3 sm:max-w-md"
+                        >
+                            <div className="grid gap-1.5">
+                                <p className="font-medium">
+                                    How far back should Gmail import?
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                    Import starts as soon as Google returns you
+                                    to Money Assistant.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                                <div className="grid flex-1 gap-1.5">
+                                    <Label
+                                        htmlFor="gmail-import-days"
+                                        className="text-xs text-muted-foreground"
+                                    >
+                                        Previous days
+                                    </Label>
+                                    <Input
+                                        id="gmail-import-days"
+                                        name="import_days"
+                                        type="number"
+                                        min={1}
+                                        max={365}
+                                        defaultValue={30}
+                                        required
+                                    />
+                                </div>
+                                <Button
+                                    type="submit"
+                                    disabled={!gmail.configured}
+                                >
                                     {needsAuthorization
-                                        ? 'Authorize Gmail'
-                                        : 'Reauthorize Gmail'}
-                                </a>
-                            </Button>
-                        ) : (
-                            <Button disabled>
-                                {needsAuthorization
-                                    ? 'Authorize Gmail'
-                                    : 'Reauthorize Gmail'}
-                            </Button>
-                        )}
+                                        ? 'Authorize and import'
+                                        : 'Reauthorize and import'}
+                                </Button>
+                            </div>
+                        </form>
                     </CardFooter>
                 </Card>
-            </div>
+            </main>
         </>
     );
 }
 
-Connections.layout = {
+GmailDataSource.layout = {
     breadcrumbs: [
         {
-            title: 'Connection settings',
-            href: edit(),
+            title: 'Gmail',
+            href: gmailDataSource(),
         },
     ],
 };

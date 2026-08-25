@@ -8,12 +8,14 @@ use App\Integrations\Gmail\GmailProfile;
 use App\Integrations\Gmail\GmailReauthorizationRequired;
 use App\Integrations\Gmail\GmailRequestFailed;
 use App\Jobs\ProcessGmailMessage;
+use App\Jobs\SynchronizeGmail;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Fakes\FakeGmail;
@@ -23,7 +25,7 @@ beforeEach(function () {
     Http::preventStrayRequests();
 });
 
-test('the owner starts a state-bound offline Gmail authorization from settings', function () {
+test('the owner starts a state-bound offline Gmail authorization from Data Sources', function () {
     config()->set('services.gmail', [
         'client_id' => 'google-client-id',
         'client_secret' => 'google-client-secret',
@@ -36,13 +38,14 @@ test('the owner starts a state-bound offline Gmail authorization from settings',
 
     $this->actingAs($owner)
         ->withSession(['auth.password_confirmed_at' => time()])
-        ->get(route('gmail.authorization.create'))
+        ->get(route('gmail.authorization.create', ['import_days' => 45]))
         ->assertRedirect($gmail->authorizationUrl)
         ->assertSessionHas('gmail_oauth_state');
 
     expect($gmail->authorizationUrlCalls)->toHaveCount(1)
         ->and($gmail->authorizationUrlCalls[0]['state'])->toHaveLength(64)
-        ->and($gmail->authorizationUrlCalls[0]['login_hint'])->toBe($owner->email);
+        ->and($gmail->authorizationUrlCalls[0]['login_hint'])->toBe($owner->email)
+        ->and(session('gmail_oauth_state.import_days'))->toBe(45);
 });
 
 test('starting Gmail authorization requires fresh owner authentication', function () {
@@ -51,11 +54,34 @@ test('starting Gmail authorization requires fresh owner authentication', functio
     app()->instance(Gmail::class, $gmail);
 
     $this->actingAs($owner)
-        ->get(route('gmail.authorization.create'))
-        ->assertRedirect(route('password.confirm'));
+        ->get(route('gmail.authorization.create', ['import_days' => 30]))
+        ->assertRedirect(route('password.confirm'))
+        ->assertSessionHas(
+            'url.intended',
+            route('gmail.authorization.create', ['import_days' => 30]),
+        );
 
     expect($gmail->authorizationUrlCalls)->toBeEmpty();
 });
+
+test('starting Gmail authorization requires a bounded import window', function (mixed $importDays) {
+    $owner = User::factory()->create();
+    $gmail = new FakeGmail;
+    app()->instance(Gmail::class, $gmail);
+
+    $this->actingAs($owner)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->from(route('data_sources.gmail'))
+        ->get(route('gmail.authorization.create', ['import_days' => $importDays]))
+        ->assertRedirect(route('data_sources.gmail'))
+        ->assertSessionHasErrors('import_days');
+
+    expect($gmail->authorizationUrlCalls)->toBeEmpty();
+})->with([
+    'missing' => null,
+    'less than one day' => 0,
+    'more than one year' => 366,
+]);
 
 test('Gmail authorization cannot start while the OAuth project is still in Testing', function () {
     config()->set('services.gmail', [
@@ -70,7 +96,7 @@ test('Gmail authorization cannot start while the OAuth project is still in Testi
 
     $this->actingAs($owner)
         ->withSession(['auth.password_confirmed_at' => time()])
-        ->get(route('gmail.authorization.create'))
+        ->get(route('gmail.authorization.create', ['import_days' => 30]))
         ->assertServiceUnavailable();
 
     expect($gmail->authorizationUrlCalls)->toBeEmpty();
@@ -78,6 +104,7 @@ test('Gmail authorization cannot start while the OAuth project is still in Testi
 
 test('the state-bound callback stores hidden encrypted credentials for the Gmail account', function () {
     CarbonImmutable::setTestNow('2026-07-28 18:30:00 UTC');
+    Queue::fake();
     $owner = User::factory()->create();
     $gmail = new FakeGmail;
     $gmail->authorization = new GmailAuthorization(
@@ -95,13 +122,14 @@ test('the state-bound callback stores hidden encrypted credentials for the Gmail
             'gmail_oauth_state' => [
                 'state' => 'expected-state',
                 'user_id' => $owner->id,
+                'import_days' => 30,
             ],
         ])
         ->get(route('gmail.authorization.store', [
             'code' => 'authorization-code',
             'state' => 'expected-state',
         ]))
-        ->assertRedirect(route('connections.edit'))
+        ->assertRedirect(route('data_sources.gmail'))
         ->assertSessionMissing('gmail_oauth_state');
 
     $connection = GmailConnection::query()->sole();
@@ -115,11 +143,17 @@ test('the state-bound callback stores hidden encrypted credentials for the Gmail
         ->and($stored->access_token)->not->toBe('sensitive-access-token')
         ->and($stored->refresh_token)->not->toBe('sensitive-refresh-token')
         ->and($connection->connected_at?->toIso8601String())->toBe(now()->toIso8601String())
+        ->and($connection->initial_sync_starts_at?->toIso8601String())->toBe(now()->subDays(30)->toIso8601String())
         ->and($connection->history_id)->toBe('bootstrap-history-100')
         ->and($connection->initial_sync_completed_at)->toBeNull()
         ->and($connection->last_successful_check_at?->toIso8601String())->toBe(now()->toIso8601String())
         ->and($connection->reauthorization_required_at)->toBeNull()
         ->and($connection->toArray())->not->toHaveKeys(['access_token', 'refresh_token']);
+
+    Queue::assertPushed(
+        SynchronizeGmail::class,
+        fn (SynchronizeGmail $job): bool => $job->connectionId === $connection->id,
+    );
 });
 
 test('a mismatched or replayed OAuth state fails closed before exchanging the code', function (string $state) {
@@ -132,6 +166,7 @@ test('a mismatched or replayed OAuth state fails closed before exchanging the co
             'gmail_oauth_state' => [
                 'state' => 'expected-state',
                 'user_id' => $owner->id,
+                'import_days' => 30,
             ],
         ])
         ->get(route('gmail.authorization.store', [
@@ -158,13 +193,14 @@ test('a state-bound denial returns safely without exchanging or retaining creden
             'gmail_oauth_state' => [
                 'state' => 'expected-state',
                 'user_id' => $owner->id,
+                'import_days' => 30,
             ],
         ])
         ->get(route('gmail.authorization.store', [
             'error' => 'access_denied',
             'state' => 'expected-state',
         ]))
-        ->assertRedirect(route('connections.edit'))
+        ->assertRedirect(route('data_sources.gmail'))
         ->assertSessionMissing('gmail_oauth_state');
 
     expect($gmail->authorizationCodes)->toBeEmpty()
@@ -192,13 +228,14 @@ test('a broader fake Gmail grant is rejected without replacing retained credenti
             'gmail_oauth_state' => [
                 'state' => 'expected-state',
                 'user_id' => $connection->user_id,
+                'import_days' => 30,
             ],
         ])
         ->get(route('gmail.authorization.store', [
             'code' => 'authorization-code',
             'state' => 'expected-state',
         ]))
-        ->assertRedirect(route('connections.edit'));
+        ->assertRedirect(route('data_sources.gmail'));
 
     $connection->refresh();
 
@@ -258,7 +295,7 @@ test('a successful refresh rotates only the encrypted short-lived Gmail access',
         ->and($connection->reauthorization_required_at)->toBeNull();
 });
 
-test('settings reports a token-free connected Gmail health projection', function () {
+test('Gmail reports a token-free connected health projection', function () {
     $connection = GmailConnection::factory()->create([
         'gmail_account_identity' => 'receipts@example.test',
         'access_token' => 'never-render-this-access-token',
@@ -267,13 +304,13 @@ test('settings reports a token-free connected Gmail health projection', function
     ]);
 
     $response = $this->actingAs($connection->owner)
-        ->get(route('connections.edit'));
+        ->get(route('data_sources.gmail'));
 
     $response
         ->assertDontSee('never-render-this-access-token')
         ->assertDontSee('never-render-this-refresh-token')
         ->assertInertia(fn (Assert $page) => $page
-            ->component('settings/connections')
+            ->component('data-sources/gmail')
             ->where('gmail.state', 'connected')
             ->where('gmail.account_identity', 'receipts@example.test')
             ->where('gmail.scope', Gmail::READ_ONLY_SCOPE)
@@ -291,18 +328,18 @@ test('Gmail connection routes are private to the authenticated owner', function 
 
     $response->assertRedirect(route('login'));
 })->with([
-    'settings' => ['get', 'connections.edit'],
+    'Data Sources' => ['get', 'data_sources.gmail'],
     'authorize' => ['get', 'gmail.authorization.create'],
     'callback' => ['get', 'gmail.authorization.store'],
     'health check' => ['post', 'gmail.connection.check'],
 ]);
 
-test('settings reports disconnected and explicit reauthorization states', function () {
+test('Data Sources reports disconnected and explicit reauthorization states', function () {
     CarbonImmutable::setTestNow('2026-07-28 19:45:00 UTC');
     $owner = User::factory()->create();
 
     $this->actingAs($owner)
-        ->get(route('connections.edit'))
+        ->get(route('data_sources.gmail'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('gmail.state', 'disconnected')
             ->where('gmail.account_identity', null)
@@ -312,21 +349,21 @@ test('settings reports disconnected and explicit reauthorization states', functi
         'gmail_account_identity' => 'receipts@example.test',
     ]);
 
-    $this->get(route('connections.edit'))
+    $this->get(route('data_sources.gmail'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('gmail.state', 'reauthorization_required')
             ->where('gmail.account_identity', 'receipts@example.test')
             ->where('gmail.reauthorization_required_at', now()->toIso8601String()));
 });
 
-test('settings reports an established Gmail synchronization as stale after five minutes', function () {
+test('Data Sources reports an established Gmail synchronization as stale after five minutes', function () {
     CarbonImmutable::setTestNow('2026-07-28 19:45:00 UTC');
     $connection = GmailConnection::factory()->create([
         'last_successful_sync_at' => now()->subMinutes(6),
     ]);
 
     $this->actingAs($connection->owner)
-        ->get(route('connections.edit'))
+        ->get(route('data_sources.gmail'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('gmail.state', 'stale')
             ->where('gmail.last_successful_sync_at', now()->subMinutes(6)->toIso8601String()));
@@ -349,7 +386,7 @@ test('an explicit health check refreshes access and records a successful Gmail p
 
     $this->actingAs($connection->owner)
         ->post(route('gmail.connection.check'))
-        ->assertRedirect(route('connections.edit'));
+        ->assertRedirect(route('data_sources.gmail'));
 
     $connection->refresh();
 
@@ -371,7 +408,7 @@ test('a transient health-check failure remains visible without pausing ingestion
 
     $this->actingAs($connection->owner)
         ->post(route('gmail.connection.check'))
-        ->assertRedirect(route('connections.edit'));
+        ->assertRedirect(route('data_sources.gmail'));
 
     $connection->refresh();
 
@@ -380,7 +417,7 @@ test('a transient health-check failure remains visible without pausing ingestion
         ->and($connection->last_check_failed_at?->toIso8601String())->toBe(now()->toIso8601String())
         ->and($connection->last_error_code)->toBe('gmail_check_failed');
 
-    $this->get(route('connections.edit'))
+    $this->get(route('data_sources.gmail'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('gmail.state', 'check_failed')
             ->where('gmail.last_check_failed_at', now()->toIso8601String()));
@@ -402,7 +439,7 @@ test('a checked Gmail account identity mismatch pauses ingestion for owner reaut
 
     $this->actingAs($connection->owner)
         ->post(route('gmail.connection.check'))
-        ->assertRedirect(route('connections.edit'));
+        ->assertRedirect(route('data_sources.gmail'));
 
     $connection->refresh();
 
@@ -411,7 +448,7 @@ test('a checked Gmail account identity mismatch pauses ingestion for owner reaut
         ->and($connection->last_check_failed_at?->toIso8601String())->toBe(now()->toIso8601String())
         ->and($connection->last_error_code)->toBe('gmail_account_mismatch');
 
-    $this->get(route('connections.edit'))
+    $this->get(route('data_sources.gmail'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('gmail.state', 'reauthorization_required'));
 });
@@ -439,19 +476,22 @@ test('explicit reauthorization updates the stable connection and resumes ingesti
             'gmail_oauth_state' => [
                 'state' => 'reauthorize-state',
                 'user_id' => $connection->user_id,
+                'import_days' => 60,
             ],
         ])
         ->get(route('gmail.authorization.store', [
             'code' => 'reauthorization-code',
             'state' => 'reauthorize-state',
         ]))
-        ->assertRedirect(route('connections.edit'));
+        ->assertRedirect(route('data_sources.gmail'));
 
     $connection->refresh();
 
     expect(GmailConnection::query()->count())->toBe(1)
         ->and($connection->id)->toBe(GmailConnection::query()->sole()->id)
         ->and($connection->connected_at?->toIso8601String())->toBe(now()->subMonth()->toIso8601String())
+        ->and($connection->initial_sync_starts_at?->toIso8601String())->toBe(now()->subDays(60)->toIso8601String())
+        ->and($connection->initial_sync_completed_at)->toBeNull()
         ->and($connection->refresh_token)->toBe('replacement-refresh-token')
         ->and($connection->ingestionIsPaused())->toBeFalse()
         ->and($connection->last_error_code)->toBeNull();
@@ -478,13 +518,14 @@ test('reauthorization cannot silently replace the dedicated Gmail account identi
             'gmail_oauth_state' => [
                 'state' => 'reauthorize-state',
                 'user_id' => $connection->user_id,
+                'import_days' => 30,
             ],
         ])
         ->get(route('gmail.authorization.store', [
             'code' => 'reauthorization-code',
             'state' => 'reauthorize-state',
         ]))
-        ->assertRedirect(route('connections.edit'));
+        ->assertRedirect(route('data_sources.gmail'));
 
     $connection->refresh();
 
@@ -493,7 +534,7 @@ test('reauthorization cannot silently replace the dedicated Gmail account identi
         ->and($connection->ingestionIsPaused())->toBeTrue();
 });
 
-test('connection settings show focused Gmail success and latest failure state', function () {
+test('Data Sources shows focused Gmail success and latest failure state', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-13 12:00:00 UTC'));
     $connection = GmailConnection::factory()->create([
         'last_successful_sync_at' => now()->subMinutes(2),
@@ -507,7 +548,7 @@ test('connection settings show focused Gmail success and latest failure state', 
     ]);
 
     $this->actingAs($connection->owner)
-        ->get(route('connections.edit'))
+        ->get(route('data_sources.gmail'))
         ->assertInertia(fn (Assert $page) => $page
             ->where(
                 'gmail.last_successful_sync_at',
@@ -546,7 +587,7 @@ test('the owner can safely retry the matching retained failed Gmail message job'
     $this->actingAs($connection->owner)
         ->post(route('gmail.failed_messages.retry', $discovery))
         ->assertSessionHasNoErrors()
-        ->assertRedirect(route('connections.edit'));
+        ->assertRedirect(route('data_sources.gmail'));
 
     $discovery->refresh();
 
@@ -570,7 +611,7 @@ test('a failed Gmail job requires the owner and a matching retained payload', fu
 
     $this->actingAs($connection->owner)
         ->post(route('gmail.failed_messages.retry', $discovery))
-        ->assertRedirect(route('connections.edit'));
+        ->assertRedirect(route('data_sources.gmail'));
 
     expect($discovery->fresh()->processing_failed_at)->not->toBeNull()
         ->and(DB::table('jobs')->count())->toBe(0);

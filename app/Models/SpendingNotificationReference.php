@@ -14,8 +14,8 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $user_id
  * @property int|null $transaction_id
- * @property int|null $spending_notification_format_id
  * @property int|null $gmail_message_discovery_id
+ * @property string|null $format_identifier
  * @property string $gmail_account_identity
  * @property string $message_id
  * @property string $processing_outcome
@@ -30,8 +30,8 @@ use Illuminate\Support\Carbon;
     'gmail_account_identity',
     'message_id',
     'processing_outcome',
-    'spending_notification_format_id',
     'gmail_message_discovery_id',
+    'format_identifier',
     'attempt_count',
     'last_attempted_at',
 ])]
@@ -54,12 +54,6 @@ class SpendingNotificationReference extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);
-    }
-
-    /** @return BelongsTo<SpendingNotificationFormat, $this> */
-    public function format(): BelongsTo
-    {
-        return $this->belongsTo(SpendingNotificationFormat::class, 'spending_notification_format_id');
     }
 
     /** @return BelongsTo<GmailMessageDiscovery, $this> */

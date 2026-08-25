@@ -49,8 +49,6 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
             'other_charges' => ['PEN' => ExactInteger::from(0), 'USD' => ExactInteger::from(0)],
         ];
         $movements = [];
-        $informationalValues = [];
-
         foreach ($lines as $line) {
             $normalizedLine = Str::squish($line);
 
@@ -94,18 +92,6 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
             }
 
             if (Str::startsWith($normalizedLine, 'PAGO MÍNIMO DEL MES')) {
-                $minimumPayment = $this->completeCurrencyPair($this->amounts($line));
-
-                foreach (['PEN', 'USD'] as $currency) {
-                    if ($minimumPayment[$currency] !== null) {
-                        $informationalValues[] = [
-                            'label' => 'Minimum payment',
-                            'value' => $minimumPayment[$currency],
-                            'currency' => $currency,
-                        ];
-                    }
-                }
-
                 continue;
             }
 
@@ -274,7 +260,7 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
             instrumentLabel: 'Interbank American Express',
             instrumentLastFour: $this->lastFour($statementText),
             movements: $movements,
-            informationalValues: $informationalValues,
+            informationalValues: [],
             reconciliation: [
                 'previous_balance_pen_minor' => $previous['PEN'],
                 'previous_balance_usd_minor' => $previous['USD'],

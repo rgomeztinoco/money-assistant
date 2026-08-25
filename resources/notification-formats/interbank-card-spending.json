@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-interbank-card-spending",
+        "received_at": "2026-08-24T02:00:00Z",
+        "from_address": "servicioalcliente@netinterbank.com.pe",
+        "subject": "CLIENTE EJEMPLO, realizaste un consumo con tu Tarjeta American Express The Platinum Card",
+        "authentication": {
+            "spf": { "result": "pass", "domain": null },
+            "dkim": { "result": "pass", "domain": null },
+            "dmarc": { "result": "pass", "domain": null }
+        },
+        "html_body": "<html><style>body { color:#333 }</style><body><h1>Interbank</h1><p>CLIENTE EJEMPLO, realizaste un consumo con tu Tarjeta American Express The Platinum Card</p><p>Conoce el detalle:</p><table><tr><td>Tarjeta:</td><td>****0680</td></tr><tr><td>Comercio:</td><td>CABIFY</td></tr><tr><td>Monto:</td><td>S/. 12.44</td></tr><tr><td>Fecha:</td><td>23/08/2026</td></tr><tr><td>Hora:</td><td>08:30 PM</td></tr></table></body></html>"
+    },
+    "expected": {
+        "format_identifier": "interbank.card_spending",
+        "occurred_on": "2026-08-23",
+        "amount_minor": 1244,
+        "currency": "PEN",
+        "kind": "spending",
+        "direction": "debit",
+        "income_source": null,
+        "transfer_purpose": null,
+        "description": "CABIFY",
+        "instrument_label": "Interbank card",
+        "instrument_last_four": "0680"
+    }
+}

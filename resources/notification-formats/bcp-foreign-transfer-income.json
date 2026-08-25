@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-bcp-foreign-transfer-income",
+        "received_at": "2026-08-04T18:00:00Z",
+        "from_address": "notificaciones@notificacionesbcp.com.pe",
+        "subject": "Transferencia del Exterior - AF000001",
+        "authentication": {
+            "spf": { "result": "pass", "domain": null },
+            "dkim": { "result": "pass", "domain": null },
+            "dmarc": { "result": "pass", "domain": null }
+        },
+        "text_body": "Estimados CLIENTE EJEMPLO,\nRecibieron una transferencia del exterior de USD 2,125.40 en su Cuenta BCP.\nMontos\nMonto recibido USD 2,150.40 Comisión por transferencia BCP USD 25.00 Total abonado USD 2,125.40\nDatos de la operación\nOperación realizada Transferencia del exterior\nFecha de abono 04/08/2026\nOrdenante ACME SAMPLE SPA\nBanco corresponsal SAMPLE BANK\nCuenta destino 191-0000-1-7788\nDirección banco destino SAMPLE ADDRESS"
+    },
+    "expected": {
+        "format_identifier": "bcp.foreign_transfer_income",
+        "occurred_on": "2026-08-04",
+        "amount_minor": 212540,
+        "currency": "USD",
+        "kind": "income",
+        "direction": "credit",
+        "income_source": "independent_work",
+        "transfer_purpose": null,
+        "description": "ACME SAMPLE SPA",
+        "instrument_label": "BCP account",
+        "instrument_last_four": "7788"
+    }
+}

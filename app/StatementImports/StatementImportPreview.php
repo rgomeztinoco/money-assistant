@@ -6,6 +6,8 @@ use App\Currency;
 use App\ExactInteger;
 use App\FinancialStatementFormat;
 use App\StatementMovementClassification;
+use App\StatementMovementMatchStatus;
+use App\StatementMovementResolution;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Str;
 use Throwable;
@@ -41,7 +43,9 @@ final readonly class StatementImportPreview
      *         description: string,
      *         amount_minor: string,
      *         currency: string,
-     *         classification: string
+     *         classification: string,
+     *         resolution: 'create'|'exclude'|'link'|'needs_resolution',
+     *         transaction_id: int|null
      *     }>
      * }
      */
@@ -74,7 +78,10 @@ final readonly class StatementImportPreview
      *         amount_minor: string,
      *         currency: Currency,
      *         classification: StatementMovementClassification,
-     *         description: string
+     *         description: string,
+     *         resolution: StatementMovementResolution,
+     *         transaction_id: int|null,
+     *         match_evidence: array<string, mixed>
      *     }>
      * }
      */
@@ -150,7 +157,10 @@ final readonly class StatementImportPreview
      *     amount_minor: string,
      *     currency: Currency,
      *     classification: StatementMovementClassification,
-     *     description: string
+     *     description: string,
+     *     resolution: StatementMovementResolution,
+     *     transaction_id: int|null,
+     *     match_evidence: array<string, mixed>
      * }>
      */
     private function validateMovementEdits(mixed $edits): array
@@ -167,6 +177,7 @@ final readonly class StatementImportPreview
             fn (StatementImportPreviewMovement $movement): string => $movement->sourceRowId,
         );
         $seen = [];
+        $linkedTransactionIds = [];
         $validated = [];
 
         foreach (array_values($edits) as $movementIndex => $edit) {
@@ -202,6 +213,18 @@ final readonly class StatementImportPreview
                         "movements.{$movementIndex}.classification",
                     );
                 }
+
+                $validated[] = [
+                    'source' => $source,
+                    'occurred_on' => $source->occurredOn,
+                    'amount_minor' => $source->amountMinor,
+                    'currency' => $source->currency,
+                    'classification' => $classification,
+                    'description' => $source->description,
+                    'resolution' => StatementMovementResolution::Excluded,
+                    'transaction_id' => null,
+                    'match_evidence' => [],
+                ];
 
                 continue;
             }
@@ -246,6 +269,27 @@ final readonly class StatementImportPreview
                 );
             }
 
+            [$resolution, $transactionId, $matchEvidence] = $this->validateResolution(
+                source: $source,
+                edit: $edit,
+                movementIndex: $movementIndex,
+                classification: $classification,
+            );
+
+            if ($resolution === StatementMovementResolution::Linked
+                && $transactionId !== null
+                && isset($linkedTransactionIds[$transactionId])) {
+                throw $this->invalid(
+                    'Each Transaction can resolve only one statement movement.',
+                    'duplicate_movement_match',
+                    "movements.{$movementIndex}.resolution",
+                );
+            }
+
+            if ($resolution === StatementMovementResolution::Linked && $transactionId !== null) {
+                $linkedTransactionIds[$transactionId] = true;
+            }
+
             $validated[] = [
                 'source' => $source,
                 'occurred_on' => $occurredOn,
@@ -253,6 +297,9 @@ final readonly class StatementImportPreview
                 'currency' => $currency,
                 'classification' => $classification,
                 'description' => $description,
+                'resolution' => $resolution,
+                'transaction_id' => $transactionId,
+                'match_evidence' => $matchEvidence,
             ];
         }
 
@@ -267,6 +314,124 @@ final readonly class StatementImportPreview
         usort($validated, fn (array $left, array $right): int => $left['source']->position <=> $right['source']->position);
 
         return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>  $edit
+     * @return array{StatementMovementResolution, int|null, array<string, mixed>}
+     */
+    private function validateResolution(
+        StatementImportPreviewMovement $source,
+        array $edit,
+        int $movementIndex,
+        StatementMovementClassification $classification,
+    ): array {
+        $match = $source->match ?? StatementMovementMatch::fresh();
+        $resolution = $edit['resolution'] ?? null;
+        $transactionIdInput = $edit['transaction_id'] ?? null;
+        $transactionId = $this->positiveInteger($transactionIdInput);
+        $validationField = "movements.{$movementIndex}.resolution";
+
+        if ($match->status === StatementMovementMatchStatus::Matched) {
+            if ($resolution !== 'link'
+                || ! is_int($transactionId)
+                || $transactionId !== $match->transactionId) {
+                throw $this->invalid(
+                    'The clear statement match changed after preview.',
+                    'movement_match_changed',
+                    $validationField,
+                );
+            }
+
+            if ($match->compatibleCandidate($transactionId, $classification) === null) {
+                throw $this->invalid(
+                    $match->incompatibilityMessage($transactionId, $classification)
+                        ?? 'The selected Transaction is not compatible with this statement movement.',
+                    'invalid_movement_match',
+                    $validationField,
+                );
+            }
+
+            return [StatementMovementResolution::Linked, $transactionId, $match->evidence];
+        }
+
+        if ($match->status === StatementMovementMatchStatus::New) {
+            if ($resolution !== 'create'
+                || $transactionId !== null
+                || $transactionIdInput !== null) {
+                throw $this->invalid(
+                    'A statement gap must be added as a new Transaction.',
+                    'invalid_movement_resolution',
+                    $validationField,
+                );
+            }
+
+            return [StatementMovementResolution::Created, null, []];
+        }
+
+        if ($resolution === 'needs_resolution') {
+            throw $this->invalid(
+                'Choose whether to link or add this ambiguous movement.',
+                'movement_needs_match_resolution',
+                $validationField,
+            );
+        }
+
+        if ($resolution === 'create' && $transactionId === null) {
+            if ($transactionIdInput !== null) {
+                throw $this->invalid(
+                    'Remove the selected Transaction before adding this movement as new.',
+                    'invalid_movement_resolution',
+                    $validationField,
+                );
+            }
+
+            return [StatementMovementResolution::Created, null, ['owner_confirmed_new' => true]];
+        }
+
+        $candidate = is_int($transactionId)
+            ? $match->compatibleCandidate($transactionId, $classification)
+            : null;
+
+        if ($resolution !== 'link'
+            || ! is_int($transactionId)
+            || $candidate === null) {
+            throw $this->invalid(
+                $transactionId === null
+                    ? 'Choose a proposed Transaction to link to this statement movement.'
+                    : ($match->incompatibilityMessage($transactionId, $classification)
+                        ?? 'The selected Transaction is not compatible with this statement movement.'),
+                'invalid_movement_match',
+                $validationField,
+            );
+        }
+
+        return [
+            StatementMovementResolution::Linked,
+            $transactionId,
+            [
+                ...$candidate['evidence'],
+                'date_difference_days' => $candidate['date_difference_days'],
+                'owner_confirmed' => true,
+            ],
+        ];
+    }
+
+    private function positiveInteger(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+
+        if (! is_string($value) || preg_match('/^[1-9][0-9]*$/D', $value) !== 1) {
+            return null;
+        }
+
+        $integer = filter_var($value, FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 1],
+        ]);
+
+        return is_int($integer) ? $integer : null;
     }
 
     private function strictDate(mixed $date, string $validationField): CarbonImmutable

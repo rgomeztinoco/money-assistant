@@ -4,20 +4,13 @@ use App\Http\Controllers\BreakdownController;
 use App\Http\Controllers\BreakdownTransactionClassificationController;
 use App\Http\Controllers\CategoryArchivalController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\DataSourceController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\MerchantRuleController;
-use App\Http\Controllers\ParserProfileActivationController;
-use App\Http\Controllers\ParserProfileController;
-use App\Http\Controllers\ParserProfilePreviewController;
-use App\Http\Controllers\ParserProfileSourceMessageController;
 use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\ReviewQueueLineItemCategoryController;
 use App\Http\Controllers\ReviewQueueTransactionCategoryController;
-use App\Http\Controllers\SpendingNotificationFormatActivationController;
-use App\Http\Controllers\SpendingNotificationFormatController;
-use App\Http\Controllers\SpendingNotificationRecoveryController;
-use App\Http\Controllers\SpendingNotificationRetryController;
 use App\Http\Controllers\StatementImportController;
 use App\Http\Controllers\StatementImportPreviewController;
 use App\Http\Controllers\StatementMovementClassificationController;
@@ -36,6 +29,7 @@ Route::get('/', HomeController::class)
 Route::middleware(['auth'])->group(function () {
     Route::get('breakdown', BreakdownController::class)->name('breakdown.index');
     Route::get('trends', TrendsController::class)->name('trends.index');
+    Route::get('data-sources/gmail', DataSourceController::class)->name('data_sources.gmail');
     Route::put(
         'breakdown/transactions/{transaction}/classification',
         [BreakdownTransactionClassificationController::class, 'update'],
@@ -92,47 +86,6 @@ Route::middleware(['auth'])->group(function () {
         'review-queue/line-items/{line_item}/category',
         [ReviewQueueLineItemCategoryController::class, 'update'],
     )->name('review_queue.line_items.category.update');
-    Route::get(
-        'parser-profile-source-messages/{gmailMessageDiscovery}',
-        [ParserProfileSourceMessageController::class, 'show'],
-    )->name('parser_profiles.source_messages.show');
-    Route::resource('parser-profiles', ParserProfileController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names([
-            'index' => 'parser_profiles.index',
-            'store' => 'parser_profiles.store',
-            'update' => 'parser_profiles.update',
-            'destroy' => 'parser_profiles.destroy',
-        ]);
-    Route::post('parser-profiles/{parser_profile}/activation', [ParserProfileActivationController::class, 'store'])
-        ->name('parser_profiles.activation.store');
-    Route::delete('parser-profiles/{parser_profile}/activation', [ParserProfileActivationController::class, 'destroy'])
-        ->name('parser_profiles.activation.destroy');
-    Route::resource('parser-profiles.spending-notification-formats', SpendingNotificationFormatController::class)
-        ->only(['store', 'update', 'destroy'])
-        ->names([
-            'store' => 'parser_profiles.formats.store',
-            'update' => 'parser_profiles.formats.update',
-            'destroy' => 'parser_profiles.formats.destroy',
-        ]);
-    Route::post(
-        'parser-profiles/{parser_profile}/spending-notification-formats/{spending_notification_format}/activation',
-        [SpendingNotificationFormatActivationController::class, 'store'],
-    )->name('parser_profiles.formats.activation.store');
-    Route::delete(
-        'parser-profiles/{parser_profile}/spending-notification-formats/{spending_notification_format}/activation',
-        [SpendingNotificationFormatActivationController::class, 'destroy'],
-    )->name('parser_profiles.formats.activation.destroy');
-    Route::post('parser-profile-previews', [ParserProfilePreviewController::class, 'store'])
-        ->name('parser_profile_previews.store');
-    Route::post(
-        'spending-notification-references/{spending_notification_reference}/recovery',
-        [SpendingNotificationRecoveryController::class, 'store'],
-    )->name('spending_notification_references.recovery.store');
-    Route::post(
-        'spending-notification-references/{spending_notification_reference}/retry',
-        [SpendingNotificationRetryController::class, 'store'],
-    )->name('spending_notification_references.retry.store');
     Route::resource('review-queue.fields', TransactionFieldReviewController::class)
         ->only(['update'])
         ->parameters(['review-queue' => 'transaction'])

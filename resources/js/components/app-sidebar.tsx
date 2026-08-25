@@ -2,7 +2,7 @@ import { Link } from '@inertiajs/react';
 import {
     Files,
     House,
-    MailSearch,
+    Mail,
     ReceiptText,
     Store,
     Tags,
@@ -23,8 +23,8 @@ import {
 import { home } from '@/routes';
 import { index as breakdownIndex } from '@/routes/breakdown';
 import { index as categoriesIndex } from '@/routes/categories';
+import { gmail as gmailDataSource } from '@/routes/data_sources';
 import { index as merchantRulesIndex } from '@/routes/merchant_rules';
-import { index as parserProfilesIndex } from '@/routes/parser_profiles';
 import { index as statementImportsIndex } from '@/routes/statement_imports';
 import { index as trendsIndex } from '@/routes/trends';
 import type { NavItem } from '@/types';
@@ -47,12 +47,19 @@ export function AppSidebar() {
             icon: TrendingUp,
         },
     ];
-    const manageNavItems: NavItem[] = [
+    const dataSourceNavItems: NavItem[] = [
+        {
+            title: 'Gmail',
+            href: gmailDataSource(),
+            icon: Mail,
+        },
         {
             title: 'Statement Imports',
             href: statementImportsIndex(),
             icon: Files,
         },
+    ];
+    const manageNavItems: NavItem[] = [
         {
             title: 'Categories',
             href: categoriesIndex(),
@@ -62,11 +69,6 @@ export function AppSidebar() {
             title: 'Merchant Rules',
             href: merchantRulesIndex(),
             icon: Store,
-        },
-        {
-            title: 'Parser Profiles',
-            href: parserProfilesIndex(),
-            icon: MailSearch,
         },
     ];
 
@@ -86,6 +88,11 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain items={mainNavItems} label="Money" />
+                <NavMain
+                    items={dataSourceNavItems}
+                    label="Data sources"
+                    priority="secondary"
+                />
                 <NavMain
                     items={manageNavItems}
                     label="Manage"

@@ -5,6 +5,7 @@ namespace App\StatementImports;
 use App\Currency;
 use App\MovementDirection;
 use App\StatementMovementClassification;
+use App\StatementMovementMatchStatus;
 use Carbon\CarbonImmutable;
 
 final readonly class StatementImportPreviewMovement
@@ -22,7 +23,26 @@ final readonly class StatementImportPreviewMovement
         public bool $contributesToSpending,
         public bool $canBeExcluded,
         public array $sourceMetadata,
+        public ?StatementMovementMatch $match = null,
     ) {}
+
+    public function withMatch(StatementMovementMatch $match): self
+    {
+        return new self(
+            sourceRowId: $this->sourceRowId,
+            position: $this->position,
+            occurredOn: $this->occurredOn,
+            description: $this->description,
+            amountMinor: $this->amountMinor,
+            currency: $this->currency,
+            direction: $this->direction,
+            classification: $this->classification,
+            contributesToSpending: $this->contributesToSpending,
+            canBeExcluded: $this->canBeExcluded,
+            sourceMetadata: $this->sourceMetadata,
+            match: $match,
+        );
+    }
 
     /**
      * @return array{
@@ -31,7 +51,9 @@ final readonly class StatementImportPreviewMovement
      *     description: string,
      *     amount_minor: string,
      *     currency: string,
-     *     classification: string
+     *     classification: string,
+     *     resolution: 'create'|'exclude'|'link'|'needs_resolution',
+     *     transaction_id: int|null
      * }
      */
     public function confirmationData(): array
@@ -43,12 +65,22 @@ final readonly class StatementImportPreviewMovement
             'amount_minor' => $this->amountMinor,
             'currency' => $this->currency->value,
             'classification' => $this->classification->value,
+            'resolution' => $this->classification === StatementMovementClassification::NotAMovement
+                ? 'exclude'
+                : match ($this->match?->status) {
+                    StatementMovementMatchStatus::Matched => 'link',
+                    StatementMovementMatchStatus::Ambiguous => 'needs_resolution',
+                    default => 'create',
+                },
+            'transaction_id' => $this->match?->transactionId,
         ];
     }
 
     /** @return array<string, mixed> */
     public function toArray(): array
     {
+        $match = $this->match ?? StatementMovementMatch::fresh();
+
         return [
             'source_row_id' => $this->sourceRowId,
             'position' => $this->position,
@@ -61,6 +93,12 @@ final readonly class StatementImportPreviewMovement
             'contributes_to_spending' => $this->contributesToSpending,
             'can_be_excluded' => $this->canBeExcluded,
             'source_metadata' => $this->sourceMetadata,
+            'match' => [
+                'status' => $match->status->value,
+                'transaction_id' => $match->transactionId,
+                'candidates' => $match->candidates,
+                'evidence' => $match->evidence,
+            ],
         ];
     }
 }

@@ -12,15 +12,22 @@ final class CompleteGmailAuthorization
 {
     public function __construct(private Gmail $gmail) {}
 
-    public function handle(User $owner, string $code): GmailConnection
-    {
+    public function handle(
+        User $owner,
+        string $code,
+        int $importLookbackDays,
+    ): GmailConnection {
         $authorization = $this->gmail->authorize($code);
 
         if ($authorization->grantedScopes !== [Gmail::READ_ONLY_SCOPE]) {
             throw GmailRequestFailed::authorization();
         }
 
-        return DB::transaction(function () use ($owner, $authorization): GmailConnection {
+        return DB::transaction(function () use (
+            $owner,
+            $authorization,
+            $importLookbackDays,
+        ): GmailConnection {
             $connection = GmailConnection::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->lockForUpdate()
@@ -38,6 +45,8 @@ final class CompleteGmailAuthorization
                 'access_token_expires_at' => $authorization->accessTokenExpiresAt,
                 'granted_scopes' => $authorization->grantedScopes,
                 'connected_at' => $connection->connected_at ?? now(),
+                'initial_sync_starts_at' => now()->subDays($importLookbackDays),
+                'initial_sync_completed_at' => null,
                 'last_successful_check_at' => now(),
                 'last_check_failed_at' => null,
                 'reauthorization_required_at' => null,

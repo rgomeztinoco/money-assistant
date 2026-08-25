@@ -4,10 +4,24 @@ use App\Integrations\Gmail\GmailRequestFailed;
 use App\Jobs\ProcessGmailMessage;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
+use App\Models\User;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
+});
+
+test('the owner chooses the inbox import window before authorizing Gmail', function () {
+    $this->actingAs(User::factory()->create());
+
+    visit(route('data_sources.gmail'))
+        ->assertSee('How far back should Gmail import?')
+        ->assertSee('Import starts as soon as Google returns you to Money Assistant.')
+        ->assertValue('Previous days', 30)
+        ->assertAttribute('#gmail-import-days', 'min', 1)
+        ->assertAttribute('#gmail-import-days', 'max', 365)
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
 });
 
 test('the owner sees the latest failed Gmail message and its retry action', function () {
@@ -37,7 +51,7 @@ test('the owner sees the latest failed Gmail message and its retry action', func
     ]);
     $this->actingAs($connection->owner);
 
-    $page = visit(route('connections.edit'));
+    $page = visit(route('data_sources.gmail'));
 
     $page
         ->assertSee('Last successful synchronization')
@@ -64,7 +78,7 @@ test('the owner sees Gmail connection health without credentials reaching the pa
     ]);
     $this->actingAs($connection->owner);
 
-    $page = visit(route('connections.edit'));
+    $page = visit(route('data_sources.gmail'));
 
     $page
         ->assertSee('Gmail')

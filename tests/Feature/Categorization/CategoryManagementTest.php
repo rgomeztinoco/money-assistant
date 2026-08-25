@@ -159,12 +159,9 @@ test('archiving a Category preserves current assignments and reporting while pre
         'category_id' => $child->id,
     ])->assertSessionHasErrors('category_id');
 
-    $this->post(route('merchant_rules.store'), [
-        'merchant' => 'Archived target',
+    $this->put(route('breakdown.transactions.classification.update', $otherTransaction), [
         'category_id' => $child->id,
-        'transaction_kind' => null,
-        'currency' => null,
-        'enabled' => true,
+        'apply_to_matching' => true,
     ])->assertSessionHasErrors('category_id');
 });
 

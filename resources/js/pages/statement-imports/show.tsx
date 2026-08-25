@@ -81,6 +81,15 @@ type StatementImportDetail = {
     movement_count: number;
     confirmed_at: string;
     reconciliation: Record<string, string>;
+    excluded_values: Array<{
+        position: number;
+        occurred_on: string;
+        amount_minor: string;
+        currency: Currency;
+        direction: StatementDirection;
+        description: string;
+        source_metadata: Record<string, unknown>;
+    }>;
     summary: Summary;
     movements: Array<{
         id: number;
@@ -91,7 +100,10 @@ type StatementImportDetail = {
         direction: StatementDirection;
         classification: StatementClassification;
         description: string;
-        transaction: LinkedTransaction | null;
+        resolution: 'linked' | 'created';
+        source_metadata: Record<string, unknown>;
+        match_evidence: Record<string, unknown>;
+        transaction: LinkedTransaction;
     }>;
 };
 
@@ -157,6 +169,18 @@ function transactionTaxonomy(transaction: LinkedTransaction): string {
     }
 }
 
+function auditValue(value: unknown): string {
+    if (typeof value === 'boolean') {
+        return value ? 'yes' : 'no';
+    }
+
+    if (typeof value === 'string' || typeof value === 'number') {
+        return String(value);
+    }
+
+    return 'retained';
+}
+
 function EditableStatementMovementRow({
     statementImportId,
     movement,
@@ -171,58 +195,79 @@ function EditableStatementMovementRow({
             option.value !== 'not_a_movement',
     );
 
+    const row = (
+        <StatementMovementRow
+            position={movement.position}
+            occurredOn={movement.occurred_on}
+            description={movement.description}
+            amountMinor={movement.amount_minor}
+            currency={movement.currency}
+            direction={movement.direction}
+            classification={movement.classification}
+            dataTest={`confirmed-statement-movement-${movement.position}`}
+            detail={
+                <div className="grid gap-1 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary">
+                            {movement.resolution === 'linked'
+                                ? 'Linked to recorded Transaction'
+                                : 'Added from statement'}
+                        </Badge>
+                        <Link
+                            href={breakdownIndex({
+                                query: {
+                                    currency: movement.currency,
+                                    preset: 'custom',
+                                    date_from: movement.occurred_on,
+                                    date_to: movement.occurred_on,
+                                    selected: movement.transaction.id,
+                                },
+                            })}
+                            className="inline-flex items-center gap-1 hover:underline"
+                        >
+                            {movement.transaction.voided_at ? 'Voided ' : ''}
+                            {movementKindLabel(movement.transaction.kind)}
+                            <ExternalLink className="size-3" />
+                        </Link>
+                        <span>{transactionTaxonomy(movement.transaction)}</span>
+                    </div>
+                    {Object.keys(movement.match_evidence).length > 0 && (
+                        <span>
+                            Match evidence:{' '}
+                            {Object.entries(movement.match_evidence)
+                                .map(
+                                    ([key, value]) =>
+                                        `${key.replaceAll('_', ' ')} ${auditValue(value)}`,
+                                )
+                                .join(' · ')}
+                        </span>
+                    )}
+                    {Object.keys(movement.source_metadata).length > 0 && (
+                        <span>
+                            Source audit:{' '}
+                            {Object.entries(movement.source_metadata)
+                                .map(
+                                    ([key, value]) =>
+                                        `${key.replaceAll('_', ' ')} ${auditValue(value)}`,
+                                )
+                                .join(' · ')}
+                        </span>
+                    )}
+                </div>
+            }
+            action={
+                <DialogTrigger asChild>
+                    <Button type="button" variant="outline" size="sm">
+                        <PencilLine /> Edit
+                    </Button>
+                </DialogTrigger>
+            }
+        />
+    );
+
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <StatementMovementRow
-                position={movement.position}
-                occurredOn={movement.occurred_on}
-                description={movement.description}
-                amountMinor={movement.amount_minor}
-                currency={movement.currency}
-                direction={movement.direction}
-                classification={movement.classification}
-                dataTest={`confirmed-statement-movement-${movement.position}`}
-                detail={
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        {movement.transaction ? (
-                            <>
-                                <Link
-                                    href={breakdownIndex({
-                                        query: {
-                                            currency: movement.currency,
-                                            preset: 'custom',
-                                            date_from: movement.occurred_on,
-                                            date_to: movement.occurred_on,
-                                            selected: movement.transaction.id,
-                                        },
-                                    })}
-                                    className="inline-flex items-center gap-1 hover:underline"
-                                >
-                                    {movement.transaction.voided_at
-                                        ? 'Voided '
-                                        : ''}
-                                    {movementKindLabel(
-                                        movement.transaction.kind,
-                                    )}
-                                    <ExternalLink className="size-3" />
-                                </Link>
-                                <span>
-                                    {transactionTaxonomy(movement.transaction)}
-                                </span>
-                            </>
-                        ) : (
-                            <span>No linked transaction</span>
-                        )}
-                    </div>
-                }
-                action={
-                    <DialogTrigger asChild>
-                        <Button type="button" variant="outline" size="sm">
-                            <PencilLine /> Edit
-                        </Button>
-                    </DialogTrigger>
-                }
-            />
+            {row}
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>
@@ -290,8 +335,8 @@ export default function StatementImportShow({
                             {statement_import.instrument_label}
                         </h1>
                         <p className="text-sm text-muted-foreground">
-                            Review the confirmed totals, posted movements, and
-                            linked transactions for this statement.
+                            Audit how every statement movement was linked,
+                            added, or explicitly excluded.
                         </p>
                     </div>
                     <Button asChild variant="outline">
@@ -310,7 +355,7 @@ export default function StatementImportShow({
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div className="grid gap-1">
                                     <CardTitle id="confirmed-import-heading">
-                                        Confirmed import
+                                        Verified statement period
                                     </CardTitle>
                                     <CardDescription>
                                         {statement_import.period_start} through{' '}
@@ -322,7 +367,8 @@ export default function StatementImportShow({
                                         {statement_import.financial_statement_format.toUpperCase()}
                                     </Badge>
                                     <Badge variant="secondary">
-                                        <FileCheck2 /> Reconciled
+                                        <FileCheck2 />
+                                        Verified
                                     </Badge>
                                 </div>
                             </div>
@@ -505,6 +551,72 @@ export default function StatementImportShow({
                                         </div>
                                     ))}
                                 </dl>
+                                {statement_import.excluded_values.length >
+                                    0 && (
+                                    <div className="grid gap-3 border-t pt-4">
+                                        <div className="grid gap-1">
+                                            <h3 className="text-sm font-medium">
+                                                Excluded source values
+                                            </h3>
+                                            <p className="text-xs text-muted-foreground">
+                                                These parser candidates were
+                                                confirmed as informational, so
+                                                they did not create
+                                                Transactions.
+                                            </p>
+                                        </div>
+                                        <div className="grid gap-2">
+                                            {statement_import.excluded_values.map(
+                                                (value) => (
+                                                    <div
+                                                        key={`${value.position}-${value.description}`}
+                                                        className="flex items-start justify-between gap-3 rounded-lg border p-3 text-sm"
+                                                    >
+                                                        <div className="grid gap-0.5">
+                                                            <span className="font-medium">
+                                                                {
+                                                                    value.description
+                                                                }
+                                                            </span>
+                                                            <span className="text-xs text-muted-foreground tabular-nums">
+                                                                {
+                                                                    value.occurred_on
+                                                                }
+                                                            </span>
+                                                            {Object.keys(
+                                                                value.source_metadata,
+                                                            ).length > 0 && (
+                                                                <span className="text-xs text-muted-foreground">
+                                                                    Source
+                                                                    audit:{' '}
+                                                                    {Object.entries(
+                                                                        value.source_metadata,
+                                                                    )
+                                                                        .map(
+                                                                            ([
+                                                                                key,
+                                                                                sourceValue,
+                                                                            ]) =>
+                                                                                `${key.replaceAll('_', ' ')} ${auditValue(sourceValue)}`,
+                                                                        )
+                                                                        .join(
+                                                                            ' · ',
+                                                                        )}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <span className="font-medium tabular-nums">
+                                                            {formatMinorUnits(
+                                                                value.amount_minor,
+                                                                value.currency,
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                ),
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </section>
                         </CardContent>
                     </Card>

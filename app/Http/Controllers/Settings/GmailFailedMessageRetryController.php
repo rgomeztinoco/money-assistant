@@ -28,7 +28,7 @@ class GmailFailedMessageRetryController extends Controller
                 'message' => __('This Gmail message is no longer eligible for retry.'),
             ]);
 
-            return to_route('connections.edit');
+            return to_route('data_sources.gmail');
         }
 
         Inertia::flash('toast', [
@@ -36,6 +36,6 @@ class GmailFailedMessageRetryController extends Controller
             'message' => __('The failed Gmail message was queued for retry.'),
         ]);
 
-        return to_route('connections.edit');
+        return to_route('data_sources.gmail');
     }
 }

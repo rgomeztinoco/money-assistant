@@ -29,6 +29,9 @@ type StatementImportItem = {
     instrument_last_four: string | null;
     movement_count: number;
     confirmed_at: string;
+    linked_movement_count: number;
+    created_movement_count: number;
+    excluded_movement_count: number;
     totals: Record<string, string>;
 };
 
@@ -164,7 +167,25 @@ export default function StatementImportsIndex({
                                                     <Badge variant="outline">
                                                         {statementImport.financial_statement_format.toUpperCase()}
                                                     </Badge>
+                                                    <Badge variant="secondary">
+                                                        Verified
+                                                    </Badge>
                                                 </div>
+
+                                                <p className="text-xs text-muted-foreground">
+                                                    {
+                                                        statementImport.linked_movement_count
+                                                    }{' '}
+                                                    linked ·{' '}
+                                                    {
+                                                        statementImport.created_movement_count
+                                                    }{' '}
+                                                    added ·{' '}
+                                                    {
+                                                        statementImport.excluded_movement_count
+                                                    }{' '}
+                                                    excluded
+                                                </p>
 
                                                 <div className="grid grid-cols-2 gap-3">
                                                     <div className="grid gap-1 rounded-lg border p-3">
@@ -290,6 +311,9 @@ export default function StatementImportsIndex({
                                                                         <Badge variant="outline">
                                                                             {statementImport.financial_statement_format.toUpperCase()}
                                                                         </Badge>
+                                                                        <Badge variant="secondary">
+                                                                            Verified
+                                                                        </Badge>
                                                                         {statementImport.instrument_last_four && (
                                                                             <span className="text-xs text-muted-foreground tabular-nums">
                                                                                 Ending{' '}
@@ -299,6 +323,20 @@ export default function StatementImportsIndex({
                                                                             </span>
                                                                         )}
                                                                     </div>
+                                                                    <span className="text-xs text-muted-foreground">
+                                                                        {
+                                                                            statementImport.linked_movement_count
+                                                                        }{' '}
+                                                                        linked ·{' '}
+                                                                        {
+                                                                            statementImport.created_movement_count
+                                                                        }{' '}
+                                                                        added ·{' '}
+                                                                        {
+                                                                            statementImport.excluded_movement_count
+                                                                        }{' '}
+                                                                        excluded
+                                                                    </span>
                                                                 </div>
                                                             </div>
                                                         </TableCell>

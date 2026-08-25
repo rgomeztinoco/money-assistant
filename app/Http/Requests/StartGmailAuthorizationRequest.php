@@ -2,15 +2,12 @@
 
 namespace App\Http\Requests;
 
+use App\Models\GmailConnection;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
-class UpdateParserProfileRequest extends FormRequest
+class StartGmailAuthorizationRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return $this->user() !== null;
@@ -24,13 +21,11 @@ class UpdateParserProfileRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => [
+            'import_days' => [
                 'required',
-                'string',
-                'max:255',
-                Rule::unique('parser_profiles')
-                    ->where('user_id', $this->user()->getKey())
-                    ->ignore($this->route('parser_profile')),
+                'integer',
+                'min:'.GmailConnection::MINIMUM_IMPORT_LOOKBACK_DAYS,
+                'max:'.GmailConnection::MAXIMUM_IMPORT_LOOKBACK_DAYS,
             ],
         ];
     }

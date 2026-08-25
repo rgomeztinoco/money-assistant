@@ -17,6 +17,9 @@ final readonly class StatementImportListItem implements Arrayable
         public ?string $instrumentLastFour,
         public int $movementCount,
         public string $confirmedAt,
+        public int $linkedMovementCount,
+        public int $createdMovementCount,
+        public int $excludedMovementCount,
         public array $totals,
     ) {}
 
@@ -32,6 +35,9 @@ final readonly class StatementImportListItem implements Arrayable
             'instrument_last_four' => $this->instrumentLastFour,
             'movement_count' => $this->movementCount,
             'confirmed_at' => $this->confirmedAt,
+            'linked_movement_count' => $this->linkedMovementCount,
+            'created_movement_count' => $this->createdMovementCount,
+            'excluded_movement_count' => $this->excludedMovementCount,
             'totals' => $this->totals,
         ];
     }

@@ -6,6 +6,7 @@ import {
     Store,
     WalletCards,
 } from 'lucide-react';
+import { SourceCoverage } from '@/components/source-coverage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -310,6 +311,13 @@ export default function BreakdownIndex(props: BreakdownProps) {
                     currency={currency}
                     period={period}
                     coverage={coverage}
+                />
+
+                <SourceCoverage
+                    source={coverage.source}
+                    className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 p-3 text-sm"
+                    detailed
+                    gmailMissingLabel="Connect Gmail for ongoing activity"
                 />
 
                 <section className="grid gap-4 md:grid-cols-3">

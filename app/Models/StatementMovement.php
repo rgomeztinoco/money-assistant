@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Currency;
 use App\MovementDirection;
 use App\StatementMovementClassification;
+use App\StatementMovementResolution;
 use Carbon\CarbonImmutable;
 use Database\Factories\StatementMovementFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -26,6 +27,8 @@ use Illuminate\Support\Carbon;
  * @property StatementMovementClassification $classification
  * @property string $description
  * @property array<string, mixed> $source_metadata
+ * @property StatementMovementResolution $resolution
+ * @property array<string, mixed> $match_evidence
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -41,11 +44,18 @@ use Illuminate\Support\Carbon;
     'classification',
     'description',
     'source_metadata',
+    'resolution',
+    'match_evidence',
 ])]
 class StatementMovement extends Model
 {
     /** @use HasFactory<StatementMovementFactory> */
     use HasFactory;
+
+    protected $attributes = [
+        'source_metadata' => '{}',
+        'match_evidence' => '{}',
+    ];
 
     /** @return BelongsTo<StatementImport, $this> */
     public function statementImport(): BelongsTo
@@ -70,6 +80,8 @@ class StatementMovement extends Model
             'direction' => MovementDirection::class,
             'classification' => StatementMovementClassification::class,
             'source_metadata' => 'array',
+            'resolution' => StatementMovementResolution::class,
+            'match_evidence' => 'array',
         ];
     }
 }

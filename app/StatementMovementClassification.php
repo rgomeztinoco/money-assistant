@@ -47,6 +47,14 @@ enum StatementMovementClassification: string
         };
     }
 
+    public function isCompatibleWith(
+        TransactionKind $transactionKind,
+        ?TransferPurpose $transferPurpose,
+    ): bool {
+        return $this->transactionKind() === $transactionKind
+            && ($this->transferPurpose() === null || $this->transferPurpose() === $transferPurpose);
+    }
+
     public function summaryKey(MovementDirection $direction): ?string
     {
         return match ($this) {

@@ -25,6 +25,7 @@ final class ReadStatementImport
                 'instrument_label',
                 'instrument_last_four',
                 'reconciliation_values',
+                'excluded_values',
                 'confirmed_at',
             ])
             ->with([
@@ -40,6 +41,9 @@ final class ReadStatementImport
                         'direction',
                         'classification',
                         'description',
+                        'resolution',
+                        'source_metadata',
+                        'match_evidence',
                     ])
                     ->with([
                         'transaction:id,kind,income_source,transfer_purpose,voided_at,category_id',
@@ -60,6 +64,7 @@ final class ReadStatementImport
             'movement_count' => $statementImport->movements->count(),
             'confirmed_at' => $statementImport->confirmed_at->toIso8601String(),
             'reconciliation' => $statementImport->reconciliation_values,
+            'excluded_values' => $statementImport->excluded_values,
             'summary' => $this->summary($statementImport),
             'movements' => $statementImport->movements
                 ->map(fn (StatementMovement $movement): array => [
@@ -71,6 +76,9 @@ final class ReadStatementImport
                     'direction' => $movement->direction->value,
                     'classification' => $movement->classification->value,
                     'description' => $movement->description,
+                    'resolution' => $movement->resolution->value,
+                    'source_metadata' => $movement->source_metadata,
+                    'match_evidence' => $movement->match_evidence,
                     'transaction' => $movement->transaction === null ? null : [
                         'id' => $movement->transaction->id,
                         'kind' => $movement->transaction->kind->value,

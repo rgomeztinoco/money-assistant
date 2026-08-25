@@ -6,6 +6,9 @@ use App\Actions\Ledger\CountOutstandingReviews;
 use App\Contracts\Gmail;
 use App\Contracts\StatementPdfExtractor;
 use App\Integrations\Gmail\GoogleGmail;
+use App\NotificationIngestion\Formats\BcpSpendingNotificationAdapter;
+use App\NotificationIngestion\Formats\InterbankSpendingNotificationAdapter;
+use App\NotificationIngestion\SupportedSpendingNotificationRegistry;
 use App\StatementImports\FinancialStatementFormatRegistry;
 use App\StatementImports\Formats\BcpFinancialStatementAdapter;
 use App\StatementImports\Formats\InterbankFinancialStatementAdapter;
@@ -36,6 +39,14 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->scoped(CountOutstandingReviews::class);
+
+        $this->app->singleton(
+            SupportedSpendingNotificationRegistry::class,
+            fn (Application $application): SupportedSpendingNotificationRegistry => new SupportedSpendingNotificationRegistry([
+                $application->make(BcpSpendingNotificationAdapter::class),
+                $application->make(InterbankSpendingNotificationAdapter::class),
+            ]),
+        );
 
         $this->app->bind(StatementPdfExtractor::class, ProcessStatementPdfExtractor::class);
 
