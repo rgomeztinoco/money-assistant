@@ -108,7 +108,7 @@ test('the owner resolves flagged Transaction fields without returning to the led
         ->fill('Correct merchant or description', 'Neighborhood market')
         ->press('Save merchant or description')
         ->assertSee('Review Queue is clear')
-        ->click('Transactions')
+        ->click('View Transactions')
         ->assertSee('$ 90.00')
         ->assertSee('Neighborhood market')
         ->assertNoJavaScriptErrors()
