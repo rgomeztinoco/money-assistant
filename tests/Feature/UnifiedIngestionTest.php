@@ -276,7 +276,7 @@ test('a clear match rejects an incompatible owner classification', function () {
         $confirmation,
     ))->toThrow(
         StatementImportValidationException::class,
-        'Choose a compatible Transaction from the proposed matches.',
+        'The selected Transaction is recorded as a Transfer, but this statement movement is classified as Spending. Change the classification or choose a Transaction recorded as Spending.',
     );
 });
 
