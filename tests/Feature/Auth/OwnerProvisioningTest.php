@@ -16,7 +16,7 @@ test('an operator can provision the Owner Account', function () {
     expect($owner->name)->toBe('Ricardo')
         ->and($owner->email)->toBe('owner@example.com')
         ->and(Hash::check('a-secure-recovery-password', $owner->password))->toBeTrue()
-        ->and($owner->categories()->count())->toBe(50)
+        ->and($owner->categories()->count())->toBe(49)
         ->and($owner->categories()->whereNull('parent_id')->count())->toBe(13)
         ->and($owner->categories()->where('name', 'Other')->exists())->toBeFalse();
 
@@ -32,7 +32,7 @@ test('an operator can provision the Owner Account', function () {
 
     expect($paths)->toBe([
         'Education',
-        'Education > Books & Supplies',
+        'Education > Books',
         'Education > Courses',
         'Entertainment',
         'Entertainment > Events',
@@ -68,12 +68,11 @@ test('an operator can provision the Owner Account', function () {
         'Shopping & Personal > Clothing',
         'Shopping & Personal > Electronics',
         'Shopping & Personal > Personal Care',
+        'Shopping & Personal > Software & Digital Services',
         'Subscriptions',
-        'Subscriptions > Software & Digital Services',
-        'Subscriptions > Streaming & Media',
+        'Subscriptions > Media',
+        'Subscriptions > Software',
         'Transport',
-        'Transport > Fuel',
-        'Transport > Parking & Tolls',
         'Transport > Public Transit',
         'Transport > Ride-hailing',
         'Transport > Vehicle Maintenance',
