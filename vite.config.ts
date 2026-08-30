@@ -4,45 +4,28 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import laravel from 'laravel-vite-plugin';
 import { bunny } from 'laravel-vite-plugin/fonts';
-import { defaultAllowedOrigins, defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 
-const privateNetworkOrigin =
-    /^https?:\/\/(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(?::\d+)?$/;
-
-export default defineConfig(({ mode }) => {
-    const environment = loadEnv(mode, process.cwd(), '');
-
-    return {
-        plugins: [
-            laravel({
-                input: ['resources/css/app.css', 'resources/js/app.tsx'],
-                refresh: true,
-                fonts: [
-                    bunny('Instrument Sans', {
-                        weights: [400, 500, 600],
-                    }),
-                ],
-            }),
-            inertia(),
-            react({
-                babel: {
-                    plugins: ['babel-plugin-react-compiler'],
-                },
-            }),
-            tailwindcss(),
-            wayfinder({
-                formVariants: true,
-            }),
-        ],
-        server: {
-            cors: {
-                origin: [
-                    defaultAllowedOrigins,
-                    ...(environment.APP_URL ? [environment.APP_URL] : []),
-                    /^https?:\/\/.*\.test(?::\d+)?$/,
-                    privateNetworkOrigin,
-                ],
+export default defineConfig({
+    plugins: [
+        laravel({
+            input: ['resources/css/app.css', 'resources/js/app.tsx'],
+            refresh: true,
+            fonts: [
+                bunny('Instrument Sans', {
+                    weights: [400, 500, 600],
+                }),
+            ],
+        }),
+        inertia(),
+        react({
+            babel: {
+                plugins: ['babel-plugin-react-compiler'],
             },
-        },
-    };
+        }),
+        tailwindcss(),
+        wayfinder({
+            formVariants: true,
+        }),
+    ],
 });
