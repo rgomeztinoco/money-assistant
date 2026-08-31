@@ -21,6 +21,16 @@ test('development application ports use standard Sail bindings', function (): vo
     ]);
 });
 
+test('Vite accepts browser previews served from private network origins', function (): void {
+    $viteConfig = file_get_contents(base_path('vite.config.ts'));
+
+    expect($viteConfig)
+        ->toContain('defaultAllowedOrigins')
+        ->toContain('privateNetworkOrigin')
+        ->toContain('origin: [')
+        ->toContain('172\\.(?:1[6-9]|2\\d|3[01])');
+});
+
 test('starting Sail launches only manually controlled development services', function (): void {
     $services = $this->developmentCompose['services'];
 
