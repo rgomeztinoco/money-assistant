@@ -91,11 +91,11 @@ test('period summaries keep movement kinds and currencies separate', function ()
         ]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('currency', 'PEN')
-            ->where('summary.net_spending_minor', '7500')
-            ->where('summary.income_minor', '70000')
-            ->where('summary.moved_to_savings_minor', '10000')
-            ->missing('summary.net_external_cash_flow_minor'));
+            ->where('currency_filter', 'PEN')
+            ->where('summary.PEN.net_spending_minor', '7500')
+            ->where('summary.PEN.income_minor', '70000')
+            ->where('summary.PEN.moved_to_savings_minor', '10000')
+            ->missing('summary.PEN.net_external_cash_flow_minor'));
 
     $this->get(route('home'))
         ->assertOk()

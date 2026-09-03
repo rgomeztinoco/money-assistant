@@ -1,37 +1,42 @@
 import type { RecordedCoverageSource } from '@/components/source-coverage';
-import type {
-    CategoryOption,
-    Currency,
-    IncomeSource,
-    MoneyMovementDetails,
-} from '@/types';
+import type { Currency, IncomeSource, MoneyMovementDetails } from '@/types';
 
 export type BreakdownPeriod = {
-    preset:
-        'this_month' | 'last_month' | 'rolling_30' | 'custom' | 'latest_month';
+    unit: 'week' | 'month' | 'quarter' | 'year' | 'custom';
     label: string;
+    anchor: string;
     date_from: string;
     date_to: string;
 };
+
+export type CurrencyAmounts = Record<Currency, string>;
 
 export type BreakdownCategory = {
     id: number | null;
     name: string;
 };
 
+export type BreakdownCategoryOption = {
+    id: number;
+    name: string;
+    path: string;
+    parent: { id: number; name: string } | null;
+};
+
 export type BreakdownCategoryGroup = {
     category: BreakdownCategory;
-    amount_minor: string;
-    percentage: string;
+    amount_minor: CurrencyAmounts;
+    percentage: CurrencyAmounts;
     children: Array<{
         category: { id: number; name: string };
-        amount_minor: string;
+        amount_minor: CurrencyAmounts;
     }>;
 };
 
 export type BreakdownDay = {
     date: string;
-    net_spending_minor: string;
+    date_to: string;
+    net_spending_minor: CurrencyAmounts;
     transaction_count: number;
 };
 
@@ -60,14 +65,14 @@ export type BreakdownTransaction = BreakdownTransactionBase &
 
 export type BreakdownTransactionDay = {
     date: string;
-    net_spending_minor: string;
-    income_minor: string;
-    moved_to_savings_minor: string;
+    net_spending_minor: CurrencyAmounts;
+    income_minor: CurrencyAmounts;
+    moved_to_savings_minor: CurrencyAmounts;
     transactions: BreakdownTransaction[];
 };
 
 export type BreakdownProps = {
-    currency: Currency;
+    currency_filter: Currency | null;
     period: BreakdownPeriod;
     coverage: {
         date_from: string | null;
@@ -75,11 +80,23 @@ export type BreakdownProps = {
         transaction_count: number;
         source: RecordedCoverageSource;
     };
-    summary: {
-        net_spending_minor: string;
-        income_minor: string;
-        moved_to_savings_minor: string;
-    };
+    summary: Record<
+        Currency,
+        {
+            net_spending_minor: string;
+            income_minor: string;
+            moved_to_savings_minor: string;
+        }
+    >;
+    categorization: Record<
+        Currency,
+        {
+            transaction_count: number;
+            uncategorized_transaction_count: number;
+            uncategorized_amount_minor: string;
+            uncategorized_percentage: string;
+        }
+    >;
     filters: {
         category: string | null;
         day: string | null;
@@ -89,14 +106,15 @@ export type BreakdownProps = {
         selected: number | null;
     };
     category_groups: BreakdownCategoryGroup[];
+    chart_granularity: 'day' | 'week' | 'month';
     days: BreakdownDay[];
     merchants: Array<{
         name: string;
-        amount_minor: string;
+        amount_minor: CurrencyAmounts;
         transaction_count: number;
     }>;
     transaction_days: BreakdownTransactionDay[];
-    category_options: Array<CategoryOption & { used: boolean }>;
+    category_options: BreakdownCategoryOption[];
     income_source_options: Array<{
         value: IncomeSource;
         used: boolean;

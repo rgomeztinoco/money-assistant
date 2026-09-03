@@ -17,19 +17,21 @@ class BreakdownTransactionClassificationController extends Controller
         ClassifyBreakdownTransaction $classifyBreakdownTransaction,
     ): RedirectResponse {
         $validated = $request->validated();
+        $categoryId = isset($validated['category_id']) ? (int) $validated['category_id'] : null;
+        $applyToMatching = (bool) ($validated['apply_to_matching'] ?? false);
         $updatedCount = $classifyBreakdownTransaction->handle(
             owner: $request->user(),
             transaction: $transaction,
-            categoryId: isset($validated['category_id']) ? (int) $validated['category_id'] : null,
+            categoryId: $categoryId,
             incomeSource: isset($validated['income_source'])
                 ? IncomeSource::from($validated['income_source'])
                 : null,
-            applyToMatching: (bool) ($validated['apply_to_matching'] ?? false),
+            applyToMatching: $applyToMatching,
         );
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => ($validated['apply_to_matching'] ?? false)
+            'message' => $applyToMatching
                 ? trans_choice('{1} 1 matching Transaction updated; future exact matches will follow this Category.|[2,*] :count matching Transactions updated; future exact matches will follow this Category.', $updatedCount, ['count' => $updatedCount])
                 : __('Classification updated.'),
         ]);

@@ -1,186 +1,282 @@
-import { Form, Link } from '@inertiajs/react';
-import { CalendarRange } from 'lucide-react';
-import InputError from '@/components/input-error';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Link, router } from '@inertiajs/react';
 import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
+    addMonths,
+    addQuarters,
+    addWeeks,
+    addYears,
+    format,
+    parseISO,
+} from 'date-fns';
+import { CalendarRange, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState } from 'react';
+import type { DateRange } from 'react-day-picker';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { index as breakdownIndex } from '@/routes/breakdown';
-import type { Currency } from '@/types';
 import type { BreakdownPeriod } from './types';
 
-const quickPeriods = [
-    { value: 'this_month', label: 'This month' },
-    { value: 'last_month', label: 'Last month' },
-    { value: 'rolling_30', label: 'Rolling 30 days' },
+const periodUnits = [
+    { value: 'week', label: 'Week' },
+    { value: 'month', label: 'Month' },
+    { value: 'quarter', label: 'Quarter' },
+    { value: 'year', label: 'Year' },
 ] satisfies ReadonlyArray<{
-    value: 'this_month' | 'last_month' | 'rolling_30';
+    value: Exclude<BreakdownPeriod['unit'], 'custom'>;
     label: string;
 }>;
 
-export function PeriodControls({
-    currency,
-    period,
-    coverage,
+function moveAnchor(
+    anchor: string,
+    unit: BreakdownPeriod['unit'],
+    direction: -1 | 1,
+): string {
+    const date = parseISO(anchor);
+    const moved =
+        unit === 'week'
+            ? addWeeks(date, direction)
+            : unit === 'quarter'
+              ? addQuarters(date, direction)
+              : unit === 'year'
+                ? addYears(date, direction)
+                : addMonths(date, direction);
+
+    return format(moved, 'yyyy-MM-dd');
+}
+
+function periodHref({
+    unit,
+    anchor,
+    currencyFilter,
 }: {
-    currency: Currency;
-    period: BreakdownPeriod;
-    coverage: {
-        date_from: string | null;
-        date_to: string | null;
-        transaction_count: number;
-    };
+    unit: Exclude<BreakdownPeriod['unit'], 'custom'>;
+    anchor: string;
+    currencyFilter: 'PEN' | 'USD' | null;
 }) {
-    const otherCurrency: Currency = currency === 'PEN' ? 'USD' : 'PEN';
+    return breakdownIndex({
+        query: {
+            currency: currencyFilter ?? undefined,
+            period: unit,
+            anchor,
+        },
+    });
+}
+
+export function PeriodControls({
+    currencyFilter,
+    period,
+    today,
+}: {
+    currencyFilter: 'PEN' | 'USD' | null;
+    period: BreakdownPeriod;
+    today: string;
+}) {
+    const [calendarOpen, setCalendarOpen] = useState(false);
+    const [range, setRange] = useState<DateRange | undefined>({
+        from: parseISO(period.date_from),
+        to: parseISO(period.date_to),
+    });
+    const navigationUnit = period.unit === 'custom' ? 'month' : period.unit;
+    const compactLabel =
+        period.date_from === period.date_to
+            ? format(parseISO(period.date_from), 'MMM d, yyyy')
+            : `${format(parseISO(period.date_from), 'MMM d')} to ${format(parseISO(period.date_to), 'MMM d')}`;
+
+    function applyRange() {
+        if (range?.from === undefined || range.to === undefined) {
+            return;
+        }
+
+        setCalendarOpen(false);
+        router.visit(
+            breakdownIndex({
+                query: {
+                    currency: currencyFilter ?? undefined,
+                    period: 'custom',
+                    date_from: format(range.from, 'yyyy-MM-dd'),
+                    date_to: format(range.to, 'yyyy-MM-dd'),
+                },
+            }),
+        );
+    }
 
     return (
-        <Card>
-            <CardHeader>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <CalendarRange className="size-5 text-muted-foreground" />
-                    <div className="flex gap-2" aria-label="Breakdown currency">
-                        <Button asChild size="sm" variant="secondary">
-                            <Link
-                                href={breakdownIndex({
-                                    query: { currency },
-                                })}
-                            >
-                                {currency}
-                            </Link>
-                        </Button>
-                        <Button asChild size="sm" variant="outline">
-                            <Link
-                                href={breakdownIndex({
-                                    query: { currency: otherCurrency },
-                                })}
-                                data-test={`breakdown-switch-${otherCurrency.toLowerCase()}`}
-                            >
-                                {otherCurrency}
-                            </Link>
-                        </Button>
-                    </div>
+        <div
+            className="flex min-w-0 items-center justify-end gap-1"
+            data-test="period-controls"
+        >
+            <div className="flex min-w-0 items-center gap-0.5">
+                <Button
+                    asChild
+                    size="icon"
+                    variant="ghost"
+                    className="size-8 shrink-0"
+                >
+                    <Link
+                        href={periodHref({
+                            unit: navigationUnit,
+                            anchor: moveAnchor(
+                                period.anchor,
+                                navigationUnit,
+                                -1,
+                            ),
+                            currencyFilter,
+                        })}
+                        aria-label={`Previous ${navigationUnit}`}
+                    >
+                        <ChevronLeft />
+                    </Link>
+                </Button>
+                <div
+                    className="w-28 min-w-0 text-center sm:w-36 lg:w-52"
+                    title={period.label}
+                >
+                    <p className="truncate text-sm font-semibold tabular-nums">
+                        <span className="lg:hidden">{compactLabel}</span>
+                        <span className="hidden lg:inline">{period.label}</span>
+                    </p>
+                    <p className="hidden truncate text-xs text-muted-foreground lg:block">
+                        {period.date_from} to {period.date_to}
+                    </p>
                 </div>
-                <CardTitle>{period.label}</CardTitle>
-                <CardDescription>
-                    Selected dates {period.date_from} through {period.date_to}.
-                    {coverage.date_from === null
-                        ? ' No Transactions fall in this period.'
-                        : ` Recorded activity covers ${coverage.date_from} through ${coverage.date_to}.`}
-                </CardDescription>
-                <div className="flex flex-wrap gap-2 pt-1">
-                    <Badge variant="outline">{currency} only</Badge>
-                    <Badge variant="secondary">
-                        {coverage.transaction_count}{' '}
-                        {coverage.transaction_count === 1
-                            ? 'Transaction'
-                            : 'Transactions'}
-                    </Badge>
-                    {period.preset === 'latest_month' && (
-                        <Badge variant="secondary">
-                            Latest month with activity
-                        </Badge>
-                    )}
-                </div>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-                <div className="flex flex-wrap gap-2" aria-label="Quick period">
-                    {quickPeriods.map((quickPeriod) => (
+                <Button
+                    asChild
+                    size="icon"
+                    variant="ghost"
+                    className="size-8 shrink-0"
+                >
+                    <Link
+                        href={periodHref({
+                            unit: navigationUnit,
+                            anchor: moveAnchor(
+                                period.anchor,
+                                navigationUnit,
+                                1,
+                            ),
+                            currencyFilter,
+                        })}
+                        aria-label={`Next ${navigationUnit}`}
+                    >
+                        <ChevronRight />
+                    </Link>
+                </Button>
+            </div>
+
+            <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="hidden shrink-0 2xl:inline-flex"
+            >
+                <Link
+                    href={periodHref({
+                        unit: 'month',
+                        anchor: today,
+                        currencyFilter,
+                    })}
+                >
+                    Today
+                </Link>
+            </Button>
+
+            <Select
+                value={navigationUnit}
+                onValueChange={(value) => {
+                    if (
+                        value === 'week' ||
+                        value === 'month' ||
+                        value === 'quarter' ||
+                        value === 'year'
+                    ) {
+                        router.visit(
+                            periodHref({
+                                unit: value,
+                                anchor: period.anchor,
+                                currencyFilter,
+                            }),
+                        );
+                    }
+                }}
+            >
+                <SelectTrigger
+                    size="sm"
+                    aria-label="Period unit"
+                    className="hidden shrink-0 md:flex"
+                >
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                    {periodUnits.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+
+            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                <PopoverTrigger
+                    render={
                         <Button
-                            key={quickPeriod.value}
-                            asChild
-                            size="sm"
+                            type="button"
                             variant={
-                                period.preset === quickPeriod.value
+                                period.unit === 'custom'
                                     ? 'secondary'
                                     : 'outline'
                             }
-                        >
+                            size="icon"
+                            className="size-8 shrink-0"
+                            aria-label="Choose a custom date range"
+                        />
+                    }
+                >
+                    <CalendarRange />
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-auto gap-3 p-2">
+                    <Calendar
+                        mode="range"
+                        selected={range}
+                        onSelect={setRange}
+                        defaultMonth={range?.from}
+                        numberOfMonths={2}
+                    />
+                    <div className="flex items-center justify-between gap-3 border-t px-2 pt-2">
+                        <Button asChild variant="ghost" size="sm">
                             <Link
-                                href={breakdownIndex({
-                                    query: {
-                                        currency,
-                                        preset: quickPeriod.value,
-                                    },
+                                href={periodHref({
+                                    unit: 'month',
+                                    anchor: today,
+                                    currencyFilter,
                                 })}
-                                data-test={`breakdown-period-${quickPeriod.value}`}
                             >
-                                {quickPeriod.label}
+                                Today
                             </Link>
                         </Button>
-                    ))}
-                </div>
-
-                <details
-                    className="rounded-lg border"
-                    open={period.preset === 'custom' || undefined}
-                >
-                    <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-                        Custom range
-                    </summary>
-                    <Form
-                        action={breakdownIndex.url()}
-                        method="get"
-                        className="grid gap-4 border-t p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
-                    >
-                        {({ errors, processing }) => (
-                            <>
-                                <input
-                                    type="hidden"
-                                    name="currency"
-                                    value={currency}
-                                />
-                                <input
-                                    type="hidden"
-                                    name="preset"
-                                    value="custom"
-                                />
-                                <div className="grid gap-2">
-                                    <Label htmlFor="breakdown-date-from">
-                                        From
-                                    </Label>
-                                    <Input
-                                        id="breakdown-date-from"
-                                        name="date_from"
-                                        type="date"
-                                        defaultValue={period.date_from}
-                                        aria-invalid={
-                                            errors.date_from ? true : undefined
-                                        }
-                                    />
-                                    <InputError message={errors.date_from} />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="breakdown-date-to">
-                                        To
-                                    </Label>
-                                    <Input
-                                        id="breakdown-date-to"
-                                        name="date_to"
-                                        type="date"
-                                        defaultValue={period.date_to}
-                                        aria-invalid={
-                                            errors.date_to ? true : undefined
-                                        }
-                                    />
-                                    <InputError message={errors.date_to} />
-                                </div>
-                                <Button type="submit" disabled={processing}>
-                                    {processing && <Spinner />}
-                                    Show range
-                                </Button>
-                            </>
-                        )}
-                    </Form>
-                </details>
-            </CardContent>
-        </Card>
+                        <Button
+                            type="button"
+                            size="sm"
+                            disabled={
+                                range?.from === undefined ||
+                                range.to === undefined
+                            }
+                            onClick={applyRange}
+                        >
+                            Apply range
+                        </Button>
+                    </div>
+                </PopoverContent>
+            </Popover>
+        </div>
     );
 }

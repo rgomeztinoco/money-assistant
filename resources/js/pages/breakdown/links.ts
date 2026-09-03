@@ -3,22 +3,23 @@ import type { Currency } from '@/types';
 import type { BreakdownPeriod } from './types';
 
 export function periodQuery({
-    currency,
+    currencyFilter,
     period,
 }: {
-    currency: Currency;
+    currencyFilter: Currency | null;
     period: BreakdownPeriod;
 }) {
     return {
-        currency,
-        preset: period.preset === 'latest_month' ? undefined : period.preset,
-        date_from: period.preset === 'custom' ? period.date_from : undefined,
-        date_to: period.preset === 'custom' ? period.date_to : undefined,
+        currency: currencyFilter ?? undefined,
+        period: period.unit,
+        anchor: period.unit === 'custom' ? undefined : period.anchor,
+        date_from: period.unit === 'custom' ? period.date_from : undefined,
+        date_to: period.unit === 'custom' ? period.date_to : undefined,
     };
 }
 
 export function selectionUrl({
-    currency,
+    currencyFilter,
     period,
     category,
     day,
@@ -27,7 +28,7 @@ export function selectionUrl({
     attention,
     selected,
 }: {
-    currency: Currency;
+    currencyFilter: Currency | null;
     period: BreakdownPeriod;
     category: string | null;
     day: string | null;
@@ -38,7 +39,7 @@ export function selectionUrl({
 }) {
     return breakdownIndex({
         query: {
-            ...periodQuery({ currency, period }),
+            ...periodQuery({ currencyFilter, period }),
             category: category ?? undefined,
             day: day ?? undefined,
             focus: focus ?? undefined,

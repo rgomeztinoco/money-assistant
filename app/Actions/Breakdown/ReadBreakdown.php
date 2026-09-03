@@ -28,22 +28,24 @@ class ReadBreakdown
     ) {}
 
     /**
-     * @param  array{preset?: string, date_from?: string, date_to?: string, category?: string, day?: string, focus?: string, merchant?: string, attention?: bool, selected?: int}  $filters
+     * @param  array{currency?: string, period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string, category?: string, day?: string, focus?: string, merchant?: string, attention?: bool, selected?: int}  $filters
      * @return array<string, mixed>
      */
-    public function handle(User $owner, Currency $currency, array $filters): array
+    public function handle(User $owner, array $filters): array
     {
-        [$preset, $dateFrom, $dateTo] = $this->period($owner, $currency, $filters);
+        $currencyFilter = isset($filters['currency'])
+            ? Currency::from($filters['currency'])
+            : null;
+        [$periodUnit, $dateFrom, $dateTo] = $this->period($filters);
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
             ->select(['id', 'user_id', 'parent_id', 'name', 'archived_at'])
-            ->withCount(['transactions', 'lineItems'])
             ->orderByRaw('lower(name)')
             ->get();
         $categoriesById = $categories->keyBy('id');
         $transactions = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
-            ->where('currency', $currency)
+            ->when($currencyFilter !== null, fn ($query) => $query->where('currency', $currencyFilter))
             ->whereNull('voided_at')
             ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
             ->select([
@@ -78,6 +80,15 @@ class ReadBreakdown
         $focusFilter = $filters['focus'] ?? null;
         $merchantFilter = $filters['merchant'] ?? null;
         $attentionFilter = (bool) ($filters['attention'] ?? false);
+        $attentionIds = $attentionFilter
+            ? Transaction::query()
+                ->whereBelongsTo($owner, 'owner')
+                ->when($currencyFilter !== null, fn ($query) => $query->where('currency', $currencyFilter))
+                ->whereNull('voided_at')
+                ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
+                ->whereRequiresReview()
+                ->pluck('id')
+            : collect();
         $chartTransactions = $dayFilter === null
             ? $transactions
             : $transactions->where('occurred_on', CarbonImmutable::parse($dayFilter));
@@ -88,7 +99,7 @@ class ReadBreakdown
                 $categoryFilter,
                 $categoriesById,
             ));
-        $detailTransactions = $transactions
+        $merchantTransactions = $transactions
             ->when($dayFilter !== null, fn (Collection $transactions): Collection => $transactions
                 ->filter(fn (Transaction $transaction): bool => $transaction->occurred_on->toDateString() === $dayFilter))
             ->when($categoryFilter !== null, fn (Collection $transactions): Collection => $transactions
@@ -99,29 +110,21 @@ class ReadBreakdown
                 )))
             ->when($focusFilter !== null, fn (Collection $transactions): Collection => $transactions
                 ->filter(fn (Transaction $transaction): bool => $this->matchesFocus($transaction, $focusFilter)))
+            ->when($attentionFilter, fn (Collection $transactions): Collection => $transactions->whereIn('id', $attentionIds));
+        $detailTransactions = $merchantTransactions
             ->when($merchantFilter !== null, fn (Collection $transactions): Collection => $transactions
                 ->filter(fn (Transaction $transaction): bool => $this->merchantNormalizer->normalize($transaction->description)
-                    === $this->merchantNormalizer->normalize($merchantFilter)))
-            ->when($attentionFilter, function (Collection $transactions) use ($owner, $currency, $dateFrom, $dateTo): Collection {
-                $attentionIds = Transaction::query()
-                    ->whereBelongsTo($owner, 'owner')
-                    ->where('currency', $currency)
-                    ->whereNull('voided_at')
-                    ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
-                    ->whereRequiresReview()
-                    ->pluck('id');
-
-                return $transactions->whereIn('id', $attentionIds);
-            });
-        $summary = $this->readPeriodSummary->handle($owner, $currency, $dateFrom, $dateTo);
+                    === $this->merchantNormalizer->normalize($merchantFilter)));
         $coverageDates = $transactions->pluck('occurred_on');
-        $merchantMatchCounts = $this->merchantMatchCounts($owner, $currency);
+        $merchantMatchCounts = $this->merchantMatchCounts($owner);
+        $chartGranularity = $this->chartGranularity($periodUnit, $dateFrom, $dateTo);
 
         return [
-            'currency' => $currency->value,
+            'currency_filter' => $currencyFilter?->value,
             'period' => [
-                'preset' => $preset,
-                'label' => $this->periodLabel($dateFrom, $dateTo),
+                'unit' => $periodUnit,
+                'label' => $this->periodLabel($periodUnit, $dateFrom, $dateTo),
+                'anchor' => $this->periodAnchor($periodUnit, $dateFrom),
                 'date_from' => $dateFrom->toDateString(),
                 'date_to' => $dateTo->toDateString(),
             ],
@@ -131,7 +134,8 @@ class ReadBreakdown
                 'transaction_count' => $transactions->count(),
                 'source' => $this->readRecordedCoverage->handle($owner, $dateFrom, $dateTo),
             ],
-            'summary' => $summary,
+            'summary' => $this->summaries($owner, $dateFrom, $dateTo),
+            'categorization' => $this->categorizationSummary($transactions, $categoriesById),
             'filters' => [
                 'category' => $categoryFilter,
                 'day' => $dayFilter,
@@ -142,9 +146,15 @@ class ReadBreakdown
                     ? (int) $filters['selected']
                     : null,
             ],
-            'category_groups' => $this->categoryGroups($chartTransactions, $categories, $categoriesById),
-            'days' => $this->days($dailyTransactions),
-            'merchants' => $this->merchants($detailTransactions),
+            'category_groups' => $this->categoryGroupsByCurrency($chartTransactions, $categories, $categoriesById),
+            'chart_granularity' => $chartGranularity,
+            'days' => $this->days(
+                $dailyTransactions,
+                $dateFrom,
+                $dateTo,
+                $chartGranularity,
+            ),
+            'merchants' => $this->merchants($merchantTransactions),
             'transaction_days' => $this->transactionDays($detailTransactions, $merchantMatchCounts),
             'category_options' => $this->categoryOptions($categories),
             'income_source_options' => $this->incomeSourceOptions($owner),
@@ -164,15 +174,17 @@ class ReadBreakdown
     }
 
     /**
-     * @param  array{preset?: string, date_from?: string, date_to?: string}  $filters
+     * @param  array{period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
      * @return array{string, CarbonImmutable, CarbonImmutable}
      */
-    private function period(User $owner, Currency $currency, array $filters): array
+    private function period(array $filters): array
     {
         $today = CarbonImmutable::today(config('app.timezone'));
+        $periodUnit = $filters['period'] ?? null;
+        $anchor = CarbonImmutable::parse($filters['anchor'] ?? $today, config('app.timezone'));
         $preset = $filters['preset'] ?? null;
 
-        if ($preset === 'custom'
+        if (($periodUnit === 'custom' || $preset === 'custom')
             && isset($filters['date_from'], $filters['date_to'])) {
             return [
                 'custom',
@@ -181,44 +193,99 @@ class ReadBreakdown
             ];
         }
 
+        if ($periodUnit === 'week') {
+            return ['week', $anchor->startOfWeek(), $anchor->endOfWeek()];
+        }
+
+        if ($periodUnit === 'quarter') {
+            return ['quarter', $anchor->startOfQuarter(), $anchor->endOfQuarter()];
+        }
+
+        if ($periodUnit === 'year') {
+            return ['year', $anchor->startOfYear(), $anchor->endOfYear()];
+        }
+
+        if ($periodUnit === 'month') {
+            return ['month', $anchor->startOfMonth(), $anchor->endOfMonth()];
+        }
+
         if ($preset === 'last_month') {
             $month = $today->subMonthNoOverflow();
 
-            return ['last_month', $month->startOfMonth(), $month->endOfMonth()];
+            return ['month', $month->startOfMonth(), $month->endOfMonth()];
         }
 
         if ($preset === 'rolling_30') {
-            return ['rolling_30', $today->subDays(29), $today];
+            return ['custom', $today->subDays(29), $today];
         }
 
         if ($preset === 'this_month') {
-            return ['this_month', $today->startOfMonth(), $today];
+            return ['month', $today->startOfMonth(), $today->endOfMonth()];
         }
 
-        $hasCurrentMonthData = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->where('currency', $currency)
-            ->whereNull('voided_at')
-            ->whereBetween('occurred_on', [$today->startOfMonth()->toDateString(), $today->toDateString()])
-            ->exists();
+        return ['month', $today->startOfMonth(), $today->endOfMonth()];
+    }
 
-        if ($hasCurrentMonthData) {
-            return ['this_month', $today->startOfMonth(), $today];
+    /** @return array<string, array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}> */
+    private function summaries(User $owner, CarbonImmutable $dateFrom, CarbonImmutable $dateTo): array
+    {
+        return collect(Currency::cases())
+            ->mapWithKeys(fn (Currency $currency): array => [
+                $currency->value => $this->readPeriodSummary->handle($owner, $currency, $dateFrom, $dateTo),
+            ])
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, Transaction>  $transactions
+     * @param  Collection<int, Category>  $categoriesById
+     * @return array<string, array{transaction_count: int, uncategorized_transaction_count: int, uncategorized_amount_minor: string, uncategorized_percentage: string}>
+     */
+    private function categorizationSummary(Collection $transactions, Collection $categoriesById): array
+    {
+        $summary = [];
+
+        foreach (Currency::cases() as $currency) {
+            $currencyTransactions = $transactions
+                ->where('currency', $currency)
+                ->filter(fn (Transaction $transaction): bool => $transaction->kind->supportsCategory());
+            $totalAmount = ExactInteger::from(0);
+            $uncategorizedAmount = ExactInteger::from(0);
+            $uncategorizedTransactionCount = 0;
+
+            foreach ($currencyTransactions as $transaction) {
+                $totalAmount = $totalAmount->add($this->absolute($transaction->amount_minor));
+                $allocation = $this->netSpendingAllocation->byCategory($transaction, $categoriesById);
+                $uncategorizedAllocation = $allocation['uncategorized'] ?? ExactInteger::from(0);
+
+                if ($uncategorizedAllocation->compare(ExactInteger::from(0)) !== 0) {
+                    $uncategorizedTransactionCount++;
+                    $uncategorizedAmount = $uncategorizedAmount->add(
+                        $this->absolute($uncategorizedAllocation->value()),
+                    );
+                }
+            }
+
+            $summary[$currency->value] = [
+                'transaction_count' => $currencyTransactions->count(),
+                'uncategorized_transaction_count' => $uncategorizedTransactionCount,
+                'uncategorized_amount_minor' => $uncategorizedAmount->value(),
+                'uncategorized_percentage' => $this->percentage($uncategorizedAmount, $totalAmount),
+            ];
         }
 
-        $latestOccurredOn = Transaction::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->where('currency', $currency)
-            ->whereNull('voided_at')
-            ->max('occurred_on');
+        return $summary;
+    }
 
-        if (! is_string($latestOccurredOn)) {
-            return ['this_month', $today->startOfMonth(), $today];
-        }
-
-        $latestMonth = CarbonImmutable::parse($latestOccurredOn, config('app.timezone'));
-
-        return ['latest_month', $latestMonth->startOfMonth(), $latestMonth->endOfMonth()];
+    private function periodAnchor(string $periodUnit, CarbonImmutable $dateFrom): string
+    {
+        return match ($periodUnit) {
+            'week' => $dateFrom->startOfWeek()->toDateString(),
+            'month' => $dateFrom->startOfMonth()->toDateString(),
+            'quarter' => $dateFrom->startOfQuarter()->toDateString(),
+            'year' => $dateFrom->startOfYear()->toDateString(),
+            default => $dateFrom->toDateString(),
+        };
     }
 
     /**
@@ -242,14 +309,14 @@ class ReadBreakdown
             }
         }
 
-        $topLevelCategoryKeys = $categories
-            ->whereNull('parent_id')
-            ->pluck('id')
-            ->push('uncategorized')
-            ->all();
-        $total = collect($amounts)
-            ->only($topLevelCategoryKeys)
-            ->reduce(fn (ExactInteger $total, ExactInteger $amount): ExactInteger => $total->add($amount), ExactInteger::from(0));
+        $totalSpending = $transactions
+            ->where('kind', TransactionKind::Spending)
+            ->reduce(
+                fn (ExactInteger $total, Transaction $transaction): ExactInteger => $total->add(
+                    ExactInteger::from($transaction->amount_minor),
+                ),
+                ExactInteger::from(0),
+            );
         $groups = [];
 
         foreach ($categories->whereNull('parent_id') as $category) {
@@ -277,7 +344,7 @@ class ReadBreakdown
             $groups[] = [
                 'category' => ['id' => $category->id, 'name' => $category->name],
                 'amount_minor' => $amount->value(),
-                'percentage' => $this->percentage($amount, $total),
+                'percentage' => $this->percentage($amount, $totalSpending),
                 'children' => $children,
             ];
         }
@@ -288,7 +355,7 @@ class ReadBreakdown
             $groups[] = [
                 'category' => ['id' => null, 'name' => 'Uncategorized'],
                 'amount_minor' => $uncategorized->value(),
-                'percentage' => $this->percentage($uncategorized, $total),
+                'percentage' => $this->percentage($uncategorized, $totalSpending),
                 'children' => [],
             ];
         }
@@ -301,39 +368,147 @@ class ReadBreakdown
 
     /**
      * @param  Collection<int, Transaction>  $transactions
-     * @return list<array{date: string, net_spending_minor: string, transaction_count: int}>
+     * @param  Collection<int, Category>  $categories
+     * @param  Collection<int, Category>  $categoriesById
+     * @return list<array<string, mixed>>
      */
-    private function days(Collection $transactions): array
+    private function categoryGroupsByCurrency(Collection $transactions, Collection $categories, Collection $categoriesById): array
     {
-        return array_values($transactions
-            ->groupBy(fn (Transaction $transaction): string => $transaction->occurred_on->toDateString())
-            ->sortKeys()
-            ->map(function (Collection $dayTransactions, string $date): array {
-                $netSpending = ExactInteger::from(0);
+        $groupsByCategory = [];
 
-                foreach ($dayTransactions as $transaction) {
-                    $netSpending = $netSpending->add(
-                        $transaction->kind->netSpendingAmount($transaction->amount_minor),
-                    );
-                }
+        foreach (Currency::cases() as $currency) {
+            $currencyGroups = $this->categoryGroups(
+                $transactions->where('currency', $currency),
+                $categories,
+                $categoriesById,
+            );
 
-                return [
-                    'date' => $date,
-                    'net_spending_minor' => $netSpending->value(),
-                    'transaction_count' => $dayTransactions->count(),
+            foreach ($currencyGroups as $group) {
+                $key = $group['category']['id'] ?? 'uncategorized';
+                $groupsByCategory[$key] ??= [
+                    'category' => $group['category'],
+                    'amount_minor' => $this->emptyCurrencyAmounts(),
+                    'percentage' => $this->emptyCurrencyAmounts(),
+                    'children' => [],
                 ];
-            })
-            ->values()
-            ->all());
+                $groupsByCategory[$key]['amount_minor'][$currency->value] = $group['amount_minor'];
+                $groupsByCategory[$key]['percentage'][$currency->value] = $group['percentage'];
+
+                foreach ($group['children'] as $child) {
+                    $childId = $child['category']['id'];
+                    $groupsByCategory[$key]['children'][$childId] ??= [
+                        'category' => $child['category'],
+                        'amount_minor' => $this->emptyCurrencyAmounts(),
+                    ];
+                    $groupsByCategory[$key]['children'][$childId]['amount_minor'][$currency->value] = $child['amount_minor'];
+                }
+            }
+        }
+
+        $groups = array_values(array_map(function (array $group): array {
+            $group['children'] = array_values($group['children']);
+
+            return $group;
+        }, $groupsByCategory));
+        usort($groups, function (array $left, array $right): int {
+            $byPercentage = $this->largestPercentage($right['percentage'])
+                <=> $this->largestPercentage($left['percentage']);
+
+            return $byPercentage !== 0
+                ? $byPercentage
+                : strcasecmp($left['category']['name'], $right['category']['name']);
+        });
+
+        return $groups;
     }
 
     /**
      * @param  Collection<int, Transaction>  $transactions
-     * @return list<array{name: string, amount_minor: string, transaction_count: int}>
+     * @return list<array{date: string, date_to: string, net_spending_minor: array<string, string>, transaction_count: int}>
+     */
+    private function days(
+        Collection $transactions,
+        CarbonImmutable $dateFrom,
+        CarbonImmutable $dateTo,
+        string $granularity,
+    ): array {
+        $days = [];
+
+        for ($date = $dateFrom; $date->lessThanOrEqualTo($dateTo); $date = $this->nextChartBucket($date, $granularity)) {
+            $bucketDateTo = $this->chartBucketEnd($date, $dateTo, $granularity);
+            $dayTransactions = $transactions->filter(
+                fn (Transaction $transaction): bool => $transaction->occurred_on->betweenIncluded($date, $bucketDateTo),
+            );
+            $netSpending = $this->emptyCurrencyTotals();
+
+            foreach ($dayTransactions as $transaction) {
+                $currency = $transaction->currency->value;
+                $netSpending[$currency] = $netSpending[$currency]->add(
+                    $transaction->kind->netSpendingAmount($transaction->amount_minor),
+                );
+            }
+
+            $days[] = [
+                'date' => $date->toDateString(),
+                'date_to' => $bucketDateTo->toDateString(),
+                'net_spending_minor' => $this->currencyTotalValues($netSpending),
+                'transaction_count' => $dayTransactions->count(),
+            ];
+        }
+
+        return $days;
+    }
+
+    private function chartGranularity(
+        string $periodUnit,
+        CarbonImmutable $dateFrom,
+        CarbonImmutable $dateTo,
+    ): string {
+        if ($periodUnit === 'year') {
+            return 'month';
+        }
+
+        if ($periodUnit === 'quarter') {
+            return 'week';
+        }
+
+        if ($periodUnit !== 'custom' || $dateFrom->diffInDays($dateTo) + 1 <= 31) {
+            return 'day';
+        }
+
+        return $dateFrom->diffInDays($dateTo) + 1 <= 120 ? 'week' : 'month';
+    }
+
+    private function nextChartBucket(CarbonImmutable $date, string $granularity): CarbonImmutable
+    {
+        return match ($granularity) {
+            'month' => $date->addMonth(),
+            'week' => $date->addWeek(),
+            default => $date->addDay(),
+        };
+    }
+
+    private function chartBucketEnd(
+        CarbonImmutable $date,
+        CarbonImmutable $periodDateTo,
+        string $granularity,
+    ): CarbonImmutable {
+        $bucketDateTo = match ($granularity) {
+            'month' => $date->endOfMonth(),
+            'week' => $date->addDays(6),
+            default => $date,
+        };
+
+        return $bucketDateTo->lessThan($periodDateTo) ? $bucketDateTo : $periodDateTo;
+    }
+
+    /**
+     * @param  Collection<int, Transaction>  $transactions
+     * @return list<array{name: string, amount_minor: array<string, string>, transaction_count: int}>
      */
     private function merchants(Collection $transactions): array
     {
-        /** @var array<string, array{name: string, amount: ExactInteger, transaction_count: int}> $merchants */
+        /** @var array<string, array{name: string, amount: array<string, ExactInteger>, transaction_count: int}> $merchants */
         $merchants = [];
 
         foreach ($transactions as $transaction) {
@@ -344,10 +519,11 @@ class ReadBreakdown
             $merchantKey = $this->merchantNormalizer->normalize($transaction->description);
             $merchants[$merchantKey] ??= [
                 'name' => $transaction->description,
-                'amount' => ExactInteger::from(0),
+                'amount' => $this->emptyCurrencyTotals(),
                 'transaction_count' => 0,
             ];
-            $merchants[$merchantKey]['amount'] = $merchants[$merchantKey]['amount']->add(
+            $currency = $transaction->currency->value;
+            $merchants[$merchantKey]['amount'][$currency] = $merchants[$merchantKey]['amount'][$currency]->add(
                 $transaction->kind->netSpendingAmount($transaction->amount_minor),
             );
             $merchants[$merchantKey]['transaction_count']++;
@@ -355,11 +531,11 @@ class ReadBreakdown
 
         $merchantRows = array_values(array_map(fn (array $merchant): array => [
             'name' => $merchant['name'],
-            'amount_minor' => $merchant['amount']->value(),
+            'amount_minor' => $this->currencyTotalValues($merchant['amount']),
             'transaction_count' => $merchant['transaction_count'],
         ], $merchants));
-        usort($merchantRows, fn (array $left, array $right): int => $this->absolute($right['amount_minor'])
-            ->compare($this->absolute($left['amount_minor'])));
+        usort($merchantRows, fn (array $left, array $right): int => $right['transaction_count']
+            <=> $left['transaction_count']);
 
         return $merchantRows;
     }
@@ -367,37 +543,38 @@ class ReadBreakdown
     /**
      * @param  Collection<int, Transaction>  $transactions
      * @param  array<string, int>  $merchantMatchCounts
-     * @return list<array{date: string, net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, transactions: list<array<string, mixed>>}>
+     * @return list<array{date: string, net_spending_minor: array<string, string>, income_minor: array<string, string>, moved_to_savings_minor: array<string, string>, transactions: list<array<string, mixed>>}>
      */
     private function transactionDays(Collection $transactions, array $merchantMatchCounts): array
     {
         return array_values($transactions
             ->groupBy(fn (Transaction $transaction): string => $transaction->occurred_on->toDateString())
             ->map(function (Collection $dayTransactions, string $date) use ($merchantMatchCounts): array {
-                $netSpending = ExactInteger::from(0);
-                $income = ExactInteger::from(0);
-                $movedToSavings = ExactInteger::from(0);
+                $netSpending = $this->emptyCurrencyTotals();
+                $income = $this->emptyCurrencyTotals();
+                $movedToSavings = $this->emptyCurrencyTotals();
 
                 foreach ($dayTransactions as $transaction) {
                     $amount = ExactInteger::from($transaction->amount_minor);
-                    $netSpending = $netSpending->add($transaction->kind->netSpendingAmount($transaction->amount_minor));
+                    $currency = $transaction->currency->value;
+                    $netSpending[$currency] = $netSpending[$currency]->add($transaction->kind->netSpendingAmount($transaction->amount_minor));
 
                     if ($transaction->kind === TransactionKind::Income) {
-                        $income = $income->add($amount);
+                        $income[$currency] = $income[$currency]->add($amount);
                     }
 
                     if ($transaction->kind === TransactionKind::Transfer && $transaction->transfer_purpose === TransferPurpose::Savings) {
-                        $movedToSavings = $transaction->direction === MovementDirection::Credit
-                            ? $movedToSavings->subtract($amount)
-                            : $movedToSavings->add($amount);
+                        $movedToSavings[$currency] = $transaction->direction === MovementDirection::Credit
+                            ? $movedToSavings[$currency]->subtract($amount)
+                            : $movedToSavings[$currency]->add($amount);
                     }
                 }
 
                 return [
                     'date' => $date,
-                    'net_spending_minor' => $netSpending->value(),
-                    'income_minor' => $income->value(),
-                    'moved_to_savings_minor' => $movedToSavings->value(),
+                    'net_spending_minor' => $this->currencyTotalValues($netSpending),
+                    'income_minor' => $this->currencyTotalValues($income),
+                    'moved_to_savings_minor' => $this->currencyTotalValues($movedToSavings),
                     'transactions' => array_values($dayTransactions
                         ->map(fn (Transaction $transaction): array => $this->transactionData($transaction, $merchantMatchCounts))
                         ->all()),
@@ -486,12 +663,11 @@ class ReadBreakdown
     }
 
     /** @return array<string, int> */
-    private function merchantMatchCounts(User $owner, Currency $currency): array
+    private function merchantMatchCounts(User $owner): array
     {
         $counts = [];
         $transactions = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
-            ->where('currency', $currency)
             ->whereNull('voided_at')
             ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->cursor();
@@ -512,7 +688,7 @@ class ReadBreakdown
 
     /**
      * @param  Collection<int, Category>  $categories
-     * @return list<array{id: int, path: string, used: bool}>
+     * @return list<array{id: int, name: string, path: string, parent: array{id: int, name: string}|null}>
      */
     private function categoryOptions(Collection $categories): array
     {
@@ -523,11 +699,14 @@ class ReadBreakdown
 
                 return [
                     'id' => $category->id,
+                    'name' => $category->name,
                     'path' => $parent === null ? $category->name : $parent->name.' > '.$category->name,
-                    'used' => $category->transactions_count > 0 || $category->line_items_count > 0,
+                    'parent' => $parent === null
+                        ? null
+                        : ['id' => $parent->id, 'name' => $parent->name],
                 ];
             })
-            ->sortBy([['used', 'desc'], ['path', 'asc']])
+            ->sortBy('path', SORT_NATURAL | SORT_FLAG_CASE)
             ->values()
             ->all());
     }
@@ -586,8 +765,47 @@ class ReadBreakdown
             : $amount;
     }
 
-    private function periodLabel(CarbonImmutable $dateFrom, CarbonImmutable $dateTo): string
+    /** @return array<string, ExactInteger> */
+    private function emptyCurrencyTotals(): array
     {
-        return $dateFrom->isoFormat('ll').' – '.$dateTo->isoFormat('ll');
+        return collect(Currency::cases())
+            ->mapWithKeys(fn (Currency $currency): array => [$currency->value => ExactInteger::from(0)])
+            ->all();
+    }
+
+    /** @return array<string, string> */
+    private function emptyCurrencyAmounts(): array
+    {
+        return collect(Currency::cases())
+            ->mapWithKeys(fn (Currency $currency): array => [$currency->value => '0'])
+            ->all();
+    }
+
+    /**
+     * @param  array<string, ExactInteger>  $totals
+     * @return array<string, string>
+     */
+    private function currencyTotalValues(array $totals): array
+    {
+        return collect($totals)
+            ->map(fn (ExactInteger $amount): string => $amount->value())
+            ->all();
+    }
+
+    /** @param array<string, string> $percentages */
+    private function largestPercentage(array $percentages): float
+    {
+        return collect($percentages)
+            ->max(fn (string $percentage): float => abs((float) $percentage)) ?? 0;
+    }
+
+    private function periodLabel(string $periodUnit, CarbonImmutable $dateFrom, CarbonImmutable $dateTo): string
+    {
+        return match ($periodUnit) {
+            'month' => $dateFrom->isoFormat('MMMM YYYY'),
+            'quarter' => 'Q'.$dateFrom->quarter.' '.$dateFrom->year,
+            'year' => (string) $dateFrom->year,
+            default => $dateFrom->isoFormat('ll').' – '.$dateTo->isoFormat('ll'),
+        };
     }
 }

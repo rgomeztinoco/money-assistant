@@ -13,7 +13,7 @@ use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('Breakdown opens the current month with independent PEN totals and visual detail', function () {
+test('Breakdown opens the current month with every currency kept independent', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
@@ -58,39 +58,52 @@ test('Breakdown opens the current month with independent PEN totals and visual d
         'amount_minor' => 99_000,
         'description' => 'USD purchase',
     ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2025-01-07',
+        'description' => 'Archived merchant',
+    ]);
 
     $response = $this->actingAs($owner)->get(route('breakdown.index'));
 
     $response->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('breakdown/index')
-            ->where('currency', 'PEN')
-            ->where('period.preset', 'this_month')
+            ->where('currency_filter', null)
+            ->where('period.unit', 'month')
             ->where('period.date_from', '2026-08-01')
-            ->where('period.date_to', '2026-08-22')
+            ->where('period.date_to', '2026-08-31')
             ->where('coverage.date_from', '2026-08-02')
-            ->where('coverage.date_to', '2026-08-06')
-            ->where('summary.net_spending_minor', '7000')
-            ->where('summary.income_minor', '10000')
-            ->where('summary.moved_to_savings_minor', '3000')
-            ->has('category_groups', 2)
+            ->where('coverage.date_to', '2026-08-07')
+            ->where('summary.PEN.net_spending_minor', '7000')
+            ->where('summary.PEN.income_minor', '10000')
+            ->where('summary.PEN.moved_to_savings_minor', '3000')
+            ->where('summary.USD.net_spending_minor', '99000')
+            ->where('categorization.PEN.transaction_count', 3)
+            ->where('categorization.PEN.uncategorized_transaction_count', 0)
+            ->where('categorization.USD.uncategorized_transaction_count', 1)
+            ->where('categorization.USD.uncategorized_amount_minor', '99000')
+            ->where('categorization.USD.uncategorized_percentage', '100')
+            ->has('category_groups', 3)
             ->where('category_groups.0.category.name', 'Food')
-            ->where('category_groups.0.amount_minor', '8000')
-            ->where('category_groups.0.percentage', '114.29')
+            ->where('category_groups.0.amount_minor.PEN', '8000')
+            ->where('category_groups.0.percentage.PEN', '100')
             ->where('category_groups.0.children.0.category.name', 'Dining')
-            ->has('days', 4)
-            ->where('days.0.date', '2026-08-02')
-            ->where('days.0.net_spending_minor', '8000')
-            ->has('transaction_days', 4)
-            ->where('transaction_days.0.date', '2026-08-06')
-            ->where('transaction_days.0.transactions.0.description', 'Savings transfer'));
-
-    expect(json_encode($response->inertiaProps(), JSON_THROW_ON_ERROR))
-        ->not->toContain('USD purchase')
-        ->not->toContain('99000');
+            ->has('days', 31)
+            ->where('days.0.date', '2026-08-01')
+            ->where('days.0.date_to', '2026-08-01')
+            ->where('days.0.net_spending_minor.PEN', '0')
+            ->where('days.1.date', '2026-08-02')
+            ->where('days.1.net_spending_minor.PEN', '8000')
+            ->where('days.2.net_spending_minor.PEN', '-1000')
+            ->where('days.30.date', '2026-08-31')
+            ->where('days.30.net_spending_minor.PEN', '0')
+            ->has('transaction_days', 5)
+            ->where('transaction_days.0.date', '2026-08-07')
+            ->where('transaction_days.0.transactions.0.description', 'USD purchase')
+            ->missing('merchant_options'));
 });
 
-test('Breakdown falls back to the latest month containing data and supports every quick period', function () {
+test('Breakdown uses the current month and supports calendar period units and custom ranges', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
     $owner = User::factory()->create();
 
@@ -107,32 +120,92 @@ test('Breakdown falls back to the latest month containing data and supports ever
     $this->actingAs($owner)
         ->get(route('breakdown.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('period.preset', 'latest_month')
-            ->where('period.date_from', '2026-07-01')
-            ->where('period.date_to', '2026-07-31'));
-
-    $this->get(route('breakdown.index', ['preset' => 'this_month']))
-        ->assertInertia(fn (Assert $page) => $page
+            ->where('period.unit', 'month')
+            ->where('chart_granularity', 'day')
+            ->has('days', 31)
             ->where('period.date_from', '2026-08-01')
-            ->where('period.date_to', '2026-08-22'));
+            ->where('period.date_to', '2026-08-31'));
 
-    $this->get(route('breakdown.index', ['preset' => 'last_month']))
+    $this->get(route('breakdown.index', ['period' => 'week', 'anchor' => '2026-08-12']))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('period.date_from', '2026-07-01')
-            ->where('period.date_to', '2026-07-31'));
+            ->where('chart_granularity', 'day')
+            ->has('days', 7)
+            ->where('period.date_from', '2026-08-10')
+            ->where('period.date_to', '2026-08-16'));
 
-    $this->get(route('breakdown.index', ['preset' => 'rolling_30']))
+    $this->get(route('breakdown.index', ['period' => 'quarter', 'anchor' => '2026-05-12']))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('period.date_from', '2026-07-24')
-            ->where('period.date_to', '2026-08-22'));
+            ->where('chart_granularity', 'week')
+            ->has('days', 13)
+            ->where('days.0.date', '2026-04-01')
+            ->where('days.0.date_to', '2026-04-07')
+            ->where('days.12.date', '2026-06-24')
+            ->where('days.12.date_to', '2026-06-30')
+            ->where('period.date_from', '2026-04-01')
+            ->where('period.date_to', '2026-06-30'));
+
+    $this->get(route('breakdown.index', ['period' => 'year', 'anchor' => '2025-05-12']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('chart_granularity', 'month')
+            ->has('days', 12)
+            ->where('days.0.date', '2025-01-01')
+            ->where('days.0.date_to', '2025-01-31')
+            ->where('days.11.date', '2025-12-01')
+            ->where('days.11.date_to', '2025-12-31')
+            ->where('period.date_from', '2025-01-01')
+            ->where('period.date_to', '2025-12-31'));
 
     $this->get(route('breakdown.index', [
         'preset' => 'custom',
         'date_from' => '2026-06-10',
         'date_to' => '2026-07-20',
     ]))->assertInertia(fn (Assert $page) => $page
+        ->where('period.unit', 'custom')
+        ->where('chart_granularity', 'week')
+        ->has('days', 6)
         ->where('period.date_from', '2026-06-10')
         ->where('period.date_to', '2026-07-20'));
+
+    $this->get(route('breakdown.index', ['currency' => 'USD']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('currency_filter', 'USD')
+            ->has('transaction_days', 1)
+            ->where('transaction_days.0.transactions.0.currency', 'USD'));
+
+    $this->get(route('breakdown.index', ['period' => 'custom']))
+        ->assertSessionHasErrors(['date_from', 'date_to']);
+});
+
+test('Category bars use each currency total spending as their denominator', function () {
+    $owner = User::factory()->create();
+    $insurance = Category::factory()->for($owner, 'owner')->create(['name' => 'Insurance']);
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2026-06-10',
+        'amount_minor' => 45_600,
+        'category_id' => $insurance->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2026-06-11',
+        'amount_minor' => 5_900,
+        'category_id' => $food->id,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('breakdown.index', [
+            'currency' => 'USD',
+            'preset' => 'custom',
+            'date_from' => '2026-06-01',
+            'date_to' => '2026-06-30',
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('summary.USD.net_spending_minor', '51500')
+            ->where('category_groups.0.category.id', $insurance->id)
+            ->where('category_groups.0.amount_minor.USD', '45600')
+            ->where('category_groups.0.percentage.USD', '88.54')
+            ->where('category_groups.1.category.id', $food->id)
+            ->where('category_groups.1.percentage.USD', '11.46'));
 });
 
 test('Category and day selections filter the same supporting Breakdown detail', function () {
@@ -183,17 +256,24 @@ test('Category and day selections filter the same supporting Breakdown detail', 
             ->where('filters.category', (string) $food->id)
             ->where('filters.day', '2026-07-11')
             ->where('filters.selected', $splitTransaction->id)
-            ->has('days', 2)
-            ->where('days.0.date', '2026-07-10')
-            ->where('days.0.net_spending_minor', '5000')
-            ->where('days.1.date', '2026-07-11')
-            ->where('days.1.net_spending_minor', '4000')
+            ->has('days', 31)
+            ->where('days.0.date', '2026-07-01')
+            ->where('days.0.net_spending_minor.PEN', '0')
+            ->where('days.9.date', '2026-07-10')
+            ->where('days.9.net_spending_minor.PEN', '5000')
+            ->where('days.10.date', '2026-07-11')
+            ->where('days.10.net_spending_minor.PEN', '4000')
+            ->where('days.30.date', '2026-07-31')
+            ->where('categorization.PEN.transaction_count', 3)
+            ->where('categorization.PEN.uncategorized_transaction_count', 1)
+            ->where('categorization.PEN.uncategorized_amount_minor', '1500')
+            ->where('categorization.PEN.uncategorized_percentage', '12.5')
             ->has('transaction_days', 1)
             ->where('transaction_days.0.transactions.0.id', $splitTransaction->id)
             ->where('transaction_days.0.transactions.0.split.0.category.name', 'Dining')
             ->has('merchants', 1)
             ->where('merchants.0.name', 'Department store')
-            ->where('merchants.0.amount_minor', '4000'));
+            ->where('merchants.0.amount_minor.PEN', '4000'));
 
     $this->get(route('breakdown.index', [
         'preset' => 'custom',
@@ -202,16 +282,19 @@ test('Category and day selections filter the same supporting Breakdown detail', 
         'category' => 'uncategorized',
     ]))->assertInertia(fn (Assert $page) => $page
         ->where('category_groups.2.category.name', 'Uncategorized')
-        ->where('category_groups.2.percentage', '12.5')
+        ->where('category_groups.2.percentage.PEN', '12.5')
         ->has('transaction_days', 1)
         ->where('transaction_days.0.transactions.0.id', $splitTransaction->id));
 
     expect($market->id)->not->toBe($cafe->id);
 });
 
-test('used classifications come first and zero-spend Categories stay out of the chart', function () {
+test('Category options expose parent groups and zero-spend Categories stay out of the chart', function () {
     $owner = User::factory()->create();
     $unused = Category::factory()->for($owner, 'owner')->create(['name' => 'Aardvarks']);
+    $child = Category::factory()->for($owner, 'owner')->for($unused, 'parent')->create([
+        'name' => 'Annual subscriptions',
+    ]);
     $used = Category::factory()->for($owner, 'owner')->create(['name' => 'Zebras']);
     $netZero = Category::factory()->for($owner, 'owner')->create(['name' => 'Zero']);
 
@@ -244,10 +327,14 @@ test('used classifications come first and zero-spend Categories stay out of the 
         ->assertInertia(fn (Assert $page) => $page
             ->has('category_groups', 1)
             ->where('category_groups.0.category.id', $used->id)
-            ->where('category_options.0.id', $used->id)
-            ->where('category_options.0.used', true)
-            ->where('category_options.2.id', $unused->id)
-            ->where('category_options.2.used', false)
+            ->where('category_options.0.id', $unused->id)
+            ->where('category_options.0.name', 'Aardvarks')
+            ->where('category_options.0.parent', null)
+            ->where('category_options.1.id', $child->id)
+            ->where('category_options.1.name', 'Annual subscriptions')
+            ->where('category_options.1.parent.id', $unused->id)
+            ->where('category_options.1.parent.name', 'Aardvarks')
+            ->missing('category_options.0.used')
             ->where('income_source_options.0.value', IncomeSource::Investments->value)
             ->where('income_source_options.0.used', true));
 });
