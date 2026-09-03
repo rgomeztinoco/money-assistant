@@ -3,6 +3,7 @@
 use App\Http\Controllers\Settings\GmailAuthorizationController;
 use App\Http\Controllers\Settings\GmailConnectionCheckController;
 use App\Http\Controllers\Settings\GmailFailedMessageRetryController;
+use App\Http\Controllers\Settings\GmailImportController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Middleware\RequirePasswordForOwnerEmailChange;
@@ -39,6 +40,9 @@ Route::middleware(['auth'])->group(function () {
 
     Route::post('data-sources/gmail/check', GmailConnectionCheckController::class)
         ->name('gmail.connection.check');
+
+    Route::post('data-sources/gmail/import', GmailImportController::class)
+        ->name('gmail.import');
 
     Route::post(
         'data-sources/gmail/failed-messages/{gmailMessageDiscovery}/retry',

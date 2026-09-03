@@ -2,6 +2,7 @@
 
 use App\Actions\NotificationIngestion\RefreshGmailConnection;
 use App\Contracts\Gmail;
+use App\GmailSynchronizationType;
 use App\Integrations\Gmail\GmailAccess;
 use App\Integrations\Gmail\GmailAuthorization;
 use App\Integrations\Gmail\GmailProfile;
@@ -332,6 +333,7 @@ test('Gmail connection routes are private to the authenticated owner', function 
     'authorize' => ['get', 'gmail.authorization.create'],
     'callback' => ['get', 'gmail.authorization.store'],
     'health check' => ['post', 'gmail.connection.check'],
+    'manual import' => ['post', 'gmail.import'],
 ]);
 
 test('Data Sources reports disconnected and explicit reauthorization states', function () {
@@ -366,8 +368,43 @@ test('Data Sources reports an established Gmail synchronization as stale after f
         ->get(route('data_sources.gmail'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('gmail.state', 'stale')
-            ->where('gmail.last_successful_sync_at', now()->subMinutes(6)->toIso8601String()));
+            ->where('gmail.last_successful_sync_at', now()->subMinutes(6)->toIso8601String())
+            ->where('gmail.next_scheduled_sync_at', '2026-07-28T19:50:00+00:00'));
 });
+
+test('the owner can manually import from a healthy Gmail connection', function () {
+    Queue::fake();
+    $connection = GmailConnection::factory()->create();
+
+    $this->actingAs($connection->owner)
+        ->post(route('gmail.import'))
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('data_sources.gmail'));
+
+    Queue::assertPushed(
+        SynchronizeGmail::class,
+        fn (SynchronizeGmail $job): bool => $job->connectionId === $connection->id
+            && $job->type === GmailSynchronizationType::Incremental,
+    );
+});
+
+test('manual Gmail import requires an active connection', function (string $connectionState) {
+    Queue::fake();
+    $owner = User::factory()->create();
+
+    if ($connectionState === 'paused') {
+        GmailConnection::factory()
+            ->reauthorizationRequired()
+            ->for($owner, 'owner')
+            ->create();
+    }
+
+    $this->actingAs($owner)
+        ->post(route('gmail.import'))
+        ->assertRedirect(route('data_sources.gmail'));
+
+    Queue::assertNothingPushed();
+})->with(['disconnected', 'paused']);
 
 test('an explicit health check refreshes access and records a successful Gmail profile check', function () {
     CarbonImmutable::setTestNow('2026-07-28 20:00:00 UTC');

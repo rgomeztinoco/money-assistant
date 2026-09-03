@@ -3,9 +3,12 @@
 namespace App\Actions\NotificationIngestion;
 
 use App\Contracts\Gmail;
+use App\GmailSynchronizationType;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\User;
+use Carbon\CarbonImmutable;
+use Cron\CronExpression;
 
 final class ReadGmailConnectionStatus
 {
@@ -20,6 +23,7 @@ final class ReadGmailConnectionStatus
      *     connected_at: string|null,
      *     last_successful_check_at: string|null,
      *     last_successful_sync_at: string|null,
+     *     next_scheduled_sync_at: string|null,
      *     latest_failure: array{type: 'synchronization'|'message', occurred_at: string, error_code: string, discovery_id: int|null, message_id: string|null, retryable: bool}|null,
      *     last_check_failed_at: string|null,
      *     reauthorization_required_at: string|null
@@ -57,10 +61,22 @@ final class ReadGmailConnectionStatus
             'connected_at' => $connection?->connected_at?->toIso8601String(),
             'last_successful_check_at' => $connection?->last_successful_check_at?->toIso8601String(),
             'last_successful_sync_at' => $connection?->last_successful_sync_at?->toIso8601String(),
+            'next_scheduled_sync_at' => $connection !== null && ! $connection->ingestionIsPaused()
+                ? $this->nextScheduledSynchronizationAt()
+                : null,
             'latest_failure' => $latestFailure,
             'last_check_failed_at' => $connection?->last_check_failed_at?->toIso8601String(),
             'reauthorization_required_at' => $connection?->reauthorization_required_at?->toIso8601String(),
         ];
+    }
+
+    private function nextScheduledSynchronizationAt(): string
+    {
+        $nextRunAt = (new CronExpression(GmailSynchronizationType::INCREMENTAL_SCHEDULE))->getNextRunDate(
+            now(),
+        );
+
+        return CarbonImmutable::instance($nextRunAt)->toIso8601String();
     }
 
     /**
