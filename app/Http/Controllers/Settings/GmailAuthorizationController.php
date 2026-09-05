@@ -4,16 +4,22 @@ namespace App\Http\Controllers\Settings;
 
 use App\Actions\NotificationIngestion\CompleteGmailAuthorization;
 use App\Contracts\Gmail;
+use App\GmailSynchronizationType;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StartGmailAuthorizationRequest;
 use App\Integrations\Gmail\GmailRequestFailed;
+use App\Jobs\SynchronizeGmail;
+use App\Models\GmailConnection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class GmailAuthorizationController extends Controller
 {
-    public function create(Request $request, Gmail $gmail): RedirectResponse
-    {
+    public function create(
+        StartGmailAuthorizationRequest $request,
+        Gmail $gmail,
+    ): RedirectResponse {
         abort_unless(
             filled(config('services.gmail.client_id'))
                 && filled(config('services.gmail.client_secret'))
@@ -27,6 +33,7 @@ class GmailAuthorizationController extends Controller
         $request->session()->put('gmail_oauth_state', [
             'state' => $state,
             'user_id' => $request->user()->getAuthIdentifier(),
+            'import_days' => $request->integer('import_days'),
         ]);
 
         return redirect()->away($gmail->authorizationUrl($state, $request->user()->email));
@@ -41,6 +48,9 @@ class GmailAuthorizationController extends Controller
             is_array($expected)
                 && is_string($expected['state'] ?? null)
                 && $expected['user_id'] === $request->user()->getAuthIdentifier()
+                && is_int($expected['import_days'] ?? null)
+                && $expected['import_days'] >= GmailConnection::MINIMUM_IMPORT_LOOKBACK_DAYS
+                && $expected['import_days'] <= GmailConnection::MAXIMUM_IMPORT_LOOKBACK_DAYS
                 && is_string($state)
                 && hash_equals($expected['state'], $state),
             419,
@@ -52,7 +62,7 @@ class GmailAuthorizationController extends Controller
                 'message' => __('Gmail authorization was not granted.'),
             ]);
 
-            return to_route('connections.edit');
+            return to_route('data_sources.gmail');
         }
 
         $code = $request->query('code');
@@ -60,18 +70,32 @@ class GmailAuthorizationController extends Controller
         abort_unless(is_string($code) && $code !== '', 419);
 
         try {
-            $completeAuthorization->handle($request->user(), $code);
+            $connection = $completeAuthorization->handle(
+                $request->user(),
+                $code,
+                $expected['import_days'],
+            );
         } catch (GmailRequestFailed) {
             Inertia::flash('toast', [
                 'type' => 'error',
                 'message' => __('Gmail could not be connected. Try reauthorizing.'),
             ]);
 
-            return to_route('connections.edit');
+            return to_route('data_sources.gmail');
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Gmail connected.')]);
+        SynchronizeGmail::dispatch(
+            $connection->id,
+            GmailSynchronizationType::Incremental,
+        );
 
-        return to_route('connections.edit');
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Gmail connected. Importing the previous :days days now.', [
+                'days' => $expected['import_days'],
+            ]),
+        ]);
+
+        return to_route('data_sources.gmail');
     }
 }

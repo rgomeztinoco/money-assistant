@@ -1,0 +1,1303 @@
+<?php
+
+use App\Actions\Breakdown\ReadBreakdown;
+use App\Actions\Ledger\ReadReviewQueue;
+use App\Actions\StatementImports\ReadStatementImport;
+use App\Actions\StatementImports\StatementImportWorkflow;
+use App\CategoryAssignmentProvenance;
+use App\Contracts\StatementPdfExtractor;
+use App\Currency;
+use App\MerchantNormalizer;
+use App\Models\Category;
+use App\Models\MerchantRule;
+use App\Models\StatementImport;
+use App\Models\StatementMovement;
+use App\Models\Transaction;
+use App\Models\User;
+use App\MovementDirection;
+use App\StatementImports\StatementImportPreview;
+use App\StatementImports\StatementImportValidationException;
+use App\StatementMovementClassification;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Concurrency;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
+use Tests\Support\ConcurrentStatementImportConfirmation;
+use Tests\SyntheticPdf;
+
+use function Pest\Laravel\mock;
+
+function bcpStatementText(): string
+{
+    return (string) file_get_contents(__DIR__.'/../Fixtures/Statements/bcp.txt');
+}
+
+function interbankStatementText(): string
+{
+    return (string) file_get_contents(__DIR__.'/../Fixtures/Statements/interbank.txt');
+}
+
+function confirmationPayload(StatementImportPreview $preview): array
+{
+    $confirmation = $preview->confirmationData();
+    $confirmation['movements'] = collect($confirmation['movements'])
+        ->map(fn (array $movement): array => [
+            ...$movement,
+            'classification' => $movement['classification'] === 'needs_classification'
+                    ? 'transfer'
+                    : $movement['classification'],
+        ])
+        ->all();
+
+    return $confirmation;
+}
+
+function expectStatementImportError(Closure $callback, string $errorCode): void
+{
+    try {
+        $callback();
+    } catch (StatementImportValidationException $exception) {
+        expect($exception->errorCode)->toBe($errorCode);
+
+        return;
+    }
+
+    throw new RuntimeException("Expected Statement Import error [{$errorCode}].");
+}
+
+test('the Statement Import workflow previews a reconciled BCP statement without retaining it', function () {
+    $owner = User::factory()->create();
+    $statement = UploadedFile::fake()->createWithContent(
+        'wrong-year.pdf',
+        SyntheticPdf::fromText(bcpStatementText()),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview($owner, $statement);
+
+    expect($preview)
+        ->financialStatementFormat->value->toBe('bcp')
+        ->periodStart->toDateString()->toBe('2026-02-01')
+        ->periodEnd->toDateString()->toBe('2026-02-28')
+        ->instrumentLabel->toBe('BCP Cuenta Digital')
+        ->movements->toHaveCount(5)
+        ->movements->sequence(
+            fn ($movement) => $movement
+                ->direction->value->toBe('debit')
+                ->classification->value->toBe('savings')
+                ->amountMinor->toBe('2000'),
+            fn ($movement) => $movement
+                ->direction->value->toBe('credit')
+                ->classification->value->toBe('savings')
+                ->amountMinor->toBe('500'),
+            fn ($movement) => $movement->classification->value->toBe('tax'),
+            fn ($movement) => $movement->classification->value->toBe('purchase'),
+            fn ($movement) => $movement->classification->value->toBe('needs_classification'),
+        )
+        ->reconciliation->toMatchArray([
+            'opening_balance_minor' => '10000',
+            'debits_minor' => '3001',
+            'credits_minor' => '5500',
+            'closing_balance_minor' => '12499',
+        ]);
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
+        ->and(Transaction::query()->doesntExist())->toBeTrue();
+});
+
+test('BCP reconstructs one movement table across pages with repeated headers', function () {
+    [$firstPage, $secondPage] = explode("\n03FEB", bcpStatementText(), 2);
+    $repeatedHeader = 'FECHA PROC. FECHA VALOR  DESCRIPCION                     CARGOS / DEBE   ABONOS / HABER';
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromPages([
+                $firstPage,
+                $repeatedHeader."\n03FEB".$secondPage,
+            ]),
+        ),
+    );
+
+    expect($preview->movements)->toHaveCount(5)
+        ->and(collect($preview->movements)->pluck('position')->all())->toBe([1, 2, 3, 4, 5])
+        ->and(collect($preview->movements)->pluck('amountMinor')->all())->toBe(['2000', '500', '1', '1000', '5000'])
+        ->and($preview->reconciliation)->toMatchArray([
+            'debits_minor' => '3001',
+            'credits_minor' => '5500',
+        ]);
+});
+
+test('BCP direction follows the physical amount column rather than description text', function () {
+    $statementText = str_replace(
+        ['WARDA                                  20.00', 'DEPOSITO                                                50.00'],
+        ['ABONO DE PRUEBA                         20.00', 'CARGO DE PRUEBA                                         50.00'],
+        bcpStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText($statementText)),
+    );
+
+    expect($preview->movements[0]->description)->toBe('ABONO DE PRUEBA')
+        ->and($preview->movements[0]->direction->value)->toBe('debit')
+        ->and($preview->movements[4]->description)->toBe('CARGO DE PRUEBA')
+        ->and($preview->movements[4]->direction->value)->toBe('credit');
+});
+
+test('the BCP asterisk remains opaque metadata', function () {
+    $statementText = str_replace(
+        'WARDA                                  20.00',
+        'WARDA*                                 20.00',
+        bcpStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText($statementText)),
+    );
+    $movement = $preview->movements[0];
+
+    expect($movement->description)->toBe('WARDA')
+        ->and($movement->direction->value)->toBe('debit')
+        ->and($movement->classification->value)->toBe('savings')
+        ->and($movement->contributesToSpending)->toBeFalse()
+        ->and($movement->sourceMetadata)->toBe(['asterisk' => true]);
+});
+
+test('BCP automatically classifies only supported narrow labels', function (
+    string $description,
+    string $classification,
+) {
+    $statementText = str_replace(
+        'Pago YAPE a 123456',
+        str_pad($description, 18),
+        bcpStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText($statementText)),
+    );
+
+    expect($preview->movements[3]->classification->value)->toBe($classification);
+})->with([
+    'WARDA' => ['WARDA', 'savings'],
+    'ITF tax' => ['IMPUESTO ITF', 'tax'],
+    'bank fee' => ['MANT. CUENTA', 'fee'],
+    'purchase' => ['PAGO YAPE A 1234', 'purchase'],
+    'explicit transfer' => ['TRANSF.BCO.INTERBA', 'transfer'],
+    'generic transfer' => ['TRANSFERENCIA', 'needs_classification'],
+    'unsupported fee suffix' => ['MANT. CUENTA EXTRA', 'needs_classification'],
+]);
+
+test('BCP distinguishes third-party movements from transfers between owner accounts', function (
+    string $description,
+    string $direction,
+    string $classification,
+) {
+    $sourceDescription = $direction === 'debit'
+        ? 'Pago YAPE a 123456'
+        : 'DEPOSITO';
+    $statementText = str_replace(
+        $sourceDescription,
+        $description,
+        bcpStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText($statementText)),
+    );
+    $movement = $direction === 'debit'
+        ? $preview->movements[3]
+        : $preview->movements[4];
+
+    expect($movement->direction->value)->toBe($direction)
+        ->and($movement->classification->value)->toBe($classification)
+        ->and($movement->contributesToSpending)->toBe(in_array($classification, ['purchase', 'refund'], true));
+})->with([
+    'Yape money out is Spending' => ['Pago YAPE a 1234', 'debit', 'purchase'],
+    'Yape money in is a Refund' => ['Pago YAPE de 1234', 'credit', 'refund'],
+    'third-party account money out is Spending' => ['TRAN.CTAS.TERC.BM', 'debit', 'purchase'],
+    'third-party account money in is a Refund' => ['TRAN.CTAS.TERC.BM', 'credit', 'refund'],
+    'owner account transfer remains a Transfer' => ['TRAN.CTAS.PROP.BM', 'credit', 'transfer'],
+    'known income remains Income' => ['DE TK BUSINESS ONL', 'credit', 'income'],
+]);
+
+test('the Statement Import workflow atomically confirms one Transaction for every BCP movement', function () {
+    $owner = User::factory()->create();
+    $taxes = Category::factory()->for($owner, 'owner')->create(['name' => 'taxes']);
+    $pdf = SyntheticPdf::fromText(bcpStatementText());
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $editedMovements = collect($preview->confirmationData()['movements'])
+        ->map(fn (array $movement): array => [
+            ...$movement,
+            'classification' => $movement['classification'] === 'needs_classification'
+                ? 'income'
+                : $movement['classification'],
+        ])
+        ->all();
+    $editedMovements[0]['occurred_on'] = '2026-02-06';
+    $editedMovements[0]['description'] = 'Corrected WARDA deposit';
+    $editedMovements[0]['amount_minor'] = '2100';
+    $editedMovements[0]['currency'] = 'USD';
+
+    $import = app(StatementImportWorkflow::class)->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        [
+            'file_hash' => $preview->fileHash,
+            'instrument_label' => 'BCP Savings account',
+            'instrument_last_four' => '1234',
+            'movements' => $editedMovements,
+        ],
+    );
+
+    $correctedMovement = $import->movements->first();
+
+    expect($import->movements)->toHaveCount(5)
+        ->and($import->movements->whereNotNull('transaction_id'))->toHaveCount(5)
+        ->and($import->movements->last()->classification->value)->toBe('income')
+        ->and($correctedMovement->occurred_on->toDateString())->toBe('2026-02-06')
+        ->and($correctedMovement->description)->toBe('Corrected WARDA deposit')
+        ->and($correctedMovement->amount_minor)->toBe(2100)
+        ->and($correctedMovement->currency->value)->toBe('USD')
+        ->and($correctedMovement->transaction->occurred_on->toDateString())->toBe('2026-02-06')
+        ->and($correctedMovement->transaction->description)->toBe('Corrected WARDA deposit')
+        ->and($correctedMovement->transaction->amount_minor)->toBe(2100)
+        ->and($correctedMovement->transaction->currency->value)->toBe('USD')
+        ->and($correctedMovement->transaction->direction->value)->toBe('debit')
+        ->and($correctedMovement->transaction->kind->value)->toBe('transfer')
+        ->and($correctedMovement->transaction->transfer_purpose->value)->toBe('savings')
+        ->and(Transaction::query()->count())->toBe(5)
+        ->and(Transaction::query()->where('kind', 'spending')->count())->toBe(2)
+        ->and(Transaction::query()->where('kind', 'income')->count())->toBe(1)
+        ->and(Transaction::query()->where('kind', 'transfer')->count())->toBe(2)
+        ->and(Transaction::query()->whereBelongsTo($taxes, 'category')->count())->toBe(1)
+        ->and(Transaction::query()->whereNull('category_id')->count())->toBe(4)
+        ->and(Transaction::query()->where('instrument_label', 'BCP Savings account')->count())->toBe(5)
+        ->and(Transaction::query()->where('instrument_last_four', '1234')->count())->toBe(5)
+        ->and(Transaction::query()->whereNotNull('merchant_rule_id')->doesntExist())->toBeTrue();
+});
+
+test('Savings movements are represented as Transfers without requiring a Spending Category', function () {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(bcpStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $import = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+    $savingsMovements = $import->movements
+        ->where('classification', StatementMovementClassification::Savings);
+
+    expect($savingsMovements)->toHaveCount(2)
+        ->and($savingsMovements->pluck('transaction.kind')->unique()->sole()->value)->toBe('transfer')
+        ->and($savingsMovements->pluck('transaction.transfer_purpose')->unique()->sole()->value)->toBe('savings')
+        ->and($savingsMovements->pluck('transaction.category_id')->filter())->toBeEmpty();
+});
+
+test('WARDA rows map to Savings transactions reports and the selected Category', function () {
+    $owner = User::factory()->create();
+    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'Long-term goals']);
+    $ruleCategory = Category::factory()->for($owner, 'owner')->create(['name' => 'Rule target']);
+    $taxes = Category::factory()->for($owner, 'owner')->create(['name' => 'Taxes']);
+    $bankFees = Category::factory()->for($owner, 'owner')->create(['name' => 'Bank Fees']);
+    MerchantRule::factory()
+        ->for($owner, 'owner')
+        ->for($ruleCategory, 'category')
+        ->create([
+            'merchant' => 'WARDA',
+            'merchant_key' => app(MerchantNormalizer::class)->normalize('WARDA'),
+        ]);
+    $statementText = str_replace(
+        'Pago YAPE a 123456',
+        str_pad('MANT. CUENTA', 18),
+        bcpStatementText(),
+    );
+    $pdf = SyntheticPdf::fromText($statementText);
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $import = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+    $savingsMovements = $import->movements->where('classification', StatementMovementClassification::Savings);
+    $deposit = $savingsMovements->firstWhere('direction', MovementDirection::Debit);
+    $withdrawal = $savingsMovements->firstWhere('direction', MovementDirection::Credit);
+    $report = app(ReadBreakdown::class)->handle(
+        $owner,
+        [
+            'currency' => Currency::Pen->value,
+            'period' => 'custom',
+            'date_from' => '2026-02-01',
+            'date_to' => '2026-02-28',
+        ],
+    );
+    $reviewQueue = app(ReadReviewQueue::class)->handle($owner);
+    $details = app(ReadStatementImport::class)->handle($owner, $import);
+    $reportCategories = collect($report['category_groups'])->keyBy('category.name');
+
+    expect($deposit->description)->toBe('WARDA')
+        ->and($deposit->transaction->kind->value)->toBe('transfer')
+        ->and($deposit->transaction->transfer_purpose->value)->toBe('savings')
+        ->and($deposit->transaction->category_id)->toBeNull()
+        ->and($withdrawal->description)->toBe('WARDA')
+        ->and($withdrawal->transaction->kind->value)->toBe('transfer')
+        ->and($withdrawal->transaction->transfer_purpose->value)->toBe('savings')
+        ->and($withdrawal->transaction->category_id)->toBeNull()
+        ->and($withdrawal->transaction->original_spending_id)->toBeNull()
+        ->and($withdrawal->transaction->refund_relationship_review_reasons)->toBe([])
+        ->and($import->movements->firstWhere('classification', StatementMovementClassification::Tax)->transaction->category_id)->toBe($taxes->id)
+        ->and($import->movements->firstWhere('classification', StatementMovementClassification::Fee)->transaction->category_id)->toBe($bankFees->id)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('category_assignment_provenance', CategoryAssignmentProvenance::Owner)->count())->toBe(2)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNotNull('merchant_rule_id')->doesntExist())->toBeTrue()
+        ->and(Category::query()->whereBelongsTo($owner, 'owner')->count())->toBe(4)
+        ->and(MerchantRule::query()->whereBelongsTo($owner, 'owner')->count())->toBe(1)
+        ->and($report['summary']['PEN']['net_spending_minor'])->toBe('1001')
+        ->and($reportCategories->has('Long-term goals'))->toBeFalse()
+        ->and($reviewQueue['unresolved_category_count'])->toBe(0)
+        ->and($reviewQueue['unresolved_refund_relationship_count'])->toBe(0)
+        ->and($details['summary']['PEN'])->toMatchArray([
+            'spending_minor' => '1001',
+            'savings_deposits_minor' => '2000',
+            'savings_withdrawals_minor' => '500',
+            'net_savings_minor' => '1500',
+        ]);
+});
+
+test('missing or archived special Categories leave BCP fees and taxes Uncategorized', function () {
+    $owner = User::factory()->create();
+    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'Savings']);
+    Category::factory()->for($owner, 'owner')->archived()->create(['name' => 'Bank Fees']);
+    $statementText = str_replace(
+        'Pago YAPE a 123456',
+        str_pad('MANT. CUENTA', 18),
+        bcpStatementText(),
+    );
+    $pdf = SyntheticPdf::fromText($statementText);
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $import = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+
+    expect($import->movements->firstWhere('classification', StatementMovementClassification::Tax)->transaction->category_id)->toBeNull()
+        ->and($import->movements->firstWhere('classification', StatementMovementClassification::Fee)->transaction->category_id)->toBeNull()
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_id')->count())->toBe(5)
+        ->and(app(ReadReviewQueue::class)->handle($owner)['unresolved_category_count'])->toBe(2);
+});
+
+test('the Statement Import workflow previews and reconciles Interbank currency columns across the closed cycle', function () {
+    $owner = User::factory()->create();
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText(interbankStatementText()),
+        ),
+    );
+
+    expect($preview)
+        ->financialStatementFormat->value->toBe('interbank')
+        ->periodStart->toDateString()->toBe('2026-01-21')
+        ->periodEnd->toDateString()->toBe('2026-02-20')
+        ->instrumentLabel->toBe('Interbank American Express')
+        ->instrumentLastFour->toBe('1234')
+        ->movements->toHaveCount(6)
+        ->and($preview->movements[0])
+        ->occurredOn->toDateString()->toBe('2026-01-23')
+        ->direction->value->toBe('credit')
+        ->classification->value->toBe('needs_classification')
+        ->and($preview->movements[1])
+        ->classification->value->toBe('card_payment')
+        ->and($preview->movements[2])
+        ->occurredOn->toDateString()->toBe('2026-01-20')
+        ->classification->value->toBe('purchase')
+        ->and($preview->movements[3])
+        ->currency->value->toBe('USD')
+        ->amountMinor->toBe('1000')
+        ->and($preview->movements[4])
+        ->currency->value->toBe('PEN')
+        ->amountMinor->toBe('500')
+        ->and($preview->movements[5])
+        ->description->toBe('SEGURO DESGRAVAMEN')
+        ->currency->value->toBe('PEN')
+        ->and($preview->reconciliation)->toMatchArray([
+            'payment_total_pen_minor' => '2700',
+            'payment_total_usd_minor' => '1000',
+            'consumption_pen_minor' => '2500',
+            'consumption_usd_minor' => '1000',
+            'other_charges_pen_minor' => '200',
+            'other_charges_usd_minor' => '0',
+        ]);
+});
+
+test('confirmation reparses and reconciles the uploaded PDF before persistence', function () {
+    $owner = User::factory()->create();
+    $reconciledText = interbankStatementText();
+    $unreconciledText = str_replace(
+        '= 27.00 10.00',
+        '= 28.00 10.00',
+        $reconciledText,
+    );
+    $extractor = mock(StatementPdfExtractor::class);
+    $extractor->expects('extract')
+        ->twice()
+        ->andReturn($reconciledText, $unreconciledText);
+    $workflow = app(StatementImportWorkflow::class);
+    $pdf = SyntheticPdf::fromText($reconciledText);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+
+    expectStatementImportError(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        confirmationPayload($preview),
+    ), 'interbank_statement_mismatch');
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
+        ->and(Transaction::query()->doesntExist())->toBeTrue();
+});
+
+test('confirmation rejects a different valid PDF even when its parsed movements are equivalent', function () {
+    $owner = User::factory()->create();
+    $workflow = app(StatementImportWorkflow::class);
+    $previewPdf = SyntheticPdf::fromText(interbankStatementText());
+    $confirmationPdf = SyntheticPdf::fromText("Copy\n".interbankStatementText());
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $previewPdf),
+    );
+
+    expectStatementImportError(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $confirmationPdf),
+        confirmationPayload($preview),
+    ), 'file_mismatch');
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
+        ->and(Transaction::query()->doesntExist())->toBeTrue();
+});
+
+test('owner classifications determine whether an ambiguous Interbank movement creates spending', function (
+    string $classification,
+    ?string $transactionKind,
+) {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $ambiguousMovement = $preview->movements[0];
+    $confirmation = confirmationPayload($preview);
+    $confirmation['movements'][0]['classification'] = $classification;
+
+    expect($ambiguousMovement->classification->value)->toBe('needs_classification');
+
+    $import = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+    $confirmedMovement = $import->movements->firstWhere(
+        'source_row_id',
+        $ambiguousMovement->sourceRowId,
+    );
+
+    expect($confirmedMovement->classification->value)->toBe($classification);
+
+    expect($confirmedMovement->transaction)->not->toBeNull()
+        ->and($confirmedMovement->transaction->kind->value)->toBe($transactionKind);
+})->with([
+    'Purchase' => ['purchase', 'spending'],
+    'Refund' => ['refund', 'refund'],
+    'Income' => ['income', 'income'],
+    'ordinary transfer' => ['transfer', 'transfer'],
+    'card payment' => ['card_payment', 'transfer'],
+]);
+
+test('confirmation requires a real kind instead of duplicating an already recorded movement', function () {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $confirmation['movements'][0]['classification'] = 'already_recorded';
+
+    expectStatementImportError(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    ), 'movement_needs_classification');
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
+        ->and(Transaction::query()->doesntExist())->toBeTrue();
+});
+
+test('Interbank confirmation isolates non-spending movements from reports rules and review counts', function () {
+    $owner = User::factory()->create();
+    $merchantRuleCategory = Category::factory()->for($owner, 'owner')->create();
+    MerchantRule::factory()
+        ->for($owner, 'owner')
+        ->for($merchantRuleCategory, 'category')
+        ->create([
+            'merchant' => 'Grocery',
+            'merchant_key' => app(MerchantNormalizer::class)->normalize('Grocery'),
+        ]);
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $confirmation['movements'][0]['classification'] = 'transfer';
+    $confirmation['movements'][3]['classification'] = 'refund';
+    $confirmation['movements'][4]['classification'] = 'transfer';
+
+    $import = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+
+    $breakdown = app(ReadBreakdown::class)->handle($owner, [
+        'period' => 'custom',
+        'date_from' => '2026-01-01',
+        'date_to' => '2026-02-28',
+    ]);
+    $reviewQueue = app(ReadReviewQueue::class)->handle($owner);
+    $importDetails = app(ReadStatementImport::class)->handle($owner, $import);
+
+    expect($import->movements)->toHaveCount(6)
+        ->and($import->movements->whereNotNull('transaction_id'))->toHaveCount(6)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->count())->toBe(6)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('kind', 'spending')->count())->toBe(2)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('kind', 'refund')->count())->toBe(1)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->where('kind', 'transfer')->count())->toBe(3)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_id')->count())->toBe(6)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_assignment_provenance')->count())->toBe(6)
+        ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('merchant_rule_id')->count())->toBe(6)
+        ->and($breakdown['summary']['PEN']['net_spending_minor'])->toBe('2200')
+        ->and($breakdown['summary']['USD']['net_spending_minor'])->toBe('-1000')
+        ->and($reviewQueue['unresolved_category_count'])->toBe(3)
+        ->and($reviewQueue['unresolved_field_count'])->toBe(0)
+        ->and($reviewQueue['unresolved_refund_relationship_count'])->toBe(0)
+        ->and($importDetails['summary']['PEN'])->toMatchArray([
+            'spending_minor' => '2200',
+            'transfers_in_minor' => '1000',
+        ])
+        ->and($importDetails['movements'][0]['transaction'])->toMatchArray([
+            'kind' => 'transfer',
+            'income_source' => null,
+            'transfer_purpose' => 'internal',
+        ])
+        ->and($importDetails['summary']['USD']['refunds_minor'])->toBe('1000');
+
+    expect(Transaction::query()->whereBelongsTo($owner, 'owner')->get())
+        ->each(fn ($transaction) => $transaction
+            ->category_assignment_provenance->toBeNull()
+            ->merchant_rule_id->toBeNull());
+});
+
+test('linked Transaction edits and voiding preserve the immutable confirmed Interbank movement', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $import = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        confirmationPayload($preview),
+    );
+    $movement = $import->movements->firstWhere('description', 'Grocery');
+    $transaction = $movement->transaction;
+
+    $this->actingAs($owner)
+        ->put(route('transactions.update', $transaction), [
+            'occurred_on' => '2026-02-10',
+            'amount_minor' => '2500',
+            'currency' => 'PEN',
+            'kind' => 'spending',
+            'description' => 'Edited imported purchase',
+            'instrument_label' => 'Interbank Amex',
+            'instrument_last_four' => '1234',
+            'category_id' => $category->id,
+            'original_spending_id' => null,
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->post(route('transactions.void.store', $transaction))
+        ->assertSessionHasNoErrors();
+
+    $movement->refresh();
+    $transaction->refresh();
+    $import->refresh();
+    $importDetails = app(ReadStatementImport::class)->handle($owner, $import);
+    $movementDetails = collect($importDetails['movements'])->firstWhere('id', $movement->id);
+
+    expect($movement->transaction_id)->toBe($transaction->id)
+        ->and($movement->occurred_on->toDateString())->toBe('2026-01-20')
+        ->and($movement->amount_minor)->toBe(2000)
+        ->and($movement->description)->toBe('Grocery')
+        ->and($movement->classification->value)->toBe('purchase')
+        ->and($transaction->occurred_on->toDateString())->toBe('2026-02-10')
+        ->and($transaction->amount_minor)->toBe(2500)
+        ->and($transaction->description)->toBe('Edited imported purchase')
+        ->and($transaction->category_assignment_provenance)->toBe(CategoryAssignmentProvenance::Owner)
+        ->and($transaction->voided_at)->not->toBeNull()
+        ->and($import->movements()->count())->toBe(6)
+        ->and($movementDetails['transaction']['voided_at'])->not->toBeNull()
+        ->and($movementDetails['transaction']['category']['id'])->toBe($category->id);
+});
+
+test('Interbank includes installment consumption in movements and reconciliation', function () {
+    $owner = User::factory()->create();
+    $statementText = str_replace(
+        [
+            'OTROS COBROS                    S/ US$',
+            '= 27.00 10.00',
+        ],
+        [
+            "TUS CONSUMOS EN CUOTAS\nFecha Comercio                  S/ US$\n10-Feb Installment purchase     10.00 0.00\nSUBTOTAL                        10.00 0.00\nOTROS COBROS                    S/ US$",
+            '= 37.00 10.00',
+        ],
+        interbankStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    );
+
+    $installmentPurchase = collect($preview->movements)
+        ->firstWhere('description', 'Installment purchase');
+
+    expect($preview->movements)->toHaveCount(7)
+        ->and($installmentPurchase)->not->toBeNull()
+        ->and($installmentPurchase->classification->value)->toBe('purchase')
+        ->and($preview->reconciliation)->toMatchArray([
+            'consumption_pen_minor' => '3500',
+            'consumption_usd_minor' => '1000',
+            'payment_total_pen_minor' => '3700',
+            'payment_total_usd_minor' => '1000',
+        ]);
+});
+
+test('Interbank preserves a negative payment subtotal joined to its decorative rule', function (string $subtotalLine) {
+    $owner = User::factory()->create();
+    $statementText = str_replace(
+        [
+            '02-Feb PAGO TARJ WEB APP        -90.00 0.00',
+            'SUBTOTAL                         0.00 0.00',
+            '= 27.00 10.00',
+        ],
+        [
+            "02-Feb PAGO TARJ WEB APP        -90.00 0.00\n03-Feb SECOND PAYMENT            -5.00 0.00",
+            $subtotalLine,
+            '= 22.00 10.00',
+        ],
+        interbankStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    );
+
+    expect($preview->reconciliation)->toMatchArray([
+        'payments_subtotal_pen_minor' => '-500',
+        'payment_total_pen_minor' => '2200',
+    ]);
+})->with([
+    'continuous decorative rule' => 'SUBTOTAL ----------------------------5.00 0.00',
+    'decorative rule split by extraction whitespace' => 'SUBTOTAL -------------- --------------5.00 0.00',
+]);
+
+test('Interbank assigns a single printed amount from its physical USD column', function () {
+    $owner = User::factory()->create();
+    $singleUsdRow = str_pad('06-Feb Single USD amount', 38).'5.00';
+    $statementText = str_replace(
+        [
+            '06-Feb Single PEN amount         5.00',
+            'SUBTOTAL                        25.00 10.00',
+            '= 27.00 10.00',
+        ],
+        [
+            $singleUsdRow,
+            'SUBTOTAL                        20.00 15.00',
+            '= 22.00 15.00',
+        ],
+        interbankStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    );
+    $movement = collect($preview->movements)
+        ->firstWhere('description', 'Single USD amount');
+
+    expect($movement)->not->toBeNull()
+        ->and($movement->currency->value)->toBe('USD')
+        ->and($preview->reconciliation['consumption_pen_minor'])->toBe('2000')
+        ->and($preview->reconciliation['consumption_usd_minor'])->toBe('1500');
+});
+
+test('Interbank reconstructs consumption across pages with a repeated heading', function () {
+    $statementPages = explode("\n05-Feb USD Merchant", interbankStatementText(), 2);
+    $statementPages[1] = "TUS CONSUMOS\nFecha Comercio                  S/ US$\n05-Feb USD Merchant".$statementPages[1];
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromPages($statementPages),
+        ),
+    );
+
+    expect($preview->movements)->toHaveCount(6)
+        ->and($preview->reconciliation['consumption_pen_minor'])->toBe('2500')
+        ->and($preview->reconciliation['consumption_usd_minor'])->toBe('1000');
+});
+
+test('Interbank infers movement years from a statement cycle crossing calendar years', function () {
+    $statementText = str_replace(
+        [
+            '21/01/2026', '20/02/2026',
+            '23-Ene', '02-Feb', '20-Ene', '05-Feb', '06-Feb', '20-Feb',
+        ],
+        [
+            '21/12/2025', '20/01/2026',
+            '23-Dic', '02-Ene', '20-Dic', '05-Ene', '06-Ene', '20-Ene',
+        ],
+        interbankStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    );
+
+    expect($preview->movements[0]->occurredOn->toDateString())->toBe('2025-12-23')
+        ->and($preview->movements[1]->occurredOn->toDateString())->toBe('2026-01-02')
+        ->and($preview->movements[2]->occurredOn->toDateString())->toBe('2025-12-20');
+});
+
+test('Interbank retains a posted movement before the cycle start using the inferred cycle year', function () {
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText(interbankStatementText()),
+        ),
+    );
+
+    expect($preview->periodStart->toDateString())->toBe('2026-01-21')
+        ->and($preview->movements[2]->occurredOn->toDateString())->toBe('2026-01-20');
+});
+
+test('Interbank excludes payment minimums from the Import Preview', function () {
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText(interbankStatementText()),
+        ),
+    );
+
+    expect($preview->informationalValues)->toBe([]);
+});
+
+test('only parser candidates can be explicitly excluded from a verified period', function () {
+    $owner = User::factory()->create();
+    $savings = Category::factory()->for($owner, 'owner')->create(['name' => 'Savings']);
+    $statementText = str_replace(
+        '    30.01    55.00',
+        "06FEB 06FEB INFORMACION                           0.00\n    30.01    55.00",
+        bcpStatementText(),
+    );
+    $pdf = SyntheticPdf::fromText($statementText);
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $candidate = collect($preview->movements)->firstWhere('description', 'INFORMACION');
+
+    expect($candidate)->not->toBeNull()
+        ->and($candidate->classification->value)->toBe('not_a_movement')
+        ->and($candidate->canBeExcluded)->toBeTrue();
+
+    $confirmation = confirmationPayload($preview);
+    $confirmation['savings_category_id'] = $savings->id;
+    $import = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+
+    expect($import->movements()->count())->toBe(5)
+        ->and($import->movements)->toHaveCount(5)
+        ->and($import->excluded_values)->toHaveCount(1)
+        ->and($import->excluded_values[0])->toMatchArray([
+            'description' => 'INFORMACION',
+            'amount_minor' => '0',
+            'currency' => 'PEN',
+        ]);
+
+    $otherOwner = User::factory()->create();
+    $ordinaryPreview = $workflow->preview(
+        $otherOwner,
+        UploadedFile::fake()->createWithContent(
+            'ordinary-preview.pdf',
+            SyntheticPdf::fromText(interbankStatementText()),
+        ),
+    );
+    $confirmation = confirmationPayload($ordinaryPreview);
+    $confirmation['movements'][0]['classification'] = 'not_a_movement';
+
+    expectStatementImportError(fn () => $workflow->confirm(
+        $otherOwner,
+        UploadedFile::fake()->createWithContent(
+            'ordinary-confirm.pdf',
+            SyntheticPdf::fromText(interbankStatementText()),
+        ),
+        $confirmation,
+    ), 'movement_cannot_be_excluded');
+});
+
+test('confirmation rejects an instrument label containing a full financial identifier', function () {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $confirmation['instrument_label'] = 'Interbank 4111 1111 1111 1111';
+
+    expectStatementImportError(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    ), 'unsafe_instrument_label');
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue();
+});
+
+test('unsafe and unsupported PDF inputs fail without retaining source evidence', function (
+    string $contents,
+    string $errorCode,
+) {
+    $owner = User::factory()->create();
+
+    try {
+        app(StatementImportWorkflow::class)->preview(
+            $owner,
+            UploadedFile::fake()->createWithContent('statement.pdf', $contents),
+        );
+
+        $this->fail('The unsafe statement should have been rejected.');
+    } catch (StatementImportValidationException $exception) {
+        expect($exception->errorCode)->toBe($errorCode);
+
+        if ($contents !== '') {
+            expect($exception->getMessage())->not->toContain($contents);
+        }
+    }
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue();
+})->with([
+    'non-PDF content' => ['not a PDF', 'invalid_pdf'],
+    'empty file' => ['', 'invalid_pdf_size'],
+    'corrupt PDF' => ['%PDF-1.4 invalid structure', 'corrupt_pdf'],
+    'oversized PDF' => [fn () => '%PDF-'.str_repeat('x', (8 * 1024 * 1024) + 1), 'invalid_pdf_size'],
+    'encrypted PDF' => [
+        fn () => SyntheticPdf::fromText(bcpStatementText())."\n/Encrypt 9 0 R",
+        'encrypted_pdf',
+    ],
+    'image-only PDF' => [fn () => SyntheticPdf::fromText('   '), 'empty_text'],
+    'unknown layout' => [
+        fn () => SyntheticPdf::fromText('A valid selectable-text PDF with an unknown format'),
+        'unsupported_format',
+    ],
+    'partial BCP signature' => [
+        fn () => SyntheticPdf::fromText('Estado de Cuenta de Ahorros'),
+        'unsupported_format',
+    ],
+    'partial Interbank signature' => [
+        fn () => SyntheticPdf::fromText('PAGO DEL MES'),
+        'unsupported_format',
+    ],
+]);
+
+test('PDF extraction resource limits fail closed before producing a preview', function (
+    string $configurationKey,
+    int $configurationValue,
+    string $errorCode,
+) {
+    config([$configurationKey => $configurationValue]);
+
+    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText(interbankStatementText()),
+        ),
+    ), $errorCode);
+})->with([
+    'page count' => ['statement-imports.max_pages', 0, 'page_limit'],
+    'extracted output' => ['statement-imports.max_extracted_bytes', 16, 'extraction_limit'],
+]);
+
+test('PDF extraction is terminated at the configured processing time limit', function () {
+    config([
+        'statement-imports.processing_timeout_seconds' => 1,
+        'statement-imports.max_extracted_bytes' => 8 * 1024 * 1024,
+    ]);
+    $largeSelectablePdf = SyntheticPdf::fromText(str_repeat("line\n", 200000));
+
+    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+        new User,
+        UploadedFile::fake()->createWithContent('statement.pdf', $largeSelectablePdf),
+    ), 'processing_limit');
+});
+
+test('PDF failures do not expose or log source contents private filenames or full identifiers', function () {
+    Log::spy();
+    $privateFilename = 'interbank-4111111111111234-private.pdf';
+    $sourceContents = '%PDF-1.4 private-statement-4111111111111234';
+
+    try {
+        app(StatementImportWorkflow::class)->preview(
+            new User,
+            UploadedFile::fake()->createWithContent($privateFilename, $sourceContents),
+        );
+
+        $this->fail('The corrupt statement should have been rejected.');
+    } catch (StatementImportValidationException $exception) {
+        expect($exception->getMessage())
+            ->not->toContain($privateFilename)
+            ->not->toContain($sourceContents)
+            ->not->toContain('4111111111111234');
+    }
+
+    Log::shouldNotHaveReceived('error');
+    Log::shouldNotHaveReceived('warning');
+    Log::shouldNotHaveReceived('log');
+});
+
+test('independent BCP reconciliation failures block preview and persistence', function (
+    string $original,
+    string $replacement,
+    string $errorCode,
+) {
+    $owner = User::factory()->create();
+    $statementText = str_replace($original, $replacement, bcpStatementText());
+
+    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    ), $errorCode);
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue();
+})->with([
+    'Cargos row sum' => ['30.01    55.00', '31.01    55.00', 'bcp_debits_mismatch'],
+    'Abonos row sum' => ['30.01    55.00', '30.01    56.00', 'bcp_credits_mismatch'],
+    'balance arithmetic' => ['124.99', '125.00', 'bcp_balance_mismatch'],
+]);
+
+test('independent Interbank reconciliation failures block preview and persistence', function (
+    string $original,
+    string $replacement,
+    string $errorCode,
+) {
+    $owner = User::factory()->create();
+    $statementText = str_replace($original, $replacement, interbankStatementText());
+
+    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    ), $errorCode);
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue();
+})->with([
+    'payments subtotal' => [
+        'SUBTOTAL                         0.00 0.00',
+        'SUBTOTAL                         1.00 0.00',
+        'interbank_payments_mismatch',
+    ],
+    'consumption subtotal' => [
+        'SUBTOTAL                        25.00 10.00',
+        'SUBTOTAL                        26.00 10.00',
+        'interbank_consumption_mismatch',
+    ],
+    'other charges subtotal' => [
+        'SUBTOTAL                         2.00 0.00',
+        'SUBTOTAL                         3.00 0.00',
+        'interbank_other_charges_mismatch',
+    ],
+    'whole statement total' => [
+        '= 27.00 10.00',
+        '= 28.00 10.00',
+        'interbank_statement_mismatch',
+    ],
+]);
+
+test('missing duplicated and misplaced Interbank rows fail reconciliation', function (
+    string $statementText,
+    string $errorCode,
+) {
+    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            SyntheticPdf::fromText($statementText),
+        ),
+    ), $errorCode);
+})->with([
+    'missing row' => [
+        fn () => str_replace("20-Ene Grocery                  20.00 0.00\n", '', interbankStatementText()),
+        'interbank_consumption_mismatch',
+    ],
+    'duplicated row' => [
+        fn () => str_replace(
+            '20-Ene Grocery                  20.00 0.00',
+            "20-Ene Grocery                  20.00 0.00\n20-Ene Grocery                  20.00 0.00",
+            interbankStatementText(),
+        ),
+        'interbank_consumption_mismatch',
+    ],
+    'misplaced currency amount' => [
+        fn () => str_replace(
+            '20-Ene Grocery                  20.00 0.00',
+            '20-Ene Grocery                   0.00 20.00',
+            interbankStatementText(),
+        ),
+        'interbank_consumption_mismatch',
+    ],
+]);
+
+test('confirmation cannot omit substitute or leave a real movement unclassified', function (
+    Closure $mutate,
+    string $errorCode,
+) {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = $mutate(confirmationPayload($preview));
+
+    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    ), $errorCode);
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
+        ->and(Transaction::query()->doesntExist())->toBeTrue();
+})->with([
+    'omitted row' => [
+        function (array $confirmation): array {
+            array_pop($confirmation['movements']);
+
+            return $confirmation;
+        },
+        'movement_set_mismatch',
+    ],
+    'substituted row' => [
+        function (array $confirmation): array {
+            $confirmation['movements'][0]['source_row_id'] = str_repeat('a', 64);
+
+            return $confirmation;
+        },
+        'movement_set_mismatch',
+    ],
+    'unclassified row' => [
+        function (array $confirmation): array {
+            $confirmation['movements'][0]['classification'] = 'needs_classification';
+
+            return $confirmation;
+        },
+        'movement_needs_classification',
+    ],
+]);
+
+test('exact statement replay is owner scoped and rejected atomically for the same owner', function () {
+    $owner = User::factory()->create();
+    $otherOwner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+
+    $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+
+    expectStatementImportError(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('replay.pdf', $pdf),
+        $confirmation,
+    ), 'duplicate_statement');
+
+    $otherPreview = $workflow->preview(
+        $otherOwner,
+        UploadedFile::fake()->createWithContent('other-preview.pdf', $pdf),
+    );
+    $workflow->confirm(
+        $otherOwner,
+        UploadedFile::fake()->createWithContent('other-confirm.pdf', $pdf),
+        confirmationPayload($otherPreview),
+    );
+
+    expect(StatementImport::query()->count())->toBe(2)
+        ->and(StatementMovement::query()->count())->toBe(12)
+        ->and(Transaction::query()->count())->toBe(12);
+});
+
+test('a failure after persistence begins rolls back the complete Statement Import', function () {
+    $owner = User::factory()->create();
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $workflow = app(StatementImportWorkflow::class);
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $movementCreations = 0;
+    $eventName = 'eloquent.creating: '.StatementMovement::class;
+
+    Event::listen($eventName, function () use (&$movementCreations): void {
+        $movementCreations++;
+
+        if ($movementCreations === 3) {
+            throw new RuntimeException('Forced persistence failure.');
+        }
+    });
+
+    try {
+        expect(fn () => $workflow->confirm(
+            $owner,
+            UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+            confirmationPayload($preview),
+        ))->toThrow(RuntimeException::class, 'Forced persistence failure.');
+    } finally {
+        Event::forget($eventName);
+    }
+
+    expect($movementCreations)->toBe(3)
+        ->and(StatementImport::query()->doesntExist())->toBeTrue()
+        ->and(StatementMovement::query()->doesntExist())->toBeTrue()
+        ->and(Transaction::query()->doesntExist())->toBeTrue();
+});
+
+test('concurrent confirmations retain one complete import and reject the duplicate', function () {
+    $connectionName = 'statement_import_concurrency';
+    config(["database.connections.{$connectionName}" => config('database.connections.pgsql')]);
+
+    $owner = new User([
+        'name' => 'Concurrent Statement Import Owner',
+        'email' => 'statement-import-'.str()->uuid().'@example.test',
+        'password' => 'password',
+    ]);
+    $owner->setConnection($connectionName);
+    $owner->save();
+
+    $pdf = SyntheticPdf::fromText(interbankStatementText());
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = confirmationPayload($preview);
+    $ownerId = $owner->getKey();
+
+    $firstConfirmation = ConcurrentStatementImportConfirmation::task($ownerId, $pdf, $confirmation);
+    $secondConfirmation = ConcurrentStatementImportConfirmation::task($ownerId, $pdf, $confirmation);
+
+    try {
+        $outcomes = Concurrency::driver('process')->run(
+            [$firstConfirmation, $secondConfirmation],
+            timeout: 30,
+        );
+
+        expect($outcomes)->toEqualCanonicalizing(['confirmed', 'duplicate_statement'])
+            ->and(StatementImport::query()->where('user_id', $ownerId)->count())->toBe(1)
+            ->and(StatementMovement::query()
+                ->whereHas('statementImport', fn ($query) => $query->where('user_id', $ownerId))
+                ->count())->toBe(6)
+            ->and(Transaction::query()->where('user_id', $ownerId)->count())->toBe(6);
+    } finally {
+        StatementImport::on($connectionName)->where('user_id', $ownerId)->delete();
+        Transaction::on($connectionName)->where('user_id', $ownerId)->delete();
+        User::on($connectionName)->find($ownerId)?->delete();
+        DB::purge($connectionName);
+    }
+});

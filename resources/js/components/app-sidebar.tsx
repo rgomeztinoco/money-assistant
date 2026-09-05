@@ -1,12 +1,12 @@
 import { Link } from '@inertiajs/react';
 import {
-    BarChart3,
-    LayoutGrid,
-    ListChecks,
-    MailSearch,
-    Store,
+    Files,
+    House,
+    Mail,
     ReceiptText,
+    Store,
     Tags,
+    TrendingUp,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -20,36 +20,43 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
+import { home } from '@/routes';
+import { index as breakdownIndex } from '@/routes/breakdown';
 import { index as categoriesIndex } from '@/routes/categories';
+import { gmail as gmailDataSource } from '@/routes/data_sources';
 import { index as merchantRulesIndex } from '@/routes/merchant_rules';
-import { index as parserProfilesIndex } from '@/routes/parser_profiles';
-import { show as reportShow } from '@/routes/reports';
-import { index as reviewQueueIndex } from '@/routes/review_queue';
-import { index as transactionsIndex } from '@/routes/transactions';
+import { index as statementImportsIndex } from '@/routes/statement_imports';
+import { index as trendsIndex } from '@/routes/trends';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
     const mainNavItems: NavItem[] = [
         {
-            title: 'Dashboard',
-            href: dashboard(),
-            icon: LayoutGrid,
+            title: 'Home',
+            href: home(),
+            icon: House,
         },
         {
-            title: 'Transactions',
-            href: transactionsIndex(),
+            title: 'Breakdown',
+            href: breakdownIndex(),
             icon: ReceiptText,
         },
         {
-            title: 'Review Queue',
-            href: reviewQueueIndex(),
-            icon: ListChecks,
+            title: 'Trends',
+            href: trendsIndex(),
+            icon: TrendingUp,
+        },
+    ];
+    const dataSourceNavItems: NavItem[] = [
+        {
+            title: 'Gmail',
+            href: gmailDataSource(),
+            icon: Mail,
         },
         {
-            title: 'Reports',
-            href: reportShow('PEN'),
-            icon: BarChart3,
+            title: 'Statement Imports',
+            href: statementImportsIndex(),
+            icon: Files,
         },
     ];
     const manageNavItems: NavItem[] = [
@@ -63,11 +70,6 @@ export function AppSidebar() {
             href: merchantRulesIndex(),
             icon: Store,
         },
-        {
-            title: 'Parser Profiles',
-            href: parserProfilesIndex(),
-            icon: MailSearch,
-        },
     ];
 
     return (
@@ -76,7 +78,7 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href={dashboard()} prefetch>
+                            <Link href={home()} prefetch>
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>
@@ -85,8 +87,17 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
-                <NavMain items={manageNavItems} label="Manage" />
+                <NavMain items={mainNavItems} label="Money" />
+                <NavMain
+                    items={dataSourceNavItems}
+                    label="Data sources"
+                    priority="secondary"
+                />
+                <NavMain
+                    items={manageNavItems}
+                    label="Manage"
+                    priority="secondary"
+                />
             </SidebarContent>
 
             <SidebarFooter>

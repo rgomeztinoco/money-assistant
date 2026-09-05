@@ -1,9 +1,9 @@
 <?php
 
-use App\Http\Controllers\Settings\ConnectionsController;
 use App\Http\Controllers\Settings\GmailAuthorizationController;
 use App\Http\Controllers\Settings\GmailConnectionCheckController;
 use App\Http\Controllers\Settings\GmailFailedMessageRetryController;
+use App\Http\Controllers\Settings\GmailImportController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Middleware\RequirePasswordForOwnerEmailChange;
@@ -28,21 +28,24 @@ Route::middleware(['auth'])->group(function () {
         ->middleware([RequirePassword::class, 'throttle:6,1'])
         ->name('user-password.update');
 
-    Route::get('settings/connections/gmail/authorize', [GmailAuthorizationController::class, 'create'])
+    Route::get('data-sources/gmail/authorize', [GmailAuthorizationController::class, 'create'])
         ->middleware(RequirePassword::class)
         ->name('gmail.authorization.create');
 
     Route::get('settings/connections/gmail/callback', [GmailAuthorizationController::class, 'store'])
         ->name('gmail.authorization.store');
 
-    Route::get('settings/connections', [ConnectionsController::class, 'edit'])
+    Route::get('settings/connections', fn () => to_route('data_sources.gmail'))
         ->name('connections.edit');
 
-    Route::post('settings/connections/gmail/check', GmailConnectionCheckController::class)
+    Route::post('data-sources/gmail/check', GmailConnectionCheckController::class)
         ->name('gmail.connection.check');
 
+    Route::post('data-sources/gmail/import', GmailImportController::class)
+        ->name('gmail.import');
+
     Route::post(
-        'settings/connections/gmail/failed-messages/{gmailMessageDiscovery}/retry',
+        'data-sources/gmail/failed-messages/{gmailMessageDiscovery}/retry',
         GmailFailedMessageRetryController::class,
     )->name('gmail.failed_messages.retry');
 

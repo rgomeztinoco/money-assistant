@@ -86,14 +86,14 @@ final class SynchronizeGmailConnection
 
     private function synchronizeInitialWindow(GmailConnection $connection): void
     {
-        $afterEpochSeconds = $connection->connected_at
+        $afterEpochSeconds = $connection->initial_sync_starts_at
             ->subMinutes(self::INITIAL_SCAN_OVERLAP_MINUTES)
             ->getTimestamp();
         $messageIds = $this->messageIdsAfter(
             $connection->access_token,
             $afterEpochSeconds,
         );
-        $messageIdsReceivedSinceConnection = [];
+        $messageIdsWithinImportWindow = [];
 
         foreach ($messageIds as $messageId) {
             $identity = $this->gmail->messageIdentity(
@@ -101,14 +101,14 @@ final class SynchronizeGmailConnection
                 $messageId,
             );
 
-            if ($identity->receivedAt->greaterThanOrEqualTo($connection->connected_at)) {
-                $messageIdsReceivedSinceConnection[] = $identity->messageId;
+            if ($identity->receivedAt->greaterThanOrEqualTo($connection->initial_sync_starts_at)) {
+                $messageIdsWithinImportWindow[] = $identity->messageId;
             }
         }
 
         $this->persistDiscoveredMessages(
             connection: $connection,
-            messageIds: $messageIdsReceivedSinceConnection,
+            messageIds: $messageIdsWithinImportWindow,
             historyId: $connection->history_id,
             completesInitialSync: true,
         );
@@ -163,10 +163,10 @@ final class SynchronizeGmailConnection
 
         $recoveryStartsAt = $connection->last_successful_sync_at
             ?->subMinutes(self::INITIAL_SCAN_OVERLAP_MINUTES)
-            ?? $connection->connected_at;
+            ?? $connection->initial_sync_starts_at;
 
-        if ($recoveryStartsAt->lessThan($connection->connected_at)) {
-            $recoveryStartsAt = $connection->connected_at;
+        if ($recoveryStartsAt->lessThan($connection->initial_sync_starts_at)) {
+            $recoveryStartsAt = $connection->initial_sync_starts_at;
         }
 
         $this->persistDiscoveredMessages(
@@ -182,11 +182,17 @@ final class SynchronizeGmailConnection
 
     private function reconcileRecentMessages(GmailConnection $connection): void
     {
+        $reconciliationStartsAt = now()->subDays(self::RECONCILIATION_DAYS);
+
+        if ($reconciliationStartsAt->lessThan($connection->initial_sync_starts_at)) {
+            $reconciliationStartsAt = $connection->initial_sync_starts_at;
+        }
+
         $this->persistDiscoveredMessages(
             connection: $connection,
             messageIds: $this->messageIdsAfter(
                 $connection->access_token,
-                now()->subDays(self::RECONCILIATION_DAYS)->getTimestamp(),
+                $reconciliationStartsAt->getTimestamp(),
             ),
             historyId: $connection->history_id,
             completesInitialSync: false,

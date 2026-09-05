@@ -15,11 +15,13 @@ test('the owner creates a Merchant Rule that categorizes a future Transaction', 
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
     $this->actingAs($owner);
 
-    visit('/merchant-rules')
+    visit('/')
+        ->click('[data-test="nav-merchant-rules"]')
+        ->assertPathIs('/merchant-rules')
         ->assertSee('Existing Transactions never change.')
         ->fill('Merchant', 'CAFÉ—Central')
         ->select('Category', 'Groceries')
-        ->select('Transaction kind', 'Purchase')
+        ->select('Transaction kind', 'Spending')
         ->select('Currency', 'PEN')
         ->press('Create Merchant Rule')
         ->assertSee('Merchant Rule created.')
@@ -28,10 +30,10 @@ test('the owner creates a Merchant Rule that categorizes a future Transaction', 
         ->assertNoConsoleLogs();
 
     visit('/transactions')
-        ->fill('Amount in minor units', '1250')
+        ->fill('Amount', '12.50')
         ->fill('Merchant or short description', "cafe\u{0301} central")
         ->select('Currency', 'PEN')
-        ->select('Transaction kind', 'purchase')
+        ->select('Movement kind', 'spending')
         ->press('Record Transaction')
         ->assertSee('Transaction recorded.')
         ->assertNoJavaScriptErrors()

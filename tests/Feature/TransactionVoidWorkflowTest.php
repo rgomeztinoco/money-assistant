@@ -11,7 +11,7 @@ test('the owner can void a Transaction', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
         ->for($owner, 'owner')
-        ->purchase()
+        ->spending()
         ->usd()
         ->create(['amount_minor' => 12345]);
 
@@ -64,8 +64,8 @@ test('restoring the same Transaction returns exactly one contribution to the led
 
     expect($transaction->refresh()->voided_at)->toBeNull();
 })->with([
-    'USD purchase' => [TransactionKind::Purchase, Currency::Usd],
-    'PEN purchase' => [TransactionKind::Purchase, Currency::Pen],
+    'USD purchase' => [TransactionKind::Spending, Currency::Usd],
+    'PEN purchase' => [TransactionKind::Spending, Currency::Pen],
     'USD Refund' => [TransactionKind::Refund, Currency::Usd],
     'PEN Refund' => [TransactionKind::Refund, Currency::Pen],
 ]);

@@ -7,7 +7,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the owner records purchases and Refunds with exact USD and PEN totals', function () {
+test('the owner records every money movement kind in plain language', function () {
     $owner = User::factory()->create();
     $this->actingAs($owner);
 
@@ -16,34 +16,40 @@ test('the owner records purchases and Refunds with exact USD and PEN totals', fu
     $page
         ->assertSee('No Transactions yet')
         ->press('Record Transaction')
-        ->assertSee('The amount minor field is required.')
-        ->assertSee('The merchant description field is required.')
-        ->fill('Amount in minor units', '12345')
-        ->fill('Merchant or short description', 'USD purchase')
-        ->select('Currency', 'USD')
-        ->select('Transaction kind', 'purchase')
-        ->press('Record Transaction')
-        ->assertSee('$ 123.45')
-        ->assertSee('USD purchase')
-        ->fill('Amount in minor units', '2345')
-        ->fill('Merchant or short description', 'USD Refund')
-        ->select('Transaction kind', 'refund')
-        ->press('Record Transaction')
-        ->assertSee('$ 23.45')
-        ->assertSee('USD Refund')
-        ->fill('Amount in minor units', '9876')
-        ->fill('Merchant or short description', 'PEN purchase')
+        ->assertSee('The amount field is required.')
+        ->assertSee('The description field is required.')
+        ->fill('Amount', '123.45')
+        ->fill('Merchant or short description', 'Mortgage payment')
         ->select('Currency', 'PEN')
-        ->select('Transaction kind', 'purchase')
+        ->select('Movement kind', 'spending')
+        ->select('Money direction', 'debit')
         ->press('Record Transaction')
-        ->assertSee('S/ 98.76')
-        ->assertSee('PEN purchase')
-        ->fill('Amount in minor units', '876')
-        ->fill('Merchant or short description', 'PEN Refund')
-        ->select('Transaction kind', 'refund')
+        ->assertSee('S/ 123.45')
+        ->assertSee('Mortgage payment')
+        ->assertSee('Spending')
+        ->fill('Amount', '23.45')
+        ->fill('Merchant or short description', 'Travel reimbursement')
+        ->select('Movement kind', 'refund')
+        ->select('Money direction', 'credit')
+        ->press('Record Transaction')
+        ->assertSee('Travel reimbursement')
+        ->assertSee('Refund or reimbursement')
+        ->fill('Amount', '98.76')
+        ->fill('Merchant or short description', 'Monthly salary')
+        ->select('Movement kind', 'income')
+        ->select('Income source', 'salary')
+        ->press('Record Transaction')
+        ->assertSee('Monthly salary')
+        ->assertSee('Income')
+        ->fill('Amount', '8.76')
+        ->fill('Merchant or short description', 'Moved to savings')
+        ->select('Movement kind', 'transfer')
+        ->select('Money direction', 'debit')
+        ->select('Transfer purpose', 'savings')
         ->press('Record Transaction')
         ->assertSee('S/ 8.76')
-        ->assertSee('PEN Refund')
+        ->assertSee('Moved to savings')
+        ->assertSee('Transfer · Moved to savings')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
@@ -52,11 +58,11 @@ test('the owner can void and restore a Transaction explicitly from the ledger', 
     $owner = User::factory()->create();
     Transaction::factory()
         ->for($owner, 'owner')
-        ->purchase()
+        ->spending()
         ->usd()
         ->create([
             'amount_minor' => 12345,
-            'merchant_description' => 'Mistaken market entry',
+            'description' => 'Mistaken market entry',
         ]);
     $this->actingAs($owner);
 

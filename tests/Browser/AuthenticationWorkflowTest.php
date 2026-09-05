@@ -29,6 +29,18 @@ function installVirtualPasskeyAuthenticator(PendingAwaitablePage $page): void
     iterator_to_array(Client::instance()->execute(playwrightBrowserContextGuid($page), 'credentialsInstall'));
 }
 
+function disableBrowserPasskeySupport(PendingAwaitablePage $page): void
+{
+    $page->page()->context()->addInitScript(<<<'JS'
+        Object.defineProperty(globalThis, 'PublicKeyCredential', {
+            configurable: true,
+            value: undefined,
+        });
+    JS);
+
+    $page->script('window.location.reload()');
+}
+
 /**
  * @return array<int, array<string, mixed>>
  */
@@ -92,15 +104,23 @@ test('the owner can register a passkey and use it for normal sign-in', function 
     configurePasskeysForBrowser($page);
     installVirtualPasskeyAuthenticator($page);
 
+    $page
+        ->assertTitle('Sign in - Money Assistant')
+        ->assertSee('Money Assistant')
+        ->assertSee('Owner sign in')
+        ->assertSee('Sign in with a passkey')
+        ->assertSee('Recovery password fallback');
+
     recoverAccessWithPassword($page, $owner);
 
-    $page->assertPathIs('/dashboard');
+    $page->assertPathIs('/');
 
     markBrowserSessionAsPasswordConfirmed($owner);
     $page->script('window.location.assign("/settings/security")');
 
     $page
         ->assertPathIs('/settings/security')
+        ->assertSee('Update recovery password')
         ->press('Add passkey')
         ->type('Passkey name', 'Browser test passkey')
         ->press('Register passkey')
@@ -120,8 +140,8 @@ test('the owner can register a passkey and use it for normal sign-in', function 
         ->click(['noWaitAfter' => true]);
 
     $page
-        ->assertPathIs('/dashboard')
-        ->assertSee('Dashboard')
+        ->assertPathIs('/')
+        ->assertSee('Home')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
@@ -133,8 +153,41 @@ test('the owner can recover access using the recovery password', function () {
     recoverAccessWithPassword($page, $owner);
 
     $page
-        ->assertPathIs('/dashboard')
-        ->assertSee('Dashboard')
+        ->assertPathIs('/')
+        ->assertSee('Home')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+});
+
+test('a browser without passkey support offers only recovery password sign-in', function () {
+    $owner = User::factory()->create();
+    $page = visit('/login');
+
+    disableBrowserPasskeySupport($page);
+
+    $page
+        ->assertTitle('Sign in - Money Assistant')
+        ->assertSee('Money Assistant')
+        ->assertSee('Recovery password')
+        ->assertSee('Sign in with recovery password')
+        ->assertDontSee('Sign in with a passkey')
+        ->assertDontSee('Recovery password fallback');
+
+    recoverAccessWithPassword($page, $owner);
+
+    $page
+        ->assertPathIs('/')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+
+    $page->script('window.location.assign("/user/confirm-password")');
+
+    $page
+        ->assertPathIs('/user/confirm-password')
+        ->assertSee('Confirm your identity to continue in this secure area.')
+        ->assertSee('Recovery password')
+        ->assertDontSee('Confirm with passkey')
+        ->assertDontSee('Use a passkey when available')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
@@ -145,7 +198,7 @@ test('the owner session expires after two hours of inactivity', function () {
 
     recoverAccessWithPassword($page, $owner);
 
-    $page->assertPathIs('/dashboard');
+    $page->assertPathIs('/');
 
     $this->travel(121)->minutes();
 
@@ -155,7 +208,7 @@ test('the owner session expires after two hours of inactivity', function () {
 
     $page
         ->assertPathIs('/login')
-        ->assertSee('Log in to your account')
+        ->assertSee('Owner sign in')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
@@ -167,7 +220,7 @@ test('sensitive operations reject stale authentication', function () {
     recoverAccessWithPassword($page, $owner);
 
     $page
-        ->assertPathIs('/dashboard')
+        ->assertPathIs('/')
         ->script('window.location.assign("/settings/security")');
 
     $page

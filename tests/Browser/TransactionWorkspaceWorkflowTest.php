@@ -15,15 +15,15 @@ test('filters, selection, and scroll context persist while directly editing a Tr
     $category = Category::factory()->for($owner, 'owner')->create();
     Transaction::factory()
         ->for($owner, 'owner')
-        ->provisional([ReviewableTransactionField::MerchantDescription])
+        ->provisional([ReviewableTransactionField::Description])
         ->create([
             'category_id' => $category->id,
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
-            'merchant_description' => 'Neighborhood market',
+            'description' => 'Neighborhood market',
             'occurred_on' => '2026-07-20',
         ]);
     Transaction::factory()->for($owner, 'owner')->create([
-        'merchant_description' => 'Unrelated pharmacy',
+        'description' => 'Unrelated pharmacy',
         'occurred_on' => '2026-07-21',
     ]);
     $this->actingAs($owner);
@@ -32,6 +32,7 @@ test('filters, selection, and scroll context persist while directly editing a Tr
 
     $page
         ->fill('Merchant or description', 'Neighborhood')
+        ->press('Advanced filters')
         ->select('Filter review state', 'outstanding')
         ->press('Apply filters')
         ->assertQueryStringHas('search', 'Neighborhood')
@@ -51,9 +52,10 @@ test('filters, selection, and scroll context persist while directly editing a Tr
         ->assertQueryStringHas('review_state', 'outstanding')
         ->assertQueryStringHas('selected')
         ->assertSee('Edit current Transaction')
-        ->assertSee('Included in spending totals')
+        ->assertSee('Included in Net Spending')
+        ->press('Advanced details')
         ->assertSee('Provenance')
-        ->fill('Edit merchant or description', 'Neighborhood market Lima')
+        ->fill('Edit description', 'Neighborhood market Lima')
         ->press('Save Transaction')
         ->assertSee('Transaction updated.')
         ->assertQueryStringHas('search', 'Neighborhood')
@@ -66,20 +68,55 @@ test('filters, selection, and scroll context persist while directly editing a Tr
         ->assertNoConsoleLogs();
 });
 
-test('the Review Queue inspector can be dismissed without immediately reopening', function () {
+test('the Transaction workspace stays actionable without horizontal scrolling on mobile', function () {
     $owner = User::factory()->create();
-    Transaction::factory()
-        ->for($owner, 'owner')
-        ->provisional([ReviewableTransactionField::MerchantDescription])
-        ->create(['merchant_description' => 'Review me']);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'description' => 'Mobile market',
+        'amount_minor' => 1_250,
+        'occurred_on' => '2026-08-21',
+    ]);
+    Transaction::factory()->count(25)->for($owner, 'owner')->spending()->usd()->create([
+        'description' => 'Earlier mobile market',
+        'occurred_on' => '2026-08-20',
+    ]);
     $this->actingAs($owner);
 
-    $page = visit('/review-queue');
+    $page = visit('/transactions')->on()->iPhone14Pro();
+
+    $page
+        ->assertSee('Mobile market')
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
+        ->press('Inspect')
+        ->assertSee('Transaction summary')
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
+        ->press('Close')
+        ->press('Void')
+        ->assertSee('Transaction voided.')
+        ->press('Next')
+        ->assertQueryStringHas('page', '2')
+        ->assertSee('Earlier mobile market')
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
+        ->press('Previous')
+        ->assertSee('Mobile market')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+});
+
+test('the Review Queue inspector can be dismissed without immediately reopening', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()
+        ->for($owner, 'owner')
+        ->provisional([ReviewableTransactionField::Description])
+        ->create(['description' => 'Review me']);
+    $this->actingAs($owner);
+
+    $page = visit("/review-queue?item=transaction:{$transaction->id}&selected={$transaction->id}");
 
     $page
         ->assertSee('Edit current Transaction')
         ->press('Close')
-        ->assertQueryStringHas('inspector', 'closed')
+        ->assertQueryStringMissing('selected')
+        ->assertSee('Review me')
         ->assertDontSee('Edit current Transaction')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();

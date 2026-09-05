@@ -5,11 +5,14 @@ namespace App\Actions\Ledger;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\ExactInteger;
+use App\IncomeSource;
 use App\Models\Transaction;
 use App\Models\User;
+use App\MovementDirection;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
 use App\TransactionKind;
+use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -23,30 +26,33 @@ class UpdateTransaction
         int $amountMinor,
         Currency $currency,
         TransactionKind $kind,
-        string $merchantDescription,
-        ?string $paymentInstrumentLabel,
-        ?string $paymentInstrumentLastFour,
+        MovementDirection $direction,
+        string $description,
+        ?IncomeSource $incomeSource,
+        ?TransferPurpose $transferPurpose,
+        ?string $instrumentLabel,
+        ?string $instrumentLastFour,
         ?int $categoryId,
-        ?int $originalPurchaseId,
+        ?int $originalSpendingId,
         bool $removeReceiptBreakdown,
     ): Transaction {
-        return DB::transaction(function () use ($owner, $transaction, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription, $paymentInstrumentLabel, $paymentInstrumentLastFour, $categoryId, $originalPurchaseId, $removeReceiptBreakdown): Transaction {
+        return DB::transaction(function () use ($owner, $transaction, $occurredOn, $amountMinor, $currency, $kind, $direction, $description, $incomeSource, $transferPurpose, $instrumentLabel, $instrumentLastFour, $categoryId, $originalSpendingId, $removeReceiptBreakdown): Transaction {
             $currentTransaction = Transaction::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->whereKey($transaction->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
             $previousKind = $currentTransaction->kind;
-            $previousOriginalPurchaseId = $currentTransaction->original_purchase_id;
+            $previousOriginalSpendingId = $currentTransaction->original_spending_id;
             $amountChanged = $currentTransaction->amount_minor !== $amountMinor;
-            $normalizedMerchantDescription = Str::squish($merchantDescription);
+            $normalizedDescription = Str::squish($description);
             $remainingProvisionalFields = $this->remainingProvisionalFields(
                 $currentTransaction,
                 $occurredOn,
                 $amountMinor,
                 $currency,
                 $kind,
-                $normalizedMerchantDescription,
+                $normalizedDescription,
             );
 
             $currentTransaction->forceFill([
@@ -54,18 +60,21 @@ class UpdateTransaction
                 'amount_minor' => $amountMinor,
                 'currency' => $currency,
                 'kind' => $kind,
-                'merchant_description' => $normalizedMerchantDescription,
-                'payment_instrument_label' => filled($paymentInstrumentLabel)
-                    ? Str::squish($paymentInstrumentLabel)
+                'direction' => $direction,
+                'income_source' => $kind === TransactionKind::Income ? $incomeSource : null,
+                'transfer_purpose' => $kind === TransactionKind::Transfer ? $transferPurpose : null,
+                'description' => $normalizedDescription,
+                'instrument_label' => filled($instrumentLabel)
+                    ? Str::squish($instrumentLabel)
                     : null,
-                'payment_instrument_last_four' => $paymentInstrumentLastFour,
-                'category_id' => $categoryId,
-                'category_assignment_provenance' => $categoryId === null
+                'instrument_last_four' => $instrumentLastFour,
+                'category_id' => $kind->supportsCategory() ? $categoryId : null,
+                'category_assignment_provenance' => ! $kind->supportsCategory() || $categoryId === null
                     ? null
                     : CategoryAssignmentProvenance::Owner,
                 'merchant_rule_id' => null,
-                'original_purchase_id' => $kind === TransactionKind::Refund
-                    ? $originalPurchaseId
+                'original_spending_id' => $kind === TransactionKind::Refund
+                    ? $originalSpendingId
                     : null,
                 'provisional_fields' => $remainingProvisionalFields,
             ]);
@@ -74,19 +83,19 @@ class UpdateTransaction
             );
             $currentTransaction->save();
 
-            if ($removeReceiptBreakdown && $amountChanged) {
+            if ((! $kind->supportsCategory()) || ($removeReceiptBreakdown && $amountChanged)) {
                 $currentTransaction->receiptBreakdown()->lockForUpdate()->first()?->delete();
             }
 
-            $affectedPurchaseIds = array_filter([
-                $previousKind === TransactionKind::Purchase ? $currentTransaction->id : null,
-                $previousOriginalPurchaseId,
-                $currentTransaction->kind === TransactionKind::Purchase ? $currentTransaction->id : null,
-                $currentTransaction->original_purchase_id,
+            $affectedSpendingIds = array_filter([
+                $previousKind === TransactionKind::Spending ? $currentTransaction->id : null,
+                $previousOriginalSpendingId,
+                $currentTransaction->kind === TransactionKind::Spending ? $currentTransaction->id : null,
+                $currentTransaction->original_spending_id,
             ]);
 
-            foreach (array_unique($affectedPurchaseIds) as $purchaseId) {
-                $this->refreshLinkedRefundReviewReasons($owner, $purchaseId);
+            foreach (array_unique($affectedSpendingIds) as $spendingId) {
+                $this->refreshLinkedRefundReviewReasons($owner, $spendingId);
             }
 
             return $currentTransaction->refresh();
@@ -98,54 +107,54 @@ class UpdateTransaction
     {
         if (
             $refund->kind !== TransactionKind::Refund
-            || $refund->original_purchase_id === null
+            || $refund->original_spending_id === null
             || $refund->voided_at !== null
         ) {
             return [];
         }
 
-        $purchase = Transaction::query()
-            ->whereKey($refund->original_purchase_id)
+        $spending = Transaction::query()
+            ->whereKey($refund->original_spending_id)
             ->lockForUpdate()
             ->firstOrFail();
 
-        if ($purchase->kind !== TransactionKind::Purchase || $purchase->voided_at !== null) {
+        if ($spending->kind !== TransactionKind::Spending || $spending->voided_at !== null) {
             return [];
         }
         $linkedRefundTotal = ExactInteger::from((string) Transaction::query()
-            ->where('original_purchase_id', $purchase->getKey())
+            ->where('original_spending_id', $spending->getKey())
             ->where('id', '<>', $refund->getKey())
             ->whereNull('voided_at')
             ->sum('amount_minor'))
             ->add(ExactInteger::from($refund->amount_minor));
         $reviewReasons = [];
 
-        if ($linkedRefundTotal->compare(ExactInteger::from($purchase->amount_minor)) === 1) {
-            $reviewReasons[] = RefundRelationshipReviewReason::CumulativeRefundsExceedPurchase->value;
+        if ($linkedRefundTotal->compare(ExactInteger::from($spending->amount_minor)) === 1) {
+            $reviewReasons[] = RefundRelationshipReviewReason::CumulativeRefundsExceedSpending->value;
         }
 
-        if ($purchase->receiptBreakdown()->exists()) {
+        if ($spending->receiptBreakdown()->exists()) {
             $reviewReasons[] = RefundRelationshipReviewReason::ReceiptBreakdownAllocationRequiresReview->value;
         }
 
         return $reviewReasons;
     }
 
-    private function refreshLinkedRefundReviewReasons(User $owner, int $purchaseId): void
+    private function refreshLinkedRefundReviewReasons(User $owner, int $spendingId): void
     {
-        $purchase = Transaction::query()
+        $spending = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
-            ->whereKey($purchaseId)
+            ->whereKey($spendingId)
             ->lockForUpdate()
             ->first();
 
-        if ($purchase === null) {
+        if ($spending === null) {
             return;
         }
 
         $linkedRefunds = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
-            ->where('original_purchase_id', $purchaseId)
+            ->where('original_spending_id', $spendingId)
             ->lockForUpdate()
             ->get();
         $activeRefundTotal = ExactInteger::from(0);
@@ -159,14 +168,14 @@ class UpdateTransaction
         $reviewReasons = [];
 
         if (
-            $purchase->kind === TransactionKind::Purchase
-            && $purchase->voided_at === null
+            $spending->kind === TransactionKind::Spending
+            && $spending->voided_at === null
         ) {
-            if ($activeRefundTotal->compare(ExactInteger::from($purchase->amount_minor)) === 1) {
-                $reviewReasons[] = RefundRelationshipReviewReason::CumulativeRefundsExceedPurchase->value;
+            if ($activeRefundTotal->compare(ExactInteger::from($spending->amount_minor)) === 1) {
+                $reviewReasons[] = RefundRelationshipReviewReason::CumulativeRefundsExceedSpending->value;
             }
 
-            if ($purchase->receiptBreakdown()->exists()) {
+            if ($spending->receiptBreakdown()->exists()) {
                 $reviewReasons[] = RefundRelationshipReviewReason::ReceiptBreakdownAllocationRequiresReview->value;
             }
         }
@@ -189,17 +198,17 @@ class UpdateTransaction
         int $amountMinor,
         Currency $currency,
         TransactionKind $kind,
-        string $merchantDescription,
+        string $description,
     ): array {
         return array_values(array_filter(
             $transaction->provisional_fields,
-            function (string $fieldName) use ($transaction, $occurredOn, $amountMinor, $currency, $kind, $merchantDescription): bool {
+            function (string $fieldName) use ($transaction, $occurredOn, $amountMinor, $currency, $kind, $description): bool {
                 return ! match (ReviewableTransactionField::from($fieldName)) {
                     ReviewableTransactionField::OccurredOn => $transaction->occurred_on->toDateString() !== $occurredOn->toDateString(),
                     ReviewableTransactionField::AmountMinor => $transaction->amount_minor !== $amountMinor,
                     ReviewableTransactionField::Currency => $transaction->currency !== $currency,
                     ReviewableTransactionField::Kind => $transaction->kind !== $kind,
-                    ReviewableTransactionField::MerchantDescription => $transaction->merchant_description !== $merchantDescription,
+                    ReviewableTransactionField::Description => $transaction->description !== $description,
                 };
             },
         ));

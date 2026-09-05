@@ -43,6 +43,7 @@ class ResolveTransactionFieldRequest extends FormRequest
                 'required',
                 ...$this->replacementValueRules($field),
             ],
+            'next_review_item' => ['nullable', 'string', 'regex:/^(transaction|line-item):[1-9][0-9]*$/'],
         ];
     }
 
@@ -56,7 +57,7 @@ class ResolveTransactionFieldRequest extends FormRequest
             ReviewableTransactionField::AmountMinor,
             ReviewableTransactionField::Currency,
             ReviewableTransactionField::Kind,
-            ReviewableTransactionField::MerchantDescription => [
+            ReviewableTransactionField::Description => [
                 function (string $attribute, mixed $value, Closure $fail) use ($field): void {
                     try {
                         $field->normalizeReplacement($value);

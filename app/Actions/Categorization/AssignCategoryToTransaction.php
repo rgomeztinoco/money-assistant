@@ -28,6 +28,12 @@ final class AssignCategoryToTransaction
                     ->lockForUpdate()
                     ->first();
 
+            if (! $transaction->kind->supportsCategory()) {
+                throw ValidationException::withMessages([
+                    'category_id' => 'Categories are available only for Spending and Refund Transactions.',
+                ]);
+            }
+
             if ($categoryId !== null && $category === null) {
                 throw ValidationException::withMessages([
                     'category_id' => 'Choose an active Category owned by you.',

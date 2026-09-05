@@ -1,99 +1,60 @@
 <?php
 
-use App\Models\Category;
-use App\Models\GmailConnection;
-use App\Models\Transaction;
 use App\Models\User;
-use App\ReviewableTransactionField;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the Dashboard directs attention into filtered owner workflows', function () {
-    $owner = User::factory()->create();
-    $category = Category::factory()->for($owner, 'owner')->create();
-    Transaction::factory()->for($owner, 'owner')->purchase()->usd()->create([
-        'occurred_on' => now()->toDateString(),
-        'amount_minor' => 1_000,
-        'merchant_description' => 'Coffee shop',
-        'category_id' => $category->id,
-    ]);
-    Transaction::factory()->for($owner, 'owner')->purchase()->pen()->provisional([
-        ReviewableTransactionField::MerchantDescription,
-    ])->create([
-        'occurred_on' => now()->toDateString(),
-        'amount_minor' => 2_500,
-        'merchant_description' => 'Neighborhood market',
-        'category_id' => $category->id,
-    ]);
-    GmailConnection::factory()->for($owner, 'owner')->create([
-        'gmail_account_identity' => 'owner@example.com',
-    ]);
-    $this->actingAs($owner);
+test('the account menu retains Settings outside the permanent product navigation', function () {
+    $this->actingAs(User::factory()->create(['name' => '  élena   山田  ']));
 
-    $page = visit('/dashboard');
-
-    $page
-        ->assertSee('PEN current-period total')
-        ->assertSee('USD current-period total')
-        ->assertSee('$ 10.00')
-        ->assertSee('S/ 25.00')
-        ->assertDontSee('Combined spending')
-        ->assertSee('Recent Transactions')
-        ->assertSee('Coffee shop')
-        ->assertSee('Neighborhood market')
-        ->assertSee('Review Queue')
-        ->assertSee('Gmail')
-        ->assertSee('Connected')
-        ->assertSee('owner@example.com')
-        ->click('[data-test="dashboard-spending-usd"]')
-        ->assertPathIs('/transactions')
-        ->assertQueryStringHas('currency', 'USD')
-        ->assertQueryStringHas(
-            'date_from',
-            now()->startOfMonth()->toDateString(),
-        )
-        ->assertQueryStringHas('date_to', now()->toDateString())
-        ->script('window.location.assign("/dashboard")');
-
-    $page
-        ->click('[data-test="dashboard-review-link"]')
-        ->assertPathIs('/review-queue')
-        ->script('window.location.assign("/dashboard")');
-
-    $page
-        ->click('[data-test="dashboard-gmail-link"]')
-        ->assertPathIs('/settings/connections')
-        ->script('window.location.assign("/dashboard")');
-
-    $page
-        ->click('[data-test="nav-reports"]')
-        ->assertPathIs('/reports/PEN')
-        ->assertSee('PEN spending report')
-        ->click('[data-test="report-switch-usd"]')
-        ->assertPathIs('/reports/USD')
-        ->assertSee('USD spending report')
+    visit('/')
+        ->assertSeeIn('[data-slot="avatar-fallback"]', 'É山')
+        ->click('[data-test="sidebar-menu-button"]')
+        ->assertSee('Settings')
+        ->assertDontSee('Dashboard')
+        ->assertDontSee('Reports')
+        ->click('Settings')
+        ->assertPathIs('/settings/profile')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
 
-test('navigation exposes only retained personal-finance destinations', function () {
-    $owner = User::factory()->create();
-    $this->actingAs($owner);
+test('secondary navigation keeps data sources and management destinations reachable', function () {
+    $this->actingAs(User::factory()->create());
 
-    $page = visit('/dashboard');
+    foreach ([
+        ['nav-home', 'Home', '/'],
+        ['nav-breakdown', 'Breakdown', '/breakdown'],
+        ['nav-trends', 'Trends', '/trends'],
+    ] as [$testId, $label, $path]) {
+        visit('/')
+            ->assertSeeIn('[data-test="'.$testId.'"]', $label)
+            ->click('[data-test="'.$testId.'"]')
+            ->assertPathIs($path)
+            ->assertAttribute('[data-test="'.$testId.'"]', 'data-active', 'true')
+            ->assertNoJavaScriptErrors()
+            ->assertNoConsoleLogs();
+    }
 
-    $page
-        ->assertSee('Dashboard')
-        ->assertSee('Transactions')
-        ->assertSee('Review Queue')
-        ->assertSee('Reports')
-        ->assertSee('Categories')
-        ->assertSee('Merchant Rules')
-        ->assertSee('Parser Profiles')
-        ->click('[data-test="sidebar-menu-button"]')
-        ->assertSee('Settings')
+    foreach ([
+        ['nav-gmail', 'Gmail', '/data-sources/gmail'],
+        ['nav-statement-imports', 'Statement Imports', '/statement-imports'],
+        ['nav-categories', 'Categories', '/categories'],
+        ['nav-merchant-rules', 'Merchant Rules', '/merchant-rules'],
+    ] as [$testId, $label, $path]) {
+        visit('/')
+            ->assertSeeIn('[data-test="'.$testId.'"]', $label)
+            ->click('[data-test="'.$testId.'"]')
+            ->assertPathIs($path)
+            ->assertAttribute('[data-test="'.$testId.'"]', 'data-active', 'true')
+            ->assertNoJavaScriptErrors()
+            ->assertNoConsoleLogs();
+    }
+
+    visit('/')
+        ->assertDontSee('Parser Profiles')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

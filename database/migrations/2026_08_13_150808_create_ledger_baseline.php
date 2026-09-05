@@ -50,13 +50,16 @@ return new class extends Migration
             $table->bigInteger('amount_minor');
             $table->string('currency', 3);
             $table->string('kind', 16);
-            $table->string('merchant_description');
-            $table->string('payment_instrument_label', 100)->nullable();
-            $table->string('payment_instrument_last_four', 4)->nullable();
+            $table->string('direction', 8);
+            $table->string('income_source', 32)->nullable();
+            $table->string('transfer_purpose', 32)->nullable();
+            $table->string('description');
+            $table->string('instrument_label', 100)->nullable();
+            $table->string('instrument_last_four', 4)->nullable();
             $table->timestamp('confirmed_at');
             $table->jsonb('provisional_fields')->default('[]');
             $table->timestamp('voided_at')->nullable();
-            $table->foreignId('original_purchase_id')->nullable()->constrained('transactions')->restrictOnDelete();
+            $table->foreignId('original_spending_id')->nullable()->constrained('transactions')->restrictOnDelete();
             $table->jsonb('refund_relationship_review_reasons')->default('[]');
             $table->foreignId('category_id')->nullable()->constrained()->restrictOnDelete();
             $table->string('category_assignment_provenance', 32)->nullable();
@@ -72,11 +75,8 @@ return new class extends Migration
 
         Schema::create('receipt_breakdowns', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->foreignId('transaction_id')->unique()->constrained()->cascadeOnDelete();
             $table->timestamps();
-
-            $table->index('user_id');
         });
 
         Schema::create('line_items', function (Blueprint $table): void {

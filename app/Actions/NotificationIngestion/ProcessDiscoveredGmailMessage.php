@@ -8,7 +8,7 @@ use App\Models\SpendingNotificationReference;
 final class ProcessDiscoveredGmailMessage
 {
     public function __construct(
-        private ReadParserProfileSourceMessage $readSourceMessage,
+        private ReadGmailMessage $readGmailMessage,
         private ProcessSpendingNotification $processSpendingNotification,
     ) {}
 
@@ -35,7 +35,7 @@ final class ProcessDiscoveredGmailMessage
         $reference = $this->processSpendingNotification->handle(
             owner: $owner,
             discovery: $discovery,
-            message: $this->readSourceMessage->sourceMessage($owner, $discovery),
+            message: $this->readGmailMessage->handle($owner, $discovery),
         );
 
         $discovery->forceFill([

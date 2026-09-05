@@ -16,11 +16,6 @@ enum SpendingNotificationProcessingOutcome: string
         return $this === self::Unsupported;
     }
 
-    public function isRecoverable(): bool
-    {
-        return in_array($this, [self::Unsupported, self::Failed], true);
-    }
-
     /** @return list<string> */
     public static function failureValues(): array
     {

@@ -26,6 +26,7 @@ class GmailConnectionFactory extends Factory
             'access_token_expires_at' => now()->addHour(),
             'granted_scopes' => ['https://www.googleapis.com/auth/gmail.readonly'],
             'connected_at' => now()->subDay(),
+            'initial_sync_starts_at' => now()->subDays(GmailConnection::DEFAULT_IMPORT_LOOKBACK_DAYS),
             'last_successful_check_at' => now()->subMinute(),
             'last_check_failed_at' => null,
             'reauthorization_required_at' => null,

@@ -13,7 +13,7 @@ enum ReviewableTransactionField: string
     case AmountMinor = 'amount_minor';
     case Currency = 'currency';
     case Kind = 'kind';
-    case MerchantDescription = 'merchant_description';
+    case Description = 'description';
 
     public function label(): string
     {
@@ -22,7 +22,7 @@ enum ReviewableTransactionField: string
             self::AmountMinor => 'Amount in minor units',
             self::Currency => 'Currency',
             self::Kind => 'Transaction kind',
-            self::MerchantDescription => 'Merchant or description',
+            self::Description => 'Merchant or description',
         };
     }
 
@@ -33,7 +33,7 @@ enum ReviewableTransactionField: string
             self::AmountMinor => (string) $transaction->amount_minor,
             self::Currency => $transaction->currency->value,
             self::Kind => $transaction->kind->value,
-            self::MerchantDescription => $transaction->merchant_description,
+            self::Description => $transaction->description,
         };
     }
 
@@ -45,7 +45,7 @@ enum ReviewableTransactionField: string
             self::AmountMinor => $this->normalizeAmountMinor($value),
             self::Currency => $this->normalizeCurrency($value),
             self::Kind => $this->normalizeKind($value),
-            self::MerchantDescription => $this->normalizeMerchantDescription($value),
+            self::Description => $this->normalizeDescription($value),
         };
     }
 
@@ -96,17 +96,21 @@ enum ReviewableTransactionField: string
     {
         $kind = is_string($value) ? TransactionKind::tryFrom($value) : null;
 
-        return $kind ?? throw new InvalidArgumentException('The replacement Transaction kind is not supported.');
+        if (! in_array($kind, [TransactionKind::Spending, TransactionKind::Refund], true)) {
+            throw new InvalidArgumentException('Review Queue kind corrections support only Spending or Refund.');
+        }
+
+        return $kind;
     }
 
-    private function normalizeMerchantDescription(mixed $value): string
+    private function normalizeDescription(mixed $value): string
     {
-        $merchantDescription = is_string($value) ? Str::squish($value) : '';
+        $description = is_string($value) ? Str::squish($value) : '';
 
-        if ($merchantDescription === '' || Str::length($merchantDescription) > 255) {
+        if ($description === '' || Str::length($description) > 255) {
             throw new InvalidArgumentException('A replacement merchant or short description is required.');
         }
 
-        return $merchantDescription;
+        return $description;
     }
 }

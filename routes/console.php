@@ -21,7 +21,7 @@ Schedule::call(
     fn () => app(DispatchGmailSynchronizations::class)
         ->handle(GmailSynchronizationType::Incremental),
 )
-    ->everyFiveMinutes()
+    ->cron(GmailSynchronizationType::INCREMENTAL_SCHEDULE)
     ->name('gmail-history-synchronization')
     ->onOneServer()
     ->withoutOverlapping();

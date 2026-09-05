@@ -12,15 +12,17 @@ final class InstallStartingTaxonomy
      */
     private const array TAXONOMY = [
         'Food & Drink' => ['Groceries', 'Restaurants', 'Delivery', 'Cafés'],
-        'Housing' => ['Rent', 'Utilities', 'Household', 'Home Improvements'],
-        'Transport' => ['Public Transit', 'Ride-hailing', 'Fuel', 'Parking & Tolls', 'Vehicle Maintenance'],
+        'Housing' => ['Rent', 'Utilities', 'Household Services', 'Household Goods', 'Home Improvements'],
+        'Transport' => ['Public Transit', 'Ride-hailing', 'Vehicle Maintenance'],
         'Health & Wellness' => ['Medical', 'Pharmacy', 'Fitness'],
-        'Shopping & Personal' => ['Clothing', 'Electronics', 'Personal Care'],
-        'Entertainment' => ['Subscriptions', 'Events', 'Hobbies'],
-        'Education' => ['Courses', 'Books & Supplies'],
+        'Shopping & Personal' => ['Clothing', 'Electronics', 'Personal Care', 'Software & Digital Services'],
+        'Entertainment' => ['Events', 'Hobbies'],
+        'Subscriptions' => ['Software', 'Media'],
+        'Education' => ['Courses', 'Books'],
         'Travel' => ['Flights', 'Lodging', 'Local Transport'],
         'Gifts & Donations' => [],
         'Fees & Taxes' => ['Bank Fees', 'Taxes'],
+        'Insurance' => ['Health', 'Life'],
         'Pets' => ['Food', 'Veterinary', 'Medicine', 'Supplies & Care'],
     ];
 

@@ -13,7 +13,7 @@ test('the owner creates a child Category and assigns it from the Transaction ins
     $owner = User::factory()->create();
     Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     $transaction = Transaction::factory()->for($owner, 'owner')->create([
-        'merchant_description' => 'Neighborhood bistro',
+        'description' => 'Neighborhood bistro',
     ]);
     $this->actingAs($owner);
 
@@ -39,6 +39,7 @@ test('the owner creates a child Category and assigns it from the Transaction ins
         ->press('Save Transaction')
         ->assertSee('Transaction updated.')
         ->assertSee('Dining out')
+        ->press('Advanced details')
         ->assertSee('Assigned by '.$owner->name)
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();

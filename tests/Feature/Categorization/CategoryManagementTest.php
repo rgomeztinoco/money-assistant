@@ -1,10 +1,13 @@
 <?php
 
+use App\Actions\Breakdown\ReadBreakdown;
 use App\CategoryAssignmentProvenance;
+use App\Currency;
 use App\Models\Category;
 use App\Models\MerchantRule;
 use App\Models\Transaction;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('the owner can read create rename and move the two-level taxonomy directly', function () {
@@ -96,13 +99,18 @@ test('renaming and moving a Category preserves its identity on historical Transa
                 ->where('selected_transaction.category.id', $category->id)
                 ->where('selected_transaction.category.name', 'Coffee Shops')));
 
-    $this->get(route('reports.show', [
-        'currency' => 'PEN',
-        'date_from' => today()->startOfMonth()->toDateString(),
-    ]))
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('category_groups.0.category.name', 'Travel')
-            ->where('category_groups.0.children.0.category.name', 'Coffee Shops'));
+    $report = app(ReadBreakdown::class)->handle(
+        owner: $owner,
+        filters: [
+            'currency' => Currency::Pen->value,
+            'period' => 'custom',
+            'date_from' => CarbonImmutable::today()->startOfMonth()->toDateString(),
+            'date_to' => CarbonImmutable::today()->toDateString(),
+        ],
+    );
+
+    expect($report['category_groups'][0]['category']['name'])->toBe('Travel')
+        ->and($report['category_groups'][0]['children'][0]['category']['name'])->toBe('Coffee Shops');
 });
 
 test('archiving a Category preserves current assignments and reporting while preventing future assignments', function () {
@@ -137,14 +145,19 @@ test('archiving a Category preserves current assignments and reporting while pre
                 ->where('selected_transaction.category.id', $child->id)
                 ->where('selected_transaction.category.name', 'Dining')));
 
-    $this->get(route('reports.show', [
-        'currency' => 'PEN',
-        'date_from' => today()->startOfMonth()->toDateString(),
-    ]))
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('category_groups.0.category.name', 'Food')
-            ->where('category_groups.0.children.0.category.name', 'Dining')
-            ->where('category_groups.0.children.0.category.archived', true));
+    $report = app(ReadBreakdown::class)->handle(
+        owner: $owner,
+        filters: [
+            'currency' => Currency::Pen->value,
+            'period' => 'custom',
+            'date_from' => CarbonImmutable::today()->startOfMonth()->toDateString(),
+            'date_to' => CarbonImmutable::today()->toDateString(),
+        ],
+    );
+
+    expect($report['category_groups'][0]['category']['name'])->toBe('Food')
+        ->and($report['category_groups'][0]['children'][0]['category']['name'])->toBe('Dining')
+        ->and($report['category_groups'][0]['children'][0]['amount_minor']['PEN'])->toBe((string) $transaction->amount_minor);
 
     $otherTransaction = Transaction::factory()->for($owner, 'owner')->create();
 
@@ -152,12 +165,9 @@ test('archiving a Category preserves current assignments and reporting while pre
         'category_id' => $child->id,
     ])->assertSessionHasErrors('category_id');
 
-    $this->post(route('merchant_rules.store'), [
-        'merchant' => 'Archived target',
+    $this->put(route('breakdown.transactions.classification.update', $otherTransaction), [
         'category_id' => $child->id,
-        'transaction_kind' => null,
-        'currency' => null,
-        'enabled' => true,
+        'apply_to_matching' => true,
     ])->assertSessionHasErrors('category_id');
 });
 

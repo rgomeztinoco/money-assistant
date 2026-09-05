@@ -15,24 +15,24 @@ test('the owner directly edits the current Transaction and clears reviewed field
     $category = Category::factory()->for($owner, 'owner')->create();
     $purchase = Transaction::factory()
         ->for($owner, 'owner')
-        ->purchase()
+        ->spending()
         ->pen()
-        ->create(['merchant_description' => 'Original purchase']);
+        ->create(['description' => 'Original purchase']);
     $transaction = Transaction::factory()
         ->for($owner, 'owner')
-        ->purchase()
+        ->spending()
         ->usd()
         ->provisional([
             ReviewableTransactionField::OccurredOn,
             ReviewableTransactionField::AmountMinor,
             ReviewableTransactionField::Currency,
             ReviewableTransactionField::Kind,
-            ReviewableTransactionField::MerchantDescription,
+            ReviewableTransactionField::Description,
         ])
         ->create([
             'occurred_on' => '2026-07-01',
             'amount_minor' => 1_000,
-            'merchant_description' => 'Imported merchant',
+            'description' => 'Imported merchant',
         ]);
 
     $this->actingAs($owner)
@@ -41,11 +41,11 @@ test('the owner directly edits the current Transaction and clears reviewed field
             'amount_minor' => 2_500,
             'currency' => 'PEN',
             'kind' => 'refund',
-            'merchant_description' => 'Corrected merchant',
-            'payment_instrument_label' => 'Visa',
-            'payment_instrument_last_four' => '4242',
+            'description' => 'Corrected merchant',
+            'instrument_label' => 'Visa',
+            'instrument_last_four' => '4242',
             'category_id' => $category->id,
-            'original_purchase_id' => $purchase->id,
+            'original_spending_id' => $purchase->id,
         ])
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('transactions.index'));
@@ -56,13 +56,32 @@ test('the owner directly edits the current Transaction and clears reviewed field
         ->and($transaction->amount_minor)->toBe(2_500)
         ->and($transaction->currency->value)->toBe('PEN')
         ->and($transaction->kind->value)->toBe('refund')
-        ->and($transaction->merchant_description)->toBe('Corrected merchant')
-        ->and($transaction->payment_instrument_label)->toBe('Visa')
-        ->and($transaction->payment_instrument_last_four)->toBe('4242')
+        ->and($transaction->description)->toBe('Corrected merchant')
+        ->and($transaction->instrument_label)->toBe('Visa')
+        ->and($transaction->instrument_last_four)->toBe('4242')
         ->and($transaction->category_id)->toBe($category->id)
         ->and($transaction->category_assignment_provenance)->toBe(CategoryAssignmentProvenance::Owner)
-        ->and($transaction->original_purchase_id)->toBe($purchase->id)
+        ->and($transaction->original_spending_id)->toBe($purchase->id)
         ->and($transaction->provisional_fields)->toBe([]);
+});
+
+test('the owner edits a Transaction amount in currency units', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->create([
+        'amount_minor' => 1_000,
+    ]);
+
+    $this->actingAs($owner)
+        ->put(route('transactions.update', $transaction), [
+            'occurred_on' => $transaction->occurred_on->toDateString(),
+            'amount' => '25.01',
+            'currency' => 'PEN',
+            'kind' => $transaction->kind->value,
+            'description' => $transaction->description,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($transaction->refresh()->amount_minor)->toBe(2_501);
 });
 
 test('the ledger is paginated and loads the selected inspector separately', function () {
@@ -82,11 +101,11 @@ test('the ledger is paginated and loads the selected inspector separately', func
             ->where('pagination.current_page', 1)
             ->where('pagination.per_page', 25)
             ->where('pagination.total', 26)
-            ->missing('purchase_options')
+            ->missing('spending_options')
             ->missing('selected_transaction')
             ->loadDeferredProps(fn (Assert $deferred) => $deferred
                 ->where('selected_transaction.id', $transactions->last()->id)
-                ->has('selected_transaction.purchase_options')),
+                ->has('selected_transaction.spending_options')),
         );
 
     $this->get(route('transactions.index', ['page' => 2]))
@@ -101,7 +120,7 @@ test('editing a purchase recalculates its Refund review state from current amoun
     $category = Category::factory()->for($owner, 'owner')->create();
     $purchase = Transaction::factory()
         ->for($owner, 'owner')
-        ->purchase()
+        ->spending()
         ->usd()
         ->create([
             'amount_minor' => 10_000,
@@ -116,9 +135,9 @@ test('editing a purchase recalculates its Refund review state from current amoun
             'amount_minor' => 12_000,
             'category_id' => $category->id,
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
-            'original_purchase_id' => $purchase->id,
+            'original_spending_id' => $purchase->id,
             'refund_relationship_review_reasons' => [
-                RefundRelationshipReviewReason::CumulativeRefundsExceedPurchase->value,
+                RefundRelationshipReviewReason::CumulativeRefundsExceedSpending->value,
             ],
         ]);
 
@@ -127,8 +146,8 @@ test('editing a purchase recalculates its Refund review state from current amoun
             'occurred_on' => $purchase->occurred_on->toDateString(),
             'amount_minor' => 15_000,
             'currency' => 'USD',
-            'kind' => 'purchase',
-            'merchant_description' => $purchase->merchant_description,
+            'kind' => 'spending',
+            'description' => $purchase->description,
             'category_id' => $category->id,
         ])
         ->assertSessionHasNoErrors();
@@ -142,11 +161,11 @@ test('editing one uncertain field preserves unrelated current review flags', fun
         ->for($owner, 'owner')
         ->provisional([
             ReviewableTransactionField::AmountMinor,
-            ReviewableTransactionField::MerchantDescription,
+            ReviewableTransactionField::Description,
         ])
         ->create([
             'amount_minor' => 1_000,
-            'merchant_description' => 'Uncertain merchant',
+            'description' => 'Uncertain merchant',
         ]);
 
     $this->actingAs($owner)
@@ -155,7 +174,7 @@ test('editing one uncertain field preserves unrelated current review flags', fun
             'amount_minor' => 1_000,
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
-            'merchant_description' => 'Correct merchant',
+            'description' => 'Correct merchant',
         ])
         ->assertSessionHasNoErrors();
 
@@ -179,7 +198,7 @@ test('an amount edit cannot silently invalidate an existing Receipt Breakdown', 
             'amount_minor' => 1_200,
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
-            'merchant_description' => $transaction->merchant_description,
+            'description' => $transaction->description,
         ])
         ->assertSessionHasErrors('amount_minor');
 
@@ -191,7 +210,7 @@ test('an amount edit cannot silently invalidate an existing Receipt Breakdown', 
         'amount_minor' => 1_200,
         'currency' => $transaction->currency->value,
         'kind' => $transaction->kind->value,
-        'merchant_description' => $transaction->merchant_description,
+        'description' => $transaction->description,
         'remove_receipt_breakdown' => true,
     ])->assertSessionHasNoErrors();
 
@@ -206,10 +225,10 @@ test('a Transaction cannot be edited without the authenticated owner', function 
         'occurred_on' => '2026-08-10',
         'amount_minor' => 2_500,
         'currency' => 'PEN',
-        'kind' => 'purchase',
-        'merchant_description' => 'Not allowed',
+        'kind' => 'spending',
+        'description' => 'Not allowed',
     ])
         ->assertRedirect(route('login'));
 
-    expect($transaction->refresh()->merchant_description)->not->toBe('Not allowed');
+    expect($transaction->refresh()->description)->not->toBe('Not allowed');
 });

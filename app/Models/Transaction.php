@@ -4,7 +4,10 @@ namespace App\Models;
 
 use App\CategoryAssignmentProvenance;
 use App\Currency;
+use App\IncomeSource;
+use App\MovementDirection;
 use App\TransactionKind;
+use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Database\Factories\TransactionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -23,13 +26,16 @@ use Illuminate\Support\Carbon;
  * @property int $amount_minor
  * @property Currency $currency
  * @property TransactionKind $kind
- * @property string $merchant_description
- * @property string|null $payment_instrument_label
- * @property string|null $payment_instrument_last_four
+ * @property MovementDirection $direction
+ * @property IncomeSource|null $income_source
+ * @property TransferPurpose|null $transfer_purpose
+ * @property string $description
+ * @property string|null $instrument_label
+ * @property string|null $instrument_last_four
  * @property CarbonImmutable $confirmed_at
  * @property list<string> $provisional_fields
  * @property CarbonImmutable|null $voided_at
- * @property int|null $original_purchase_id
+ * @property int|null $original_spending_id
  * @property list<string> $refund_relationship_review_reasons
  * @property int|null $category_id
  * @property CategoryAssignmentProvenance|null $category_assignment_provenance
@@ -46,13 +52,16 @@ use Illuminate\Support\Carbon;
     'amount_minor',
     'currency',
     'kind',
-    'merchant_description',
-    'payment_instrument_label',
-    'payment_instrument_last_four',
+    'direction',
+    'income_source',
+    'transfer_purpose',
+    'description',
+    'instrument_label',
+    'instrument_last_four',
     'confirmed_at',
     'provisional_fields',
     'voided_at',
-    'original_purchase_id',
+    'original_spending_id',
     'refund_relationship_review_reasons',
     'category_id',
     'category_assignment_provenance',
@@ -87,12 +96,18 @@ class Transaction extends Model
         return $this->hasMany(SpendingNotificationReference::class);
     }
 
+    /** @return HasOne<StatementMovement, $this> */
+    public function statementMovement(): HasOne
+    {
+        return $this->hasOne(StatementMovement::class);
+    }
+
     /**
      * @return BelongsTo<Transaction, $this>
      */
-    public function originalPurchase(): BelongsTo
+    public function originalSpending(): BelongsTo
     {
-        return $this->belongsTo(self::class, 'original_purchase_id');
+        return $this->belongsTo(self::class, 'original_spending_id');
     }
 
     /**
@@ -100,7 +115,7 @@ class Transaction extends Model
      */
     public function linkedRefunds(): HasMany
     {
-        return $this->hasMany(self::class, 'original_purchase_id');
+        return $this->hasMany(self::class, 'original_spending_id');
     }
 
     /**
@@ -124,6 +139,7 @@ class Transaction extends Model
     public function scopeWhereCategoryRequiresReview(Builder $query): Builder
     {
         return $query
+            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->whereNull('category_id')
             ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
                 ->whereHas('lineItems'));
@@ -163,6 +179,9 @@ class Transaction extends Model
             'amount_minor' => 'integer',
             'currency' => Currency::class,
             'kind' => TransactionKind::class,
+            'direction' => MovementDirection::class,
+            'income_source' => IncomeSource::class,
+            'transfer_purpose' => TransferPurpose::class,
             'confirmed_at' => 'immutable_datetime',
             'provisional_fields' => 'array',
             'voided_at' => 'immutable_datetime',

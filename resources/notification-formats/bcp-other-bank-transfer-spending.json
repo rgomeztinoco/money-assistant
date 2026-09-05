@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-bcp-other-bank-transfer-spending",
+        "received_at": "2026-08-06T14:00:00Z",
+        "from_address": "notificaciones@notificacionesbcp.com.pe",
+        "subject": "Constancia de Transferencia a Otros Bancos - Servicio de Notificaciones BCP",
+        "authentication": {
+            "spf": { "result": "pass", "domain": null },
+            "dkim": { "result": "pass", "domain": null },
+            "dmarc": { "result": "pass", "domain": null }
+        },
+        "html_body": "<html><body><p>Hola CLIENTE EJEMPLO,</p><p>Realizaste una transferencia de S/ 25.00 desde tu Cuenta digital.</p><h2>Montos</h2><p>Monto enviado</p><p>S/ 25.00</p><p>Comisión</p><p>S/ 2.50</p><p>Total cobrado</p><p>S/ 27.50</p><h2>Datos de la operación</h2><p>Operación realizada</p><p>Transferencia a otros bancos</p><p>Fecha y hora</p><p>06 de Agosto de 2026 - 08:33 AM</p><p>Enviado a</p><p>SAMPLE RECIPIENT</p><p>Banco destino</p><p>Sample Bank</p><p>Desde</p><p>Cuenta digital **** 1234</p><p>Mensaje</p></body></html>"
+    },
+    "expected": {
+        "format_identifier": "bcp.other_bank_transfer_spending",
+        "occurred_on": "2026-08-06",
+        "amount_minor": 2750,
+        "currency": "PEN",
+        "kind": "spending",
+        "direction": "debit",
+        "income_source": null,
+        "transfer_purpose": null,
+        "description": "Transfer to SAMPLE RECIPIENT",
+        "instrument_label": "BCP account",
+        "instrument_last_four": "1234"
+    }
+}

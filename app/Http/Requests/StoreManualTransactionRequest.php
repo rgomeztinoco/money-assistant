@@ -3,14 +3,31 @@
 namespace App\Http\Requests;
 
 use App\Currency;
+use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
+use App\IncomeSource;
+use App\MovementDirection;
 use App\TransactionKind;
-use Closure;
+use App\TransferPurpose;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StoreManualTransactionRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        if ($this->missing('direction')) {
+            $this->merge([
+                'direction' => match ($this->input('kind')) {
+                    TransactionKind::Refund->value, TransactionKind::Income->value => MovementDirection::Credit->value,
+                    default => MovementDirection::Debit->value,
+                },
+            ]);
+        }
+    }
+
+    use InteractsWithCurrencyAmountInput;
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -28,22 +45,31 @@ class StoreManualTransactionRequest extends FormRequest
     {
         return [
             'occurred_on' => ['required', 'date_format:Y-m-d'],
-            'amount_minor' => [
-                'required',
-                function (string $attribute, mixed $value, Closure $fail): void {
-                    if (! is_int($value) && (! is_string($value) || ! ctype_digit($value))) {
-                        $fail('The :attribute field must be an integer.');
-                    }
-                },
-                'integer',
-                'min:1',
-                'max:'.PHP_INT_MAX,
-            ],
+            ...$this->currencyAmountInputRules(),
             'currency' => ['required', Rule::enum(Currency::class)],
             'kind' => ['required', Rule::enum(TransactionKind::class)],
-            'merchant_description' => ['required', 'string', 'max:255'],
-            'payment_instrument_label' => ['nullable', 'string', 'max:100'],
-            'payment_instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
+            'direction' => ['required', Rule::enum(MovementDirection::class)],
+            'income_source' => [
+                Rule::requiredIf($this->input('kind') === TransactionKind::Income->value),
+                'nullable',
+                Rule::enum(IncomeSource::class),
+            ],
+            'transfer_purpose' => [
+                Rule::requiredIf($this->input('kind') === TransactionKind::Transfer->value),
+                'nullable',
+                Rule::enum(TransferPurpose::class),
+            ],
+            'description' => ['required', 'string', 'max:255'],
+            'instrument_label' => ['nullable', 'string', 'max:100'],
+            'instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'amount.required_without' => 'The amount field is required.',
         ];
     }
 }

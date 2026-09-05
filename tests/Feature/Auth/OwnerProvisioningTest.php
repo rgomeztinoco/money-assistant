@@ -16,8 +16,8 @@ test('an operator can provision the Owner Account', function () {
     expect($owner->name)->toBe('Ricardo')
         ->and($owner->email)->toBe('owner@example.com')
         ->and(Hash::check('a-secure-recovery-password', $owner->password))->toBeTrue()
-        ->and($owner->categories()->count())->toBe(44)
-        ->and($owner->categories()->whereNull('parent_id')->count())->toBe(11)
+        ->and($owner->categories()->count())->toBe(49)
+        ->and($owner->categories()->whereNull('parent_id')->count())->toBe(13)
         ->and($owner->categories()->where('name', 'Other')->exists())->toBeFalse();
 
     $paths = $owner->categories()
@@ -32,12 +32,11 @@ test('an operator can provision the Owner Account', function () {
 
     expect($paths)->toBe([
         'Education',
-        'Education > Books & Supplies',
+        'Education > Books',
         'Education > Courses',
         'Entertainment',
         'Entertainment > Events',
         'Entertainment > Hobbies',
-        'Entertainment > Subscriptions',
         'Fees & Taxes',
         'Fees & Taxes > Bank Fees',
         'Fees & Taxes > Taxes',
@@ -53,9 +52,13 @@ test('an operator can provision the Owner Account', function () {
         'Health & Wellness > Pharmacy',
         'Housing',
         'Housing > Home Improvements',
-        'Housing > Household',
+        'Housing > Household Goods',
+        'Housing > Household Services',
         'Housing > Rent',
         'Housing > Utilities',
+        'Insurance',
+        'Insurance > Health',
+        'Insurance > Life',
         'Pets',
         'Pets > Food',
         'Pets > Medicine',
@@ -65,9 +68,11 @@ test('an operator can provision the Owner Account', function () {
         'Shopping & Personal > Clothing',
         'Shopping & Personal > Electronics',
         'Shopping & Personal > Personal Care',
+        'Shopping & Personal > Software & Digital Services',
+        'Subscriptions',
+        'Subscriptions > Media',
+        'Subscriptions > Software',
         'Transport',
-        'Transport > Fuel',
-        'Transport > Parking & Tolls',
         'Transport > Public Transit',
         'Transport > Ride-hailing',
         'Transport > Vehicle Maintenance',

@@ -8,31 +8,28 @@ use App\Models\Transaction;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('an exact Merchant Rule categorizes only matching future Transactions after Unicode punctuation case and whitespace normalization', function () {
+test('a contextual exact merchant match categorizes matching Transactions after Unicode punctuation case and whitespace normalization', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     $historicalTransaction = Transaction::factory()->for($owner, 'owner')->create([
-        'merchant_description' => 'Café Central',
-        'kind' => 'purchase',
+        'description' => 'Café Central',
+        'kind' => 'spending',
         'currency' => 'PEN',
     ]);
     $this->actingAs($owner)
-        ->post(route('merchant_rules.store'), [
-            'merchant' => 'CAFÉ—CENTRAL',
+        ->put(route('breakdown.transactions.classification.update', $historicalTransaction), [
             'category_id' => $category->id,
-            'transaction_kind' => 'purchase',
-            'currency' => 'PEN',
-            'enabled' => true,
+            'apply_to_matching' => true,
         ])->assertSessionHasNoErrors();
 
-    expect($historicalTransaction->fresh()->category_id)->toBeNull();
+    expect($historicalTransaction->fresh()->category_id)->toBe($category->id);
 
     $this->post(route('transactions.store'), [
         'occurred_on' => '2026-08-10',
         'amount_minor' => 1_000,
         'currency' => 'PEN',
-        'kind' => 'purchase',
-        'merchant_description' => "  cafe\u{0301}...central  ",
+        'kind' => 'spending',
+        'description' => "  cafe\u{0301}...central  ",
     ])->assertSessionHasNoErrors();
 
     $futureTransaction = Transaction::query()->latest('id')->firstOrFail();
@@ -68,28 +65,27 @@ test('disabled and out-of-scope Merchant Rules leave new Transactions Uncategori
             'amount_minor' => 1_000,
             'currency' => $currency,
             'kind' => $kind,
-            'merchant_description' => 'Scoped Merchant',
+            'description' => 'Scoped Merchant',
         ])->assertSessionHasNoErrors();
 
         return Transaction::query()->latest('id')->firstOrFail();
     };
 
-    expect($record('refund', 'USD')->category_id)->toBeNull();
+    $matchingTransaction = $record('refund', 'USD');
 
-    $this->patch(route('merchant_rules.update', $rule), [
-        'merchant' => $merchant,
+    expect($matchingTransaction->category_id)->toBeNull();
+
+    $this->put(route('breakdown.transactions.classification.update', $matchingTransaction), [
         'category_id' => $category->id,
-        'transaction_kind' => 'refund',
-        'currency' => 'USD',
-        'enabled' => true,
+        'apply_to_matching' => true,
     ])->assertSessionHasNoErrors();
 
-    expect($record('purchase', 'USD')->category_id)->toBeNull()
+    expect($record('spending', 'USD')->category_id)->toBeNull()
         ->and($record('refund', 'PEN')->category_id)->toBeNull()
         ->and($record('refund', 'USD')->category_id)->toBe($category->id);
 });
 
-test('deleting a Merchant Rule preserves its truthful current Category provenance', function () {
+test('retiring a Merchant Rule preserves its truthful current Category provenance', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     $rule = MerchantRule::factory()->for($owner, 'owner')->for($category)->create();
@@ -99,9 +95,8 @@ test('deleting a Merchant Rule preserves its truthful current Category provenanc
         'merchant_rule_id' => $rule->id,
     ]);
 
-    $this->actingAs($owner)
-        ->delete(route('merchant_rules.destroy', $rule))
-        ->assertSessionHasNoErrors();
+    $this->actingAs($owner);
+    $rule->delete();
 
     $this->assertSoftDeleted($rule);
 

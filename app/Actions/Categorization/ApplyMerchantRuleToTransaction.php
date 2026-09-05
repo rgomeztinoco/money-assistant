@@ -21,6 +21,10 @@ final class ApplyMerchantRuleToTransaction
                 ->lockForUpdate()
                 ->sole();
 
+            if (! $lockedTransaction->kind->supportsCategory()) {
+                return $lockedTransaction;
+            }
+
             if ($lockedTransaction->category_id !== null
                 || $lockedTransaction->category_assignment_provenance !== null) {
                 return $lockedTransaction;
@@ -28,7 +32,7 @@ final class ApplyMerchantRuleToTransaction
 
             $matchingRules = MerchantRule::query()
                 ->where('user_id', $lockedTransaction->user_id)
-                ->where('merchant_key', $this->merchantNormalizer->normalize($lockedTransaction->merchant_description))
+                ->where('merchant_key', $this->merchantNormalizer->normalize($lockedTransaction->description))
                 ->where('enabled', true)
                 ->whereHas('category', fn (Builder $query) => $query->whereNull('archived_at'))
                 ->where(fn (Builder $query) => $query

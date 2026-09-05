@@ -26,8 +26,8 @@ export default function Security(props: Props) {
             <div className="space-y-6">
                 <Heading
                     variant="small"
-                    title="Update password"
-                    description="Ensure your account is using a long, random password to stay secure"
+                    title="Update recovery password"
+                    description="Keep a long, unique fallback for times when a passkey is unavailable"
                 />
 
                 <Form
@@ -47,7 +47,9 @@ export default function Security(props: Props) {
                     {({ errors, processing }) => (
                         <>
                             <div className="grid gap-2">
-                                <Label htmlFor="password">New password</Label>
+                                <Label htmlFor="password">
+                                    New recovery password
+                                </Label>
 
                                 <PasswordInput
                                     id="password"
@@ -55,7 +57,7 @@ export default function Security(props: Props) {
                                     name="password"
                                     className="mt-1 block w-full"
                                     autoComplete="new-password"
-                                    placeholder="New password"
+                                    placeholder="New recovery password"
                                     passwordrules={props.passwordRules}
                                 />
 
@@ -64,7 +66,7 @@ export default function Security(props: Props) {
 
                             <div className="grid gap-2">
                                 <Label htmlFor="password_confirmation">
-                                    Confirm password
+                                    Confirm recovery password
                                 </Label>
 
                                 <PasswordInput
@@ -72,7 +74,7 @@ export default function Security(props: Props) {
                                     name="password_confirmation"
                                     className="mt-1 block w-full"
                                     autoComplete="new-password"
-                                    placeholder="Confirm password"
+                                    placeholder="Confirm recovery password"
                                     passwordrules={props.passwordRules}
                                 />
 

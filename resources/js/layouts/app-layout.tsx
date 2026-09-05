@@ -1,16 +1,33 @@
-import AppLayoutTemplate from '@/layouts/app/app-sidebar-layout';
-import type { BreadcrumbItem } from '@/types';
+import { usePage } from '@inertiajs/react';
+import { AppSidebar } from '@/components/app-sidebar';
+import { AppSidebarHeader } from '@/components/app-sidebar-header';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import type { AppLayoutProps } from '@/types';
 
 export default function AppLayout({
-    breadcrumbs = [],
     children,
-}: {
-    breadcrumbs?: BreadcrumbItem[];
-    children: React.ReactNode;
-}) {
+    breadcrumbs = [],
+    headerActions,
+    viewportConstrained = false,
+}: AppLayoutProps) {
+    const { sidebarOpen } = usePage().props;
+
     return (
-        <AppLayoutTemplate breadcrumbs={breadcrumbs}>
-            {children}
-        </AppLayoutTemplate>
+        <SidebarProvider defaultOpen={sidebarOpen}>
+            <AppSidebar />
+            <SidebarInset
+                className={
+                    viewportConstrained
+                        ? 'overflow-x-hidden xl:h-[calc(100svh-(--spacing(4)))] xl:max-h-[calc(100svh-(--spacing(4)))] xl:overflow-hidden'
+                        : 'overflow-x-hidden'
+                }
+            >
+                <AppSidebarHeader
+                    breadcrumbs={breadcrumbs}
+                    actions={headerActions}
+                />
+                {children}
+            </SidebarInset>
+        </SidebarProvider>
     );
 }

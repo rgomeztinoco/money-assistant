@@ -1,0 +1,11 @@
+Estado de Cuenta de Ahorros Cuenta Digital BCP
+FECHA PROC. FECHA VALOR  DESCRIPCION                     CARGOS / DEBE   ABONOS / HABER
+DEL  01/02/26  AL  28/02/26
+            SALDO ANTERIOR                                                100.00
+01FEB 01FEB WARDA                                  20.00
+02FEB 02FEB WARDA                                                   5.00
+03FEB 03FEB IMPUESTO ITF                            0.01
+04FEB 04FEB Pago YAPE a 123456                     10.00
+05FEB 05FEB DEPOSITO                                                50.00
+    30.01    55.00
+                   124.99

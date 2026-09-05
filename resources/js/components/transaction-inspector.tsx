@@ -29,8 +29,34 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
-import { formatMinorUnits } from '@/lib/format-minor-units';
-import type { CategoryOption, SelectedTransaction } from '@/types';
+import {
+    currencyUnitsToMinorUnits,
+    formatMinorUnits,
+    minorUnitsToCurrencyUnits,
+} from '@/lib/format-minor-units';
+import {
+    incomeSourceOptions,
+    movementDescription,
+    movementDirectionOptions,
+    movementKindFromValue,
+    movementKindOptions,
+    movementSupportsCategory,
+    transferPurposeOptions,
+} from '@/lib/money-movement';
+import type {
+    CategoryOption,
+    SelectedTransaction,
+    TransactionKind,
+} from '@/types';
+
+type EditableLineItem = {
+    clientId: string;
+    description: string;
+    quantity: string | null;
+    unitPrice: string;
+    lineTotal: string;
+    category: { id: number; name: string } | null;
+};
 
 function ReceiptBreakdownSection({
     transaction,
@@ -40,19 +66,27 @@ function ReceiptBreakdownSection({
     categoryOptions: CategoryOption[];
 }) {
     const breakdown = transaction.receipt_breakdown;
-    const [lineItems, setLineItems] = useState(
+    const [lineItems, setLineItems] = useState<EditableLineItem[]>(
         () =>
             breakdown?.line_items.map((lineItem) => ({
-                ...lineItem,
                 clientId: lineItem.id,
+                description: lineItem.description,
+                quantity: lineItem.quantity,
+                unitPrice:
+                    lineItem.unit_price_minor === null
+                        ? ''
+                        : minorUnitsToCurrencyUnits(lineItem.unit_price_minor),
+                lineTotal: minorUnitsToCurrencyUnits(lineItem.line_total_minor),
+                category: lineItem.category,
             })) ?? [
                 {
-                    id: '',
                     clientId: crypto.randomUUID(),
-                    description: transaction.merchant_description,
+                    description: transaction.description,
                     quantity: null,
-                    unit_price_minor: null,
-                    line_total_minor: transaction.amount_minor,
+                    unitPrice: '',
+                    lineTotal: minorUnitsToCurrencyUnits(
+                        transaction.amount_minor,
+                    ),
                     category:
                         transaction.category === null
                             ? null
@@ -69,8 +103,8 @@ function ReceiptBreakdownSection({
         field:
             | 'description'
             | 'quantity'
-            | 'unit_price_minor'
-            | 'line_total_minor'
+            | 'unitPrice'
+            | 'lineTotal'
             | 'category_id',
         value: string,
     ) {
@@ -97,6 +131,24 @@ function ReceiptBreakdownSection({
             }),
         );
     }
+
+    let lineItemTotal = 0n;
+    let hasValidLineItemTotals = true;
+
+    for (const lineItem of lineItems) {
+        const lineTotal = currencyUnitsToMinorUnits(lineItem.lineTotal);
+
+        if (lineTotal === null) {
+            hasValidLineItemTotals = false;
+            break;
+        }
+
+        lineItemTotal += lineTotal;
+    }
+
+    const reconciliationDelta = hasValidLineItemTotals
+        ? BigInt(transaction.amount_minor) - lineItemTotal
+        : null;
 
     return (
         <section className="grid gap-3">
@@ -181,20 +233,19 @@ function ReceiptBreakdownSection({
                                         <Label
                                             htmlFor={`receipt-line-${lineItem.clientId}-unit-price`}
                                         >
-                                            Unit price in minor units
+                                            Unit price
                                         </Label>
                                         <Input
                                             id={`receipt-line-${lineItem.clientId}-unit-price`}
-                                            name={`line_items[${index}][unit_price_minor]`}
+                                            name={`line_items[${index}][unit_price]`}
                                             type="number"
-                                            step="1"
-                                            value={
-                                                lineItem.unit_price_minor ?? ''
-                                            }
+                                            step="0.01"
+                                            inputMode="decimal"
+                                            value={lineItem.unitPrice}
                                             onChange={(event) =>
                                                 updateLineItem(
                                                     lineItem.clientId,
-                                                    'unit_price_minor',
+                                                    'unitPrice',
                                                     event.target.value,
                                                 )
                                             }
@@ -205,18 +256,19 @@ function ReceiptBreakdownSection({
                                         <Label
                                             htmlFor={`receipt-line-${lineItem.clientId}-total`}
                                         >
-                                            Signed total in minor units
+                                            Line total
                                         </Label>
                                         <Input
                                             id={`receipt-line-${lineItem.clientId}-total`}
-                                            name={`line_items[${index}][line_total_minor]`}
+                                            name={`line_items[${index}][line_total]`}
                                             type="number"
-                                            step="1"
-                                            value={lineItem.line_total_minor}
+                                            step="0.01"
+                                            inputMode="decimal"
+                                            value={lineItem.lineTotal}
                                             onChange={(event) =>
                                                 updateLineItem(
                                                     lineItem.clientId,
-                                                    'line_total_minor',
+                                                    'lineTotal',
                                                     event.target.value,
                                                 )
                                             }
@@ -287,12 +339,11 @@ function ReceiptBreakdownSection({
                                     setLineItems((currentLineItems) => [
                                         ...currentLineItems,
                                         {
-                                            id: '',
                                             clientId: crypto.randomUUID(),
                                             description: '',
                                             quantity: null,
-                                            unit_price_minor: null,
-                                            line_total_minor: '1',
+                                            unitPrice: '',
+                                            lineTotal: '0.00',
                                             category: null,
                                         },
                                     ])
@@ -300,8 +351,24 @@ function ReceiptBreakdownSection({
                             >
                                 <Plus /> Add Line Item
                             </Button>
+                            <div
+                                className={`rounded-md border p-3 text-sm ${reconciliationDelta === 0n ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-200' : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200'}`}
+                            >
+                                {reconciliationDelta === null
+                                    ? 'Enter valid currency-unit totals to check reconciliation.'
+                                    : reconciliationDelta === 0n
+                                      ? 'Reconciled exactly'
+                                      : reconciliationDelta > 0n
+                                        ? `${formatMinorUnits(reconciliationDelta.toString(), transaction.currency)} remaining`
+                                        : `${formatMinorUnits((-reconciliationDelta).toString(), transaction.currency)} over the Transaction amount`}
+                            </div>
                             <InputError message={errors.line_items} />
-                            <Button type="submit" disabled={processing}>
+                            <Button
+                                type="submit"
+                                disabled={
+                                    processing || reconciliationDelta !== 0n
+                                }
+                            >
                                 {processing && <Spinner />}
                                 {breakdown
                                     ? 'Replace Receipt Breakdown'
@@ -348,10 +415,14 @@ function ReceiptBreakdownSection({
 function TransactionEditForm({
     transaction,
     categoryOptions,
+    nextReviewItem,
 }: {
     transaction: SelectedTransaction;
     categoryOptions: CategoryOption[];
+    nextReviewItem?: string;
 }) {
+    const [kind, setKind] = useState<TransactionKind>(transaction.kind);
+
     return (
         <Form
             key={transaction.id}
@@ -361,6 +432,13 @@ function TransactionEditForm({
         >
             {({ errors, processing }) => (
                 <>
+                    {nextReviewItem && (
+                        <input
+                            type="hidden"
+                            name="next_review_item"
+                            value={nextReviewItem}
+                        />
+                    )}
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="grid gap-2">
                             <Label
@@ -380,18 +458,20 @@ function TransactionEditForm({
                             <Label
                                 htmlFor={`transaction-${transaction.id}-amount`}
                             >
-                                Edit amount in minor units
+                                Edit amount
                             </Label>
                             <Input
                                 id={`transaction-${transaction.id}-amount`}
-                                name="amount_minor"
+                                name="amount"
                                 type="number"
-                                min="1"
-                                step="1"
-                                inputMode="numeric"
-                                defaultValue={transaction.amount_minor}
+                                min="0.01"
+                                step="0.01"
+                                inputMode="decimal"
+                                defaultValue={minorUnitsToCurrencyUnits(
+                                    transaction.amount_minor,
+                                )}
                             />
-                            <InputError message={errors.amount_minor} />
+                            <InputError message={errors.amount} />
                         </div>
                         <div className="grid gap-2">
                             <Label
@@ -414,34 +494,89 @@ function TransactionEditForm({
                             <Label
                                 htmlFor={`transaction-${transaction.id}-kind`}
                             >
-                                Edit Transaction kind
+                                Edit movement kind
                             </Label>
                             <NativeSelect
                                 id={`transaction-${transaction.id}-kind`}
                                 name="kind"
-                                defaultValue={transaction.kind}
-                                options={[
-                                    { value: 'purchase', label: 'Purchase' },
-                                    { value: 'refund', label: 'Refund' },
-                                ]}
+                                value={kind}
+                                onChange={(event) =>
+                                    setKind(
+                                        movementKindFromValue(
+                                            event.target.value,
+                                        ),
+                                    )
+                                }
+                                options={movementKindOptions}
                             />
                             <InputError message={errors.kind} />
                         </div>
+                        <div className="grid gap-2">
+                            <Label
+                                htmlFor={`transaction-${transaction.id}-direction`}
+                            >
+                                Edit money direction
+                            </Label>
+                            <NativeSelect
+                                id={`transaction-${transaction.id}-direction`}
+                                name="direction"
+                                defaultValue={transaction.direction}
+                                options={movementDirectionOptions}
+                            />
+                            <InputError message={errors.direction} />
+                        </div>
+                        {kind === 'income' && (
+                            <div className="grid gap-2">
+                                <Label
+                                    htmlFor={`transaction-${transaction.id}-income-source`}
+                                >
+                                    Edit income source
+                                </Label>
+                                <NativeSelect
+                                    id={`transaction-${transaction.id}-income-source`}
+                                    name="income_source"
+                                    defaultValue={
+                                        transaction.income_source ?? 'other'
+                                    }
+                                    options={incomeSourceOptions}
+                                />
+                                <InputError message={errors.income_source} />
+                            </div>
+                        )}
+                        {kind === 'transfer' && (
+                            <div className="grid gap-2">
+                                <Label
+                                    htmlFor={`transaction-${transaction.id}-transfer-purpose`}
+                                >
+                                    Edit transfer purpose
+                                </Label>
+                                <NativeSelect
+                                    id={`transaction-${transaction.id}-transfer-purpose`}
+                                    name="transfer_purpose"
+                                    defaultValue={
+                                        transaction.transfer_purpose ??
+                                        'internal'
+                                    }
+                                    options={transferPurposeOptions}
+                                />
+                                <InputError message={errors.transfer_purpose} />
+                            </div>
+                        )}
                     </div>
 
                     <div className="grid gap-2">
                         <Label
                             htmlFor={`transaction-${transaction.id}-merchant`}
                         >
-                            Edit merchant or description
+                            Edit description
                         </Label>
                         <Input
                             id={`transaction-${transaction.id}-merchant`}
-                            name="merchant_description"
+                            name="description"
                             maxLength={255}
-                            defaultValue={transaction.merchant_description}
+                            defaultValue={transaction.description}
                         />
-                        <InputError message={errors.merchant_description} />
+                        <InputError message={errors.description} />
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -453,16 +588,14 @@ function TransactionEditForm({
                             </Label>
                             <Input
                                 id={`transaction-${transaction.id}-instrument`}
-                                name="payment_instrument_label"
+                                name="instrument_label"
                                 maxLength={100}
                                 defaultValue={
-                                    transaction.payment_instrument_label ?? ''
+                                    transaction.instrument_label ?? ''
                                 }
                                 placeholder="Visa, cash, checking"
                             />
-                            <InputError
-                                message={errors.payment_instrument_label}
-                            />
+                            <InputError message={errors.instrument_label} />
                         </div>
                         <div className="grid gap-2">
                             <Label
@@ -472,22 +605,19 @@ function TransactionEditForm({
                             </Label>
                             <Input
                                 id={`transaction-${transaction.id}-last-four`}
-                                name="payment_instrument_last_four"
+                                name="instrument_last_four"
                                 inputMode="numeric"
                                 pattern="[0-9]{4}"
                                 maxLength={4}
                                 defaultValue={
-                                    transaction.payment_instrument_last_four ??
-                                    ''
+                                    transaction.instrument_last_four ?? ''
                                 }
                             />
-                            <InputError
-                                message={errors.payment_instrument_last_four}
-                            />
+                            <InputError message={errors.instrument_last_four} />
                         </div>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    {movementSupportsCategory(kind) && (
                         <div className="grid gap-2">
                             <Label
                                 htmlFor={`transaction-${transaction.id}-category`}
@@ -510,32 +640,38 @@ function TransactionEditForm({
                             />
                             <InputError message={errors.category_id} />
                         </div>
+                    )}
+
+                    {kind === 'refund' && (
                         <div className="grid gap-2">
                             <Label
-                                htmlFor={`transaction-${transaction.id}-purchase`}
+                                htmlFor={`transaction-${transaction.id}-spending`}
                             >
-                                Edit original purchase
+                                Edit original Spending Transaction
                             </Label>
                             <NativeSelect
-                                id={`transaction-${transaction.id}-purchase`}
-                                name="original_purchase_id"
+                                id={`transaction-${transaction.id}-spending`}
+                                name="original_spending_id"
                                 defaultValue={
-                                    transaction.original_purchase?.id.toString() ??
+                                    transaction.original_spending?.id.toString() ??
                                     ''
                                 }
                                 options={[
-                                    { value: '', label: 'No Refund link' },
-                                    ...transaction.purchase_options.map(
-                                        (purchase) => ({
-                                            value: purchase.id.toString(),
-                                            label: `${purchase.occurred_on} · ${purchase.merchant_description} · ${purchase.currency}`,
+                                    {
+                                        value: '',
+                                        label: 'No reimbursement link',
+                                    },
+                                    ...transaction.spending_options.map(
+                                        (spending) => ({
+                                            value: spending.id.toString(),
+                                            label: `${spending.occurred_on} · ${spending.description} · ${spending.currency}`,
                                         }),
                                     ),
                                 ]}
                             />
-                            <InputError message={errors.original_purchase_id} />
+                            <InputError message={errors.original_spending_id} />
                         </div>
-                    </div>
+                    )}
 
                     {transaction.review.fields.length > 0 && (
                         <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
@@ -544,33 +680,36 @@ function TransactionEditForm({
                         </p>
                     )}
 
-                    {transaction.receipt_breakdown !== null && (
-                        <div className="flex items-start gap-2 rounded-md border p-3">
-                            <input
-                                id={`transaction-${transaction.id}-remove-breakdown`}
-                                name="remove_receipt_breakdown"
-                                type="checkbox"
-                                value="1"
-                                className="mt-0.5 size-4 rounded border-input"
-                            />
-                            <div className="grid gap-1">
-                                <Label
-                                    htmlFor={`transaction-${transaction.id}-remove-breakdown`}
-                                >
-                                    Remove Receipt Breakdown if the amount
-                                    changes
-                                </Label>
-                                <p className="text-xs text-muted-foreground">
-                                    This explicitly removes the current Line
-                                    Items because they would no longer
-                                    reconcile.
-                                </p>
-                                <InputError
-                                    message={errors.remove_receipt_breakdown}
+                    {movementSupportsCategory(kind) &&
+                        transaction.receipt_breakdown !== null && (
+                            <div className="flex items-start gap-2 rounded-md border p-3">
+                                <input
+                                    id={`transaction-${transaction.id}-remove-breakdown`}
+                                    name="remove_receipt_breakdown"
+                                    type="checkbox"
+                                    value="1"
+                                    className="mt-0.5 size-4 rounded border-input"
                                 />
+                                <div className="grid gap-1">
+                                    <Label
+                                        htmlFor={`transaction-${transaction.id}-remove-breakdown`}
+                                    >
+                                        Remove Receipt Breakdown if the amount
+                                        changes
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        This explicitly removes the current Line
+                                        Items because they would no longer
+                                        reconcile.
+                                    </p>
+                                    <InputError
+                                        message={
+                                            errors.remove_receipt_breakdown
+                                        }
+                                    />
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
                     <Button type="submit" disabled={processing}>
                         {processing && <Spinner />}
@@ -586,10 +725,12 @@ export function TransactionInspector({
     transaction,
     categoryOptions,
     onOpenChange,
+    nextReviewItem,
 }: {
     transaction: SelectedTransaction | null;
     categoryOptions: CategoryOption[];
     onOpenChange: (open: boolean) => void;
+    nextReviewItem?: string;
 }) {
     const unresolvedReviewCount = transaction
         ? transaction.review.fields.length +
@@ -606,9 +747,7 @@ export function TransactionInspector({
                 <SheetContent className="w-full overflow-y-auto sm:max-w-xl lg:max-w-2xl">
                     <SheetHeader className="border-b">
                         <div className="flex flex-wrap items-center gap-2 pr-8">
-                            <SheetTitle>
-                                {transaction.merchant_description}
-                            </SheetTitle>
+                            <SheetTitle>{transaction.description}</SheetTitle>
                             <Badge variant="outline">Confirmed</Badge>
                             {transaction.voided_at && (
                                 <Badge variant="secondary">
@@ -639,17 +778,7 @@ export function TransactionInspector({
                     <div className="grid gap-6 px-4 pb-6">
                         <section className="grid gap-3">
                             <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-                                Edit current Transaction
-                            </h2>
-                            <TransactionEditForm
-                                transaction={transaction}
-                                categoryOptions={categoryOptions}
-                            />
-                        </section>
-
-                        <section className="grid gap-3">
-                            <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-                                Current values
+                                Transaction summary
                             </h2>
                             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border p-4 text-sm">
                                 <div>
@@ -676,35 +805,98 @@ export function TransactionInspector({
                                         Kind
                                     </dt>
                                     <dd className="font-medium">
-                                        {transaction.kind === 'refund'
-                                            ? 'Refund'
-                                            : 'Purchase'}
+                                        {movementDescription({
+                                            kind: transaction.kind,
+                                            transferPurpose:
+                                                transaction.transfer_purpose,
+                                        })}
                                     </dd>
                                 </div>
                                 <div>
                                     <dt className="text-muted-foreground">
-                                        Category
+                                        Direction
                                     </dt>
                                     <dd className="font-medium">
-                                        {transaction.category?.name ??
-                                            'Uncategorized'}
+                                        {transaction.direction === 'debit'
+                                            ? 'Money out'
+                                            : 'Money in'}
                                     </dd>
                                 </div>
+                                {movementSupportsCategory(transaction.kind) && (
+                                    <div>
+                                        <dt className="text-muted-foreground">
+                                            Category
+                                        </dt>
+                                        <dd className="font-medium">
+                                            {transaction.category?.name ??
+                                                'Uncategorized'}
+                                        </dd>
+                                    </div>
+                                )}
+                                {transaction.kind === 'income' && (
+                                    <div>
+                                        <dt className="text-muted-foreground">
+                                            Income Source
+                                        </dt>
+                                        <dd className="font-medium">
+                                            {incomeSourceOptions.find(
+                                                (option) =>
+                                                    option.value ===
+                                                    transaction.income_source,
+                                            )?.label ?? 'Other income'}
+                                        </dd>
+                                    </div>
+                                )}
+                                {transaction.kind === 'transfer' && (
+                                    <div>
+                                        <dt className="text-muted-foreground">
+                                            Transfer Purpose
+                                        </dt>
+                                        <dd className="font-medium">
+                                            {transferPurposeOptions.find(
+                                                (option) =>
+                                                    option.value ===
+                                                    transaction.transfer_purpose,
+                                            )?.label ?? 'Other transfer'}
+                                        </dd>
+                                    </div>
+                                )}
                             </dl>
                             <p className="text-xs text-muted-foreground">
                                 {transaction.voided_at
-                                    ? 'Excluded from spending totals while Voided.'
-                                    : 'Included in spending totals.'}{' '}
+                                    ? 'Excluded from all period summaries while Voided.'
+                                    : movementSupportsCategory(transaction.kind)
+                                      ? 'Included in Net Spending.'
+                                      : transaction.kind === 'income'
+                                        ? 'Included in Income.'
+                                        : transaction.transfer_purpose ===
+                                            'savings'
+                                          ? 'Included in Moved to Savings.'
+                                          : 'Excluded from spending and income summaries.'}{' '}
                                 Confirmed{' '}
                                 {transaction.confirmed_at.slice(0, 10)}.
                             </p>
                         </section>
 
-                        <ReceiptBreakdownSection
-                            key={`${transaction.receipt_breakdown?.id ?? 'none'}-${transaction.receipt_breakdown?.line_items.map((lineItem) => lineItem.id).join('-') ?? ''}`}
-                            transaction={transaction}
-                            categoryOptions={categoryOptions}
-                        />
+                        <section className="grid gap-3">
+                            <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                                Edit current Transaction
+                            </h2>
+                            <TransactionEditForm
+                                key={transaction.id}
+                                transaction={transaction}
+                                categoryOptions={categoryOptions}
+                                nextReviewItem={nextReviewItem}
+                            />
+                        </section>
+
+                        {movementSupportsCategory(transaction.kind) && (
+                            <ReceiptBreakdownSection
+                                key={`${transaction.currency}-${transaction.amount_minor}-${transaction.receipt_breakdown?.id ?? 'none'}-${transaction.receipt_breakdown?.line_items.map((lineItem) => lineItem.id).join('-') ?? ''}`}
+                                transaction={transaction}
+                                categoryOptions={categoryOptions}
+                            />
+                        )}
 
                         {transaction.review.category && (
                             <section className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/20">
@@ -730,108 +922,125 @@ export function TransactionInspector({
                                     </h2>
                                     <p>
                                         {reason.name ===
-                                        'cumulative_refunds_exceed_purchase'
-                                            ? 'The confirmed Refunds remain included. Review the linked purchase and edit the current Refund if needed.'
-                                            : 'The purchase has a Receipt Breakdown. No Line Items were copied or inferred for this Refund.'}
+                                        'cumulative_refunds_exceed_spending'
+                                            ? 'The confirmed Refunds remain included. Review the linked spending and edit the current Refund if needed.'
+                                            : 'The spending has a Receipt Breakdown. No Line Items were copied or inferred for this Refund.'}
                                     </p>
                                 </section>
                             ),
                         )}
 
-                        <section className="grid gap-3">
-                            <h2 className="flex items-center gap-2 font-semibold">
-                                <ShieldCheck className="size-4" /> Provenance
-                            </h2>
-                            <div className="grid gap-2 rounded-lg border p-4 text-sm">
-                                <p>
-                                    Category source:{' '}
-                                    <span className="font-medium">
-                                        {transaction.category?.provenance.source.replace(
-                                            '_',
-                                            ' ',
-                                        ) ?? 'No Category assignment'}
-                                    </span>
-                                </p>
-                                {transaction.category?.provenance.owner && (
-                                    <p className="text-muted-foreground">
-                                        Assigned by{' '}
-                                        {
-                                            transaction.category.provenance
-                                                .owner.name
-                                        }
-                                    </p>
-                                )}
-                                {transaction.category?.provenance
-                                    .merchant_rule && (
-                                    <p className="text-muted-foreground">
-                                        Merchant Rule #{' '}
-                                        {
-                                            transaction.category.provenance
-                                                .merchant_rule.id
-                                        }
-                                    </p>
-                                )}
-                                <p>
-                                    {transaction.source_reference_count === 0
-                                        ? 'Manual or owner-confirmed entry with no Spending Notification Reference.'
-                                        : `${transaction.source_reference_count} Spending Notification ${transaction.source_reference_count === 1 ? 'Reference' : 'References'} retained.`}
-                                </p>
-                                {transaction.source_references.map(
-                                    (reference) => (
-                                        <p
-                                            key={reference.id}
-                                            className="text-muted-foreground"
-                                        >
-                                            {reference.processing_outcome.replaceAll(
-                                                '_',
-                                                ' ',
-                                            )}
-                                            {reference.created_at
-                                                ? ` · ${reference.created_at.slice(0, 10)}`
-                                                : ''}
+                        <details className="rounded-lg border">
+                            <summary className="cursor-pointer px-4 py-3 font-semibold">
+                                Advanced details
+                            </summary>
+                            <div className="grid gap-6 border-t p-4">
+                                <section className="grid gap-3">
+                                    <h2 className="flex items-center gap-2 font-semibold">
+                                        <ShieldCheck className="size-4" />
+                                        Category Assignment Provenance and
+                                        source references
+                                    </h2>
+                                    <div className="grid gap-2 rounded-lg border p-4 text-sm">
+                                        <p>
+                                            Category source:{' '}
+                                            <span className="font-medium">
+                                                {transaction.category?.provenance.source.replace(
+                                                    '_',
+                                                    ' ',
+                                                ) ?? 'No Category assignment'}
+                                            </span>
                                         </p>
-                                    ),
-                                )}
-                            </div>
-                        </section>
-
-                        <section className="grid gap-3">
-                            <h2 className="flex items-center gap-2 font-semibold">
-                                <Link2 className="size-4" /> Refund links
-                            </h2>
-                            <div className="grid gap-2 rounded-lg border p-4 text-sm">
-                                {!transaction.original_purchase &&
-                                    transaction.linked_refunds.length === 0 && (
-                                        <p className="text-muted-foreground">
-                                            No Refund links.
-                                        </p>
-                                    )}
-                                {transaction.original_purchase && (
-                                    <p>
-                                        Original purchase:{' '}
-                                        <span className="font-medium">
-                                            {
-                                                transaction.original_purchase
-                                                    .merchant_description
-                                            }
-                                        </span>
-                                    </p>
-                                )}
-                                {transaction.linked_refunds.map((refund) => (
-                                    <p key={refund.id}>
-                                        Linked Refund:{' '}
-                                        <span className="font-medium">
-                                            {refund.merchant_description}
-                                        </span>{' '}
-                                        ·{' '}
-                                        {formatMinorUnits(
-                                            refund.amount_minor,
-                                            refund.currency,
+                                        {transaction.category?.provenance
+                                            .owner && (
+                                            <p className="text-muted-foreground">
+                                                Assigned by{' '}
+                                                {
+                                                    transaction.category
+                                                        .provenance.owner.name
+                                                }
+                                            </p>
                                         )}
-                                    </p>
-                                ))}
+                                        {transaction.category?.provenance
+                                            .merchant_rule && (
+                                            <p className="text-muted-foreground">
+                                                Merchant Rule #{' '}
+                                                {
+                                                    transaction.category
+                                                        .provenance
+                                                        .merchant_rule.id
+                                                }
+                                            </p>
+                                        )}
+                                        <p>
+                                            {transaction.source_reference_count ===
+                                            0
+                                                ? 'Manual or owner-confirmed entry with no Spending Notification Reference.'
+                                                : `${transaction.source_reference_count} Spending Notification ${transaction.source_reference_count === 1 ? 'Reference' : 'References'} retained.`}
+                                        </p>
+                                        {transaction.source_references.map(
+                                            (reference) => (
+                                                <p
+                                                    key={reference.id}
+                                                    className="text-muted-foreground"
+                                                >
+                                                    {reference.processing_outcome.replaceAll(
+                                                        '_',
+                                                        ' ',
+                                                    )}
+                                                    {reference.created_at
+                                                        ? ` · ${reference.created_at.slice(0, 10)}`
+                                                        : ''}
+                                                </p>
+                                            ),
+                                        )}
+                                    </div>
+                                </section>
+
+                                <section className="grid gap-3">
+                                    <h2 className="flex items-center gap-2 font-semibold">
+                                        <Link2 className="size-4" /> Refund
+                                        links
+                                    </h2>
+                                    <div className="grid gap-2 rounded-lg border p-4 text-sm">
+                                        {!transaction.original_spending &&
+                                            transaction.linked_refunds
+                                                .length === 0 && (
+                                                <p className="text-muted-foreground">
+                                                    No Refund links.
+                                                </p>
+                                            )}
+                                        {transaction.original_spending && (
+                                            <p>
+                                                Original spending:{' '}
+                                                <span className="font-medium">
+                                                    {
+                                                        transaction
+                                                            .original_spending
+                                                            .description
+                                                    }
+                                                </span>
+                                            </p>
+                                        )}
+                                        {transaction.linked_refunds.map(
+                                            (refund) => (
+                                                <p key={refund.id}>
+                                                    Linked Refund:{' '}
+                                                    <span className="font-medium">
+                                                        {refund.description}
+                                                    </span>{' '}
+                                                    ·{' '}
+                                                    {formatMinorUnits(
+                                                        refund.amount_minor,
+                                                        refund.currency,
+                                                    )}
+                                                </p>
+                                            ),
+                                        )}
+                                    </div>
+                                </section>
                             </div>
-                        </section>
+                        </details>
                     </div>
                 </SheetContent>
             )}

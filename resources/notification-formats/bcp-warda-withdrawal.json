@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-bcp-warda-withdrawal",
+        "received_at": "2026-08-06T14:00:00Z",
+        "from_address": "notificaciones@notificacionesbcp.com.pe",
+        "subject": "Realizaste un retiro de tu wardadito.",
+        "authentication": {
+            "spf": { "result": "pass", "domain": null },
+            "dkim": { "result": "pass", "domain": null },
+            "dmarc": { "result": "pass", "domain": null }
+        },
+        "html_body": "<html><body><p>Hola CLIENTE EJEMPLO,</p><p>Realizaste un retiro de S/ 50.00 en tu wardadito Fijos.</p><h2>Montos</h2><p>Total retirado</p><p>S/ 50.00</p><h2>Datos de la operación</h2><p>Operación realizada</p><p>Retiro</p><p>Fecha y hora</p><p>06 de agosto de 2026 - 08:43:01</p><p>Origen</p><p>Wardadito Fijos</p><p>Destino</p><p>AHOR. *************0057</p><p>¿No reconoces esta operación?</p></body></html>"
+    },
+    "expected": {
+        "format_identifier": "bcp.warda_withdrawal",
+        "occurred_on": "2026-08-06",
+        "amount_minor": 5000,
+        "currency": "PEN",
+        "kind": "transfer",
+        "direction": "credit",
+        "income_source": null,
+        "transfer_purpose": "savings",
+        "description": "WARDA withdrawal",
+        "instrument_label": "BCP account",
+        "instrument_last_four": "0057"
+    }
+}

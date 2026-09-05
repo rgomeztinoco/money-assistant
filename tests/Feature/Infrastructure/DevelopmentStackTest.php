@@ -7,18 +7,28 @@ beforeEach(function (): void {
     $this->productionCompose = Yaml::parseFile(base_path('compose.production.yaml'));
 });
 
-test('development services publish ports only on loopback', function (): void {
+test('development application ports use standard Sail bindings', function (): void {
     $services = $this->developmentCompose['services'];
 
     expect($services['laravel.test']['ports'])->toBe([
-        '127.0.0.1:${APP_PORT:-8080}:80',
-        '127.0.0.1:${VITE_PORT:-5173}:${VITE_PORT:-5173}',
+        '${APP_PORT:-8080}:80',
+        '${VITE_PORT:-5173}:${VITE_PORT:-5173}',
     ])->and($services['pgsql']['ports'])->toBe([
         '127.0.0.1:${FORWARD_DB_PORT:-5433}:5432',
     ])->and($services['mailpit']['ports'])->toBe([
         '127.0.0.1:${FORWARD_MAILPIT_PORT:-1025}:1025',
         '127.0.0.1:${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025',
     ]);
+});
+
+test('Vite accepts browser previews served from private network origins', function (): void {
+    $viteConfig = file_get_contents(base_path('vite.config.ts'));
+
+    expect($viteConfig)
+        ->toContain('defaultAllowedOrigins')
+        ->toContain('privateNetworkOrigin')
+        ->toContain('origin: [')
+        ->toContain('172\\.(?:1[6-9]|2\\d|3[01])');
 });
 
 test('starting Sail launches only manually controlled development services', function (): void {

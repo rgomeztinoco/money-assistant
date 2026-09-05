@@ -3,6 +3,9 @@
 namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ReadCategoryAssignmentProvenance;
+use App\Models\Category;
+use App\Models\LineItem;
+use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
@@ -45,9 +48,12 @@ use Illuminate\Support\Str;
  *     amount_minor: string,
  *     currency: string,
  *     kind: string,
- *     merchant_description: string,
+ *     direction: string,
+ *     income_source: string|null,
+ *     transfer_purpose: string|null,
+ *     description: string,
  *     confirmed_at: string,
- *     original_purchase: array{id: int, merchant_description: string}|null,
+ *     original_spending: array{id: int, description: string}|null,
  *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
  *     review_state: string,
  *     review_field_count: int,
@@ -64,9 +70,12 @@ class ReadLedger
         'amount_minor',
         'currency',
         'kind',
-        'merchant_description',
+        'direction',
+        'income_source',
+        'transfer_purpose',
+        'description',
         'confirmed_at',
-        'original_purchase_id',
+        'original_spending_id',
         'category_id',
         'category_assignment_provenance',
         'merchant_rule_id',
@@ -91,15 +100,17 @@ class ReadLedger
         array $filters = [],
     ): array {
         $filters = $this->normalizeFilters($filters);
+        $categoryIds = $this->categoryIdsForFilter($owner, $filters['category_id']);
         $transactionQuery = $this->applyFilters(
             Transaction::query()->whereBelongsTo($owner, 'owner'),
             $filters,
+            $categoryIds,
         )
             ->when($filters['void_state'] === 'active', fn (Builder $query) => $query->whereNull('voided_at'))
             ->when($filters['void_state'] === 'voided', fn (Builder $query) => $query->whereNotNull('voided_at'))
             ->select([...self::TRANSACTION_COLUMNS, 'voided_at'])
             ->with([
-                'originalPurchase:id,merchant_description',
+                'originalSpending:id,description',
                 'category:id,name',
                 'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id',
             ])
@@ -143,9 +154,12 @@ class ReadLedger
      *     amount_minor: string,
      *     currency: string,
      *     kind: string,
-     *     merchant_description: string,
+     *     direction: string,
+     *     income_source: string|null,
+     *     transfer_purpose: string|null,
+     *     description: string,
      *     confirmed_at: string,
-     *     original_purchase: array{id: int, merchant_description: string}|null,
+     *     original_spending: array{id: int, description: string}|null,
      *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
      *     review_state: string,
      *     review_field_count: int,
@@ -159,9 +173,11 @@ class ReadLedger
         $receiptBreakdown = $transaction->receiptBreakdown?->lineItems->isNotEmpty() === true
             ? $transaction->receiptBreakdown
             : null;
-        $unresolvedCategoryCount = $receiptBreakdown === null
-            ? ($transaction->category_id === null ? 1 : 0)
-            : $receiptBreakdown->lineItems->whereNull('category_id')->count();
+        $unresolvedCategoryCount = $transaction->kind->supportsCategory()
+            ? ($receiptBreakdown === null
+                ? ($transaction->category_id === null ? 1 : 0)
+                : $receiptBreakdown->lineItems->whereNull('category_id')->count())
+            : 0;
         $reviewFields = [];
 
         foreach ($transaction->provisional_fields as $fieldName) {
@@ -189,13 +205,16 @@ class ReadLedger
             'amount_minor' => (string) $transaction->amount_minor,
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
-            'merchant_description' => $transaction->merchant_description,
+            'direction' => $transaction->direction->value,
+            'income_source' => $transaction->income_source?->value,
+            'transfer_purpose' => $transaction->transfer_purpose?->value,
+            'description' => $transaction->description,
             'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
-            'original_purchase' => $transaction->originalPurchase === null
+            'original_spending' => $transaction->originalSpending === null
                 ? null
                 : [
-                    'id' => $transaction->originalPurchase->id,
-                    'merchant_description' => $transaction->originalPurchase->merchant_description,
+                    'id' => $transaction->originalSpending->id,
+                    'description' => $transaction->originalSpending->description,
                 ],
             'category' => $category,
             'review_state' => $unresolvedCategoryCount > 0
@@ -232,12 +251,13 @@ class ReadLedger
     /**
      * @param  Builder<Transaction>  $query
      * @param  LedgerFilters  $filters
+     * @param  list<int>|null  $categoryIds
      * @return Builder<Transaction>
      */
-    private function applyFilters(Builder $query, array $filters): Builder
+    private function applyFilters(Builder $query, array $filters, ?array $categoryIds): Builder
     {
         if ($filters['search'] !== '') {
-            $query->where('merchant_description', 'ilike', '%'.$filters['search'].'%');
+            $query->where('description', 'ilike', '%'.$filters['search'].'%');
         }
 
         $query
@@ -245,15 +265,15 @@ class ReadLedger
             ->when($filters['date_to'] !== null, fn (Builder $query) => $query->whereDate('occurred_on', '<=', $filters['date_to']))
             ->when($filters['currency'] !== 'all', fn (Builder $query) => $query->where('currency', $filters['currency']))
             ->when($filters['kind'] !== 'all', fn (Builder $query) => $query->where('kind', $filters['kind']))
-            ->when($filters['category_id'] !== null, fn (Builder $query) => $query->where('category_id', $filters['category_id']))
+            ->when($categoryIds !== null, fn (Builder $query) => $this->whereHasCategoryContribution($query, $categoryIds))
             ->when($filters['refund_relationship'] === 'linked', fn (Builder $query) => $query
                 ->where('kind', TransactionKind::Refund)
-                ->whereNotNull('original_purchase_id'))
+                ->whereNotNull('original_spending_id'))
             ->when($filters['refund_relationship'] === 'unlinked', fn (Builder $query) => $query
                 ->where('kind', TransactionKind::Refund)
-                ->whereNull('original_purchase_id'))
+                ->whereNull('original_spending_id'))
             ->when($filters['refund_relationship'] === 'not_applicable', fn (Builder $query) => $query
-                ->where('kind', TransactionKind::Purchase));
+                ->where('kind', '<>', TransactionKind::Refund));
 
         if ($filters['category_state'] === 'categorized') {
             $this->whereHasNoUncategorizedContribution($query);
@@ -273,20 +293,67 @@ class ReadLedger
         return $query;
     }
 
+    /** @return list<int>|null */
+    private function categoryIdsForFilter(User $owner, ?int $categoryId): ?array
+    {
+        if ($categoryId === null) {
+            return null;
+        }
+
+        $category = Category::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->findOrFail($categoryId);
+        $categoryIds = [$category->id];
+
+        foreach ($category->children()->get(['id']) as $child) {
+            $categoryIds[] = $child->id;
+        }
+
+        return $categoryIds;
+    }
+
+    /**
+     * @param  Builder<Transaction>  $query
+     * @param  list<int>  $categoryIds
+     */
+    private function whereHasCategoryContribution(Builder $query, array $categoryIds): void
+    {
+        $transactionsWithLineItems = ReceiptBreakdown::query()
+            ->select('transaction_id')
+            ->whereIn('id', LineItem::query()->select('receipt_breakdown_id'));
+        $transactionsWithMatchingLineItems = ReceiptBreakdown::query()
+            ->select('transaction_id')
+            ->whereIn('id', LineItem::query()
+                ->select('receipt_breakdown_id')
+                ->whereIn('category_id', $categoryIds));
+
+        $query->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+            ->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems, $transactionsWithMatchingLineItems): void {
+                $query
+                    ->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems): void {
+                        $query
+                            ->whereIn('category_id', $categoryIds)
+                            ->whereNotIn('id', $transactionsWithLineItems);
+                    })
+                    ->orWhereIn('id', $transactionsWithMatchingLineItems);
+            });
+    }
+
     /** @param Builder<Transaction> $query */
     private function whereHasUncategorizedContribution(Builder $query): void
     {
-        $query->where(function (Builder $query): void {
-            $query
-                ->where(function (Builder $query): void {
-                    $query
-                        ->whereNull('category_id')
-                        ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
-                            ->whereHas('lineItems'));
-                })
-                ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
-                    ->whereHas('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
-        });
+        $query->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+            ->where(function (Builder $query): void {
+                $query
+                    ->where(function (Builder $query): void {
+                        $query
+                            ->whereNull('category_id')
+                            ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
+                                ->whereHas('lineItems'));
+                    })
+                    ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
+                        ->whereHas('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
+            });
     }
 
     /** @param Builder<Transaction> $query */
@@ -294,15 +361,19 @@ class ReadLedger
     {
         $query->where(function (Builder $query): void {
             $query
-                ->where(function (Builder $query): void {
+                ->whereNotIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+                ->orWhere(function (Builder $query): void {
                     $query
-                        ->whereNotNull('category_id')
-                        ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
-                            ->whereHas('lineItems'));
-                })
-                ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
-                    ->whereHas('lineItems')
-                    ->whereDoesntHave('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
+                        ->where(function (Builder $query): void {
+                            $query
+                                ->whereNotNull('category_id')
+                                ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
+                                    ->whereHas('lineItems'));
+                        })
+                        ->orWhereHas('receiptBreakdown', fn (Builder $query) => $query
+                            ->whereHas('lineItems')
+                            ->whereDoesntHave('lineItems', fn (Builder $query) => $query->whereNull('category_id')));
+                });
         });
     }
 }

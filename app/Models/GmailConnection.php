@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property CarbonImmutable $access_token_expires_at
  * @property list<string> $granted_scopes
  * @property CarbonImmutable $connected_at
+ * @property CarbonImmutable $initial_sync_starts_at
  * @property CarbonImmutable $last_successful_check_at
  * @property CarbonImmutable|null $last_check_failed_at
  * @property CarbonImmutable|null $reauthorization_required_at
@@ -41,6 +42,7 @@ use Illuminate\Support\Carbon;
     'access_token_expires_at',
     'granted_scopes',
     'connected_at',
+    'initial_sync_starts_at',
     'last_successful_check_at',
     'last_check_failed_at',
     'reauthorization_required_at',
@@ -54,6 +56,12 @@ use Illuminate\Support\Carbon;
 #[Hidden(['access_token', 'refresh_token'])]
 class GmailConnection extends Model
 {
+    public const MINIMUM_IMPORT_LOOKBACK_DAYS = 1;
+
+    public const MAXIMUM_IMPORT_LOOKBACK_DAYS = 365;
+
+    public const DEFAULT_IMPORT_LOOKBACK_DAYS = 30;
+
     public const ERROR_CHECK_FAILED = 'gmail_check_failed';
 
     public const ERROR_GMAIL_ACCOUNT_MISMATCH = 'gmail_account_mismatch';
@@ -89,6 +97,7 @@ class GmailConnection extends Model
             'access_token_expires_at' => 'immutable_datetime',
             'granted_scopes' => 'array',
             'connected_at' => 'immutable_datetime',
+            'initial_sync_starts_at' => 'immutable_datetime',
             'last_successful_check_at' => 'immutable_datetime',
             'last_check_failed_at' => 'immutable_datetime',
             'reauthorization_required_at' => 'immutable_datetime',

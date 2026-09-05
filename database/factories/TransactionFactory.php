@@ -3,10 +3,13 @@
 namespace Database\Factories;
 
 use App\Currency;
+use App\IncomeSource;
 use App\Models\Transaction;
 use App\Models\User;
+use App\MovementDirection;
 use App\ReviewableTransactionField;
 use App\TransactionKind;
+use App\TransferPurpose;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -26,16 +29,18 @@ class TransactionFactory extends Factory
             'occurred_on' => fake()->dateTimeBetween('-1 year', 'now'),
             'amount_minor' => fake()->numberBetween(1, 100_000),
             'currency' => fake()->randomElement(Currency::cases()),
-            'kind' => fake()->randomElement(TransactionKind::cases()),
-            'merchant_description' => fake()->company(),
+            'kind' => TransactionKind::Spending,
+            'direction' => MovementDirection::Debit,
+            'description' => fake()->company(),
             'confirmed_at' => now(),
         ];
     }
 
-    public function purchase(): static
+    public function spending(): static
     {
         return $this->state(fn (array $attributes) => [
-            'kind' => TransactionKind::Purchase,
+            'kind' => TransactionKind::Spending,
+            'direction' => MovementDirection::Debit,
         ]);
     }
 
@@ -43,6 +48,25 @@ class TransactionFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'kind' => TransactionKind::Refund,
+            'direction' => MovementDirection::Credit,
+        ]);
+    }
+
+    public function income(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'kind' => TransactionKind::Income,
+            'direction' => MovementDirection::Credit,
+            'income_source' => IncomeSource::Other,
+        ]);
+    }
+
+    public function transfer(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'kind' => TransactionKind::Transfer,
+            'direction' => MovementDirection::Debit,
+            'transfer_purpose' => TransferPurpose::Internal,
         ]);
     }
 

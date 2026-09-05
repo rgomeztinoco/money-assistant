@@ -1,12 +1,26 @@
 import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
-type NativeSelectProps = Omit<ComponentProps<'select'>, 'children'> & {
-    options: ReadonlyArray<{ value: string; label: string }>;
-};
+type NativeSelectOption = { value: string; label: string };
+
+type NativeSelectProps = Omit<ComponentProps<'select'>, 'children'> &
+    (
+        | {
+              options: ReadonlyArray<NativeSelectOption>;
+              groups?: never;
+          }
+        | {
+              options?: never;
+              groups: ReadonlyArray<{
+                  label: string;
+                  options: ReadonlyArray<NativeSelectOption>;
+              }>;
+          }
+    );
 
 export function NativeSelect({
     options,
+    groups,
     className,
     ...props
 }: NativeSelectProps) {
@@ -18,10 +32,19 @@ export function NativeSelect({
             )}
             {...props}
         >
-            {options.map((option) => (
+            {options?.map((option) => (
                 <option key={option.value} value={option.value}>
                     {option.label}
                 </option>
+            ))}
+            {groups?.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                    {group.options.map((option) => (
+                        <option key={option.value} value={option.value}>
+                            {option.label}
+                        </option>
+                    ))}
+                </optgroup>
             ))}
         </select>
     );

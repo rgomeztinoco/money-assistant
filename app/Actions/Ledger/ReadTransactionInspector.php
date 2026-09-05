@@ -9,6 +9,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
+use App\TransactionKind;
 
 /**
  * @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance
@@ -20,7 +21,7 @@ use App\ReviewableTransactionField;
  *     amount_minor: string,
  *     currency: string,
  *     kind: string,
- *     merchant_description: string,
+ *     description: string,
  *     category_name: string|null
  * }
  */
@@ -38,9 +39,12 @@ class ReadTransactionInspector
      *     amount_minor: string,
      *     currency: string,
      *     kind: string,
-     *     merchant_description: string,
-     *     payment_instrument_label: string|null,
-     *     payment_instrument_last_four: string|null,
+     *     direction: string,
+     *     income_source: string|null,
+     *     transfer_purpose: string|null,
+     *     description: string,
+     *     instrument_label: string|null,
+     *     instrument_last_four: string|null,
      *     confirmed_at: string,
      *     voided_at: string|null,
      *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
@@ -49,12 +53,12 @@ class ReadTransactionInspector
      *         fields: list<array{name: string, label: string, value: string}>,
      *         refund_relationship_reasons: list<array{name: string, label: string}>
      *     },
-     *     original_purchase: RelatedTransactionData|null,
+     *     original_spending: RelatedTransactionData|null,
      *     linked_refunds: list<RelatedTransactionData>,
      *     source_reference_count: int,
      *     source_references: list<array{id: int, processing_outcome: string, created_at: string|null}>,
      *     receipt_breakdown: ReceiptBreakdownData|null,
-     *     purchase_options: list<array{id: int, occurred_on: string, merchant_description: string, currency: string}>
+     *     spending_options: list<array{id: int, occurred_on: string, description: string, currency: string}>
      * }|null
      */
     public function handle(User $owner, ?int $transactionId): ?array
@@ -67,8 +71,8 @@ class ReadTransactionInspector
             ->whereBelongsTo($owner, 'owner')
             ->with([
                 'category:id,name',
-                'originalPurchase:id,occurred_on,amount_minor,currency,kind,merchant_description,category_id',
-                'originalPurchase.category:id,name',
+                'originalSpending:id,occurred_on,amount_minor,currency,kind,description,category_id',
+                'originalSpending.category:id,name',
                 'linkedRefunds' => fn ($query) => $query
                     ->with('category:id,name')
                     ->orderByDesc('occurred_on')
@@ -111,9 +115,12 @@ class ReadTransactionInspector
             'amount_minor' => (string) $transaction->amount_minor,
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
-            'merchant_description' => $transaction->merchant_description,
-            'payment_instrument_label' => $transaction->payment_instrument_label,
-            'payment_instrument_last_four' => $transaction->payment_instrument_last_four,
+            'direction' => $transaction->direction->value,
+            'income_source' => $transaction->income_source?->value,
+            'transfer_purpose' => $transaction->transfer_purpose?->value,
+            'description' => $transaction->description,
+            'instrument_label' => $transaction->instrument_label,
+            'instrument_last_four' => $transaction->instrument_last_four,
             'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
             'voided_at' => $transaction->voided_at?->toIso8601String(),
             'category' => $transaction->category === null
@@ -124,14 +131,15 @@ class ReadTransactionInspector
                     'provenance' => $this->readCategoryAssignmentProvenance->handle($transaction, $owner),
                 ],
             'review' => [
-                'category' => ($receiptBreakdown === null || $receiptBreakdown['line_items'] === [])
+                'category' => $transaction->kind->supportsCategory()
+                    && ($receiptBreakdown === null || $receiptBreakdown['line_items'] === [])
                     && $transaction->category_id === null,
                 'fields' => $reviewFields,
                 'refund_relationship_reasons' => $refundRelationshipReasons,
             ],
-            'original_purchase' => $transaction->originalPurchase === null
+            'original_spending' => $transaction->originalSpending === null
                 ? null
-                : $this->relatedTransactionData($transaction->originalPurchase),
+                : $this->relatedTransactionData($transaction->originalSpending),
             'linked_refunds' => array_values($transaction->linkedRefunds
                 ->map(fn (Transaction $refund): array => $this->relatedTransactionData($refund))
                 ->all()),
@@ -144,19 +152,19 @@ class ReadTransactionInspector
                 ])
                 ->all()),
             'receipt_breakdown' => $receiptBreakdown,
-            'purchase_options' => array_values(Transaction::query()
+            'spending_options' => array_values(Transaction::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->whereNull('voided_at')
-                ->where('kind', 'purchase')
+                ->where('kind', TransactionKind::Spending)
                 ->whereKeyNot($transaction->getKey())
                 ->orderByDesc('occurred_on')
                 ->orderByDesc('id')
-                ->get(['id', 'occurred_on', 'merchant_description', 'currency'])
-                ->map(fn (Transaction $purchase): array => [
-                    'id' => $purchase->id,
-                    'occurred_on' => $purchase->occurred_on->toDateString(),
-                    'merchant_description' => $purchase->merchant_description,
-                    'currency' => $purchase->currency->value,
+                ->get(['id', 'occurred_on', 'description', 'currency'])
+                ->map(fn (Transaction $spending): array => [
+                    'id' => $spending->id,
+                    'occurred_on' => $spending->occurred_on->toDateString(),
+                    'description' => $spending->description,
+                    'currency' => $spending->currency->value,
                 ])
                 ->all()),
         ];
@@ -171,7 +179,7 @@ class ReadTransactionInspector
             'amount_minor' => (string) $transaction->amount_minor,
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
-            'merchant_description' => $transaction->merchant_description,
+            'description' => $transaction->description,
             'category_name' => $transaction->category?->name,
         ];
     }

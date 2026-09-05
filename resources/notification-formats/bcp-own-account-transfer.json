@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-bcp-own-account-transfer",
+        "received_at": "2026-08-06T14:00:00Z",
+        "from_address": "notificaciones@notificacionesbcp.com.pe",
+        "subject": "Constancia de Transferencia Entre mis Cuentas - Servicio de Notificaciones BCP",
+        "authentication": {
+            "spf": { "result": "pass", "domain": null },
+            "dkim": { "result": "pass", "domain": null },
+            "dmarc": { "result": "pass", "domain": null }
+        },
+        "text_body": "Hola CLIENTE EJEMPLO, Realizaste una transferencia de S/ 4,000.00 desde tu Cuenta digital. Montos Monto transferido S/ 4,000.00 Tipo de cambio S/ 3.60 Total cobrado al tipo de cambio $ 1,111.11 Datos de la operación Operación realizada Transferencia entre mis cuentas Fecha y hora 06 de Agosto de 2026 - 08:40 AM Enviado a Cuenta destino **** 4567 Desde Cuenta digital **** 9876 Mensaje Canal Banca Móvil BCP"
+    },
+    "expected": {
+        "format_identifier": "bcp.own_account_transfer",
+        "occurred_on": "2026-08-06",
+        "amount_minor": 111111,
+        "currency": "USD",
+        "kind": "transfer",
+        "direction": "debit",
+        "income_source": null,
+        "transfer_purpose": "internal",
+        "description": "Transfer between own accounts",
+        "instrument_label": "BCP account",
+        "instrument_last_four": "9876"
+    }
+}
