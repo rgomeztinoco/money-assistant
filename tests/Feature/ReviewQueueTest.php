@@ -1,9 +1,9 @@
 <?php
 
+use App\Actions\Breakdown\ReadBreakdown;
 use App\Actions\Categorization\CategorizeReviewTransaction;
 use App\Actions\Ledger\CountOutstandingReviews;
 use App\Actions\Ledger\RecordManualTransaction;
-use App\Actions\Reporting\ReadCurrencyReport;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\Models\Category;
@@ -415,18 +415,21 @@ test('an Uncategorized Transaction remains in totals, reports in its system buck
             ->missing('totals')
             ->missing('category_totals'));
 
-    $report = app(ReadCurrencyReport::class)->handle(
+    $report = app(ReadBreakdown::class)->handle(
         owner: $owner,
-        currency: Currency::Usd,
-        dateFrom: CarbonImmutable::parse('2000-01-01'),
-        dateTo: CarbonImmutable::today(),
+        filters: [
+            'currency' => Currency::Usd->value,
+            'period' => 'custom',
+            'date_from' => '2000-01-01',
+            'date_to' => CarbonImmutable::today()->toDateString(),
+        ],
     );
     $categoryTotals = collect($report['category_groups'])
         ->flatMap(fn (array $group): array => [$group, ...$group['children']]);
 
-    expect($categoryTotals->firstWhere('category.id', $category->id)['amount_minor'])
+    expect($categoryTotals->firstWhere('category.id', $category->id)['amount_minor']['USD'])
         ->toBe('5000')
-        ->and($categoryTotals->firstWhere('category.id', null)['amount_minor'])
+        ->and($categoryTotals->firstWhere('category.id', null)['amount_minor']['USD'])
         ->toBe('10000');
 
     $this->get(route('review_queue.index'))

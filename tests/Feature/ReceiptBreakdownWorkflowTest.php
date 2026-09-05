@@ -1,6 +1,6 @@
 <?php
 
-use App\Actions\Reporting\ReadCurrencyReport;
+use App\Actions\Breakdown\ReadBreakdown;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\Models\Category;
@@ -16,16 +16,19 @@ function receiptCategoryTotalFor(
     Currency $currency,
     ?int $categoryId,
 ): string {
-    $report = app(ReadCurrencyReport::class)->handle(
+    $report = app(ReadBreakdown::class)->handle(
         owner: $owner,
-        currency: $currency,
-        dateFrom: CarbonImmutable::parse('2000-01-01'),
-        dateTo: CarbonImmutable::today(),
+        filters: [
+            'currency' => $currency->value,
+            'period' => 'custom',
+            'date_from' => '2000-01-01',
+            'date_to' => CarbonImmutable::today()->toDateString(),
+        ],
     );
 
     return (string) collect($report['category_groups'])
         ->flatMap(fn (array $group): array => [$group, ...$group['children']])
-        ->firstWhere('category.id', $categoryId)['amount_minor'];
+        ->firstWhere('category.id', $categoryId)['amount_minor'][$currency->value];
 }
 
 test('the owner atomically saves a reconciled purchase Receipt Breakdown', function () {

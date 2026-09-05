@@ -1,7 +1,7 @@
 <?php
 
+use App\Actions\Breakdown\ReadBreakdown;
 use App\Actions\Ledger\ReadReviewQueue;
-use App\Actions\Reporting\ReadCurrencyReport;
 use App\Actions\StatementImports\ReadStatementImport;
 use App\Actions\StatementImports\StatementImportWorkflow;
 use App\CategoryAssignmentProvenance;
@@ -18,7 +18,6 @@ use App\MovementDirection;
 use App\StatementImports\StatementImportPreview;
 use App\StatementImports\StatementImportValidationException;
 use App\StatementMovementClassification;
-use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
@@ -344,11 +343,14 @@ test('WARDA rows map to Savings transactions reports and the selected Category',
     $savingsMovements = $import->movements->where('classification', StatementMovementClassification::Savings);
     $deposit = $savingsMovements->firstWhere('direction', MovementDirection::Debit);
     $withdrawal = $savingsMovements->firstWhere('direction', MovementDirection::Credit);
-    $report = app(ReadCurrencyReport::class)->handle(
+    $report = app(ReadBreakdown::class)->handle(
         $owner,
-        Currency::Pen,
-        CarbonImmutable::parse('2026-02-01'),
-        CarbonImmutable::parse('2026-02-28'),
+        [
+            'currency' => Currency::Pen->value,
+            'period' => 'custom',
+            'date_from' => '2026-02-01',
+            'date_to' => '2026-02-28',
+        ],
     );
     $reviewQueue = app(ReadReviewQueue::class)->handle($owner);
     $details = app(ReadStatementImport::class)->handle($owner, $import);
@@ -370,7 +372,7 @@ test('WARDA rows map to Savings transactions reports and the selected Category',
         ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNotNull('merchant_rule_id')->doesntExist())->toBeTrue()
         ->and(Category::query()->whereBelongsTo($owner, 'owner')->count())->toBe(4)
         ->and(MerchantRule::query()->whereBelongsTo($owner, 'owner')->count())->toBe(1)
-        ->and($report['period']['total_minor'])->toBe('1001')
+        ->and($report['summary']['PEN']['net_spending_minor'])->toBe('1001')
         ->and($reportCategories->has('Long-term goals'))->toBeFalse()
         ->and($reviewQueue['unresolved_category_count'])->toBe(0)
         ->and($reviewQueue['unresolved_refund_relationship_count'])->toBe(0)
@@ -595,18 +597,11 @@ test('Interbank confirmation isolates non-spending movements from reports rules 
         $confirmation,
     );
 
-    $penReport = app(ReadCurrencyReport::class)->handle(
-        $owner,
-        Currency::Pen,
-        CarbonImmutable::parse('2026-01-01'),
-        CarbonImmutable::parse('2026-02-28'),
-    );
-    $usdReport = app(ReadCurrencyReport::class)->handle(
-        $owner,
-        Currency::Usd,
-        CarbonImmutable::parse('2026-01-01'),
-        CarbonImmutable::parse('2026-02-28'),
-    );
+    $breakdown = app(ReadBreakdown::class)->handle($owner, [
+        'period' => 'custom',
+        'date_from' => '2026-01-01',
+        'date_to' => '2026-02-28',
+    ]);
     $reviewQueue = app(ReadReviewQueue::class)->handle($owner);
     $importDetails = app(ReadStatementImport::class)->handle($owner, $import);
 
@@ -619,8 +614,8 @@ test('Interbank confirmation isolates non-spending movements from reports rules 
         ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_id')->count())->toBe(6)
         ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('category_assignment_provenance')->count())->toBe(6)
         ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->whereNull('merchant_rule_id')->count())->toBe(6)
-        ->and($penReport['period']['total_minor'])->toBe('2200')
-        ->and($usdReport['period']['total_minor'])->toBe('-1000')
+        ->and($breakdown['summary']['PEN']['net_spending_minor'])->toBe('2200')
+        ->and($breakdown['summary']['USD']['net_spending_minor'])->toBe('-1000')
         ->and($reviewQueue['unresolved_category_count'])->toBe(3)
         ->and($reviewQueue['unresolved_field_count'])->toBe(0)
         ->and($reviewQueue['unresolved_refund_relationship_count'])->toBe(0)
