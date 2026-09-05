@@ -69,13 +69,6 @@ class SpendingNotificationReference extends Model
                 ?->isRetryable() === true;
     }
 
-    public function isRecoverable(): bool
-    {
-        return $this->transaction_id === null
-            && SpendingNotificationProcessingOutcome::tryFrom($this->processing_outcome)
-                ?->isRecoverable() === true;
-    }
-
     /** @return array<string, string> */
     protected function casts(): array
     {

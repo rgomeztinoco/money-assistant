@@ -7,13 +7,16 @@ beforeEach(function () {
 });
 
 test('the account menu retains Settings outside the permanent product navigation', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create(['name' => '  élena   山田  ']));
 
     visit('/')
+        ->assertSeeIn('[data-slot="avatar-fallback"]', 'É山')
         ->click('[data-test="sidebar-menu-button"]')
         ->assertSee('Settings')
         ->assertDontSee('Dashboard')
         ->assertDontSee('Reports')
+        ->click('Settings')
+        ->assertPathIs('/settings/profile')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
@@ -30,6 +33,7 @@ test('secondary navigation keeps data sources and management destinations reacha
             ->assertSeeIn('[data-test="'.$testId.'"]', $label)
             ->click('[data-test="'.$testId.'"]')
             ->assertPathIs($path)
+            ->assertAttribute('[data-test="'.$testId.'"]', 'data-active', 'true')
             ->assertNoJavaScriptErrors()
             ->assertNoConsoleLogs();
     }
@@ -44,6 +48,7 @@ test('secondary navigation keeps data sources and management destinations reacha
             ->assertSeeIn('[data-test="'.$testId.'"]', $label)
             ->click('[data-test="'.$testId.'"]')
             ->assertPathIs($path)
+            ->assertAttribute('[data-test="'.$testId.'"]', 'data-active', 'true')
             ->assertNoJavaScriptErrors()
             ->assertNoConsoleLogs();
     }

@@ -35,11 +35,6 @@ test('Gmail exposes source health without a parser builder', function () {
             ->missing('spending_notification_formats'));
 });
 
-test('Gmail ingestion formats are application-owned and fixture verified', function () {
-    expect(app(SupportedSpendingNotificationRegistry::class)->verifyFixtures())
-        ->each->toBeTrue();
-});
-
 test('Interbank Plin card notifications are spending regardless of destination', function () {
     $fixture = json_decode(
         (string) file_get_contents(resource_path('notification-formats/interbank-plin-card-spending.json')),

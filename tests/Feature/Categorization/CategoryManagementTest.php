@@ -1,6 +1,6 @@
 <?php
 
-use App\Actions\Reporting\ReadCurrencyReport;
+use App\Actions\Breakdown\ReadBreakdown;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\Models\Category;
@@ -99,11 +99,14 @@ test('renaming and moving a Category preserves its identity on historical Transa
                 ->where('selected_transaction.category.id', $category->id)
                 ->where('selected_transaction.category.name', 'Coffee Shops')));
 
-    $report = app(ReadCurrencyReport::class)->handle(
+    $report = app(ReadBreakdown::class)->handle(
         owner: $owner,
-        currency: Currency::Pen,
-        dateFrom: CarbonImmutable::today()->startOfMonth(),
-        dateTo: CarbonImmutable::today(),
+        filters: [
+            'currency' => Currency::Pen->value,
+            'period' => 'custom',
+            'date_from' => CarbonImmutable::today()->startOfMonth()->toDateString(),
+            'date_to' => CarbonImmutable::today()->toDateString(),
+        ],
     );
 
     expect($report['category_groups'][0]['category']['name'])->toBe('Travel')
@@ -142,16 +145,19 @@ test('archiving a Category preserves current assignments and reporting while pre
                 ->where('selected_transaction.category.id', $child->id)
                 ->where('selected_transaction.category.name', 'Dining')));
 
-    $report = app(ReadCurrencyReport::class)->handle(
+    $report = app(ReadBreakdown::class)->handle(
         owner: $owner,
-        currency: Currency::Pen,
-        dateFrom: CarbonImmutable::today()->startOfMonth(),
-        dateTo: CarbonImmutable::today(),
+        filters: [
+            'currency' => Currency::Pen->value,
+            'period' => 'custom',
+            'date_from' => CarbonImmutable::today()->startOfMonth()->toDateString(),
+            'date_to' => CarbonImmutable::today()->toDateString(),
+        ],
     );
 
     expect($report['category_groups'][0]['category']['name'])->toBe('Food')
         ->and($report['category_groups'][0]['children'][0]['category']['name'])->toBe('Dining')
-        ->and($report['category_groups'][0]['children'][0]['category']['archived'])->toBeTrue();
+        ->and($report['category_groups'][0]['children'][0]['amount_minor']['PEN'])->toBe((string) $transaction->amount_minor);
 
     $otherTransaction = Transaction::factory()->for($owner, 'owner')->create();
 
