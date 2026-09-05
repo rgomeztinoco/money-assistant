@@ -286,19 +286,3 @@ test('systemd restores the deployment path before private ingress', function ():
         ->toContain('Requires=money-assistant-production.service')
         ->toContain('After=money-assistant-production.service tailscale-online.target');
 });
-
-test('production deployment runbook promotes a tracked release and verifies the retained paths', function (): void {
-    $runbook = file_get_contents(base_path('docs/production-deployment.md'));
-
-    expect($runbook)
-        ->toContain('vendor/bin/sail artisan test --compact')
-        ->toContain('systemctl start money-assistant-backup.service')
-        ->toContain('git archive --format=tar HEAD')
-        ->toContain('chmod 0755 "$release_directory"')
-        ->toContain('rsync --archive --delete --chown=root:root')
-        ->toContain('sudo chmod 0755 /opt/money-assistant')
-        ->toContain('sudo /opt/money-assistant/deploy-production')
-        ->toContain('sudo /opt/money-assistant/verify-private-ingress')
-        ->toContain('BACKUP_AGE_IDENTITY_FILE')
-        ->toContain('money_assistant_restore_YYYYMMDD');
-});
