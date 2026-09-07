@@ -20,15 +20,11 @@ function financialStatementFormatAdapter(
 
         public function matches(string $statementText): bool
         {
-            unset($statementText);
-
             return $this->matches;
         }
 
         public function preview(string $statementText, string $fileHash): StatementImportPreview
         {
-            unset($statementText, $fileHash);
-
             return $this->statementImportPreview;
         }
     };
@@ -50,19 +46,6 @@ function financialStatementFormatPreview(): StatementImportPreview
     );
 }
 
-function expectFinancialStatementFormatRegistryError(Closure $callback, string $errorCode): void
-{
-    try {
-        $callback();
-    } catch (StatementImportValidationException $exception) {
-        expect($exception->errorCode)->toBe($errorCode);
-
-        return;
-    }
-
-    throw new RuntimeException("Expected Financial Statement Format error [{$errorCode}].");
-}
-
 test('the registry delegates to the only matching Financial Statement Format adapter', function () {
     $preview = financialStatementFormatPreview();
     $registry = new FinancialStatementFormatRegistry([
@@ -79,10 +62,8 @@ test('the registry rejects unsupported Financial Statement Formats', function ()
         financialStatementFormatAdapter(false, $preview),
     ]);
 
-    expectFinancialStatementFormatRegistryError(
-        fn () => $registry->preview('statement text', str_repeat('a', 64)),
-        'unsupported_format',
-    );
+    expect(fn () => $registry->preview('statement text', str_repeat('a', 64)))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('unsupported_format'));
 });
 
 test('the registry rejects ambiguous Financial Statement Formats', function () {
@@ -92,8 +73,6 @@ test('the registry rejects ambiguous Financial Statement Formats', function () {
         financialStatementFormatAdapter(true, $preview),
     ]);
 
-    expectFinancialStatementFormatRegistryError(
-        fn () => $registry->preview('statement text', str_repeat('a', 64)),
-        'ambiguous_format',
-    );
+    expect(fn () => $registry->preview('statement text', str_repeat('a', 64)))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('ambiguous_format'));
 });

@@ -53,19 +53,6 @@ function confirmationPayload(StatementImportPreview $preview): array
     return $confirmation;
 }
 
-function expectStatementImportError(Closure $callback, string $errorCode): void
-{
-    try {
-        $callback();
-    } catch (StatementImportValidationException $exception) {
-        expect($exception->errorCode)->toBe($errorCode);
-
-        return;
-    }
-
-    throw new RuntimeException("Expected Statement Import error [{$errorCode}].");
-}
-
 test('the Statement Import workflow previews a reconciled BCP statement without retaining it', function () {
     $owner = User::factory()->create();
     $statement = UploadedFile::fake()->createWithContent(
@@ -477,11 +464,12 @@ test('confirmation reparses and reconciles the uploaded PDF before persistence',
         UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
     );
 
-    expectStatementImportError(fn () => $workflow->confirm(
+    expect(fn () => $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
         confirmationPayload($preview),
-    ), 'interbank_statement_mismatch');
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('interbank_statement_mismatch'));
 
     expect(StatementImport::query()->doesntExist())->toBeTrue()
         ->and(StatementMovement::query()->doesntExist())->toBeTrue()
@@ -498,11 +486,12 @@ test('confirmation rejects a different valid PDF even when its parsed movements 
         UploadedFile::fake()->createWithContent('preview.pdf', $previewPdf),
     );
 
-    expectStatementImportError(fn () => $workflow->confirm(
+    expect(fn () => $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $confirmationPdf),
         confirmationPayload($preview),
-    ), 'file_mismatch');
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('file_mismatch'));
 
     expect(StatementImport::query()->doesntExist())->toBeTrue()
         ->and(StatementMovement::query()->doesntExist())->toBeTrue()
@@ -559,11 +548,12 @@ test('confirmation requires a real kind instead of duplicating an already record
     $confirmation = confirmationPayload($preview);
     $confirmation['movements'][0]['classification'] = 'already_recorded';
 
-    expectStatementImportError(fn () => $workflow->confirm(
+    expect(fn () => $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
         $confirmation,
-    ), 'movement_needs_classification');
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('movement_needs_classification'));
 
     expect(StatementImport::query()->doesntExist())->toBeTrue()
         ->and(StatementMovement::query()->doesntExist())->toBeTrue()
@@ -909,14 +899,15 @@ test('only parser candidates can be explicitly excluded from a verified period',
     $confirmation = confirmationPayload($ordinaryPreview);
     $confirmation['movements'][0]['classification'] = 'not_a_movement';
 
-    expectStatementImportError(fn () => $workflow->confirm(
+    expect(fn () => $workflow->confirm(
         $otherOwner,
         UploadedFile::fake()->createWithContent(
             'ordinary-confirm.pdf',
             SyntheticPdf::fromText(interbankStatementText()),
         ),
         $confirmation,
-    ), 'movement_cannot_be_excluded');
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('movement_cannot_be_excluded'));
 });
 
 test('confirmation rejects an instrument label containing a full financial identifier', function () {
@@ -930,11 +921,12 @@ test('confirmation rejects an instrument label containing a full financial ident
     $confirmation = confirmationPayload($preview);
     $confirmation['instrument_label'] = 'Interbank 4111 1111 1111 1111';
 
-    expectStatementImportError(fn () => $workflow->confirm(
+    expect(fn () => $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
         $confirmation,
-    ), 'unsafe_instrument_label');
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('unsafe_instrument_label'));
 
     expect(StatementImport::query()->doesntExist())->toBeTrue();
 });
@@ -945,20 +937,16 @@ test('unsafe and unsupported PDF inputs fail without retaining source evidence',
 ) {
     $owner = User::factory()->create();
 
-    try {
-        app(StatementImportWorkflow::class)->preview(
-            $owner,
-            UploadedFile::fake()->createWithContent('statement.pdf', $contents),
-        );
-
-        $this->fail('The unsafe statement should have been rejected.');
-    } catch (StatementImportValidationException $exception) {
+    expect(fn () => app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('statement.pdf', $contents),
+    ))->toThrow(function (StatementImportValidationException $exception) use ($errorCode, $contents): void {
         expect($exception->errorCode)->toBe($errorCode);
 
         if ($contents !== '') {
             expect($exception->getMessage())->not->toContain($contents);
         }
-    }
+    });
 
     expect(StatementImport::query()->doesntExist())->toBeTrue();
 })->with([
@@ -992,13 +980,14 @@ test('PDF extraction resource limits fail closed before producing a preview', fu
 ) {
     config([$configurationKey => $configurationValue]);
 
-    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+    expect(fn () => app(StatementImportWorkflow::class)->preview(
         User::factory()->create(),
         UploadedFile::fake()->createWithContent(
             'statement.pdf',
             SyntheticPdf::fromText(interbankStatementText()),
         ),
-    ), $errorCode);
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe($errorCode));
 })->with([
     'page count' => ['statement-imports.max_pages', 0, 'page_limit'],
     'extracted output' => ['statement-imports.max_extracted_bytes', 16, 'extraction_limit'],
@@ -1011,10 +1000,11 @@ test('PDF extraction is terminated at the configured processing time limit', fun
     ]);
     $largeSelectablePdf = SyntheticPdf::fromText(str_repeat("line\n", 200000));
 
-    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+    expect(fn () => app(StatementImportWorkflow::class)->preview(
         new User,
         UploadedFile::fake()->createWithContent('statement.pdf', $largeSelectablePdf),
-    ), 'processing_limit');
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('processing_limit'));
 });
 
 test('PDF failures do not expose or log source contents private filenames or full identifiers', function () {
@@ -1022,19 +1012,15 @@ test('PDF failures do not expose or log source contents private filenames or ful
     $privateFilename = 'interbank-4111111111111234-private.pdf';
     $sourceContents = '%PDF-1.4 private-statement-4111111111111234';
 
-    try {
-        app(StatementImportWorkflow::class)->preview(
-            new User,
-            UploadedFile::fake()->createWithContent($privateFilename, $sourceContents),
-        );
-
-        $this->fail('The corrupt statement should have been rejected.');
-    } catch (StatementImportValidationException $exception) {
+    expect(fn () => app(StatementImportWorkflow::class)->preview(
+        new User,
+        UploadedFile::fake()->createWithContent($privateFilename, $sourceContents),
+    ))->toThrow(function (StatementImportValidationException $exception) use ($privateFilename, $sourceContents): void {
         expect($exception->getMessage())
             ->not->toContain($privateFilename)
             ->not->toContain($sourceContents)
             ->not->toContain('4111111111111234');
-    }
+    });
 
     Log::shouldNotHaveReceived('error');
     Log::shouldNotHaveReceived('warning');
@@ -1049,13 +1035,14 @@ test('independent BCP reconciliation failures block preview and persistence', fu
     $owner = User::factory()->create();
     $statementText = str_replace($original, $replacement, bcpStatementText());
 
-    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+    expect(fn () => app(StatementImportWorkflow::class)->preview(
         $owner,
         UploadedFile::fake()->createWithContent(
             'statement.pdf',
             SyntheticPdf::fromText($statementText),
         ),
-    ), $errorCode);
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe($errorCode));
 
     expect(StatementImport::query()->doesntExist())->toBeTrue();
 })->with([
@@ -1072,13 +1059,14 @@ test('independent Interbank reconciliation failures block preview and persistenc
     $owner = User::factory()->create();
     $statementText = str_replace($original, $replacement, interbankStatementText());
 
-    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+    expect(fn () => app(StatementImportWorkflow::class)->preview(
         $owner,
         UploadedFile::fake()->createWithContent(
             'statement.pdf',
             SyntheticPdf::fromText($statementText),
         ),
-    ), $errorCode);
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe($errorCode));
 
     expect(StatementImport::query()->doesntExist())->toBeTrue();
 })->with([
@@ -1108,13 +1096,14 @@ test('missing duplicated and misplaced Interbank rows fail reconciliation', func
     string $statementText,
     string $errorCode,
 ) {
-    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->preview(
+    expect(fn () => app(StatementImportWorkflow::class)->preview(
         User::factory()->create(),
         UploadedFile::fake()->createWithContent(
             'statement.pdf',
             SyntheticPdf::fromText($statementText),
         ),
-    ), $errorCode);
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe($errorCode));
 })->with([
     'missing row' => [
         fn () => str_replace("20-Ene Grocery                  20.00 0.00\n", '', interbankStatementText()),
@@ -1150,11 +1139,12 @@ test('confirmation cannot omit substitute or leave a real movement unclassified'
     );
     $confirmation = $mutate(confirmationPayload($preview));
 
-    expectStatementImportError(fn () => app(StatementImportWorkflow::class)->confirm(
+    expect(fn () => app(StatementImportWorkflow::class)->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
         $confirmation,
-    ), $errorCode);
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe($errorCode));
 
     expect(StatementImport::query()->doesntExist())->toBeTrue()
         ->and(StatementMovement::query()->doesntExist())->toBeTrue()
@@ -1203,11 +1193,12 @@ test('exact statement replay is owner scoped and rejected atomically for the sam
         $confirmation,
     );
 
-    expectStatementImportError(fn () => $workflow->confirm(
+    expect(fn () => $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('replay.pdf', $pdf),
         $confirmation,
-    ), 'duplicate_statement');
+    ))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('duplicate_statement'));
 
     $otherPreview = $workflow->preview(
         $otherOwner,

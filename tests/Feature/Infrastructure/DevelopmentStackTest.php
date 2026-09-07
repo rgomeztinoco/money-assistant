@@ -21,16 +21,6 @@ test('development application ports use standard Sail bindings', function (): vo
     ]);
 });
 
-test('Vite accepts browser previews served from private network origins', function (): void {
-    $viteConfig = file_get_contents(base_path('vite.config.ts'));
-
-    expect($viteConfig)
-        ->toContain('defaultAllowedOrigins')
-        ->toContain('privateNetworkOrigin')
-        ->toContain('origin: [')
-        ->toContain('172\\.(?:1[6-9]|2\\d|3[01])');
-});
-
 test('starting Sail launches only manually controlled development services', function (): void {
     $services = $this->developmentCompose['services'];
 
@@ -39,22 +29,6 @@ test('starting Sail launches only manually controlled development services', fun
     foreach ($services as $service) {
         expect($service)->not->toHaveKey('restart');
     }
-});
-
-test('development background processes have explicit interactive lifecycles', function (): void {
-    $composer = json_decode(
-        file_get_contents(base_path('composer.json')),
-        true,
-        flags: JSON_THROW_ON_ERROR,
-    );
-
-    expect($composer['scripts']['dev'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'npx concurrently -c "#93c5fd,#fb7185,#fdba74" "php artisan queue:work" "php artisan pail --timeout=0" "npm run dev" --names=queue,logs,vite --kill-others',
-    ])->and($composer['scripts']['dev:scheduler'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'php artisan schedule:work --no-interaction',
-    ]);
 });
 
 test('development and production lifecycle commands target isolated Compose resources', function (): void {

@@ -42,19 +42,6 @@ function statementImportPreviewForLifecycle(?StatementMovementMatch $match = nul
     );
 }
 
-function expectStatementImportPreviewError(Closure $callback, string $errorCode): void
-{
-    try {
-        $callback();
-    } catch (StatementImportValidationException $exception) {
-        expect($exception->errorCode)->toBe($errorCode);
-
-        return;
-    }
-
-    throw new RuntimeException("Expected Import Preview error [{$errorCode}].");
-}
-
 test('Import Preview prepares confirmation data without exposing parser metadata', function () {
     $preview = statementImportPreviewForLifecycle();
 
@@ -99,18 +86,14 @@ test('Import Preview rejects source substitution and unsafe exclusion', function
     $substituted = $preview->confirmationData();
     $substituted['movements'][0]['source_row_id'] = str_repeat('c', 64);
 
-    expectStatementImportPreviewError(
-        fn () => $preview->validateConfirmation($substituted),
-        'movement_set_mismatch',
-    );
+    expect(fn () => $preview->validateConfirmation($substituted))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('movement_set_mismatch'));
 
     $excluded = $preview->confirmationData();
     $excluded['movements'][0]['classification'] = 'not_a_movement';
 
-    expectStatementImportPreviewError(
-        fn () => $preview->validateConfirmation($excluded),
-        'movement_cannot_be_excluded',
-    );
+    expect(fn () => $preview->validateConfirmation($excluded))
+        ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('movement_cannot_be_excluded'));
 });
 
 test('Import Preview explains why a proposed Transaction is incompatible with the movement classification', function () {
@@ -143,16 +126,11 @@ test('Import Preview explains why a proposed Transaction is incompatible with th
     $confirmation['movements'][0]['resolution'] = 'link';
     $confirmation['movements'][0]['transaction_id'] = 42;
 
-    try {
-        $preview->validateConfirmation($confirmation);
-    } catch (StatementImportValidationException $exception) {
-        expect($exception->errorCode)->toBe('invalid_movement_match')
-            ->and($exception->getMessage())->toBe(
-                'The selected Transaction is recorded as Spending, but this statement movement is classified as a Transfer between your accounts. Change the classification or choose a Transaction recorded as a Transfer.',
-            );
-
-        return;
-    }
-
-    throw new RuntimeException('Expected an incompatible Transaction error.');
+    expect(fn () => $preview->validateConfirmation($confirmation))
+        ->toThrow(function (StatementImportValidationException $exception): void {
+            expect($exception->errorCode)->toBe('invalid_movement_match')
+                ->and($exception->getMessage())->toBe(
+                    'The selected Transaction is recorded as Spending, but this statement movement is classified as a Transfer between your accounts. Change the classification or choose a Transaction recorded as a Transfer.',
+                );
+        });
 });
