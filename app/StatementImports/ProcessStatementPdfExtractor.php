@@ -12,15 +12,13 @@ final class ProcessStatementPdfExtractor implements StatementPdfExtractor
 
     private const int EXTRACTION_LIMIT_EXIT_CODE = 21;
 
-    private const int CORRUPT_PDF_EXIT_CODE = 22;
-
     public function extract(string $path): string
     {
         try {
             $result = Process::timeout((int) config('statement-imports.processing_timeout_seconds'))
                 ->run($this->command($path));
         } catch (ProcessTimedOutException) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'The statement took too long to process.',
                 'processing_limit',
             );
@@ -31,19 +29,15 @@ final class ProcessStatementPdfExtractor implements StatementPdfExtractor
         }
 
         throw match ($result->exitCode()) {
-            self::PAGE_LIMIT_EXIT_CODE => $this->invalid(
+            self::PAGE_LIMIT_EXIT_CODE => new StatementImportValidationException(
                 'The statement has an unsupported number of pages.',
                 'page_limit',
             ),
-            self::EXTRACTION_LIMIT_EXIT_CODE => $this->invalid(
+            self::EXTRACTION_LIMIT_EXIT_CODE => new StatementImportValidationException(
                 'The extracted statement is too large to process safely.',
                 'extraction_limit',
             ),
-            self::CORRUPT_PDF_EXIT_CODE => $this->invalid(
-                'The PDF is corrupt or cannot be read.',
-                'corrupt_pdf',
-            ),
-            default => $this->invalid(
+            default => new StatementImportValidationException(
                 'The PDF is corrupt or cannot be read.',
                 'corrupt_pdf',
             ),
@@ -86,10 +80,5 @@ final class ProcessStatementPdfExtractor implements StatementPdfExtractor
             (string) config('statement-imports.max_pages'),
             (string) config('statement-imports.max_extracted_bytes'),
         ];
-    }
-
-    private function invalid(string $message, string $errorCode): StatementImportValidationException
-    {
-        return new StatementImportValidationException($message, $errorCode);
     }
 }

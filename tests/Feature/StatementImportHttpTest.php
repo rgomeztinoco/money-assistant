@@ -266,21 +266,35 @@ test('the owner can link a statement movement when multipart form data serialize
         ->and(Transaction::query()->whereBelongsTo($owner, 'owner')->count())->toBe(5);
 });
 
-test('the Statement Import index is owner scoped and exposes safe metadata', function () {
+test('the Statement Import index paginates owner scoped history with safe metadata', function () {
     $owner = User::factory()->create();
     $otherOwner = User::factory()->create();
+    $olderImports = StatementImport::factory()->count(25)->for($owner, 'owner')->create([
+        'confirmed_at' => now()->subDay(),
+    ]);
     $statementImport = StatementImport::factory()->for($owner, 'owner')->create([
         'instrument_label' => 'Safe account',
+        'excluded_values' => [['description' => 'Opening balance']],
     ]);
-    StatementMovement::factory()->count(3)->for($statementImport)->create();
+    StatementMovement::factory()->count(2)->for($statementImport)->create();
+    StatementMovement::factory()->for($statementImport)->create(['resolution' => 'linked']);
     StatementImport::factory()->for($otherOwner, 'owner')->create();
 
     $response = $this->actingAs($owner)
         ->get(route('statement_imports.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('statement-imports/index')
-            ->has('statement_imports.data', 1)
+            ->has('statement_imports.data', 25)
+            ->where('statement_imports.total', 26)
+            ->where('statement_imports.current_page', 1)
+            ->where('statement_imports.last_page', 2)
+            ->where('statement_imports.next_page_url', route('statement_imports.index', ['page' => 2]))
+            ->where('statement_imports.data.0.id', $statementImport->id)
             ->where('statement_imports.data.0.instrument_label', 'Safe account')
+            ->where('statement_imports.data.0.movement_count', 3)
+            ->where('statement_imports.data.0.created_movement_count', 2)
+            ->where('statement_imports.data.0.linked_movement_count', 1)
+            ->where('statement_imports.data.0.excluded_movement_count', 1)
             ->has('statement_imports.data.0.totals')
             ->missing('statement_imports.data.0.file_hash'),
         );
@@ -299,6 +313,15 @@ test('the Statement Import index is owner scoped and exposes safe metadata', fun
         'excluded_movement_count',
         'totals',
     ]);
+
+    $this->get(route('statement_imports.index', ['page' => 2]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('statement_imports.data', 1)
+            ->where('statement_imports.total', 26)
+            ->where('statement_imports.current_page', 2)
+            ->where('statement_imports.next_page_url', null)
+            ->where('statement_imports.prev_page_url', route('statement_imports.index', ['page' => 1]))
+            ->where('statement_imports.data.0.id', $olderImports->first()->id));
 });
 
 test('BCP and Interbank imports coexist in safe history with complete movement summaries', function () {

@@ -52,7 +52,7 @@ final class StatementImportWorkflow
         $path = $statement->getRealPath();
 
         if ($path === false || ! is_readable($path)) {
-            throw $this->invalid('The uploaded statement could not be read.', 'unreadable_pdf');
+            throw new StatementImportValidationException('The uploaded statement could not be read.', 'unreadable_pdf');
         }
 
         $bytes = file_get_contents($path);
@@ -60,29 +60,29 @@ final class StatementImportWorkflow
         if ($bytes === false
             || $bytes === ''
             || strlen($bytes) > ((int) config('statement-imports.max_file_kilobytes') * 1024)) {
-            throw $this->invalid('The statement must be a PDF no larger than 8 MB.', 'invalid_pdf_size');
+            throw new StatementImportValidationException('The statement must be a PDF no larger than 8 MB.', 'invalid_pdf_size');
         }
 
         if (! str_starts_with($bytes, '%PDF-')) {
-            throw $this->invalid('Only valid PDF statements are supported.', 'invalid_pdf');
+            throw new StatementImportValidationException('Only valid PDF statements are supported.', 'invalid_pdf');
         }
 
         if (preg_match('/\/Encrypt\b/', $bytes) === 1) {
-            throw $this->invalid('Remove the PDF password before importing this statement.', 'encrypted_pdf');
+            throw new StatementImportValidationException('Remove the PDF password before importing this statement.', 'encrypted_pdf');
         }
 
         unset($bytes);
         $text = $this->pdfExtractor->extract($path);
 
         if (Str::squish($text) === '') {
-            throw $this->invalid('The PDF has no selectable text. Scanned statements are not supported.', 'empty_text');
+            throw new StatementImportValidationException('The PDF has no selectable text. Scanned statements are not supported.', 'empty_text');
         }
 
         try {
             $fileHash = hash_file('sha256', $path);
 
             if ($fileHash === false) {
-                throw $this->invalid('The uploaded statement could not be identified.', 'unreadable_pdf');
+                throw new StatementImportValidationException('The uploaded statement could not be identified.', 'unreadable_pdf');
             }
 
             return $this->statementMovementMatcher->match(
@@ -180,7 +180,7 @@ final class StatementImportWorkflow
             });
         } catch (QueryException $exception) {
             if ($exception->getCode() === '23505') {
-                throw $this->invalid('This exact statement has already been confirmed.', 'duplicate_statement');
+                throw new StatementImportValidationException('This exact statement has already been confirmed.', 'duplicate_statement');
             }
 
             throw $exception;
@@ -223,7 +223,7 @@ final class StatementImportWorkflow
         $kind = $classification->transactionKind();
 
         if ($kind === null) {
-            throw $this->invalid('Every confirmed movement needs a transaction kind.', 'movement_needs_classification');
+            throw new StatementImportValidationException('Every confirmed movement needs a transaction kind.', 'movement_needs_classification');
         }
 
         return Transaction::create([
@@ -256,13 +256,5 @@ final class StatementImportWorkflow
             ->availableForAssignment()
             ->whereRaw('lower(name) = lower(?)', [$name])
             ->first();
-    }
-
-    private function invalid(
-        string $message,
-        string $errorCode,
-        string $validationField = 'statement',
-    ): StatementImportValidationException {
-        return new StatementImportValidationException($message, $errorCode, $validationField);
     }
 }

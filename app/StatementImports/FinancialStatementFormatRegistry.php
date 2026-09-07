@@ -17,24 +17,19 @@ final readonly class FinancialStatementFormatRegistry
         ));
 
         if ($matchingAdapters === []) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'This Financial Statement Format is not supported.',
                 'unsupported_format',
             );
         }
 
         if (count($matchingAdapters) > 1) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'The Financial Statement Format could not be identified safely.',
                 'ambiguous_format',
             );
         }
 
         return $matchingAdapters[0]->preview($statementText, $fileHash);
-    }
-
-    private function invalid(string $message, string $errorCode): StatementImportValidationException
-    {
-        return new StatementImportValidationException($message, $errorCode);
     }
 }
