@@ -72,15 +72,6 @@ final class ReadCategoryTaxonomy
             ->all());
     }
 
-    public function activeCategoryIdNamed(User $owner, string $name): ?int
-    {
-        return Category::query()
-            ->whereBelongsTo($owner, 'owner')
-            ->availableForAssignment()
-            ->whereRaw('lower(name) = lower(?)', [$name])
-            ->value('id');
-    }
-
     /**
      * @return array{id: int, parent_id: int|null, name: string, archived_at: string|null, transaction_count: int}
      */

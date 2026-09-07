@@ -29,7 +29,7 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
     public function preview(string $statementText, string $fileHash): StatementImportPreview
     {
         if (preg_match('/DEL\s+(\d{2}\/\d{2}\/\d{2,4})\s+AL\s+(\d{2}\/\d{2}\/\d{2,4})/u', $statementText, $period) !== 1) {
-            throw $this->invalid('The BCP statement period could not be read.', 'invalid_period');
+            throw new StatementImportValidationException('The BCP statement period could not be read.', 'invalid_period');
         }
 
         $periodStart = $this->parseNumericDate($period[1]);
@@ -51,7 +51,7 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
                 $creditColumn = strpos($line, 'ABONOS / HABER');
 
                 if ($debitColumn === false || $creditColumn === false || $debitColumn >= $creditColumn) {
-                    throw $this->invalid('The BCP movement columns could not be read.', 'invalid_bcp_columns');
+                    throw new StatementImportValidationException('The BCP movement columns could not be read.', 'invalid_bcp_columns');
                 }
 
                 $directionBoundary = null;
@@ -98,7 +98,7 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
                 ->toString();
 
             if ($debitColumn === null || $creditColumn === null) {
-                throw $this->invalid('The BCP movement columns could not be read.', 'invalid_bcp_columns');
+                throw new StatementImportValidationException('The BCP movement columns could not be read.', 'invalid_bcp_columns');
             }
 
             $directionBoundary ??= $this->directionBoundary($lines, $debitColumn, $creditColumn);
@@ -133,7 +133,7 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
         }
 
         if ($openingBalance === null || $printedDebits === null || $printedCredits === null || $closingBalance === null) {
-            throw $this->invalid('The BCP statement totals could not be read.', 'missing_reconciliation');
+            throw new StatementImportValidationException('The BCP statement totals could not be read.', 'missing_reconciliation');
         }
 
         $parsedDebits = $this->sumMovements($movements, MovementDirection::Debit);
@@ -144,15 +144,15 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
             ->value();
 
         if ($parsedDebits !== $printedDebits) {
-            throw $this->invalid('BCP Cargos do not reconcile with the parsed movements.', 'bcp_debits_mismatch');
+            throw new StatementImportValidationException('BCP Cargos do not reconcile with the parsed movements.', 'bcp_debits_mismatch');
         }
 
         if ($parsedCredits !== $printedCredits) {
-            throw $this->invalid('BCP Abonos do not reconcile with the parsed movements.', 'bcp_credits_mismatch');
+            throw new StatementImportValidationException('BCP Abonos do not reconcile with the parsed movements.', 'bcp_credits_mismatch');
         }
 
         if ($expectedClosing !== $closingBalance) {
-            throw $this->invalid('The BCP opening balance and totals do not reconcile with the closing balance.', 'bcp_balance_mismatch');
+            throw new StatementImportValidationException('The BCP opening balance and totals do not reconcile with the closing balance.', 'bcp_balance_mismatch');
         }
 
         return new StatementImportPreview(
@@ -215,7 +215,7 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
         $parsed = CarbonImmutable::createFromFormat($format, $date, config('app.timezone'));
 
         if ($parsed === null) {
-            throw $this->invalid('The statement contains an invalid date.', 'invalid_date');
+            throw new StatementImportValidationException('The statement contains an invalid date.', 'invalid_date');
         }
 
         return $parsed;
@@ -247,7 +247,7 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
         try {
             return CarbonImmutable::createSafe($year, $month, $day, timezone: config('app.timezone'));
         } catch (Throwable) {
-            throw $this->invalid('A BCP movement contains an invalid date.', 'invalid_movement_date');
+            throw new StatementImportValidationException('A BCP movement contains an invalid date.', 'invalid_movement_date');
         }
     }
 
@@ -342,10 +342,5 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
         }
 
         return substr(str_replace('-', '', $account[0]), -4);
-    }
-
-    private function invalid(string $message, string $errorCode): StatementImportValidationException
-    {
-        return new StatementImportValidationException($message, $errorCode);
     }
 }

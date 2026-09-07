@@ -89,7 +89,7 @@ final readonly class StatementImportPreview
     {
         if (! is_string($confirmation['file_hash'] ?? null)
             || ! hash_equals($this->fileHash, $confirmation['file_hash'])) {
-            throw $this->invalid('The confirmation PDF does not match the previewed statement.', 'file_mismatch');
+            throw new StatementImportValidationException('The confirmation PDF does not match the previewed statement.', 'file_mismatch');
         }
 
         $instrumentLabel = Str::squish(is_string($confirmation['instrument_label'] ?? null)
@@ -98,7 +98,7 @@ final readonly class StatementImportPreview
         $instrumentLastFour = $confirmation['instrument_last_four'] ?? null;
 
         if ($instrumentLabel === '' || Str::length($instrumentLabel) > 100) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'A safe payment-instrument label is required.',
                 'invalid_instrument_label',
                 'instrument_label',
@@ -106,7 +106,7 @@ final readonly class StatementImportPreview
         }
 
         if (preg_match('/(?:\d[\s-]?){5,}/', $instrumentLabel) === 1) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'Use a product label without a complete account or card number.',
                 'unsafe_instrument_label',
                 'instrument_label',
@@ -115,7 +115,7 @@ final readonly class StatementImportPreview
 
         if ($instrumentLastFour !== null
             && (! is_string($instrumentLastFour) || preg_match('/^\d{4}$/D', $instrumentLastFour) !== 1)) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'Payment-instrument last four must contain exactly four digits.',
                 'invalid_instrument_last_four',
                 'instrument_last_four',
@@ -166,7 +166,7 @@ final readonly class StatementImportPreview
     private function validateMovementEdits(mixed $edits): array
     {
         if (! is_array($edits) || count($edits) !== count($this->movements)) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'Every source movement must be included exactly once.',
                 'movement_set_mismatch',
                 'movements',
@@ -182,7 +182,7 @@ final readonly class StatementImportPreview
 
         foreach (array_values($edits) as $movementIndex => $edit) {
             if (! is_array($edit) || ! is_string($edit['source_row_id'] ?? null)) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     'Every movement must retain its source identity.',
                     'invalid_source_row',
                     "movements.{$movementIndex}.source_row_id",
@@ -193,7 +193,7 @@ final readonly class StatementImportPreview
             $source = $sourceMovements->get($sourceRowId);
 
             if (! $source instanceof StatementImportPreviewMovement || isset($seen[$sourceRowId])) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     'A source movement was omitted, duplicated, or substituted.',
                     'movement_set_mismatch',
                     "movements.{$movementIndex}.source_row_id",
@@ -207,7 +207,7 @@ final readonly class StatementImportPreview
 
             if ($classification === StatementMovementClassification::NotAMovement) {
                 if (! $source->canBeExcluded) {
-                    throw $this->invalid(
+                    throw new StatementImportValidationException(
                         'A posted movement cannot be removed from the import.',
                         'movement_cannot_be_excluded',
                         "movements.{$movementIndex}.classification",
@@ -243,7 +243,7 @@ final readonly class StatementImportPreview
             $description = Str::squish(is_string($edit['description'] ?? null) ? $edit['description'] : '');
 
             if ($currency === null) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     'A movement has an unsupported currency.',
                     'invalid_movement_currency',
                     "movements.{$movementIndex}.currency",
@@ -254,7 +254,7 @@ final readonly class StatementImportPreview
                 StatementMovementClassification::NeedsClassification,
                 StatementMovementClassification::AlreadyRecorded,
             ], true)) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     'Classify every real movement before confirming the import.',
                     'movement_needs_classification',
                     "movements.{$movementIndex}.classification",
@@ -262,7 +262,7 @@ final readonly class StatementImportPreview
             }
 
             if ($description === '' || Str::length($description) > 255) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     'Every movement requires a short description.',
                     'invalid_movement_description',
                     "movements.{$movementIndex}.description",
@@ -279,7 +279,7 @@ final readonly class StatementImportPreview
             if ($resolution === StatementMovementResolution::Linked
                 && $transactionId !== null
                 && isset($linkedTransactionIds[$transactionId])) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     'Each Transaction can resolve only one statement movement.',
                     'duplicate_movement_match',
                     "movements.{$movementIndex}.resolution",
@@ -304,7 +304,7 @@ final readonly class StatementImportPreview
         }
 
         if (count($seen) !== $sourceMovements->count()) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'Every source movement must be included exactly once.',
                 'movement_set_mismatch',
                 'movements',
@@ -336,7 +336,7 @@ final readonly class StatementImportPreview
             if ($resolution !== 'link'
                 || ! is_int($transactionId)
                 || $transactionId !== $match->transactionId) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     'The clear statement match changed after preview.',
                     'movement_match_changed',
                     $validationField,
@@ -344,7 +344,7 @@ final readonly class StatementImportPreview
             }
 
             if ($match->compatibleCandidate($transactionId, $classification) === null) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     $match->incompatibilityMessage($transactionId, $classification)
                         ?? 'The selected Transaction is not compatible with this statement movement.',
                     'invalid_movement_match',
@@ -359,7 +359,7 @@ final readonly class StatementImportPreview
             if ($resolution !== 'create'
                 || $transactionId !== null
                 || $transactionIdInput !== null) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     'A statement gap must be added as a new Transaction.',
                     'invalid_movement_resolution',
                     $validationField,
@@ -370,7 +370,7 @@ final readonly class StatementImportPreview
         }
 
         if ($resolution === 'needs_resolution') {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'Choose whether to link or add this ambiguous movement.',
                 'movement_needs_match_resolution',
                 $validationField,
@@ -379,7 +379,7 @@ final readonly class StatementImportPreview
 
         if ($resolution === 'create' && $transactionId === null) {
             if ($transactionIdInput !== null) {
-                throw $this->invalid(
+                throw new StatementImportValidationException(
                     'Remove the selected Transaction before adding this movement as new.',
                     'invalid_movement_resolution',
                     $validationField,
@@ -396,7 +396,7 @@ final readonly class StatementImportPreview
         if ($resolution !== 'link'
             || ! is_int($transactionId)
             || $candidate === null) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 $transactionId === null
                     ? 'Choose a proposed Transaction to link to this statement movement.'
                     : ($match->incompatibilityMessage($transactionId, $classification)
@@ -437,13 +437,13 @@ final readonly class StatementImportPreview
     private function strictDate(mixed $date, string $validationField): CarbonImmutable
     {
         if (! is_string($date)) {
-            throw $this->invalid('Every movement requires a valid date.', 'invalid_movement_date', $validationField);
+            throw new StatementImportValidationException('Every movement requires a valid date.', 'invalid_movement_date', $validationField);
         }
 
         $parsed = CarbonImmutable::createFromFormat('!Y-m-d', $date, config('app.timezone'));
 
         if ($parsed === null || $parsed->toDateString() !== $date) {
-            throw $this->invalid('Every movement requires a valid date.', 'invalid_movement_date', $validationField);
+            throw new StatementImportValidationException('Every movement requires a valid date.', 'invalid_movement_date', $validationField);
         }
 
         return $parsed;
@@ -452,7 +452,7 @@ final readonly class StatementImportPreview
     private function positiveMinorUnits(mixed $amount, string $validationField): string
     {
         if (! is_int($amount) && ! is_string($amount)) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'Movement amounts must use positive integer minor units.',
                 'invalid_movement_amount',
                 $validationField,
@@ -462,7 +462,7 @@ final readonly class StatementImportPreview
         try {
             $exact = ExactInteger::from($amount);
         } catch (Throwable) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'Movement amounts must use positive integer minor units.',
                 'invalid_movement_amount',
                 $validationField,
@@ -471,7 +471,7 @@ final readonly class StatementImportPreview
 
         if ($exact->compare(ExactInteger::from(0)) !== 1
             || $exact->compare(ExactInteger::from('9223372036854775807')) === 1) {
-            throw $this->invalid(
+            throw new StatementImportValidationException(
                 'Movement amounts must use positive integer minor units.',
                 'invalid_movement_amount',
                 $validationField,
@@ -479,13 +479,5 @@ final readonly class StatementImportPreview
         }
 
         return $exact->value();
-    }
-
-    private function invalid(
-        string $message,
-        string $errorCode,
-        string $validationField = 'statement',
-    ): StatementImportValidationException {
-        return new StatementImportValidationException($message, $errorCode, $validationField);
     }
 }

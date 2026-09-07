@@ -29,7 +29,7 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
     public function preview(string $statementText, string $fileHash): StatementImportPreview
     {
         if (preg_match('/Tarjeta de Cr(?:é|e)dito del\s+(\d{2}\/\d{2}\/\d{4})\s+al cierre de\s+(\d{2}\/\d{2}\/\d{4})/ui', $statementText, $period) !== 1) {
-            throw $this->invalid('The Interbank statement period could not be read.', 'invalid_period');
+            throw new StatementImportValidationException('The Interbank statement period could not be read.', 'invalid_period');
         }
 
         $periodStart = $this->parseNumericDate($period[1]);
@@ -144,7 +144,7 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
             $firstAmountCapture = $rowAmountCaptures[0] ?? null;
 
             if (! is_array($firstAmountCapture)) {
-                throw $this->invalid('An Interbank row amount could not be located.', 'invalid_currency_columns');
+                throw new StatementImportValidationException('An Interbank row amount could not be located.', 'invalid_currency_columns');
             }
 
             $firstAmountOffset = $firstAmountCapture[1];
@@ -153,7 +153,7 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
                 $secondAmountCapture = $rowAmountCaptures[1] ?? null;
 
                 if (! is_array($secondAmountCapture)) {
-                    throw $this->invalid('An Interbank row amount could not be located.', 'invalid_currency_columns');
+                    throw new StatementImportValidationException('An Interbank row amount could not be located.', 'invalid_currency_columns');
                 }
 
                 $secondAmountOffset = $secondAmountCapture[1];
@@ -182,7 +182,7 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
             }
 
             if (count($nonZeroAmounts) > 1) {
-                throw $this->invalid('An Interbank row contains amounts in more than one currency.', 'ambiguous_currency_columns');
+                throw new StatementImportValidationException('An Interbank row contains amounts in more than one currency.', 'ambiguous_currency_columns');
             }
 
             $currency = (string) array_key_first($nonZeroAmounts);
@@ -220,7 +220,7 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
 
         foreach ([$previous, $printedPayments, $printedConsumption, $printedOtherCharges, $printedPaymentTotal] as $requiredTotals) {
             if ($requiredTotals['PEN'] === null || $requiredTotals['USD'] === null) {
-                throw $this->invalid('The Interbank statement totals could not be read.', 'missing_reconciliation');
+                throw new StatementImportValidationException('The Interbank statement totals could not be read.', 'missing_reconciliation');
             }
         }
 
@@ -230,15 +230,15 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
                 ->value();
 
             if ($paymentsExpected !== $printedPayments[$currency]) {
-                throw $this->invalid("Interbank payments do not reconcile in {$currency}.", 'interbank_payments_mismatch');
+                throw new StatementImportValidationException("Interbank payments do not reconcile in {$currency}.", 'interbank_payments_mismatch');
             }
 
             if ($sectionSums['consumption'][$currency]->value() !== $printedConsumption[$currency]) {
-                throw $this->invalid("Interbank consumption does not reconcile in {$currency}.", 'interbank_consumption_mismatch');
+                throw new StatementImportValidationException("Interbank consumption does not reconcile in {$currency}.", 'interbank_consumption_mismatch');
             }
 
             if ($sectionSums['other_charges'][$currency]->value() !== $printedOtherCharges[$currency]) {
-                throw $this->invalid("Interbank other charges do not reconcile in {$currency}.", 'interbank_other_charges_mismatch');
+                throw new StatementImportValidationException("Interbank other charges do not reconcile in {$currency}.", 'interbank_other_charges_mismatch');
             }
 
             $wholeStatement = ExactInteger::from($printedPayments[$currency])
@@ -247,7 +247,7 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
                 ->value();
 
             if ($wholeStatement !== $printedPaymentTotal[$currency]) {
-                throw $this->invalid("The Interbank statement does not reconcile in {$currency}.", 'interbank_statement_mismatch');
+                throw new StatementImportValidationException("The Interbank statement does not reconcile in {$currency}.", 'interbank_statement_mismatch');
             }
         }
 
@@ -397,7 +397,7 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
         try {
             return CarbonImmutable::createSafe($year, $month, $day, 0, 0, 0, config('app.timezone'));
         } catch (Throwable) {
-            throw $this->invalid('An Interbank movement contains an invalid date.', 'invalid_movement_date');
+            throw new StatementImportValidationException('An Interbank movement contains an invalid date.', 'invalid_movement_date');
         }
     }
 
@@ -406,7 +406,7 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
         $parsed = CarbonImmutable::createFromFormat('!d/m/Y', $date, config('app.timezone'));
 
         if ($parsed === null) {
-            throw $this->invalid('The statement contains an invalid date.', 'invalid_date');
+            throw new StatementImportValidationException('The statement contains an invalid date.', 'invalid_date');
         }
 
         return $parsed;
@@ -426,10 +426,5 @@ final class InterbankFinancialStatementAdapter implements FinancialStatementForm
         }
 
         return $instrument[1];
-    }
-
-    private function invalid(string $message, string $errorCode): StatementImportValidationException
-    {
-        return new StatementImportValidationException($message, $errorCode);
     }
 }
