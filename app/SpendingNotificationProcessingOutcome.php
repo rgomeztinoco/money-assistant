@@ -15,22 +15,4 @@ enum SpendingNotificationProcessingOutcome: string
     {
         return $this === self::Unsupported;
     }
-
-    /** @return list<string> */
-    public static function failureValues(): array
-    {
-        return array_map(
-            static fn (self $outcome): string => $outcome->value,
-            [self::AuthenticationFailed, self::Unsupported, self::Failed],
-        );
-    }
-
-    /** @return list<string> */
-    public static function successValues(): array
-    {
-        return array_map(
-            static fn (self $outcome): string => $outcome->value,
-            [self::Created, self::CreatedWithReview],
-        );
-    }
 }
