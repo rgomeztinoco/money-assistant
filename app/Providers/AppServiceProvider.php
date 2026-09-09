@@ -16,6 +16,7 @@ use App\StatementImports\ProcessStatementPdfExtractor;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
@@ -65,6 +66,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        DevCommands::except('server');
+        DevCommands::artisan('queue:work', 'queue');
 
         RateLimiter::for(
             'gmail-message-processing',

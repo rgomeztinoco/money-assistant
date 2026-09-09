@@ -54,14 +54,6 @@
             "pnpm install --frozen-lockfile",
             "pnpm run build"
         ],
-        "dev": [
-            "Composer\\Config::disableProcessTimeout",
-            "pnpm exec concurrently -c \"#93c5fd,#fb7185,#fdba74\" \"php artisan queue:work\" \"php artisan pail --timeout=0\" \"pnpm run dev\" --names=queue,logs,vite --kill-others"
-        ],
-        "dev:scheduler": [
-            "Composer\\Config::disableProcessTimeout",
-            "php artisan schedule:work --no-interaction"
-        ],
         "lint": [
             "pint --parallel"
         ],

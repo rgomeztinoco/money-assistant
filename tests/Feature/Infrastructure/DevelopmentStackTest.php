@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Yaml\Yaml;
 
 beforeEach(function (): void {
@@ -29,6 +30,20 @@ test('starting Sail launches only manually controlled development services', fun
     foreach ($services as $service) {
         expect($service)->not->toHaveKey('restart');
     }
+});
+
+test('Artisan dev runs the development processes alongside Sail', function (): void {
+    expect(Artisan::call('dev:list', ['--json' => true]))->toBe(0);
+
+    $commands = collect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))
+        ->pluck('command', 'name')
+        ->all();
+
+    expect($commands)->toEqual([
+        'queue' => 'php artisan queue:work',
+        'logs' => 'php artisan pail --timeout=0',
+        'vite' => 'pnpm run dev',
+    ]);
 });
 
 test('development and production lifecycle commands target isolated Compose resources', function (): void {
