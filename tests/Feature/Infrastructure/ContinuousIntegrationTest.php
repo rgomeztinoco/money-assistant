@@ -30,18 +30,18 @@ test('CI runs the quality gates and builds assets before testing', function (): 
         'artisan test --compact tests/Feature',
         'vendor/bin/pint --test',
         'vendor/bin/phpstan analyse',
-        'npm run types:check',
-        'npm run lint:check',
-        'npm run format:check',
-        'npm run build',
+        'pnpm run types:check',
+        'pnpm run lint:check',
+        'pnpm run format:check',
+        'pnpm run build',
     )->not->toContain('tests/Browser', 'playwright install')
-        ->and($browserCommands)->toContain('artisan test --compact --parallel --processes=2 tests/Browser', 'npm run build')
+        ->and($browserCommands)->toContain('artisan test --compact --parallel --processes=2 tests/Browser', 'pnpm run build')
         ->not->toContain('tests/Feature')
         ->and($productionCommands)->toContain('artisan test', 'ProductionStackTest.php', 'BackupRecoveryTest.php');
 
-    expect(strpos($commands, 'artisan migrate:fresh'))->toBeLessThan(strpos($commands, 'npm run build'))
-        ->and(strpos($commands, 'npm run build'))->toBeLessThan(strpos($commands, 'artisan test'))
-        ->and(strpos($browserCommands, 'npm run build'))->toBeLessThan(strpos($browserCommands, 'artisan test'));
+    expect(strpos($commands, 'artisan migrate:fresh'))->toBeLessThan(strpos($commands, 'pnpm run build'))
+        ->and(strpos($commands, 'pnpm run build'))->toBeLessThan(strpos($commands, 'artisan test'))
+        ->and(strpos($browserCommands, 'pnpm run build'))->toBeLessThan(strpos($browserCommands, 'artisan test'));
 });
 
 test('CI runs directly on the runner against a healthy PostgreSQL service', function (string $job): void {
@@ -76,8 +76,8 @@ test('CI installs headless Chromium before running browser tests with two worker
     $workflow = Yaml::parseFile(base_path('.github/workflows/tests.yml'));
     $steps = collect($workflow['jobs']['browser']['steps']);
     $node = $steps->first(fn (array $step): bool => str_starts_with($step['uses'] ?? '', 'actions/setup-node@'));
-    $dependencies = $steps->firstWhere('run', 'npm ci --no-audit --no-fund');
-    $browser = $steps->firstWhere('run', 'npx playwright install --with-deps --only-shell chromium');
+    $dependencies = $steps->firstWhere('run', 'pnpm install --frozen-lockfile');
+    $browser = $steps->firstWhere('run', 'pnpm exec playwright install --with-deps --only-shell chromium');
     $tests = $steps->firstWhere('run', 'php artisan test --compact --parallel --processes=2 tests/Browser');
 
     expect($node)->not->toBeNull()
@@ -89,6 +89,26 @@ test('CI installs headless Chromium before running browser tests with two worker
         ->and($steps->search($dependencies))->toBeLessThan($steps->search($browser))
         ->and($steps->search($browser))->toBeLessThan($steps->search($tests));
 });
+
+test('frontend CI jobs install the pinned pnpm before restoring its cache', function (string $job): void {
+    $workflow = Yaml::parseFile(base_path('.github/workflows/tests.yml'));
+    $steps = collect($workflow['jobs'][$job]['steps']);
+    $pnpm = $steps->first(fn (array $step): bool => str_starts_with($step['uses'] ?? '', 'pnpm/action-setup@'));
+    $node = $steps->first(fn (array $step): bool => str_starts_with($step['uses'] ?? '', 'actions/setup-node@'));
+    $dependencies = $steps->firstWhere('run', 'pnpm install --frozen-lockfile');
+    $package = json_decode(file_get_contents(base_path('package.json')), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($pnpm)->not->toBeNull()
+        ->and($node)->not->toBeNull()
+        ->and($dependencies)->not->toBeNull()
+        ->and($package['packageManager'])->toMatch('/^pnpm@\d+\.\d+\.\d+$/')
+        ->and($pnpm['with'] ?? [])->not->toHaveKey('version')
+        ->and($node['with']['cache'])->toBe('pnpm')
+        ->and($steps->search($pnpm))->toBeLessThan($steps->search($node))
+        ->and($steps->search($node))->toBeLessThan($steps->search($dependencies))
+        ->and(base_path('pnpm-lock.yaml'))->toBeFile()
+        ->and(file_exists(base_path('package-lock.json')))->toBeFalse();
+})->with(['checks', 'browser']);
 
 test('CI waits for independent browser and quality jobs even when they fail', function (): void {
     $jobs = Yaml::parseFile(base_path('.github/workflows/tests.yml'))['jobs'];

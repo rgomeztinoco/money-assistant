@@ -170,7 +170,10 @@ final class ReadTrends
                     'counts' => [],
                     'largest' => [],
                 ];
-                $this->recordEvidence($categoryBuckets[$bucketKey], $periodIndex, $allocation, $transaction);
+                $categoryBuckets[$bucketKey] = [
+                    ...$categoryBuckets[$bucketKey],
+                    ...$this->recordEvidence($categoryBuckets[$bucketKey], $periodIndex, $allocation, $transaction),
+                ];
             }
 
             $merchantKey = $this->merchantNormalizer->normalize($transaction->description);
@@ -180,12 +183,15 @@ final class ReadTrends
                 'counts' => [],
                 'largest' => [],
             ];
-            $this->recordEvidence(
-                $merchantBuckets[$merchantKey],
-                $periodIndex,
-                $transaction->kind->netSpendingAmount($transaction->amount_minor),
-                $transaction,
-            );
+            $merchantBuckets[$merchantKey] = [
+                ...$merchantBuckets[$merchantKey],
+                ...$this->recordEvidence(
+                    $merchantBuckets[$merchantKey],
+                    $periodIndex,
+                    $transaction->kind->netSpendingAmount($transaction->amount_minor),
+                    $transaction,
+                ),
+            ];
         }
 
         $findings = [
@@ -231,13 +237,16 @@ final class ReadTrends
         return $findings;
     }
 
-    /** @param TrendBucket $bucket */
+    /**
+     * @param  TrendBucket  $bucket
+     * @return TrendBucket
+     */
     private function recordEvidence(
-        array &$bucket,
+        array $bucket,
         int $periodIndex,
         ExactInteger $amount,
         Transaction $transaction,
-    ): void {
+    ): array {
         $bucket['amounts'][$periodIndex] = ($bucket['amounts'][$periodIndex] ?? ExactInteger::from(0))
             ->add($amount);
         $bucket['counts'][$periodIndex] = ($bucket['counts'][$periodIndex] ?? 0) + 1;
@@ -252,6 +261,8 @@ final class ReadTrends
                 'absolute_amount' => $absoluteAmount,
             ];
         }
+
+        return $bucket;
     }
 
     /**
