@@ -35,7 +35,7 @@ test('CI runs the quality gates and builds assets before testing', function (): 
         'npm run format:check',
         'npm run build',
     )->not->toContain('tests/Browser', 'playwright install')
-        ->and($browserCommands)->toContain('artisan test --compact tests/Browser', 'npm run build')
+        ->and($browserCommands)->toContain('artisan test --compact --parallel --processes=2 tests/Browser', 'npm run build')
         ->not->toContain('tests/Feature')
         ->and($productionCommands)->toContain('artisan test', 'ProductionStackTest.php', 'BackupRecoveryTest.php');
 
@@ -72,13 +72,13 @@ test('CI runs directly on the runner against a healthy PostgreSQL service', func
     }
 })->with(['checks', 'browser', 'production-stack']);
 
-test('CI installs Node and Chromium before running browser tests', function (): void {
+test('CI installs headless Chromium before running browser tests with two workers', function (): void {
     $workflow = Yaml::parseFile(base_path('.github/workflows/tests.yml'));
     $steps = collect($workflow['jobs']['browser']['steps']);
     $node = $steps->first(fn (array $step): bool => str_starts_with($step['uses'] ?? '', 'actions/setup-node@'));
     $dependencies = $steps->firstWhere('run', 'npm ci --no-audit --no-fund');
-    $browser = $steps->firstWhere('run', 'npx playwright install --with-deps chromium');
-    $tests = $steps->firstWhere('run', 'php artisan test --compact tests/Browser');
+    $browser = $steps->firstWhere('run', 'npx playwright install --with-deps --only-shell chromium');
+    $tests = $steps->firstWhere('run', 'php artisan test --compact --parallel --processes=2 tests/Browser');
 
     expect($node)->not->toBeNull()
         ->and($dependencies)->not->toBeNull()
