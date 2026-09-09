@@ -73,8 +73,8 @@ COPY --chown=www-data:www-data storage storage
 COPY --chown=www-data:www-data artisan composer.json composer.lock ./
 COPY --from=build --chown=www-data:www-data /app/vendor vendor
 COPY --from=build --chown=www-data:www-data /app/public/build public/build
-COPY --chown=www-data:www-data Caddyfile.application /etc/frankenphp/Caddyfile
-COPY --chmod=0755 docker-entrypoint.production /usr/local/bin/with-production-secrets
+COPY --chown=www-data:www-data production/Caddyfile.application /etc/frankenphp/Caddyfile
+COPY --chmod=0755 production/docker-entrypoint.production /usr/local/bin/with-production-secrets
 
 RUN chmod -R ug+rwX storage bootstrap/cache
 

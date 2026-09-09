@@ -65,7 +65,7 @@ printf '%s' "$ufw_rules" | awk '
 compose_status="$(docker compose \
     --project-name "$project_name" \
     --env-file "$environment_file" \
-    --file "${script_directory}/compose.production.yaml" \
+    --file "${script_directory}/../compose.production.yaml" \
     config --format json)"
 
 printf '%s' "$compose_status" | jq -e '

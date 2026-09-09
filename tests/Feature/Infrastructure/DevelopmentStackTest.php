@@ -57,7 +57,7 @@ test('development and production lifecycle commands target isolated Compose reso
     $productionNetworks = $projectResourceNames($this->productionCompose, 'networks');
     $developmentVolumes = $projectResourceNames($this->developmentCompose, 'volumes');
     $productionVolumes = $projectResourceNames($this->productionCompose, 'volumes');
-    $productionService = file_get_contents(base_path('money-assistant-production.service'));
+    $productionService = file_get_contents(base_path('production/money-assistant-production.service'));
 
     expect($developmentProject)->toBe('money-assistant-development')
         ->and($productionProject)->toBe('money-assistant-production')

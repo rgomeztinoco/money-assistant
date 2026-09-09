@@ -290,7 +290,7 @@ volumes:
 
 configs:
     production_caddy:
-        file: ./Caddyfile.production
+        file: ./production/Caddyfile.production
 
 secrets:
     application_key:
