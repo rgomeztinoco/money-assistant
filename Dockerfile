@@ -68,6 +68,7 @@ COPY --chown=www-data:www-data config config
 COPY --chown=www-data:www-data database database
 COPY --chown=www-data:www-data public public
 COPY --chown=www-data:www-data resources/views resources/views
+COPY --chown=www-data:www-data resources/notification-formats resources/notification-formats
 COPY --chown=www-data:www-data routes routes
 COPY --chown=www-data:www-data storage storage
 COPY --chown=www-data:www-data artisan composer.json composer.lock ./
@@ -77,6 +78,8 @@ COPY --chown=www-data:www-data production/Caddyfile.application /etc/frankenphp/
 COPY --chmod=0755 production/docker-entrypoint.production /usr/local/bin/with-production-secrets
 
 RUN chmod -R ug+rwX storage bootstrap/cache
+
+RUN php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $results = $app->make(App\NotificationIngestion\SupportedSpendingNotificationRegistry::class)->verifyFixtures(); if ($results === [] || in_array(false, $results, true)) { throw new RuntimeException("Gmail notification format verification failed."); }'
 
 USER root
 
