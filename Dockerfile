@@ -21,7 +21,7 @@ WORKDIR /app
 
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY --from=node /usr/local/ /usr/local/
-COPY composer.json composer.lock package.json package-lock.json ./
+COPY composer.json composer.lock package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 RUN composer install \
         --classmap-authoritative \
@@ -31,7 +31,8 @@ RUN composer install \
         --no-progress \
         --no-scripts \
         --prefer-dist \
-    && npm ci --no-audit --no-fund
+    && corepack enable pnpm \
+    && pnpm install --frozen-lockfile
 
 COPY app app
 COPY bootstrap bootstrap
@@ -50,7 +51,7 @@ RUN composer dump-autoload \
         --no-dev \
         --no-interaction \
     && php artisan wayfinder:generate --with-form --no-interaction \
-    && npm run build
+    && pnpm run build
 
 FROM php-base AS production
 
@@ -72,8 +73,8 @@ COPY --chown=www-data:www-data storage storage
 COPY --chown=www-data:www-data artisan composer.json composer.lock ./
 COPY --from=build --chown=www-data:www-data /app/vendor vendor
 COPY --from=build --chown=www-data:www-data /app/public/build public/build
-COPY --chown=www-data:www-data Caddyfile.application /etc/frankenphp/Caddyfile
-COPY --chmod=0755 docker-entrypoint.production /usr/local/bin/with-production-secrets
+COPY --chown=www-data:www-data production/Caddyfile.application /etc/frankenphp/Caddyfile
+COPY --chmod=0755 production/docker-entrypoint.production /usr/local/bin/with-production-secrets
 
 RUN chmod -R ug+rwX storage bootstrap/cache
 

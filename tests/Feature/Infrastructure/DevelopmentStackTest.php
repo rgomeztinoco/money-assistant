@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Yaml\Yaml;
 
 beforeEach(function (): void {
@@ -31,6 +32,20 @@ test('starting Sail launches only manually controlled development services', fun
     }
 });
 
+test('Artisan dev runs the development processes alongside Sail', function (): void {
+    expect(Artisan::call('dev:list', ['--json' => true]))->toBe(0);
+
+    $commands = collect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))
+        ->pluck('command', 'name')
+        ->all();
+
+    expect($commands)->toEqual([
+        'queue' => 'php artisan queue:work',
+        'logs' => 'php artisan pail --timeout=0',
+        'vite' => 'pnpm run dev',
+    ]);
+});
+
 test('development and production lifecycle commands target isolated Compose resources', function (): void {
     $developmentProject = $this->developmentCompose['name'];
     $productionProject = $this->productionCompose['name'];
@@ -42,7 +57,7 @@ test('development and production lifecycle commands target isolated Compose reso
     $productionNetworks = $projectResourceNames($this->productionCompose, 'networks');
     $developmentVolumes = $projectResourceNames($this->developmentCompose, 'volumes');
     $productionVolumes = $projectResourceNames($this->productionCompose, 'volumes');
-    $productionService = file_get_contents(base_path('money-assistant-production.service'));
+    $productionService = file_get_contents(base_path('production/money-assistant-production.service'));
 
     expect($developmentProject)->toBe('money-assistant-development')
         ->and($productionProject)->toBe('money-assistant-production')

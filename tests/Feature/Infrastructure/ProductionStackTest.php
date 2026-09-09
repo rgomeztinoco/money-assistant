@@ -43,7 +43,7 @@ test('production Compose builds one hardened application image', function (): vo
     expect($services['web']['secrets'])->toContain('google_gmail_client_secret')
         ->and($services['worker']['secrets'])->toContain('google_gmail_client_secret')
         ->and($services['scheduler']['secrets'])->not->toContain('google_gmail_client_secret')
-        ->and(file_get_contents(base_path('docker-entrypoint.production')))
+        ->and(file_get_contents(base_path('production/docker-entrypoint.production')))
         ->toContain('read_secret APP_KEY')
         ->toContain('read_secret DB_PASSWORD')
         ->toContain('read_secret GOOGLE_GMAIL_CLIENT_SECRET');
@@ -64,12 +64,12 @@ test('only the private proxy publishes a loopback port', function (): void {
     }
 
     expect($this->productionCompose['networks']['application']['driver'])->toBe('bridge')
-        ->and(file_get_contents(base_path('Caddyfile.production')))
+        ->and(file_get_contents(base_path('production/Caddyfile.production')))
         ->toContain('reverse_proxy web:8080')
         ->toContain('header_up X-Forwarded-Proto https')
-        ->and(file_get_contents(base_path('money-assistant-tailnet.service')))
+        ->and(file_get_contents(base_path('production/money-assistant-tailnet.service')))
         ->toContain('tailscale serve --bg --https=8443 http://127.0.0.1:8443')
-        ->and(file_get_contents(base_path('verify-private-ingress')))
+        ->and(file_get_contents(base_path('production/verify-private-ingress')))
         ->toContain('tailscale funnel status --json');
 });
 
@@ -146,7 +146,7 @@ SH);
             ]),
         ];
         $approvedIngress = new Process([
-            base_path('verify-private-ingress'),
+            base_path('production/verify-private-ingress'),
             $environmentFile,
         ], base_path(), $environment);
         $approvedIngress->run();
@@ -155,7 +155,7 @@ SH);
             ->and($approvedIngress->getOutput())->toContain('Private ingress verification passed.');
 
         $lanIngress = new Process([
-            base_path('verify-private-ingress'),
+            base_path('production/verify-private-ingress'),
             $environmentFile,
         ], base_path(), [
             ...$environment,
@@ -168,7 +168,7 @@ SH);
             ->toContain('an application listener is reachable outside its approved private interface');
 
         $publicDevelopmentIngress = new Process([
-            base_path('verify-private-ingress'),
+            base_path('production/verify-private-ingress'),
             $environmentFile,
         ], base_path(), [
             ...$environment,
@@ -203,13 +203,13 @@ SH);
 
     try {
         $environment = [
-            'COMPOSE_FILE' => base_path('compose.production.yaml'),
+            'COMPOSE_FILE' => false,
             'DEPLOYMENT_LOCK_FILE' => $temporaryDirectory.'/deployment.lock',
             'DEPLOYMENT_TEST_COMMAND_LOG' => $commandLog,
             'ENVIRONMENT_FILE' => $environmentFile,
             'PATH' => $binaryDirectory.':'.getenv('PATH'),
         ];
-        $deployment = new Process([base_path('deploy-production')], base_path(), $environment);
+        $deployment = new Process([base_path('production/deploy-production')], $temporaryDirectory, $environment);
         $deployment->run();
 
         expect($deployment->getExitCode())->toBe(0, $deployment->getErrorOutput())
@@ -218,7 +218,7 @@ SH);
         $commands = file($commandLog, FILE_IGNORE_NEW_LINES);
 
         expect($commands)->toHaveCount(5)
-            ->and($commands[0])->toContain('config --quiet')
+            ->and($commands[0])->toContain('--file '.base_path('production/../compose.production.yaml'), 'config --quiet')
             ->and($commands[1])->toContain('build --pull migrate')
             ->and($commands[2])->toContain('up --detach --wait postgres')
             ->and($commands[3])->toContain('run --rm --no-deps migrate')
@@ -226,7 +226,7 @@ SH);
             ->toContain('up --detach --wait --remove-orphans --force-recreate --no-deps web worker scheduler proxy');
 
         file_put_contents($commandLog, '');
-        $failedDeployment = new Process([base_path('deploy-production')], base_path(), [
+        $failedDeployment = new Process([base_path('production/deploy-production')], $temporaryDirectory, [
             ...$environment,
             'DEPLOYMENT_TEST_FAIL_MIGRATION' => 'true',
         ]);
@@ -257,8 +257,8 @@ SH);
     chmod($binaryDirectory.'/docker', 0700);
 
     try {
-        $deployment = new Process([base_path('deploy-production')], base_path(), [
-            'COMPOSE_FILE' => base_path('compose.production.yaml'),
+        $deployment = new Process([base_path('production/deploy-production')], $temporaryDirectory, [
+            'COMPOSE_FILE' => false,
             'DEPLOYMENT_LOCK_FILE' => $temporaryDirectory.'/deployment.lock',
             'DEPLOYMENT_TEST_COMMAND_LOG' => $commandLog,
             'MONEY_ASSISTANT_CONFIGURATION_DIRECTORY' => $configurationDirectory,
@@ -275,12 +275,12 @@ SH);
 });
 
 test('systemd restores the deployment path before private ingress', function (): void {
-    $productionService = file_get_contents(base_path('money-assistant-production.service'));
-    $tailnetService = file_get_contents(base_path('money-assistant-tailnet.service'));
+    $productionService = file_get_contents(base_path('production/money-assistant-production.service'));
+    $tailnetService = file_get_contents(base_path('production/money-assistant-tailnet.service'));
 
     expect($productionService)
         ->toContain('WorkingDirectory=/opt/money-assistant')
-        ->toContain('ExecStart=/opt/money-assistant/deploy-production')
+        ->toContain('ExecStart=/opt/money-assistant/production/deploy-production')
         ->toContain('WantedBy=multi-user.target')
         ->and($tailnetService)
         ->toContain('Requires=money-assistant-production.service')

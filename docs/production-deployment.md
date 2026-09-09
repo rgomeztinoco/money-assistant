@@ -4,6 +4,19 @@ Use this runbook after a feature has merged into `main` and its required GitHub 
 
 Production code lives in `/opt/money-assistant`. Configuration and secrets remain in `/etc/money-assistant` and must never be copied into the repository or release archive.
 
+Deployment support lives in `production/`:
+
+| Command | Purpose |
+| --- | --- |
+| `deploy-production` | Build, migrate, and replace the application containers. |
+| `install-production-services` | Install the application, private-access, and backup systemd units and backup commands. |
+| `export-production-backup` | Stream the database into an encrypted backup. |
+| `restore-production-backup` | Restore a backup into a separate verification database. |
+| `verify-private-ingress` | Check Tailscale, firewall rules, exposed ports, and HTTPS health. |
+| `docker-entrypoint.production` | Load mounted secrets when an application container starts. |
+
+Host security updates use Ubuntu's `unattended-upgrades`; this repository no longer maintains a separate security policy checker or vulnerability ledger. Existing host update settings remain installed.
+
 ## 1. Prepare the release
 
 From the development checkout, confirm there are no local changes, update `main`, and run the test suite:
@@ -53,21 +66,18 @@ sudo chmod 0755 /opt/money-assistant
 
 `rsync --delete` is intentionally scoped to the fixed `/opt/money-assistant/` code directory. Production state is stored in Docker volumes, while host-managed configuration and secrets are under `/etc/money-assistant`.
 
-If a release changes the systemd units or backup commands, reinstall their retained definitions after promoting the snapshot:
+This release moves the deployment command into `production/`. Reinstall the units after promoting the snapshot so the next reboot uses the new path. Repeat this whenever a release changes the units or backup commands:
 
 ```bash
-sudo /opt/money-assistant/install-production-services
-sudo /opt/money-assistant/install-production-backup
+sudo /opt/money-assistant/production/install-production-services
 ```
-
-Run `sudo /opt/money-assistant/install-production-security-updates` only when the release changes the retained security-update policy or installer.
 
 ## 4. Deploy
 
 Run the production deployment command from the installed snapshot:
 
 ```bash
-sudo /opt/money-assistant/deploy-production
+sudo /opt/money-assistant/production/deploy-production
 ```
 
 The command validates Compose configuration, builds the application image, waits for PostgreSQL, runs migrations with `--force --isolated`, and replaces the web, worker, scheduler, and proxy containers only after migrations succeed. The recreated worker and scheduler containers load the new code automatically.
@@ -89,7 +99,7 @@ sudo docker compose \
 Verify private HTTPS ingress and the systemd lifecycle:
 
 ```bash
-sudo /opt/money-assistant/verify-private-ingress /etc/money-assistant/production.env
+sudo /opt/money-assistant/production/verify-private-ingress /etc/money-assistant/production.env
 systemctl is-active money-assistant-production.service money-assistant-tailnet.service money-assistant-backup.timer
 systemctl is-enabled money-assistant-production.service money-assistant-tailnet.service money-assistant-backup.timer
 ```

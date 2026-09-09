@@ -9,7 +9,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/money-assistant
 TimeoutStartSec=10min
-ExecStart=/opt/money-assistant/deploy-production
+ExecStart=/opt/money-assistant/production/deploy-production
 ExecStop=/usr/bin/docker compose --project-name money-assistant-production --env-file /etc/money-assistant/production.env --file /opt/money-assistant/compose.production.yaml stop
 
 [Install]

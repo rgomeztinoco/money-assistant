@@ -73,7 +73,7 @@ test('the durable schema cannot retain raw Spending Notification or receipt imag
 test('production credentials resolve only through host-managed secret boundaries', function (): void {
     $compose = file_get_contents(base_path('compose.production.yaml'));
     $environment = file_get_contents(base_path('.env.production.example'));
-    $entrypoint = file_get_contents(base_path('docker-entrypoint.production'));
+    $entrypoint = file_get_contents(base_path('production/docker-entrypoint.production'));
 
     expect($compose)
         ->toContain('APP_PREVIOUS_KEYS_FILE: /run/secrets/application_previous_keys')

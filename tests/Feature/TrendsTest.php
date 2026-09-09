@@ -89,7 +89,12 @@ test('Trends compares month to date with three equivalent months and ranks finan
             ->where('findings.0.scenario.difference_minor', '6000')
             ->where('findings.1.kind', 'merchant')
             ->where('findings.1.merchant', 'Central Market')
+            ->where('findings.1.current_total_minor', '7000')
+            ->where('findings.1.typical_total_minor', '1000')
             ->where('findings.1.change_minor', '6000')
+            ->where('findings.1.current_transaction_count', 2)
+            ->where('findings.1.typical_transaction_count', 1)
+            ->where('findings.1.unusual_transaction.id', $unusualTransaction->id)
             ->missing('comparison_builder'));
 });
 

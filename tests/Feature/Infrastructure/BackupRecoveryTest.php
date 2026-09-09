@@ -65,7 +65,7 @@ done
 SH);
 
     try {
-        $backup = runBackupCommand('export-production-backup', [], [
+        $backup = runBackupCommand('production/export-production-backup', [], [
             'BACKUP_AGE_RECIPIENT_FILE' => $recipientFile,
             'BACKUP_DIRECTORY' => $backupDirectory,
             'BACKUP_LOCK_FILE' => $temporaryDirectory.'/backup.lock',
@@ -86,7 +86,7 @@ SH);
             ->toContain('age --encrypt --recipients-file '.$recipientFile)
             ->not->toContain('application_key', 'database_password');
 
-        $failedBackup = runBackupCommand('export-production-backup', [], [
+        $failedBackup = runBackupCommand('production/export-production-backup', [], [
             'BACKUP_AGE_RECIPIENT_FILE' => $recipientFile,
             'BACKUP_DIRECTORY' => $backupDirectory,
             'BACKUP_LOCK_FILE' => $temporaryDirectory.'/backup.lock',
@@ -130,7 +130,7 @@ esac
 SH);
 
     try {
-        $restore = runBackupCommand('restore-production-backup', [
+        $restore = runBackupCommand('production/restore-production-backup', [
             $backupFile,
             'money_assistant_restore_20260813',
         ], [
@@ -152,7 +152,7 @@ SH);
             ->toContain('SELECT count(*) FROM migrations')
             ->not->toContain('dropdb');
 
-        $productionRestore = runBackupCommand('restore-production-backup', [
+        $productionRestore = runBackupCommand('production/restore-production-backup', [
             $backupFile,
             'money_assistant',
         ], [
@@ -171,9 +171,9 @@ SH);
 });
 
 test('the backup installer enables one hardened daily timer', function (): void {
-    $installer = file_get_contents(base_path('install-production-backup'));
-    $service = file_get_contents(base_path('money-assistant-backup.service'));
-    $timer = file_get_contents(base_path('money-assistant-backup.timer'));
+    $installer = file_get_contents(base_path('production/install-production-services'));
+    $service = file_get_contents(base_path('production/money-assistant-backup.service'));
+    $timer = file_get_contents(base_path('production/money-assistant-backup.timer'));
 
     expect($installer)
         ->toContain('install -m 0755')
@@ -187,3 +187,60 @@ test('the backup installer enables one hardened daily timer', function (): void 
         ->toContain('OnCalendar=*-*-* 03:30:00')
         ->toContain('Persistent=true');
 });
+
+test('production installation enables services only after installing their files', function (bool $installationFails): void {
+    $temporaryDirectory = backupTemporaryDirectory();
+    $binaryDirectory = $temporaryDirectory.'/bin';
+    $commandLog = $temporaryDirectory.'/commands.log';
+    $environmentFile = $temporaryDirectory.'/production.env';
+    mkdir($binaryDirectory, 0700, true);
+    file_put_contents($environmentFile, '');
+    installBackupCommand($binaryDirectory, 'id', "printf '0\\n'");
+    installBackupCommand($binaryDirectory, 'install', <<<'SH'
+printf 'install %s\n' "$*" >> "$INSTALLATION_TEST_COMMAND_LOG"
+for argument in "$@"; do
+    case "$argument" in
+        */production/*) [ -r "$argument" ] || exit 1 ;;
+    esac
+done
+[ "$INSTALLATION_TEST_FAIL" = false ] || exit 23
+SH);
+    installBackupCommand($binaryDirectory, 'systemctl', <<<'SH'
+printf 'systemctl %s\n' "$*" >> "$INSTALLATION_TEST_COMMAND_LOG"
+SH);
+
+    try {
+        $installation = runBackupCommand('production/install-production-services', [], [
+            'ENVIRONMENT_FILE' => $environmentFile,
+            'INSTALLATION_TEST_COMMAND_LOG' => $commandLog,
+            'INSTALLATION_TEST_FAIL' => $installationFails ? 'true' : 'false',
+            'PATH' => $binaryDirectory.':'.getenv('PATH'),
+            'SYSTEMD_DIRECTORY' => $temporaryDirectory.'/systemd',
+        ]);
+        $commands = file_get_contents($commandLog);
+
+        if ($installationFails) {
+            expect($installation->getExitCode())->toBe(23)
+                ->and($commands)->not->toContain('systemctl');
+
+            return;
+        }
+
+        expect($installation->getExitCode())->toBe(0, $installation->getErrorOutput())
+            ->and($commands)
+            ->toContain('install -m 0755 '.base_path('production/export-production-backup').' /usr/local/sbin/export-production-backup')
+            ->toContain('install -m 0755 '.base_path('production/restore-production-backup').' /usr/local/sbin/restore-production-backup');
+
+        foreach (['production.service', 'tailnet.service', 'backup.service', 'backup.timer'] as $unit) {
+            expect($commands)->toContain('install -m 0644 '.base_path('production/money-assistant-'.$unit).' '.$temporaryDirectory.'/systemd/money-assistant-'.$unit);
+        }
+
+        expect(array_slice(file($commandLog, FILE_IGNORE_NEW_LINES), -3))->toBe([
+            'systemctl daemon-reload',
+            'systemctl enable --now money-assistant-production.service money-assistant-tailnet.service',
+            'systemctl enable --now money-assistant-backup.timer',
+        ]);
+    } finally {
+        (new Filesystem)->deleteDirectory($temporaryDirectory);
+    }
+})->with(['success' => false, 'installation failure' => true]);

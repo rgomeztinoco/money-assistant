@@ -5,6 +5,7 @@
 .phpunit.cache
 .phpunit.result.cache
 node_modules
+.pnpm-store
 public/build
 public/hot
 storage/framework/cache/*
