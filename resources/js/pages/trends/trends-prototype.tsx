@@ -495,7 +495,7 @@ export function VariantA(props: ConceptProps) {
                     </div>
                 </CardContent>
             </Card>
-            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+            <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
                 <section className="min-w-0">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                         <div>
@@ -579,7 +579,7 @@ export function VariantB(props: ConceptProps) {
                     its evidence.
                 </p>
             </div>
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_15rem]">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_15rem]">
                 <section className="min-w-0 rounded-xl border">
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
                         <div className="flex items-center gap-2">
@@ -792,10 +792,10 @@ export function VariantC(props: ConceptProps) {
         total - Number(selected.scenario?.difference_minor ?? 0);
 
     return (
-        <div className="grid items-start gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] xl:gap-10">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] xl:gap-10">
             <nav
                 aria-label="Changes to explore"
-                className="flex flex-col gap-4"
+                className="flex min-w-0 flex-col gap-4"
             >
                 <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-sm font-semibold">
