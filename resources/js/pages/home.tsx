@@ -351,6 +351,9 @@ function SecondaryCurrency({ briefing }: { briefing: Briefing }) {
 }
 
 const HomePrototype = lazy(() => import('./home-prototype'));
+const HomeExplorationPrototype = lazy(
+    () => import('./home-exploration-prototype'),
+);
 
 export default function Home(props: {
     primary: Briefing | null;
@@ -360,6 +363,16 @@ export default function Home(props: {
     const variant = new URL(url, 'http://localhost').searchParams.get(
         'variant',
     );
+
+    if (import.meta.env.DEV && ['D', 'E', 'F'].includes(variant ?? '')) {
+        return (
+            <Suspense
+                fallback={<div className="p-6">Loading Home concepts…</div>}
+            >
+                <HomeExplorationPrototype {...props} />
+            </Suspense>
+        );
+    }
 
     if (import.meta.env.DEV && ['A', 'B', 'C'].includes(variant ?? '')) {
         return (
