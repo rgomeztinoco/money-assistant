@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import {
     ArrowRight,
     CircleAlert,
@@ -7,6 +7,7 @@ import {
     PiggyBank,
     ReceiptText,
 } from 'lucide-react';
+import { lazy, Suspense } from 'react';
 import { SourceCoverage } from '@/components/source-coverage';
 import type { RecordedCoverageSource } from '@/components/source-coverage';
 import { Badge } from '@/components/ui/badge';
@@ -48,7 +49,7 @@ type MaterialChange = {
     comparison_periods: Period[];
 };
 
-type Briefing = {
+export type Briefing = {
     currency: Currency;
     period: Period;
     coverage: {
@@ -349,7 +350,31 @@ function SecondaryCurrency({ briefing }: { briefing: Briefing }) {
     );
 }
 
-export default function Home({
+const HomePrototype = lazy(() => import('./home-prototype'));
+
+export default function Home(props: {
+    primary: Briefing | null;
+    secondary: Briefing | null;
+}) {
+    const { url } = usePage();
+    const variant = new URL(url, 'http://localhost').searchParams.get(
+        'variant',
+    );
+
+    if (import.meta.env.DEV && ['A', 'B', 'C'].includes(variant ?? '')) {
+        return (
+            <Suspense
+                fallback={<div className="p-6">Loading Home concepts…</div>}
+            >
+                <HomePrototype {...props} />
+            </Suspense>
+        );
+    }
+
+    return <CurrentHome {...props} />;
+}
+
+function CurrentHome({
     primary,
     secondary,
 }: {
