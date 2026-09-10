@@ -35,6 +35,9 @@ export default defineConfig(({ mode }) => {
             }),
         ],
         server: {
+            hmr: {
+                host: appUrl ? new URL(appUrl).hostname : 'localhost',
+            },
             cors: {
                 origin: [
                     defaultAllowedOrigins,
