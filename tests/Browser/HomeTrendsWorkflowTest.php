@@ -115,7 +115,7 @@ test('Home keeps the weekly briefing focused and every claim drills into Breakdo
         ->assertNoConsoleLogs();
 });
 
-test('Trends explains automatic comparisons and links findings to their evidence', function () {
+test('Trends scans, filters, and expands the change ledger before opening its evidence', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
 
@@ -144,19 +144,36 @@ test('Trends explains automatic comparisons and links findings to their evidence
 
     $page
         ->assertTitle('Trends - Money Assistant')
-        ->assertSee('Equivalent days in the previous three months')
-        ->assertSee('Six-month context')
+        ->assertSee('The change ledger')
+        ->assertSee('Calendar-month context')
         ->assertSee('Food')
         ->assertSee('Central Market')
-        ->assertSee('Frequency')
-        ->assertSee('Unusual Transaction')
+        ->assertSee('Category and merchant views overlap')
         ->assertSee('No recorded activity')
-        ->assertSee('If this matched the recent typical level')
+        ->assertSee('Current partial month through Aug 22')
+        ->assertNotPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
         ->assertNotPresent('input[name="date_from"]')
         ->assertScript(
             'document.documentElement.scrollWidth <= document.documentElement.clientWidth',
         )
-        ->click('[data-test="trend-finding-category-'.$food->id.'"]')
+        ->click('[data-test="trend-toggle-category-'.$food->id.'"]')
+        ->assertPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
+        ->assertSee('Transaction frequency')
+        ->assertSee('Unusual Transaction')
+        ->keys('[data-test="trend-toggle-merchant-central-market"]', 'Enter')
+        ->assertPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
+        ->assertPresent('[data-test="trend-evidence-merchant-central-market"]')
+        ->keys('[data-test="trend-toggle-category-'.$food->id.'"]', 'Enter')
+        ->assertNotPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
+        ->assertPresent('[data-test="trend-evidence-merchant-central-market"]')
+        ->click('[data-test="trends-filter-category"]')
+        ->assertPathIs('/trends')
+        ->assertSee('Aug 1 – Aug 22, 2026')
+        ->assertPresent('[data-test="trend-toggle-category-'.$food->id.'"]')
+        ->assertNotPresent('[data-test="trend-toggle-merchant-central-market"]')
+        ->click('[data-test="trends-filter-all"]')
+        ->click('[data-test="trend-toggle-category-'.$food->id.'"]')
+        ->click('[data-test="trend-breakdown-category-'.$food->id.'"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('category', (string) $food->id)
         ->assertQueryStringHas('selected', (string) $unusual->id);
@@ -164,6 +181,7 @@ test('Trends explains automatic comparisons and links findings to their evidence
     $page = visit('/trends');
 
     $page
+        ->click('[data-test="trend-toggle-category-'.$food->id.'"]')
         ->click('[data-test="trend-finding-category-'.$food->id.'-comparison-0"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('category', (string) $food->id)
@@ -174,7 +192,8 @@ test('Trends explains automatic comparisons and links findings to their evidence
     $page = visit('/trends');
 
     $page
-        ->click('[data-test="trend-finding-merchant-central-market"]')
+        ->click('[data-test="trend-toggle-merchant-central-market"]')
+        ->click('[data-test="trend-breakdown-merchant-central-market"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('merchant', 'Central Market');
 
