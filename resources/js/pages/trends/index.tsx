@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import {
     ArrowRight,
     CalendarRange,
@@ -24,8 +24,9 @@ import {
 } from '@/lib/transaction-filter-url';
 import { index as trendsIndex } from '@/routes/trends';
 import type { Currency } from '@/types';
+import TrendsPrototype from './trends-prototype';
 
-type Period = {
+export type Period = {
     label: string;
     date_from: string;
     date_to: string;
@@ -62,7 +63,7 @@ type MerchantFinding = FindingBase & {
     merchant: string;
 };
 
-type Finding = CategoryFinding | MerchantFinding;
+export type Finding = CategoryFinding | MerchantFinding;
 
 type MonthlyContext = Period & {
     month: string;
@@ -73,7 +74,7 @@ function absoluteAmount(amount: string): string {
     return amount.startsWith('-') ? amount.slice(1) : amount;
 }
 
-function findingName(finding: Finding): string {
+export function findingName(finding: Finding): string {
     return finding.kind === 'category'
         ? finding.category.name
         : finding.merchant;
@@ -92,7 +93,7 @@ function findingTestId(finding: Finding): string {
     return `trend-finding-merchant-${merchantKey}`;
 }
 
-function findingUrl(
+export function findingUrl(
     finding: Finding,
     period: Period,
     includeUnusualTransaction = true,
@@ -293,15 +294,7 @@ function SummaryCards({
     );
 }
 
-export default function Trends({
-    currency,
-    available_currencies: availableCurrencies,
-    period,
-    comparison_periods: comparisonPeriods,
-    summary,
-    findings,
-    monthly_context: monthlyContext,
-}: {
+export type TrendsProps = {
     currency: Currency;
     available_currencies: Currency[];
     period: Period;
@@ -309,7 +302,30 @@ export default function Trends({
     summary: Summary | null;
     findings: Finding[];
     monthly_context: MonthlyContext[];
-}) {
+};
+
+export default function Trends(props: TrendsProps) {
+    const { url } = usePage();
+    const variant = new URL(url, 'http://localhost').searchParams.get(
+        'variant',
+    );
+
+    if (import.meta.env.DEV && ['A', 'B', 'C'].includes(variant ?? '')) {
+        return <TrendsPrototype {...props} />;
+    }
+
+    return <OriginalTrends {...props} />;
+}
+
+function OriginalTrends({
+    currency,
+    available_currencies: availableCurrencies,
+    period,
+    comparison_periods: comparisonPeriods,
+    summary,
+    findings,
+    monthly_context: monthlyContext,
+}: TrendsProps) {
     return (
         <>
             <Head title="Trends" />

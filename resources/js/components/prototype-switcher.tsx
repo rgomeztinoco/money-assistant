@@ -1,4 +1,4 @@
-// Throwaway UI comparison controls. Remove when a Home direction is chosen.
+// Throwaway UI comparison controls. Remove when the design explorations are settled.
 import { Link, router, usePage } from '@inertiajs/react';
 import { ChevronLeft, ChevronRight, FlaskConical } from 'lucide-react';
 import { useEffect } from 'react';
@@ -21,25 +21,29 @@ export const homeConcepts = [
 
 export function PrototypeSwitcher({
     state,
+    concepts = homeConcepts,
+    title = 'Home',
+    route = home.url,
 }: {
     state: Record<string, unknown>;
+    concepts?: typeof homeConcepts;
+    title?: string;
+    route?: typeof home.url;
 }) {
     const { url } = usePage();
     const params = new URL(url, 'http://localhost').searchParams;
     const index = Math.max(
         0,
-        homeConcepts.findIndex((item) => item.key === params.get('variant')),
+        concepts.findIndex((item) => item.key === params.get('variant')),
     );
-    const concept = homeConcepts[index];
+    const concept = concepts[index];
 
     function cycle(direction: number) {
         const next =
-            homeConcepts[
-                (index + direction + homeConcepts.length) % homeConcepts.length
-            ];
+            concepts[(index + direction + concepts.length) % concepts.length];
         params.set('variant', next.key);
         router.replace({
-            url: home.url({ query: Object.fromEntries(params) }),
+            url: route({ query: Object.fromEntries(params) }),
             preserveState: true,
             preserveScroll: false,
         });
@@ -92,7 +96,7 @@ export function PrototypeSwitcher({
                 </Button>
                 <div className="min-w-36 text-center" aria-live="polite">
                     <p className="text-xs text-muted-foreground">
-                        Home prototype · {index + 1} of 3
+                        {title} prototype · {index + 1} of {concepts.length}
                     </p>
                     <p className="text-sm font-semibold">
                         {concept.key} · {concept.name}
@@ -107,7 +111,7 @@ export function PrototypeSwitcher({
                     <ChevronRight />
                 </Button>
                 <Button asChild size="sm" variant="ghost">
-                    <Link href={home()}>Original</Link>
+                    <Link href={route()}>Original</Link>
                 </Button>
             </div>
             <details className="w-full px-2 text-xs text-muted-foreground">
