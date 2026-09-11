@@ -118,6 +118,7 @@ test('Home keeps the weekly briefing focused and every claim drills into Breakdo
 test('Trends scans, filters, and expands the change ledger before opening its evidence', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $transport = Category::factory()->for($owner, 'owner')->create(['name' => 'Transport']);
 
     foreach (['2026-05-10', '2026-06-10', '2026-07-10'] as $occurredOn) {
         Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
@@ -126,12 +127,36 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
             'description' => 'Central Market',
             'category_id' => $food->id,
         ]);
+        Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+            'occurred_on' => $occurredOn,
+            'amount_minor' => 2_000,
+            'description' => 'City Bus',
+            'category_id' => $transport->id,
+        ]);
     }
 
     $unusual = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-08',
         'amount_minor' => 4_000,
         'description' => 'Central Market',
+        'category_id' => $food->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-09',
+        'amount_minor' => 1_000,
+        'description' => 'City Bus',
+        'category_id' => $transport->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 300,
+        'description' => 'Café',
+        'category_id' => $food->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-11',
+        'amount_minor' => 200,
+        'description' => 'Cafè',
         'category_id' => $food->id,
     ]);
     Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
@@ -151,6 +176,11 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
         ->assertSee('Category and merchant views overlap')
         ->assertSee('No recorded activity')
         ->assertSee('Current partial month through Aug 22')
+        ->assertAttribute(
+            '[data-test="trend-change-category-'.$transport->id.'"]',
+            'data-direction',
+            'down',
+        )
         ->assertNotPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
         ->assertNotPresent('input[name="date_from"]')
         ->assertScript(
@@ -166,6 +196,13 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
         ->keys('[data-test="trend-toggle-category-'.$food->id.'"]', 'Enter')
         ->assertNotPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
         ->assertPresent('[data-test="trend-evidence-merchant-central-market"]')
+        ->click('[data-test="trend-toggle-merchant-café"]')
+        ->keys('[data-test="trend-toggle-merchant-cafè"]', 'Enter')
+        ->assertPresent('[data-test="trend-evidence-merchant-café"]')
+        ->assertPresent('[data-test="trend-evidence-merchant-cafè"]')
+        ->keys('[data-test="trend-toggle-merchant-café"]', 'Enter')
+        ->assertNotPresent('[data-test="trend-evidence-merchant-café"]')
+        ->assertPresent('[data-test="trend-evidence-merchant-cafè"]')
         ->click('[data-test="trends-filter-category"]')
         ->assertPathIs('/trends')
         ->assertSee('Aug 1 – Aug 22, 2026')
@@ -203,6 +240,47 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
         ->click('[data-test="trends-switch-usd"]')
         ->assertPathIs('/trends')
         ->assertQueryStringHas('currency', 'USD')
+        ->assertNoAccessibilityIssues()
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+});
+
+test('Trends distinguishes empty activity, missing context, and no material findings', function () {
+    $historicalOwner = User::factory()->create();
+    Transaction::factory()->for($historicalOwner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-07-10',
+        'amount_minor' => 1_000,
+    ]);
+    $this->actingAs($historicalOwner);
+
+    visit('/trends')
+        ->assertSee('No PEN activity this month to date')
+        ->assertSee('Current partial month through Aug 22')
+        ->assertSee('No recorded activity');
+
+    $emptyOwner = User::factory()->create();
+    $this->actingAs($emptyOwner);
+
+    visit('/trends')
+        ->assertSee('No PEN activity this month to date')
+        ->assertSee('No six-month activity recorded');
+
+    $steadyOwner = User::factory()->create();
+    $food = Category::factory()->for($steadyOwner, 'owner')->create(['name' => 'Food']);
+
+    foreach (['2026-05-10', '2026-06-10', '2026-07-10', '2026-08-10'] as $occurredOn) {
+        Transaction::factory()->for($steadyOwner, 'owner')->spending()->pen()->create([
+            'occurred_on' => $occurredOn,
+            'amount_minor' => 1_000,
+            'description' => 'Central Market',
+            'category_id' => $food->id,
+        ]);
+    }
+    $this->actingAs($steadyOwner);
+
+    visit('/trends')
+        ->assertSee('No material findings')
+        ->assertSee('No material Category or merchant change')
         ->assertNoAccessibilityIssues()
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();

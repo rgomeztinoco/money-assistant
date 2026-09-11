@@ -39,14 +39,22 @@ function findingName(finding: Finding): string {
         : finding.merchant;
 }
 
-function findingKeySegment(finding: Finding): string {
+function findingIdentity(finding: Finding): string {
+    if (finding.kind === 'category') {
+        return `category:${finding.category.id ?? 'uncategorized'}`;
+    }
+
+    return `merchant:${finding.merchant}`;
+}
+
+function findingTestSegment(finding: Finding): string {
     if (finding.kind === 'category') {
         return `category-${finding.category.id ?? 'uncategorized'}`;
     }
 
     const merchantKey = finding.merchant
         .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/[^\p{L}\p{N}]+/gu, '-')
         .replace(/^-|-$/g, '');
 
     return `merchant-${merchantKey}`;
@@ -78,9 +86,10 @@ function findingUrl(
     });
 }
 
-function Change({ finding }: { finding: Finding }) {
+function FindingChange({ finding }: { finding: Finding }) {
     const decreased = finding.change_minor.startsWith('-');
     const Icon = decreased ? ArrowDownRight : ArrowUpRight;
+    const testSegment = findingTestSegment(finding);
 
     return (
         <span
@@ -88,6 +97,8 @@ function Change({ finding }: { finding: Finding }) {
                 'inline-flex items-center justify-end gap-1 font-semibold whitespace-nowrap tabular-nums',
                 decreased ? 'text-chart-2' : 'text-chart-1',
             )}
+            data-direction={decreased ? 'down' : 'up'}
+            data-test={`trend-change-${testSegment}`}
         >
             <Icon className="size-4" />
             <span className="sr-only">{decreased ? 'Down' : 'Up'} </span>
@@ -158,12 +169,12 @@ function FindingEvidence({
     period: Period;
     comparisonPeriods: Period[];
 }) {
-    const keySegment = findingKeySegment(finding);
+    const testSegment = findingTestSegment(finding);
 
     return (
         <div
             className="grid gap-5 p-4 sm:p-5"
-            data-test={`trend-evidence-${keySegment}`}
+            data-test={`trend-evidence-${testSegment}`}
         >
             <div className="grid gap-5 lg:grid-cols-2">
                 <ComparisonBars finding={finding} />
@@ -222,7 +233,7 @@ function FindingEvidence({
                                     comparisonPeriod,
                                     false,
                                 )}
-                                data-test={`trend-finding-${keySegment}-comparison-${index}`}
+                                data-test={`trend-finding-${testSegment}-comparison-${index}`}
                                 className="rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                             >
                                 {comparisonPeriod.label}
@@ -234,7 +245,7 @@ function FindingEvidence({
                 <Button asChild size="sm" variant="outline">
                     <Link
                         href={findingUrl(finding, period)}
-                        data-test={`trend-breakdown-${keySegment}`}
+                        data-test={`trend-breakdown-${testSegment}`}
                     >
                         Open in Breakdown
                         <ArrowRight data-icon="inline-end" />
@@ -385,18 +396,19 @@ export function ChangeLedger({
 
                     <ol>
                         {visibleFindings.map((finding) => {
-                            const keySegment = findingKeySegment(finding);
-                            const expanded = expandedFindings.has(keySegment);
+                            const identity = findingIdentity(finding);
+                            const testSegment = findingTestSegment(finding);
+                            const expanded = expandedFindings.has(identity);
 
                             return (
                                 <li
-                                    key={keySegment}
+                                    key={identity}
                                     className="border-b last:border-b-0"
                                 >
                                     <Collapsible
                                         open={expanded}
                                         onOpenChange={(open) =>
-                                            setFindingExpanded(keySegment, open)
+                                            setFindingExpanded(identity, open)
                                         }
                                     >
                                         <CollapsibleTrigger asChild>
@@ -406,7 +418,7 @@ export function ChangeLedger({
                                                     'group grid w-full items-center gap-x-3 gap-y-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden focus-visible:ring-inset data-[state=open]:bg-muted/40',
                                                     ledgerColumns,
                                                 )}
-                                                data-test={`trend-toggle-${keySegment}`}
+                                                data-test={`trend-toggle-${testSegment}`}
                                             >
                                                 <span className="col-span-3 col-start-1 row-start-1 min-w-0 md:col-span-1">
                                                     <span className="block truncate font-medium">
@@ -445,7 +457,9 @@ export function ChangeLedger({
                                                     <span className="block text-[0.6875rem] text-muted-foreground md:hidden">
                                                         Change
                                                     </span>
-                                                    <Change finding={finding} />
+                                                    <FindingChange
+                                                        finding={finding}
+                                                    />
                                                 </span>
                                                 <span className="col-span-3 col-start-1 row-start-3 md:col-span-1 md:col-start-5 md:row-start-1">
                                                     <ImpactMagnitude
