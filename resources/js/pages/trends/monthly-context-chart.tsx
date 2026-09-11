@@ -6,6 +6,7 @@ import {
     ReferenceLine,
     XAxis,
 } from 'recharts';
+import { Card } from '@/components/ui/card';
 import {
     ChartContainer,
     ChartTooltip,
@@ -14,7 +15,7 @@ import {
 import type { ChartConfig } from '@/components/ui/chart';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import type { Currency } from '@/types';
-import type { MonthlyContext, Period } from './types';
+import type { MonthlyContext } from './types';
 
 const chartConfig = {
     total: { label: 'Net Spending', color: 'var(--chart-2)' },
@@ -30,14 +31,24 @@ function shortDate(date: string): string {
 
 export function MonthlyContextChart({
     currency,
-    period,
     months,
 }: {
     currency: Currency;
-    period: Period;
     months: MonthlyContext[];
 }) {
-    const currentMonth = period.date_from.slice(0, 7);
+    const contextMonth = months.at(-1);
+    const partialMonth =
+        contextMonth !== undefined &&
+        contextMonth.date_to !==
+            new Date(
+                Date.UTC(
+                    Number(contextMonth.month.slice(0, 4)),
+                    Number(contextMonth.month.slice(5, 7)),
+                    0,
+                ),
+            )
+                .toISOString()
+                .slice(0, 10);
     const chartData = months.map((month) => ({
         ...month,
         shortLabel: month.label.split(' ')[0],
@@ -49,20 +60,17 @@ export function MonthlyContextChart({
         .map((month) => month.label);
 
     return (
-        <section className="grid min-w-0 gap-3">
-            <div>
-                <h2 className="text-sm font-medium">Calendar-month context</h2>
-                <p className="text-xs text-muted-foreground">
-                    Six separate months in {currency}.
-                </p>
+        <Card className="min-w-0 gap-0 overflow-hidden py-0">
+            <div className="flex h-12 items-center border-b px-4">
+                <h2 className="font-semibold">Monthly context</h2>
             </div>
 
             {months.length === 0 ? (
-                <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
-                    No six-month activity recorded.
+                <p className="p-5 text-sm text-muted-foreground">
+                    No recorded activity.
                 </p>
             ) : (
-                <>
+                <div className="grid gap-3 p-4">
                     <ChartContainer
                         config={chartConfig}
                         className="h-40 w-full min-w-0"
@@ -109,7 +117,8 @@ export function MonthlyContextChart({
                             >
                                 {chartData.map((month) => {
                                     const partial =
-                                        month.month === currentMonth;
+                                        partialMonth &&
+                                        month.month === contextMonth.month;
 
                                     return (
                                         <Cell
@@ -132,11 +141,13 @@ export function MonthlyContextChart({
                     </ChartContainer>
 
                     <div className="grid gap-1.5 text-xs text-muted-foreground">
-                        <p className="flex items-center gap-2">
-                            <span className="size-2.5 rounded-sm border border-dashed border-chart-2 bg-chart-2/50" />
-                            Current partial month through{' '}
-                            {shortDate(period.date_to)}
-                        </p>
+                        {partialMonth && (
+                            <p className="flex items-center gap-2">
+                                <span className="size-2.5 rounded-sm border border-dashed border-chart-2 bg-chart-2/50" />
+                                Partial month through{' '}
+                                {shortDate(contextMonth.date_to)}
+                            </p>
+                        )}
                         {monthsWithoutActivity.length > 0 && (
                             <p>
                                 No recorded activity:{' '}
@@ -144,8 +155,8 @@ export function MonthlyContextChart({
                             </p>
                         )}
                     </div>
-                </>
+                </div>
             )}
-        </section>
+        </Card>
     );
 }

@@ -169,13 +169,16 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
 
     $page
         ->assertTitle('Trends - Money Assistant')
-        ->assertSee('The change ledger')
-        ->assertSee('Calendar-month context')
+        ->assertPresent('[data-test="period-controls"]')
+        ->assertNotPresent('main h1')
+        ->assertDontSee('The change ledger')
+        ->assertDontSee('See where Net Spending changed')
+        ->assertSee('Monthly context')
         ->assertSee('Food')
         ->assertSee('Central Market')
         ->assertSee('Category and merchant views overlap')
         ->assertSee('No recorded activity')
-        ->assertSee('Current partial month through Aug 22')
+        ->assertSee('Partial month through Aug 22')
         ->assertAttribute(
             '[data-test="trend-change-category-'.$transport->id.'"]',
             'data-direction',
@@ -205,7 +208,7 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
         ->assertPresent('[data-test="trend-evidence-merchant-cafè"]')
         ->click('[data-test="trends-filter-category"]')
         ->assertPathIs('/trends')
-        ->assertSee('Aug 1 – Aug 22, 2026')
+        ->assertSee('Aug 1 to Aug 22')
         ->assertPresent('[data-test="trend-toggle-category-'.$food->id.'"]')
         ->assertNotPresent('[data-test="trend-toggle-merchant-central-market"]')
         ->click('[data-test="trends-filter-all"]')
@@ -234,15 +237,27 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('merchant', 'Central Market');
 
-    $page = visit('/trends');
+    $page = visit('/trends?period=month&anchor=2026-07-12');
 
     $page
         ->click('[data-test="trends-switch-usd"]')
         ->assertPathIs('/trends')
         ->assertQueryStringHas('currency', 'USD')
+        ->assertQueryStringHas('period', 'month')
+        ->assertQueryStringHas('anchor', '2026-07-01')
         ->assertNoAccessibilityIssues()
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
+
+    $page = visit('/trends');
+
+    $page
+        ->click('[aria-label="Previous month"]')
+        ->assertPathIs('/trends')
+        ->assertQueryStringHas('currency', 'PEN')
+        ->assertQueryStringHas('period', 'month')
+        ->assertQueryStringHas('anchor', '2026-07-01')
+        ->assertSee('July 2026');
 });
 
 test('Trends distinguishes empty activity, missing context, and no material findings', function () {
@@ -254,16 +269,16 @@ test('Trends distinguishes empty activity, missing context, and no material find
     $this->actingAs($historicalOwner);
 
     visit('/trends')
-        ->assertSee('No PEN activity this month to date')
-        ->assertSee('Current partial month through Aug 22')
+        ->assertSee('No PEN activity')
+        ->assertSee('Partial month through Aug 22')
         ->assertSee('No recorded activity');
 
     $emptyOwner = User::factory()->create();
     $this->actingAs($emptyOwner);
 
     visit('/trends')
-        ->assertSee('No PEN activity this month to date')
-        ->assertSee('No six-month activity recorded');
+        ->assertSee('No PEN activity')
+        ->assertSee('No recorded activity');
 
     $steadyOwner = User::factory()->create();
     $food = Category::factory()->for($steadyOwner, 'owner')->create(['name' => 'Food']);

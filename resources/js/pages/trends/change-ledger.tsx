@@ -4,11 +4,11 @@ import {
     ArrowRight,
     ArrowUpRight,
     ChevronDown,
-    TrendingUp,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import {
     Collapsible,
     CollapsibleContent,
@@ -22,7 +22,7 @@ import {
 } from '@/lib/transaction-filter-url';
 import { cn } from '@/lib/utils';
 import type { Currency } from '@/types';
-import type { Finding, Period, Summary } from './types';
+import type { ComparisonPeriod, Finding, Period, Summary } from './types';
 
 type FindingScope = 'all' | Finding['kind'];
 
@@ -62,7 +62,7 @@ function findingTestSegment(finding: Finding): string {
 
 function findingUrl(
     finding: Finding,
-    period: Period,
+    period: Period | ComparisonPeriod,
     includeUnusualTransaction = true,
 ) {
     const selected = includeUnusualTransaction
@@ -167,7 +167,7 @@ function FindingEvidence({
 }: {
     finding: Finding;
     period: Period;
-    comparisonPeriods: Period[];
+    comparisonPeriods: ComparisonPeriod[];
 }) {
     const testSegment = findingTestSegment(finding);
 
@@ -292,7 +292,7 @@ export function ChangeLedger({
 }: {
     currency: Currency;
     period: Period;
-    comparisonPeriods: Period[];
+    comparisonPeriods: ComparisonPeriod[];
     summary: Summary | null;
     findings: Finding[];
 }) {
@@ -325,7 +325,7 @@ export function ChangeLedger({
     }
 
     return (
-        <section className="min-w-0 overflow-hidden rounded-xl border">
+        <Card className="min-w-0 gap-0 overflow-hidden py-0">
             <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
                     <h2 className="font-semibold">Changes by impact</h2>
@@ -359,13 +359,9 @@ export function ChangeLedger({
 
             {summary === null ? (
                 <div className="grid justify-items-center gap-2 p-8 text-center">
-                    <TrendingUp className="size-8 text-muted-foreground" />
-                    <p className="font-medium">
-                        No {currency} activity this month to date
-                    </p>
-                    <p className="max-w-md text-sm text-muted-foreground">
-                        The change ledger will appear after this period records
-                        Transactions.
+                    <p className="font-medium">No {currency} activity</p>
+                    <p className="text-sm text-muted-foreground">
+                        Nothing was recorded in this period.
                     </p>
                 </div>
             ) : visibleFindings.length === 0 ? (
@@ -493,6 +489,6 @@ export function ChangeLedger({
                 Category and merchant views overlap. Their changes should not be
                 added together.
             </p>
-        </section>
+        </Card>
     );
 }

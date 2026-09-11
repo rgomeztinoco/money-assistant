@@ -64,8 +64,11 @@ test('Trends compares month to date with three equivalent months and ranks finan
         ->assertInertia(fn (Assert $page) => $page
             ->component('trends/index')
             ->where('currency', 'PEN')
+            ->where('period.unit', 'month')
+            ->where('period.anchor', '2026-08-01')
             ->where('period.date_from', '2026-08-01')
             ->where('period.date_to', '2026-08-22')
+            ->where('today', '2026-08-22')
             ->has('comparison_periods', 3)
             ->where('comparison_periods.0.date_from', '2026-07-01')
             ->where('comparison_periods.0.date_to', '2026-07-22')
@@ -121,7 +124,7 @@ test('Trends keeps currencies separate and selects USD through a persistent filt
         ->get(route('trends.index', ['currency' => 'USD']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('currency', 'USD')
-            ->where('available_currencies', ['PEN', 'USD'])
+            ->missing('available_currencies')
             ->where('summary.net_spending_minor', '2500')
             ->where('findings.0.currency', 'USD'));
 
@@ -212,7 +215,6 @@ test('Trends keeps historical currency context without inventing current or empt
         ->get(route('trends.index', ['currency' => 'USD']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('currency', 'USD')
-            ->where('available_currencies', ['PEN', 'USD'])
             ->where('summary', null)
             ->where('findings', [])
             ->has('monthly_context', 6)
@@ -232,7 +234,6 @@ test('Trends has no currency context when the owner has no Transactions', functi
     $this->actingAs(User::factory()->create())
         ->get(route('trends.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('available_currencies', [])
             ->where('summary', null)
             ->where('findings', [])
             ->where('monthly_context', []));
@@ -243,3 +244,65 @@ test('Trends rejects unsupported currency filters', function () {
         ->get('/trends?currency=EUR')
         ->assertSessionHasErrors('currency');
 });
+
+test('Trends resolves calendar period selections and their equivalent comparisons', function (
+    string $unit,
+    string $anchor,
+    string $dateFrom,
+    string $dateTo,
+    string $comparisonDateFrom,
+    string $comparisonDateTo,
+) {
+    $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
+
+    $this->actingAs(User::factory()->create())
+        ->get(route('trends.index', ['period' => $unit, 'anchor' => $anchor]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('period.unit', $unit)
+            ->where('period.anchor', $dateFrom)
+            ->where('period.date_from', $dateFrom)
+            ->where('period.date_to', $dateTo)
+            ->where('comparison_periods.0.date_from', $comparisonDateFrom)
+            ->where('comparison_periods.0.date_to', $comparisonDateTo));
+})->with([
+    'week' => ['week', '2026-08-12', '2026-08-10', '2026-08-16', '2026-08-03', '2026-08-09'],
+    'month' => ['month', '2026-07-12', '2026-07-01', '2026-07-31', '2026-06-01', '2026-06-30'],
+    'quarter' => ['quarter', '2026-05-12', '2026-04-01', '2026-06-30', '2026-01-01', '2026-03-31'],
+    'year' => ['year', '2025-05-12', '2025-01-01', '2025-12-31', '2024-01-01', '2024-12-31'],
+]);
+
+test('Trends compares custom ranges with the three immediately preceding equal ranges', function () {
+    $this->actingAs(User::factory()->create())
+        ->get(route('trends.index', [
+            'period' => 'custom',
+            'date_from' => '2026-08-10',
+            'date_to' => '2026-08-12',
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('period.unit', 'custom')
+            ->where('period.date_from', '2026-08-10')
+            ->where('period.date_to', '2026-08-12')
+            ->where('comparison_periods.0.date_from', '2026-08-07')
+            ->where('comparison_periods.0.date_to', '2026-08-09')
+            ->where('comparison_periods.2.date_from', '2026-08-01')
+            ->where('comparison_periods.2.date_to', '2026-08-03'));
+});
+
+test('Trends validates custom date ranges', function (array $query, array $errors) {
+    $this->actingAs(User::factory()->create())
+        ->get(route('trends.index', $query))
+        ->assertSessionHasErrors($errors);
+})->with([
+    'missing dates' => [
+        ['period' => 'custom'],
+        ['date_from', 'date_to'],
+    ],
+    'reversed dates' => [
+        [
+            'period' => 'custom',
+            'date_from' => '2026-08-12',
+            'date_to' => '2026-08-10',
+        ],
+        ['date_to'],
+    ],
+]);

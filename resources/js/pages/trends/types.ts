@@ -1,6 +1,8 @@
-import type { Currency } from '@/types';
+import type { Currency, ReportingPeriod } from '@/types';
 
-export type Period = {
+export type Period = ReportingPeriod;
+
+export type ComparisonPeriod = {
     label: string;
     date_from: string;
     date_to: string;
@@ -39,17 +41,17 @@ export type MerchantFinding = FindingBase & {
 
 export type Finding = CategoryFinding | MerchantFinding;
 
-export type MonthlyContext = Period & {
+export type MonthlyContext = ComparisonPeriod & {
     month: string;
     total_minor: string | null;
 };
 
 export type TrendsProps = {
     currency: Currency;
-    available_currencies: Currency[];
     period: Period;
-    comparison_periods: Period[];
+    comparison_periods: ComparisonPeriod[];
     summary: Summary | null;
     findings: Finding[];
     monthly_context: MonthlyContext[];
+    today: string;
 };

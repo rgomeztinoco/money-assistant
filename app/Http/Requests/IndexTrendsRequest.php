@@ -18,6 +18,11 @@ class IndexTrendsRequest extends FormRequest
     {
         return [
             'currency' => ['nullable', Rule::enum(Currency::class)],
+            'period' => ['nullable', Rule::in(['week', 'month', 'quarter', 'year', 'custom'])],
+            'anchor' => ['nullable', 'date_format:Y-m-d'],
+            'preset' => ['nullable', Rule::in(['this_month', 'last_month', 'rolling_30', 'custom'])],
+            'date_from' => [Rule::requiredIf($this->input('preset') === 'custom' || $this->input('period') === 'custom'), 'nullable', 'date_format:Y-m-d'],
+            'date_to' => [Rule::requiredIf($this->input('preset') === 'custom' || $this->input('period') === 'custom'), 'nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
         ];
     }
 }
