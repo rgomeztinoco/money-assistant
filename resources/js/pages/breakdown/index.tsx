@@ -986,7 +986,10 @@ export default function BreakdownIndex(props: BreakdownProps) {
                         className="min-h-0 min-w-0 gap-0 overflow-hidden py-0 xl:h-full"
                         data-test="breakdown-transactions-card"
                     >
-                        <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+                        <div
+                            className="flex shrink-0 items-center justify-between border-b p-4"
+                            data-test="breakdown-transactions-header"
+                        >
                             <h2 className="font-semibold">Transactions</h2>
                             <Badge
                                 variant="secondary"

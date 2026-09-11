@@ -267,6 +267,12 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
                 const ledgerNote = document.querySelector(
                     '[data-test="trends-ledger-note"]',
                 );
+                const ledgerHeader = document.querySelector(
+                    '[data-test="trends-ledger-header"]',
+                );
+                const ledgerColumnHeader = document.querySelector(
+                    '[data-test="trends-ledger-column-header"]',
+                );
                 const overviewContent = overview?.querySelector(
                     '[data-slot="card-content"]',
                 );
@@ -287,6 +293,8 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
                     || ledgerScroll === null
                     || chart === null
                     || ledgerNote === null
+                    || ledgerHeader === null
+                    || ledgerColumnHeader === null
                     || overviewContent === null
                     || netSpendingHeading === null
                     || monthlyContextHeading === null
@@ -301,6 +309,10 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
                 const overviewBounds = overview.getBoundingClientRect();
                 const ledgerBounds = ledger.getBoundingClientRect();
                 const noteBounds = ledgerNote.getBoundingClientRect();
+                const ledgerStyle = getComputedStyle(ledger);
+                const ledgerHeaderStyle = getComputedStyle(ledgerHeader);
+                const ledgerColumnHeaderStyle =
+                    getComputedStyle(ledgerColumnHeader);
                 const overviewContentStyle = getComputedStyle(overviewContent);
                 const netSpendingHeadingStyle =
                     getComputedStyle(netSpendingHeading);
@@ -324,6 +336,13 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
                     && ledgerBounds.bottom <= innerHeight
                     && noteBounds.bottom <= ledgerBounds.bottom
                     && noteBounds.top >= ledgerScroll.getBoundingClientRect().bottom
+                    && ledgerHeaderStyle.paddingTop === '16px'
+                    && ledgerHeaderStyle.paddingBottom === '16px'
+                    && !ledgerHeader.classList.contains('h-12')
+                    && ledgerColumnHeaderStyle.fontSize === '14px'
+                    && ledgerColumnHeaderStyle.lineHeight === '20px'
+                    && ledgerColumnHeaderStyle.fontWeight === '500'
+                    && ledgerColumnHeaderStyle.color === ledgerStyle.color
                     && overviewContentStyle.paddingTop === '24px'
                     && overviewContentStyle.paddingRight === '24px'
                     && overviewContentStyle.gap === '24px'
