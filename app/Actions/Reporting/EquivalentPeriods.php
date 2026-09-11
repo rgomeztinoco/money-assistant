@@ -7,21 +7,26 @@ use Carbon\CarbonImmutable;
 
 final readonly class EquivalentPeriods
 {
-    private const int PreviousPeriodCount = 3;
+    private const int DefaultPreviousPeriodCount = 3;
 
     /** @param non-empty-list<array{CarbonImmutable, CarbonImmutable}> $periods */
-    private function __construct(private array $periods) {}
+    private function __construct(
+        private array $periods,
+        private int $previousPeriodCount,
+    ) {}
 
-    public static function forPeriod(ReportingPeriod $period): self
-    {
+    public static function forPeriod(
+        ReportingPeriod $period,
+        int $previousPeriodCount = self::DefaultPreviousPeriodCount,
+    ): self {
         $periods = [[$period->dateFrom, $period->dateTo]];
         $durationDays = (int) $period->dateFrom->diffInDays($period->dateTo) + 1;
 
-        foreach (range(1, self::PreviousPeriodCount) as $offset) {
+        foreach (range(1, $previousPeriodCount) as $offset) {
             $periods[] = self::previousPeriod($period, $durationDays, $offset);
         }
 
-        return new self($periods);
+        return new self($periods, $previousPeriodCount);
     }
 
     /** @return non-empty-list<array{CarbonImmutable, CarbonImmutable}> */
@@ -39,12 +44,12 @@ final readonly class EquivalentPeriods
     /** @return list<int> */
     public function comparisonIndexes(): array
     {
-        return range(1, self::PreviousPeriodCount);
+        return range(1, $this->previousPeriodCount);
     }
 
     public function comparisonCount(): int
     {
-        return self::PreviousPeriodCount;
+        return $this->previousPeriodCount;
     }
 
     public function indexOf(CarbonImmutable $occurredOn): ?int
@@ -67,7 +72,7 @@ final readonly class EquivalentPeriods
             $total = $total->add($amounts[$index] ?? ExactInteger::from(0));
         }
 
-        return ExactInteger::from(bcdiv($total->value(), (string) self::PreviousPeriodCount, 0));
+        return ExactInteger::from(bcdiv($total->value(), (string) $this->previousPeriodCount, 0));
     }
 
     /** @return array{CarbonImmutable, CarbonImmutable} */

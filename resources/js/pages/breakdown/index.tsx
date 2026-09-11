@@ -13,7 +13,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { update as updateClassification } from '@/actions/App/Http/Controllers/BreakdownTransactionClassificationController';
-import { ReportingControls } from '@/components/reporting-controls';
+import { CurrencyFilter } from '@/components/currency-filter';
+import { PeriodControls } from '@/components/period-controls';
 import { SourceCoverage } from '@/components/source-coverage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -777,6 +778,38 @@ export default function BreakdownIndex(props: BreakdownProps) {
                     className="flex shrink-0 flex-wrap items-center gap-2"
                     data-test="breakdown-filter-bar"
                 >
+                    <CurrencyFilter
+                        value={props.currency_filter}
+                        options={[
+                            {
+                                value: null,
+                                label: 'All',
+                                testId: 'reporting-currency-all',
+                            },
+                            {
+                                value: 'PEN',
+                                label: 'PEN',
+                                testId: 'reporting-currency-pen',
+                            },
+                            {
+                                value: 'USD',
+                                label: 'USD',
+                                testId: 'reporting-currency-usd',
+                            },
+                        ]}
+                        href={(currencyFilter) =>
+                            selectionUrl({
+                                currencyFilter,
+                                period: props.period,
+                                category: props.filters.category,
+                                day: props.filters.day,
+                                focus: props.filters.focus,
+                                merchant: props.filters.merchant,
+                                attention: props.filters.attention,
+                                selected: null,
+                            }).url
+                        }
+                    />
                     {selectedCategory !== null && (
                         <RemovableFilter
                             label={`Category: ${selectedCategory}`}
@@ -1025,13 +1058,12 @@ BreakdownIndex.layout = (props: BreakdownProps) => ({
         },
     ],
     headerActions: (
-        <ReportingControls
-            currencyFilter={props.currency_filter}
+        <PeriodControls
             period={props.period}
             today={props.today}
-            href={(currencyFilter, selection) =>
+            href={(selection) =>
                 breakdownReportingHref({
-                    currencyFilter,
+                    currencyFilter: props.currency_filter,
                     selection,
                 })
             }

@@ -19,6 +19,7 @@ type FindingBase = {
     current_total_minor: string;
     typical_total_minor: string;
     change_minor: string;
+    period_totals_minor: string[];
     current_transaction_count: number;
     typical_transaction_count: number;
     unusual_transaction: {

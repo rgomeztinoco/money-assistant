@@ -6,19 +6,21 @@ import {
     ReferenceLine,
     XAxis,
 } from 'recharts';
-import { Card } from '@/components/ui/card';
 import {
     ChartContainer,
+    ChartLegend,
+    ChartLegendContent,
     ChartTooltip,
     ChartTooltipContent,
 } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
 import { formatMinorUnits } from '@/lib/format-minor-units';
-import type { Currency } from '@/types';
-import type { MonthlyContext } from './types';
+import { cn } from '@/lib/utils';
+import type { MonthlyContext, TrendReport } from './types';
 
 const chartConfig = {
-    total: { label: 'Net Spending', color: 'var(--chart-2)' },
+    PEN: { label: 'Soles', color: 'var(--chart-1)' },
+    USD: { label: 'USD', color: 'var(--chart-2)' },
 } satisfies ChartConfig;
 
 function shortDate(date: string): string {
@@ -29,53 +31,100 @@ function shortDate(date: string): string {
     }).format(new Date(`${date}T00:00:00Z`));
 }
 
+function isPartialMonth(month: MonthlyContext): boolean {
+    const monthEnd = new Date(
+        Date.UTC(
+            Number(month.month.slice(0, 4)),
+            Number(month.month.slice(5, 7)),
+            0,
+        ),
+    )
+        .toISOString()
+        .slice(0, 10);
+
+    return month.date_to !== monthEnd;
+}
+
 export function MonthlyContextChart({
-    currency,
-    months,
+    reports,
+    className,
 }: {
-    currency: Currency;
-    months: MonthlyContext[];
+    reports: TrendReport[];
+    className?: string;
 }) {
-    const contextMonth = months.at(-1);
-    const partialMonth =
-        contextMonth !== undefined &&
-        contextMonth.date_to !==
-            new Date(
-                Date.UTC(
-                    Number(contextMonth.month.slice(0, 4)),
-                    Number(contextMonth.month.slice(5, 7)),
-                    0,
-                ),
-            )
-                .toISOString()
-                .slice(0, 10);
-    const chartData = months.map((month) => ({
+    const currencies = reports.map((report) => report.currency);
+    const contextMonths = Array.from(
+        new Map(
+            reports
+                .flatMap((report) => report.monthly_context)
+                .map((month) => [month.month, month]),
+        ).values(),
+    ).sort((left, right) => left.month.localeCompare(right.month));
+    const monthlyContextByCurrency = new Map(
+        reports.map((report) => [
+            report.currency,
+            new Map(
+                report.monthly_context.map((month) => [month.month, month]),
+            ),
+        ]),
+    );
+    const chartData = contextMonths.map((month) => ({
         ...month,
         shortLabel: month.label.split(' ')[0],
-        total:
-            month.total_minor === null ? null : Number(month.total_minor) / 100,
+        ...Object.fromEntries(
+            currencies.map((currency) => {
+                const total = monthlyContextByCurrency
+                    .get(currency)
+                    ?.get(month.month)?.total_minor;
+
+                return [
+                    currency,
+                    total === null || total === undefined
+                        ? null
+                        : Number(total) / 100,
+                ];
+            }),
+        ),
     }));
-    const monthsWithoutActivity = months
-        .filter((month) => month.total_minor === null)
-        .map((month) => month.label);
+    const contextMonth = contextMonths.at(-1);
+    const partialMonth =
+        contextMonth !== undefined && isPartialMonth(contextMonth);
+    const missingActivity = reports.map((report) => ({
+        currency: report.currency,
+        months: contextMonths
+            .filter(
+                (month) =>
+                    monthlyContextByCurrency
+                        .get(report.currency)
+                        ?.get(month.month)?.total_minor == null,
+            )
+            .map((month) => month.label),
+    }));
 
     return (
-        <Card className="min-w-0 gap-0 overflow-hidden py-0">
-            <div className="flex h-12 items-center border-b px-4">
+        <section
+            className={cn(
+                'flex min-h-0 min-w-0 flex-col overflow-hidden border-t',
+                className,
+            )}
+            data-test="trends-monthly-context"
+        >
+            <div className="flex h-12 shrink-0 items-center border-b px-4">
                 <h2 className="font-semibold">Monthly context</h2>
             </div>
 
-            {months.length === 0 ? (
+            {contextMonths.length === 0 ? (
                 <p className="p-5 text-sm text-muted-foreground">
                     No recorded activity.
                 </p>
             ) : (
-                <div className="grid gap-3 p-4">
+                <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
                     <ChartContainer
                         config={chartConfig}
-                        className="h-40 w-full min-w-0"
+                        className="h-full min-h-40 w-full min-w-0 flex-1"
                         role="img"
-                        aria-label={`Six-month Net Spending context in ${currency}`}
+                        aria-label={`Seven-month Net Spending context in ${currencies.join(' and ')}`}
+                        data-stacked={currencies.length > 1 ? 'true' : 'false'}
                     >
                         <BarChart
                             accessibilityLayer
@@ -94,69 +143,96 @@ export function MonthlyContextChart({
                                 content={
                                     <ChartTooltipContent
                                         config={chartConfig}
-                                        formatValue={(value) =>
+                                        formatValue={(value, name) =>
                                             formatMinorUnits(
                                                 String(
                                                     Math.round(
                                                         Number(value) * 100,
                                                     ),
                                                 ),
-                                                currency,
+                                                name === 'USD' ? 'USD' : 'PEN',
                                             )
                                         }
                                     />
                                 }
                             />
-                            <Bar
-                                dataKey="total"
-                                name="total"
-                                radius={[3, 3, 3, 3]}
-                                maxBarSize={36}
-                                minPointSize={2}
-                                isAnimationActive={false}
-                            >
-                                {chartData.map((month) => {
-                                    const partial =
-                                        partialMonth &&
-                                        month.month === contextMonth.month;
-
-                                    return (
+                            {currencies.length > 1 && (
+                                <ChartLegend
+                                    content={
+                                        <ChartLegendContent
+                                            config={chartConfig}
+                                        />
+                                    }
+                                />
+                            )}
+                            {currencies.map((currency) => (
+                                <Bar
+                                    key={currency}
+                                    dataKey={currency}
+                                    name={currency}
+                                    stackId={
+                                        currencies.length > 1
+                                            ? 'spending'
+                                            : undefined
+                                    }
+                                    fill={`var(--color-${currency})`}
+                                    radius={[3, 3, 3, 3]}
+                                    maxBarSize={36}
+                                    minPointSize={2}
+                                    isAnimationActive={false}
+                                >
+                                    {contextMonths.map((month) => (
                                         <Cell
-                                            key={month.month}
-                                            fill="var(--color-total)"
-                                            fillOpacity={partial ? 0.55 : 1}
+                                            key={`${currency}-${month.month}`}
+                                            fill={`var(--color-${currency})`}
+                                            fillOpacity={
+                                                partialMonth &&
+                                                month.month ===
+                                                    contextMonth.month
+                                                    ? 0.55
+                                                    : 1
+                                            }
                                             stroke={
-                                                partial
-                                                    ? 'var(--color-total)'
+                                                partialMonth &&
+                                                month.month ===
+                                                    contextMonth.month
+                                                    ? `var(--color-${currency})`
                                                     : 'none'
                                             }
                                             strokeDasharray={
-                                                partial ? '4 3' : undefined
+                                                partialMonth &&
+                                                month.month ===
+                                                    contextMonth.month
+                                                    ? '4 3'
+                                                    : undefined
                                             }
                                         />
-                                    );
-                                })}
-                            </Bar>
+                                    ))}
+                                </Bar>
+                            ))}
                         </BarChart>
                     </ChartContainer>
 
-                    <div className="grid gap-1.5 text-xs text-muted-foreground">
-                        {partialMonth && (
+                    <div className="grid shrink-0 gap-1.5 text-xs text-muted-foreground">
+                        {partialMonth && contextMonth !== undefined && (
                             <p className="flex items-center gap-2">
                                 <span className="size-2.5 rounded-sm border border-dashed border-chart-2 bg-chart-2/50" />
                                 Partial month through{' '}
                                 {shortDate(contextMonth.date_to)}
                             </p>
                         )}
-                        {monthsWithoutActivity.length > 0 && (
-                            <p>
-                                No recorded activity:{' '}
-                                {monthsWithoutActivity.join(', ')}.
-                            </p>
+                        {missingActivity.map(
+                            ({ currency, months }) =>
+                                months.length > 0 && (
+                                    <p key={currency}>
+                                        No {currency} activity:{' '}
+                                        {months.join(', ')}.
+                                    </p>
+                                ),
                         )}
                     </div>
                 </div>
             )}
-        </Card>
+        </section>
     );
 }

@@ -1,9 +1,9 @@
 import { Head, Link } from '@inertiajs/react';
 import { ArrowRight, CalendarRange } from 'lucide-react';
-import { ReportingControls } from '@/components/reporting-controls';
-import { Badge } from '@/components/ui/badge';
+import { CurrencyFilter } from '@/components/currency-filter';
+import { PeriodControls } from '@/components/period-controls';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { periodBreakdownUrl } from '@/lib/transaction-filter-url';
@@ -40,114 +40,164 @@ function PeriodSummary({
     period: Period;
     summary: Summary | null;
 }) {
+    const label = currency === 'PEN' ? 'Soles' : 'USD';
+
     return (
-        <Card className="gap-0 overflow-hidden py-0">
-            <CardContent className="grid gap-4 p-4">
-                <span className="text-xs font-semibold tracking-wider text-muted-foreground">
-                    {currency}
-                </span>
-                <dl className="grid gap-1">
-                    <dt className="text-sm text-muted-foreground">
-                        Net spending
-                    </dt>
-                    <dd className="text-2xl font-semibold tracking-tight tabular-nums">
-                        {summary === null
-                            ? 'No activity'
-                            : formatMinorUnits(
-                                  summary.net_spending_minor,
-                                  currency,
-                              )}
-                    </dd>
-                </dl>
-                <Button asChild size="sm" variant="outline">
-                    <Link
-                        href={periodBreakdownUrl({ currency, period })}
-                        data-test="trends-period-breakdown"
-                    >
-                        Open in Breakdown
-                        <ArrowRight data-icon="inline-end" />
-                    </Link>
-                </Button>
-            </CardContent>
-        </Card>
+        <section
+            className="flex items-center justify-between gap-4 p-4"
+            data-test={`trends-summary-${currency.toLowerCase()}`}
+        >
+            <dl className="grid gap-1">
+                <dt className="text-sm font-medium text-muted-foreground">
+                    {label} Net Spending
+                </dt>
+                <dd className="text-2xl font-semibold tracking-tight tabular-nums">
+                    {summary === null
+                        ? 'No activity'
+                        : formatMinorUnits(
+                              summary.net_spending_minor,
+                              currency,
+                          )}
+                </dd>
+            </dl>
+            <Button asChild size="icon" variant="ghost">
+                <Link
+                    href={periodBreakdownUrl({ currency, period })}
+                    data-test={`trends-period-breakdown-${currency.toLowerCase()}`}
+                    aria-label={`Open ${label} Net Spending in Breakdown`}
+                >
+                    <ArrowRight />
+                </Link>
+            </Button>
+        </section>
     );
+}
+
+function comparisonRange(comparisonPeriods: ComparisonPeriod[]): string {
+    const oldest = comparisonPeriods.at(-1);
+    const newest = comparisonPeriods[0];
+
+    if (oldest === undefined || newest === undefined) {
+        return '';
+    }
+
+    const dateFrom = new Date(`${oldest.date_from}T00:00:00Z`);
+    const dateTo = new Date(`${newest.date_to}T00:00:00Z`);
+    const sameYear = dateFrom.getUTCFullYear() === dateTo.getUTCFullYear();
+    const fromLabel = new Intl.DateTimeFormat('en', {
+        month: 'short',
+        year: sameYear ? undefined : 'numeric',
+        timeZone: 'UTC',
+    }).format(dateFrom);
+    const toLabel = new Intl.DateTimeFormat('en', {
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+    }).format(dateTo);
+
+    return `${fromLabel}–${toLabel}`;
 }
 
 function ComparisonPeriodIndicator({
     comparisonPeriods,
+    period,
 }: {
     comparisonPeriods: ComparisonPeriod[];
+    period: Period;
 }) {
+    const unit = period.unit === 'custom' ? 'periods' : `${period.unit}s`;
+
     return (
-        <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-sm">
             <CalendarRange className="size-4 shrink-0 text-muted-foreground" />
             <span className="text-muted-foreground">Compared with</span>
-            {comparisonPeriods.map((comparisonPeriod) => (
-                <Badge key={comparisonPeriod.date_from} variant="secondary">
-                    {comparisonPeriod.label}
-                </Badge>
-            ))}
-        </div>
-    );
-}
-
-function TrendCurrencySection({
-    report,
-    period,
-    comparisonPeriods,
-}: {
-    report: TrendReport;
-    period: Period;
-    comparisonPeriods: ComparisonPeriod[];
-}) {
-    return (
-        <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_17rem]">
-            <ChangeLedger
-                currency={report.currency}
-                period={period}
-                comparisonPeriods={comparisonPeriods}
-                summary={report.summary}
-                findings={report.findings}
-            />
-
-            <aside className="grid min-w-0 content-start gap-4">
-                <PeriodSummary
-                    currency={report.currency}
-                    period={period}
-                    summary={report.summary}
-                />
-                <MonthlyContextChart
-                    currency={report.currency}
-                    months={report.monthly_context}
-                />
-            </aside>
+            <span className="text-muted-foreground">
+                Previous {comparisonPeriods.length} {unit}:{' '}
+                <span className="font-medium text-foreground">
+                    {comparisonRange(comparisonPeriods)}
+                </span>
+            </span>
         </div>
     );
 }
 
 export default function Trends(props: TrendsProps) {
+    const reports: TrendReport[] =
+        props.secondary === null ? [props] : [props, props.secondary];
+
     return (
         <>
             <Head title="Trends" />
 
-            <main className="flex min-h-0 flex-1 flex-col gap-4 p-4 md:p-6">
-                <ComparisonPeriodIndicator
-                    comparisonPeriods={props.comparison_periods}
-                />
-
-                <TrendCurrencySection
-                    report={props}
-                    period={props.period}
-                    comparisonPeriods={props.comparison_periods}
-                />
-
-                {props.secondary !== null && (
-                    <TrendCurrencySection
-                        report={props.secondary}
-                        period={props.period}
-                        comparisonPeriods={props.comparison_periods}
+            <main className="flex min-h-0 flex-1 flex-col gap-4 p-4 md:p-6 xl:overflow-hidden">
+                <div
+                    className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                    data-test="trends-context-bar"
+                >
+                    <CurrencyFilter
+                        value={props.currency_filter}
+                        options={[
+                            {
+                                value: null,
+                                label: 'All',
+                                testId: 'reporting-currency-all',
+                            },
+                            {
+                                value: 'PEN',
+                                label: 'PEN',
+                                testId: 'reporting-currency-pen',
+                            },
+                            {
+                                value: 'USD',
+                                label: 'USD',
+                                testId: 'reporting-currency-usd',
+                            },
+                        ]}
+                        href={(currencyFilter) =>
+                            trendsReportingHref({
+                                currencyFilter,
+                                selection: reportingSelection(props.period),
+                            })
+                        }
                     />
-                )}
+                    <ComparisonPeriodIndicator
+                        comparisonPeriods={props.comparison_periods}
+                        period={props.period}
+                    />
+                </div>
+
+                <div className="grid min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(20rem,0.8fr)_minmax(36rem,1.2fr)] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:overflow-hidden">
+                    <aside
+                        className="min-h-0 min-w-0 xl:h-full"
+                        data-test="trends-overview-column"
+                    >
+                        <Card
+                            className="flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden py-0 xl:h-full"
+                            data-test="trends-overview-card"
+                        >
+                            <div className="grid shrink-0 divide-y">
+                                {reports.map((report) => (
+                                    <PeriodSummary
+                                        key={report.currency}
+                                        currency={report.currency}
+                                        period={props.period}
+                                        summary={report.summary}
+                                    />
+                                ))}
+                            </div>
+                            <MonthlyContextChart
+                                reports={reports}
+                                className="flex-1"
+                            />
+                        </Card>
+                    </aside>
+
+                    <ChangeLedger
+                        currencyFilter={props.currency_filter}
+                        period={props.period}
+                        reports={reports}
+                    />
+                </div>
             </main>
         </>
     );
@@ -166,16 +216,16 @@ Trends.layout = (props: TrendsProps) => ({
         },
     ],
     headerActions: (
-        <ReportingControls
-            currencyFilter={props.currency_filter}
+        <PeriodControls
             period={props.period}
             today={props.today}
-            href={(currencyFilter, selection) =>
+            href={(selection) =>
                 trendsReportingHref({
-                    currencyFilter,
+                    currencyFilter: props.currency_filter,
                     selection,
                 })
             }
         />
     ),
+    viewportConstrained: true,
 });

@@ -118,12 +118,12 @@ test('Home keeps the weekly briefing focused and every claim drills into Breakdo
         ->assertNoConsoleLogs();
 });
 
-test('Trends scans, filters, and expands the change ledger before opening its evidence', function () {
+test('Trends scans and filters the combined change ledger before opening Breakdown', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     $transport = Category::factory()->for($owner, 'owner')->create(['name' => 'Transport']);
 
-    foreach (['2026-05-10', '2026-06-10', '2026-07-10'] as $occurredOn) {
+    foreach (['2026-02-10', '2026-03-10', '2026-04-10', '2026-05-10', '2026-06-10', '2026-07-10'] as $occurredOn) {
         Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
             'occurred_on' => $occurredOn,
             'amount_minor' => 1_000,
@@ -178,57 +178,42 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
         ->assertDontSee('The change ledger')
         ->assertDontSee('See where Net Spending changed')
         ->assertSee('Monthly context')
+        ->assertSee('Soles Net Spending')
+        ->assertSee('USD Net Spending')
         ->assertSee('Compared with')
-        ->assertSee('Jul 1 – Jul 22, 2026')
+        ->assertSee('Previous 6 months')
+        ->assertSee('Feb–Jul 2026')
         ->assertSee('Food')
         ->assertSee('Central Market')
         ->assertSee('Category and merchant views overlap')
-        ->assertSee('No recorded activity')
         ->assertSee('Partial month through Aug 22')
+        ->assertPresent('[data-test="trends-ledger-all"]')
+        ->assertNotPresent('[data-test="trends-ledger-pen"]')
+        ->assertNotPresent('[data-test="trends-ledger-usd"]')
+        ->assertPresent('[data-test="trend-frequency-pen-category-'.$food->id.'"]')
+        ->assertPresent('[data-test="trend-sparkline-pen-category-'.$food->id.'"]')
+        ->assertPresent('[data-test="trend-breakdown-pen-category-'.$food->id.'"]')
         ->assertAttribute(
             '[data-test="trend-change-pen-category-'.$transport->id.'"]',
             'data-direction',
             'down',
         )
-        ->assertNotPresent('[data-test="trend-evidence-pen-category-'.$food->id.'"]')
+        ->assertNotPresent('[data-test^="trend-toggle-"]')
+        ->assertNotPresent('[data-test^="trend-evidence-"]')
         ->assertNotPresent('input[name="date_from"]')
         ->assertScript(
             'document.documentElement.scrollWidth <= document.documentElement.clientWidth',
         );
 
     $page
-        ->click('[data-test="trend-toggle-pen-category-'.$food->id.'"]')
-        ->assertPresent('[data-test="trend-evidence-pen-category-'.$food->id.'"]')
-        ->assertSee('Transaction frequency')
-        ->assertSee('Unusual Transaction');
-
-    $page
-        ->keys('[data-test="trend-toggle-pen-merchant-central-market"]', 'Enter')
-        ->assertPresent('[data-test="trend-evidence-pen-category-'.$food->id.'"]')
-        ->assertPresent('[data-test="trend-evidence-pen-merchant-central-market"]')
-        ->keys('[data-test="trend-toggle-pen-category-'.$food->id.'"]', 'Enter')
-        ->assertNotPresent('[data-test="trend-evidence-pen-category-'.$food->id.'"]')
-        ->assertPresent('[data-test="trend-evidence-pen-merchant-central-market"]');
-
-    $page
-        ->click('[data-test="trend-toggle-pen-merchant-café"]')
-        ->keys('[data-test="trend-toggle-pen-merchant-cafè"]', 'Enter')
-        ->assertPresent('[data-test="trend-evidence-pen-merchant-café"]')
-        ->assertPresent('[data-test="trend-evidence-pen-merchant-cafè"]')
-        ->keys('[data-test="trend-toggle-pen-merchant-café"]', 'Enter')
-        ->assertNotPresent('[data-test="trend-evidence-pen-merchant-café"]')
-        ->assertPresent('[data-test="trend-evidence-pen-merchant-cafè"]');
-
-    $page
-        ->click('[data-test="trends-pen-filter-category"]')
+        ->click('[data-test="trends-all-filter-category"]')
         ->assertPathIs('/trends')
         ->assertSee('Aug 1 to Aug 22')
-        ->assertPresent('[data-test="trend-toggle-pen-category-'.$food->id.'"]')
-        ->assertNotPresent('[data-test="trend-toggle-pen-merchant-central-market"]');
+        ->assertPresent('[data-test="trend-breakdown-pen-category-'.$food->id.'"]')
+        ->assertNotPresent('[data-test="trend-breakdown-pen-merchant-central-market"]');
 
     $page
-        ->click('[data-test="trends-pen-filter-all"]')
-        ->click('[data-test="trend-toggle-pen-category-'.$food->id.'"]')
+        ->click('[data-test="trends-all-filter-all"]')
         ->click('[data-test="trend-breakdown-pen-category-'.$food->id.'"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('category', (string) $food->id)
@@ -237,18 +222,6 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
     $page = visit('/trends');
 
     $page
-        ->click('[data-test="trend-toggle-pen-category-'.$food->id.'"]')
-        ->click('[data-test="trend-finding-pen-category-'.$food->id.'-comparison-0"]')
-        ->assertPathIs('/breakdown')
-        ->assertQueryStringHas('category', (string) $food->id)
-        ->assertQueryStringHas('date_from', '2026-07-01')
-        ->assertQueryStringHas('date_to', '2026-07-22')
-        ->assertQueryStringMissing('selected');
-
-    $page = visit('/trends');
-
-    $page
-        ->click('[data-test="trend-toggle-pen-merchant-central-market"]')
         ->click('[data-test="trend-breakdown-pen-merchant-central-market"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('merchant', 'Central Market');
@@ -262,6 +235,72 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
         ->assertQueryStringHas('period', 'month')
         ->assertQueryStringHas('anchor', '2026-07-01')
         ->assertNoAccessibilityIssues()
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+
+    $page = visit('/trends');
+
+    $page
+        ->resize(1280, 720)
+        ->assertScript(<<<'JS'
+            (() => {
+                const contextBar = document.querySelector(
+                    '[data-test="trends-context-bar"]',
+                );
+                const overview = document.querySelector(
+                    '[data-test="trends-overview-column"]',
+                );
+                const ledger = document.querySelector(
+                    '[data-test="trends-ledger-all"]',
+                );
+                const ledgerScroll = document.querySelector(
+                    '[data-test="trends-ledger-scroll"]',
+                );
+                const chart = document.querySelector(
+                    '[data-test="trends-monthly-context"] [data-slot="chart"]',
+                );
+                const ledgerNote = document.querySelector(
+                    '[data-test="trends-ledger-note"]',
+                );
+
+                if (
+                    contextBar === null
+                    || overview === null
+                    || ledger === null
+                    || ledgerScroll === null
+                    || chart === null
+                    || ledgerNote === null
+                ) {
+                    return false;
+                }
+
+                ledgerScroll.scrollTop = 120;
+
+                const contextStyle = getComputedStyle(contextBar);
+                const overviewBounds = overview.getBoundingClientRect();
+                const ledgerBounds = ledger.getBoundingClientRect();
+                const noteBounds = ledgerNote.getBoundingClientRect();
+
+                return ledger.textContent.includes('S/ 45.00')
+                    && ledger.textContent.includes('$ 25.00')
+                    && document.querySelectorAll(
+                        '[data-test="trends-monthly-context"]',
+                    ).length === 1
+                    && chart.getAttribute('data-stacked') === 'true'
+                    && contextStyle.borderTopWidth === '0px'
+                    && contextStyle.borderBottomWidth === '0px'
+                    && Math.abs(overviewBounds.top - ledgerBounds.top) < 1
+                    && Math.abs(overviewBounds.bottom - ledgerBounds.bottom) < 1
+                    && ledgerBounds.bottom <= innerHeight
+                    && noteBounds.bottom <= ledgerBounds.bottom
+                    && noteBounds.top >= ledgerScroll.getBoundingClientRect().bottom
+                    && document.documentElement.scrollHeight
+                        <= document.documentElement.clientHeight
+                    && getComputedStyle(ledgerScroll).overflowY === 'auto'
+                    && ledgerScroll.scrollHeight > ledgerScroll.clientHeight
+                    && ledgerScroll.scrollTop > 0;
+            })()
+            JS)
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
@@ -286,7 +325,8 @@ test('Reporting period and currency persist between the main money pages', funct
     $this->actingAs($owner);
 
     visit('/breakdown?currency=USD&period=month&anchor=2026-07-12')
-        ->assertPresent('[data-test="reporting-controls"]')
+        ->assertPresent('[data-test="breakdown-filter-bar"]')
+        ->assertPresent('[data-test="reporting-currency-usd"]')
         ->click('[data-test="nav-trends"]')
         ->assertPathIs('/trends')
         ->assertQueryStringHas('currency', 'USD')
@@ -320,21 +360,21 @@ test('Trends distinguishes empty activity, missing context, and no material find
     $this->actingAs($historicalOwner);
 
     visit('/trends')
-        ->assertSee('No PEN activity')
+        ->assertSee('No activity')
         ->assertSee('Partial month through Aug 22')
-        ->assertSee('No recorded activity');
+        ->assertSee('No USD activity');
 
     $emptyOwner = User::factory()->create();
     $this->actingAs($emptyOwner);
 
     visit('/trends')
-        ->assertSee('No PEN activity')
+        ->assertSee('No activity')
         ->assertSee('No recorded activity');
 
     $steadyOwner = User::factory()->create();
     $food = Category::factory()->for($steadyOwner, 'owner')->create(['name' => 'Food']);
 
-    foreach (['2026-05-10', '2026-06-10', '2026-07-10', '2026-08-10'] as $occurredOn) {
+    foreach (['2026-02-10', '2026-03-10', '2026-04-10', '2026-05-10', '2026-06-10', '2026-07-10', '2026-08-10'] as $occurredOn) {
         Transaction::factory()->for($steadyOwner, 'owner')->spending()->pen()->create([
             'occurred_on' => $occurredOn,
             'amount_minor' => 1_000,
