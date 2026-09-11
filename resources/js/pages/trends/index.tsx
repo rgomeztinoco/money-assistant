@@ -3,7 +3,7 @@ import { ArrowRight, CalendarRange } from 'lucide-react';
 import { CurrencyFilter } from '@/components/currency-filter';
 import { PeriodControls } from '@/components/period-controls';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { periodBreakdownUrl } from '@/lib/transaction-filter-url';
@@ -40,18 +40,16 @@ function PeriodSummary({
     period: Period;
     summary: Summary | null;
 }) {
-    const label = currency === 'PEN' ? 'Soles' : 'USD';
-
     return (
         <section
-            className="flex items-center justify-between gap-4 p-4"
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-1 py-4 sm:px-4"
             data-test={`trends-summary-${currency.toLowerCase()}`}
         >
-            <dl className="grid gap-1">
-                <dt className="text-sm font-medium text-muted-foreground">
-                    {label} Net Spending
+            <dl className="grid min-w-0 gap-1">
+                <dt className="text-xs font-semibold tracking-wider text-muted-foreground">
+                    {currency}
                 </dt>
-                <dd className="text-2xl font-semibold tracking-tight tabular-nums">
+                <dd className="truncate text-2xl font-semibold tracking-tight tabular-nums">
                     {summary === null
                         ? 'No activity'
                         : formatMinorUnits(
@@ -64,7 +62,7 @@ function PeriodSummary({
                 <Link
                     href={periodBreakdownUrl({ currency, period })}
                     data-test={`trends-period-breakdown-${currency.toLowerCase()}`}
-                    aria-label={`Open ${label} Net Spending in Breakdown`}
+                    aria-label={`Open ${currency} Net Spending in Breakdown`}
                 >
                     <ArrowRight />
                 </Link>
@@ -172,23 +170,42 @@ export default function Trends(props: TrendsProps) {
                         data-test="trends-overview-column"
                     >
                         <Card
-                            className="flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden py-0 xl:h-full"
+                            className="min-h-0 min-w-0 gap-0 overflow-hidden py-0 xl:h-full"
                             data-test="trends-overview-card"
                         >
-                            <div className="grid shrink-0 divide-y">
-                                {reports.map((report) => (
-                                    <PeriodSummary
-                                        key={report.currency}
-                                        currency={report.currency}
-                                        period={props.period}
-                                        summary={report.summary}
-                                    />
-                                ))}
-                            </div>
-                            <MonthlyContextChart
-                                reports={reports}
-                                className="flex-1"
-                            />
+                            <CardContent className="flex h-full min-h-0 flex-col gap-6 p-4 sm:p-6">
+                                <section
+                                    className="grid shrink-0 gap-3"
+                                    data-test="trends-net-spending"
+                                >
+                                    <div>
+                                        <h2 className="font-semibold">
+                                            Net spending
+                                        </h2>
+                                        <p className="text-sm text-muted-foreground">
+                                            {props.period.label}
+                                        </p>
+                                    </div>
+                                    <div
+                                        className={`grid border-y ${
+                                            reports.length > 1
+                                                ? 'grid-cols-2 divide-x'
+                                                : 'grid-cols-1'
+                                        }`}
+                                        data-test="trends-net-spending-currencies"
+                                    >
+                                        {reports.map((report) => (
+                                            <PeriodSummary
+                                                key={report.currency}
+                                                currency={report.currency}
+                                                period={props.period}
+                                                summary={report.summary}
+                                            />
+                                        ))}
+                                    </div>
+                                </section>
+                                <MonthlyContextChart reports={reports} />
+                            </CardContent>
                         </Card>
                     </aside>
 

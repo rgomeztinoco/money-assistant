@@ -54,14 +54,11 @@ function findingTestId(finding: Finding): string {
 }
 
 function findingUrl(finding: Finding, period: Period) {
-    const selected = finding.unusual_transaction?.id;
-
     if (finding.kind === 'category') {
         return categoryBreakdownUrl({
             currency: finding.currency,
             period,
             categoryId: finding.category.id,
-            selected,
         });
     }
 
@@ -69,7 +66,6 @@ function findingUrl(finding: Finding, period: Period) {
         currency: finding.currency,
         period,
         merchant: finding.merchant,
-        selected,
     });
 }
 
@@ -173,7 +169,7 @@ export function ChangeLedger({
             className="flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden py-0 xl:h-full"
             data-test={`trends-ledger-${ledgerSegment}`}
         >
-            <div className="flex shrink-0 flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-h-12 shrink-0 flex-col gap-2 border-b px-4 py-3 sm:h-12 sm:flex-row sm:items-center sm:justify-between sm:py-0">
                 <div className="flex items-center gap-2">
                     <h2 className="font-semibold">Changes by impact</h2>
                     <Badge variant="outline">{currencyFilter ?? 'All'}</Badge>
@@ -233,7 +229,7 @@ export function ChangeLedger({
                     <>
                         <div
                             className={cn(
-                                'sticky top-0 z-10 hidden items-center gap-2 border-b bg-background px-4 py-2 text-xs font-medium text-muted-foreground md:grid',
+                                'sticky top-0 z-10 hidden h-10 items-center gap-2 border-b bg-background px-4 text-xs font-medium text-muted-foreground md:grid',
                                 ledgerColumns,
                             )}
                             aria-hidden="true"

@@ -138,7 +138,7 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
         ]);
     }
 
-    $unusual = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-08-08',
         'amount_minor' => 4_000,
         'description' => 'Central Market',
@@ -178,8 +178,9 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
         ->assertDontSee('The change ledger')
         ->assertDontSee('See where Net Spending changed')
         ->assertSee('Monthly context')
-        ->assertSee('Soles Net Spending')
-        ->assertSee('USD Net Spending')
+        ->assertSee('Net spending')
+        ->assertSeeIn('[data-test="trends-summary-pen"]', 'PEN')
+        ->assertSeeIn('[data-test="trends-summary-usd"]', 'USD')
         ->assertSee('Compared with')
         ->assertSee('Previous 6 months')
         ->assertSee('Feb–Jul 2026')
@@ -217,14 +218,18 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
         ->click('[data-test="trend-breakdown-pen-category-'.$food->id.'"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('category', (string) $food->id)
-        ->assertQueryStringHas('selected', (string) $unusual->id);
+        ->assertQueryStringHas('currency', 'PEN')
+        ->assertQueryStringHas('date_from', '2026-08-01')
+        ->assertQueryStringHas('date_to', '2026-08-22')
+        ->assertQueryStringMissing('selected');
 
     $page = visit('/trends');
 
     $page
         ->click('[data-test="trend-breakdown-pen-merchant-central-market"]')
         ->assertPathIs('/breakdown')
-        ->assertQueryStringHas('merchant', 'Central Market');
+        ->assertQueryStringHas('merchant', 'Central Market')
+        ->assertQueryStringMissing('selected');
 
     $page = visit('/trends?period=month&anchor=2026-07-12');
 
@@ -262,6 +267,18 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
                 const ledgerNote = document.querySelector(
                     '[data-test="trends-ledger-note"]',
                 );
+                const overviewContent = overview?.querySelector(
+                    '[data-slot="card-content"]',
+                );
+                const netSpendingHeading = document.querySelector(
+                    '[data-test="trends-net-spending"] h2',
+                );
+                const monthlyContextHeading = document.querySelector(
+                    '[data-test="trends-monthly-context"] h2',
+                );
+                const currencySummaries = document.querySelectorAll(
+                    '[data-test^="trends-summary-"]',
+                );
 
                 if (
                     contextBar === null
@@ -270,6 +287,10 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
                     || ledgerScroll === null
                     || chart === null
                     || ledgerNote === null
+                    || overviewContent === null
+                    || netSpendingHeading === null
+                    || monthlyContextHeading === null
+                    || currencySummaries.length !== 2
                 ) {
                     return false;
                 }
@@ -280,6 +301,15 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
                 const overviewBounds = overview.getBoundingClientRect();
                 const ledgerBounds = ledger.getBoundingClientRect();
                 const noteBounds = ledgerNote.getBoundingClientRect();
+                const overviewContentStyle = getComputedStyle(overviewContent);
+                const netSpendingHeadingStyle =
+                    getComputedStyle(netSpendingHeading);
+                const monthlyContextHeadingStyle =
+                    getComputedStyle(monthlyContextHeading);
+                const penSummaryBounds =
+                    currencySummaries[0].getBoundingClientRect();
+                const usdSummaryBounds =
+                    currencySummaries[1].getBoundingClientRect();
 
                 return ledger.textContent.includes('S/ 45.00')
                     && ledger.textContent.includes('$ 25.00')
@@ -294,6 +324,17 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
                     && ledgerBounds.bottom <= innerHeight
                     && noteBounds.bottom <= ledgerBounds.bottom
                     && noteBounds.top >= ledgerScroll.getBoundingClientRect().bottom
+                    && overviewContentStyle.paddingTop === '24px'
+                    && overviewContentStyle.paddingRight === '24px'
+                    && overviewContentStyle.gap === '24px'
+                    && netSpendingHeadingStyle.fontSize
+                        === monthlyContextHeadingStyle.fontSize
+                    && netSpendingHeadingStyle.lineHeight
+                        === monthlyContextHeadingStyle.lineHeight
+                    && netSpendingHeadingStyle.fontWeight
+                        === monthlyContextHeadingStyle.fontWeight
+                    && Math.abs(penSummaryBounds.top - usdSummaryBounds.top) < 1
+                    && usdSummaryBounds.left >= penSummaryBounds.right
                     && document.documentElement.scrollHeight
                         <= document.documentElement.clientHeight
                     && getComputedStyle(ledgerScroll).overflowY === 'auto'

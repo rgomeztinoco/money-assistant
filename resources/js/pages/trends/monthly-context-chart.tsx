@@ -104,24 +104,27 @@ export function MonthlyContextChart({
     return (
         <section
             className={cn(
-                'flex min-h-0 min-w-0 flex-col overflow-hidden border-t',
+                'flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden',
                 className,
             )}
             data-test="trends-monthly-context"
         >
-            <div className="flex h-12 shrink-0 items-center border-b px-4">
+            <div className="shrink-0">
                 <h2 className="font-semibold">Monthly context</h2>
+                <p className="text-sm text-muted-foreground">
+                    Previous six months and the current month.
+                </p>
             </div>
 
             {contextMonths.length === 0 ? (
-                <p className="p-5 text-sm text-muted-foreground">
+                <p className="border-y py-6 text-center text-sm text-muted-foreground">
                     No recorded activity.
                 </p>
             ) : (
-                <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+                <div className="flex min-h-0 flex-1 flex-col gap-3">
                     <ChartContainer
                         config={chartConfig}
-                        className="h-full min-h-40 w-full min-w-0 flex-1"
+                        className="h-52 w-full max-w-full min-w-0 xl:h-full xl:min-h-40 xl:flex-1"
                         role="img"
                         aria-label={`Seven-month Net Spending context in ${currencies.join(' and ')}`}
                         data-stacked={currencies.length > 1 ? 'true' : 'false'}
