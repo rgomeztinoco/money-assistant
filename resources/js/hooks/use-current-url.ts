@@ -22,12 +22,13 @@ export function useCurrentUrl() {
                 ? currentUrlPath.startsWith(path)
                 : path === currentUrlPath;
 
-        if (!urlString.startsWith('http')) {
-            return comparePath(urlString);
-        }
-
         try {
-            const absoluteUrl = new URL(urlString);
+            const absoluteUrl = new URL(
+                urlString,
+                typeof window !== 'undefined'
+                    ? window.location.origin
+                    : 'http://localhost',
+            );
 
             return comparePath(absoluteUrl.pathname);
         } catch {

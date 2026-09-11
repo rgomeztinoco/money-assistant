@@ -67,6 +67,12 @@ test('Home gives the owner one PEN briefing and a compact USD summary', function
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('home')
+            ->where('currency_filter', null)
+            ->where('period.unit', 'month')
+            ->where('period.anchor', '2026-08-01')
+            ->where('period.date_from', '2026-08-01')
+            ->where('period.date_to', '2026-08-22')
+            ->where('today', '2026-08-22')
             ->where('primary.currency', 'PEN')
             ->where('primary.period.date_from', '2026-08-01')
             ->where('primary.period.date_to', '2026-08-22')
@@ -178,4 +184,43 @@ test('Home does not invent empty totals when the owner has no Transactions', fun
 test('guests are redirected from Home to login', function () {
     $this->get(route('home'))
         ->assertRedirectToRoute('login');
+});
+
+test('Home applies the shared currency and period filters', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
+    $owner = User::factory()->create();
+
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-07-10',
+        'amount_minor' => 90_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2026-07-10',
+        'amount_minor' => 2_500,
+    ]);
+
+    $response = $this->actingAs($owner)
+        ->get(route('home', [
+            'currency' => 'USD',
+            'period' => 'month',
+            'anchor' => '2026-07-12',
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('currency_filter', 'USD')
+            ->where('period.unit', 'month')
+            ->where('period.anchor', '2026-07-01')
+            ->where('period.date_from', '2026-07-01')
+            ->where('period.date_to', '2026-07-31')
+            ->where('primary.currency', 'USD')
+            ->where('primary.summary.net_spending_minor', '2500')
+            ->where('secondary', null));
+
+    expect(json_encode($response->inertiaProps(), JSON_THROW_ON_ERROR))
+        ->not->toContain('90000');
+});
+
+test('Home validates custom date ranges', function () {
+    $this->actingAs(User::factory()->create())
+        ->get(route('home', ['period' => 'custom']))
+        ->assertSessionHasErrors(['date_from', 'date_to']);
 });

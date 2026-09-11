@@ -24,8 +24,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { index as breakdownIndex } from '@/routes/breakdown';
-import type { BreakdownPeriod } from './types';
+import type { ReportingPeriod, ReportingPeriodSelection } from '@/types';
 
 const periodUnits = [
     { value: 'week', label: 'Week' },
@@ -33,13 +32,13 @@ const periodUnits = [
     { value: 'quarter', label: 'Quarter' },
     { value: 'year', label: 'Year' },
 ] satisfies ReadonlyArray<{
-    value: Exclude<BreakdownPeriod['unit'], 'custom'>;
+    value: Exclude<ReportingPeriod['unit'], 'custom'>;
     label: string;
 }>;
 
 function moveAnchor(
     anchor: string,
-    unit: BreakdownPeriod['unit'],
+    unit: ReportingPeriod['unit'],
     direction: -1 | 1,
 ): string {
     const date = parseISO(anchor);
@@ -55,32 +54,14 @@ function moveAnchor(
     return format(moved, 'yyyy-MM-dd');
 }
 
-function periodHref({
-    unit,
-    anchor,
-    currencyFilter,
-}: {
-    unit: Exclude<BreakdownPeriod['unit'], 'custom'>;
-    anchor: string;
-    currencyFilter: 'PEN' | 'USD' | null;
-}) {
-    return breakdownIndex({
-        query: {
-            currency: currencyFilter ?? undefined,
-            period: unit,
-            anchor,
-        },
-    });
-}
-
 export function PeriodControls({
-    currencyFilter,
     period,
     today,
+    href,
 }: {
-    currencyFilter: 'PEN' | 'USD' | null;
-    period: BreakdownPeriod;
+    period: ReportingPeriod;
     today: string;
+    href: (selection: ReportingPeriodSelection) => string;
 }) {
     const [calendarOpen, setCalendarOpen] = useState(false);
     const [range, setRange] = useState<DateRange | undefined>({
@@ -100,13 +81,10 @@ export function PeriodControls({
 
         setCalendarOpen(false);
         router.visit(
-            breakdownIndex({
-                query: {
-                    currency: currencyFilter ?? undefined,
-                    period: 'custom',
-                    date_from: format(range.from, 'yyyy-MM-dd'),
-                    date_to: format(range.to, 'yyyy-MM-dd'),
-                },
+            href({
+                unit: 'custom',
+                dateFrom: format(range.from, 'yyyy-MM-dd'),
+                dateTo: format(range.to, 'yyyy-MM-dd'),
             }),
         );
     }
@@ -124,14 +102,13 @@ export function PeriodControls({
                     className="size-8 shrink-0"
                 >
                     <Link
-                        href={periodHref({
+                        href={href({
                             unit: navigationUnit,
                             anchor: moveAnchor(
                                 period.anchor,
                                 navigationUnit,
                                 -1,
                             ),
-                            currencyFilter,
                         })}
                         aria-label={`Previous ${navigationUnit}`}
                     >
@@ -157,14 +134,13 @@ export function PeriodControls({
                     className="size-8 shrink-0"
                 >
                     <Link
-                        href={periodHref({
+                        href={href({
                             unit: navigationUnit,
                             anchor: moveAnchor(
                                 period.anchor,
                                 navigationUnit,
                                 1,
                             ),
-                            currencyFilter,
                         })}
                         aria-label={`Next ${navigationUnit}`}
                     >
@@ -179,15 +155,7 @@ export function PeriodControls({
                 size="sm"
                 className="hidden shrink-0 2xl:inline-flex"
             >
-                <Link
-                    href={periodHref({
-                        unit: 'month',
-                        anchor: today,
-                        currencyFilter,
-                    })}
-                >
-                    Today
-                </Link>
+                <Link href={href({ unit: 'month', anchor: today })}>Today</Link>
             </Button>
 
             <Select
@@ -200,10 +168,9 @@ export function PeriodControls({
                         value === 'year'
                     ) {
                         router.visit(
-                            periodHref({
+                            href({
                                 unit: value,
                                 anchor: period.anchor,
-                                currencyFilter,
                             }),
                         );
                     }
@@ -254,10 +221,9 @@ export function PeriodControls({
                     <div className="flex items-center justify-between gap-3 border-t px-2 pt-2">
                         <Button asChild variant="ghost" size="sm">
                             <Link
-                                href={periodHref({
+                                href={href({
                                     unit: 'month',
                                     anchor: today,
-                                    currencyFilter,
                                 })}
                             >
                                 Today
