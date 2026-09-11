@@ -46,6 +46,9 @@ test('Home keeps the weekly briefing focused and every claim drills into Breakdo
     $page
         ->assertTitle('Home - Money Assistant')
         ->assertSee('Home')
+        ->assertPresent('[data-test="reporting-controls"]')
+        ->assertPresent('[data-test="reporting-currency-all"]')
+        ->assertNotPresent('main h1')
         ->assertSee('Coverage')
         ->assertSee('Net Spending')
         ->assertSee('Income')
@@ -170,50 +173,63 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
     $page
         ->assertTitle('Trends - Money Assistant')
         ->assertPresent('[data-test="period-controls"]')
+        ->assertPresent('[data-test="reporting-currency-all"]')
         ->assertNotPresent('main h1')
         ->assertDontSee('The change ledger')
         ->assertDontSee('See where Net Spending changed')
         ->assertSee('Monthly context')
+        ->assertSee('Compared with')
+        ->assertSee('Jul 1 – Jul 22, 2026')
         ->assertSee('Food')
         ->assertSee('Central Market')
         ->assertSee('Category and merchant views overlap')
         ->assertSee('No recorded activity')
         ->assertSee('Partial month through Aug 22')
         ->assertAttribute(
-            '[data-test="trend-change-category-'.$transport->id.'"]',
+            '[data-test="trend-change-pen-category-'.$transport->id.'"]',
             'data-direction',
             'down',
         )
-        ->assertNotPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
+        ->assertNotPresent('[data-test="trend-evidence-pen-category-'.$food->id.'"]')
         ->assertNotPresent('input[name="date_from"]')
         ->assertScript(
             'document.documentElement.scrollWidth <= document.documentElement.clientWidth',
-        )
-        ->click('[data-test="trend-toggle-category-'.$food->id.'"]')
-        ->assertPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
+        );
+
+    $page
+        ->click('[data-test="trend-toggle-pen-category-'.$food->id.'"]')
+        ->assertPresent('[data-test="trend-evidence-pen-category-'.$food->id.'"]')
         ->assertSee('Transaction frequency')
-        ->assertSee('Unusual Transaction')
-        ->keys('[data-test="trend-toggle-merchant-central-market"]', 'Enter')
-        ->assertPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
-        ->assertPresent('[data-test="trend-evidence-merchant-central-market"]')
-        ->keys('[data-test="trend-toggle-category-'.$food->id.'"]', 'Enter')
-        ->assertNotPresent('[data-test="trend-evidence-category-'.$food->id.'"]')
-        ->assertPresent('[data-test="trend-evidence-merchant-central-market"]')
-        ->click('[data-test="trend-toggle-merchant-café"]')
-        ->keys('[data-test="trend-toggle-merchant-cafè"]', 'Enter')
-        ->assertPresent('[data-test="trend-evidence-merchant-café"]')
-        ->assertPresent('[data-test="trend-evidence-merchant-cafè"]')
-        ->keys('[data-test="trend-toggle-merchant-café"]', 'Enter')
-        ->assertNotPresent('[data-test="trend-evidence-merchant-café"]')
-        ->assertPresent('[data-test="trend-evidence-merchant-cafè"]')
-        ->click('[data-test="trends-filter-category"]')
+        ->assertSee('Unusual Transaction');
+
+    $page
+        ->keys('[data-test="trend-toggle-pen-merchant-central-market"]', 'Enter')
+        ->assertPresent('[data-test="trend-evidence-pen-category-'.$food->id.'"]')
+        ->assertPresent('[data-test="trend-evidence-pen-merchant-central-market"]')
+        ->keys('[data-test="trend-toggle-pen-category-'.$food->id.'"]', 'Enter')
+        ->assertNotPresent('[data-test="trend-evidence-pen-category-'.$food->id.'"]')
+        ->assertPresent('[data-test="trend-evidence-pen-merchant-central-market"]');
+
+    $page
+        ->click('[data-test="trend-toggle-pen-merchant-café"]')
+        ->keys('[data-test="trend-toggle-pen-merchant-cafè"]', 'Enter')
+        ->assertPresent('[data-test="trend-evidence-pen-merchant-café"]')
+        ->assertPresent('[data-test="trend-evidence-pen-merchant-cafè"]')
+        ->keys('[data-test="trend-toggle-pen-merchant-café"]', 'Enter')
+        ->assertNotPresent('[data-test="trend-evidence-pen-merchant-café"]')
+        ->assertPresent('[data-test="trend-evidence-pen-merchant-cafè"]');
+
+    $page
+        ->click('[data-test="trends-pen-filter-category"]')
         ->assertPathIs('/trends')
         ->assertSee('Aug 1 to Aug 22')
-        ->assertPresent('[data-test="trend-toggle-category-'.$food->id.'"]')
-        ->assertNotPresent('[data-test="trend-toggle-merchant-central-market"]')
-        ->click('[data-test="trends-filter-all"]')
-        ->click('[data-test="trend-toggle-category-'.$food->id.'"]')
-        ->click('[data-test="trend-breakdown-category-'.$food->id.'"]')
+        ->assertPresent('[data-test="trend-toggle-pen-category-'.$food->id.'"]')
+        ->assertNotPresent('[data-test="trend-toggle-pen-merchant-central-market"]');
+
+    $page
+        ->click('[data-test="trends-pen-filter-all"]')
+        ->click('[data-test="trend-toggle-pen-category-'.$food->id.'"]')
+        ->click('[data-test="trend-breakdown-pen-category-'.$food->id.'"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('category', (string) $food->id)
         ->assertQueryStringHas('selected', (string) $unusual->id);
@@ -221,8 +237,8 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
     $page = visit('/trends');
 
     $page
-        ->click('[data-test="trend-toggle-category-'.$food->id.'"]')
-        ->click('[data-test="trend-finding-category-'.$food->id.'-comparison-0"]')
+        ->click('[data-test="trend-toggle-pen-category-'.$food->id.'"]')
+        ->click('[data-test="trend-finding-pen-category-'.$food->id.'-comparison-0"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('category', (string) $food->id)
         ->assertQueryStringHas('date_from', '2026-07-01')
@@ -232,15 +248,15 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
     $page = visit('/trends');
 
     $page
-        ->click('[data-test="trend-toggle-merchant-central-market"]')
-        ->click('[data-test="trend-breakdown-merchant-central-market"]')
+        ->click('[data-test="trend-toggle-pen-merchant-central-market"]')
+        ->click('[data-test="trend-breakdown-pen-merchant-central-market"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('merchant', 'Central Market');
 
     $page = visit('/trends?period=month&anchor=2026-07-12');
 
     $page
-        ->click('[data-test="trends-switch-usd"]')
+        ->click('[data-test="reporting-currency-usd"]')
         ->assertPathIs('/trends')
         ->assertQueryStringHas('currency', 'USD')
         ->assertQueryStringHas('period', 'month')
@@ -254,10 +270,45 @@ test('Trends scans, filters, and expands the change ledger before opening its ev
     $page
         ->click('[aria-label="Previous month"]')
         ->assertPathIs('/trends')
-        ->assertQueryStringHas('currency', 'PEN')
+        ->assertQueryStringMissing('currency')
         ->assertQueryStringHas('period', 'month')
         ->assertQueryStringHas('anchor', '2026-07-01')
         ->assertSee('July 2026');
+
+});
+
+test('Reporting period and currency persist between the main money pages', function () {
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2026-07-10',
+        'amount_minor' => 2_500,
+    ]);
+    $this->actingAs($owner);
+
+    visit('/breakdown?currency=USD&period=month&anchor=2026-07-12')
+        ->assertPresent('[data-test="reporting-controls"]')
+        ->click('[data-test="nav-trends"]')
+        ->assertPathIs('/trends')
+        ->assertQueryStringHas('currency', 'USD')
+        ->assertQueryStringHas('period', 'month')
+        ->assertQueryStringHas('anchor', '2026-07-01')
+        ->assertSee('July 2026')
+        ->click('[data-test="nav-home"]')
+        ->assertPathIs('/')
+        ->assertQueryStringHas('currency', 'USD')
+        ->assertQueryStringHas('period', 'month')
+        ->assertQueryStringHas('anchor', '2026-07-01')
+        ->assertSee('July 2026')
+        ->click('[data-test="reporting-currency-all"]')
+        ->assertQueryStringMissing('currency')
+        ->click('[data-test="nav-breakdown"]')
+        ->assertPathIs('/breakdown')
+        ->assertQueryStringMissing('currency')
+        ->assertQueryStringHas('period', 'month')
+        ->assertQueryStringHas('anchor', '2026-07-01')
+        ->assertNoAccessibilityIssues()
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
 });
 
 test('Trends distinguishes empty activity, missing context, and no material findings', function () {

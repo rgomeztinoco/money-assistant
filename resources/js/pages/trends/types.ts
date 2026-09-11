@@ -46,12 +46,17 @@ export type MonthlyContext = ComparisonPeriod & {
     total_minor: string | null;
 };
 
-export type TrendsProps = {
+export type TrendReport = {
     currency: Currency;
-    period: Period;
-    comparison_periods: ComparisonPeriod[];
     summary: Summary | null;
     findings: Finding[];
     monthly_context: MonthlyContext[];
+};
+
+export type TrendsProps = TrendReport & {
+    currency_filter: Currency | null;
+    period: Period;
+    comparison_periods: ComparisonPeriod[];
+    secondary: TrendReport | null;
     today: string;
 };

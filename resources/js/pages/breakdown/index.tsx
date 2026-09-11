@@ -13,8 +13,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { update as updateClassification } from '@/actions/App/Http/Controllers/BreakdownTransactionClassificationController';
-import { CurrencyFilter } from '@/components/currency-filter';
-import { PeriodControls } from '@/components/period-controls';
+import { ReportingControls } from '@/components/reporting-controls';
 import { SourceCoverage } from '@/components/source-coverage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,6 +46,7 @@ import {
     movementDescription,
     transferPurposeLabel,
 } from '@/lib/money-movement';
+import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { index as breakdownIndex } from '@/routes/breakdown';
 import type { Currency, ReportingPeriodSelection } from '@/types';
 import { CategoryBreakdown, DailyChart } from './charts';
@@ -67,7 +67,7 @@ const focusLabels = {
     savings: 'To savings',
 } satisfies Record<NonNullable<BreakdownProps['filters']['focus']>, string>;
 
-function breakdownPeriodHref({
+function breakdownReportingHref({
     currencyFilter,
     selection,
 }: {
@@ -75,14 +75,7 @@ function breakdownPeriodHref({
     selection: ReportingPeriodSelection;
 }): string {
     return breakdownIndex.url({
-        query: {
-            currency: currencyFilter ?? undefined,
-            period: selection.unit,
-            anchor: selection.unit === 'custom' ? undefined : selection.anchor,
-            date_from:
-                selection.unit === 'custom' ? selection.dateFrom : undefined,
-            date_to: selection.unit === 'custom' ? selection.dateTo : undefined,
-        },
+        query: reportingQuery(currencyFilter, selection),
     });
 }
 
@@ -755,7 +748,6 @@ export default function BreakdownIndex(props: BreakdownProps) {
         .flatMap((day) => day.transactions)
         .find((transaction) => transaction.id === props.filters.selected);
     const hasFilters =
-        props.currency_filter !== null ||
         props.filters.category !== null ||
         props.filters.day !== null ||
         props.filters.focus !== null ||
@@ -785,26 +777,6 @@ export default function BreakdownIndex(props: BreakdownProps) {
                     className="flex shrink-0 flex-wrap items-center gap-2"
                     data-test="breakdown-filter-bar"
                 >
-                    <CurrencyFilter
-                        value={props.currency_filter}
-                        options={[
-                            { value: null, label: 'All' },
-                            { value: 'PEN', label: 'PEN' },
-                            { value: 'USD', label: 'USD' },
-                        ]}
-                        href={(currencyFilter) =>
-                            selectionUrl({
-                                currencyFilter,
-                                period: props.period,
-                                category: props.filters.category,
-                                day: props.filters.day,
-                                focus: props.filters.focus,
-                                merchant: props.filters.merchant,
-                                attention: props.filters.attention,
-                                selected: null,
-                            }).url
-                        }
-                    />
                     {selectedCategory !== null && (
                         <RemovableFilter
                             label={`Category: ${selectedCategory}`}
@@ -889,7 +861,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                         <Button asChild variant="ghost" size="sm">
                             <Link
                                 href={selectionUrl({
-                                    currencyFilter: null,
+                                    currencyFilter: props.currency_filter,
                                     period: props.period,
                                     category: null,
                                     day: null,
@@ -1044,16 +1016,22 @@ BreakdownIndex.layout = (props: BreakdownProps) => ({
     breadcrumbs: [
         {
             title: 'Breakdown',
-            href: breakdownIndex(),
+            href: breakdownIndex({
+                query: reportingQuery(
+                    props.currency_filter,
+                    reportingSelection(props.period),
+                ),
+            }),
         },
     ],
     headerActions: (
-        <PeriodControls
+        <ReportingControls
+            currencyFilter={props.currency_filter}
             period={props.period}
             today={props.today}
-            href={(selection) =>
-                breakdownPeriodHref({
-                    currencyFilter: props.currency_filter,
+            href={(currencyFilter, selection) =>
+                breakdownReportingHref({
+                    currencyFilter,
                     selection,
                 })
             }

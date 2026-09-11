@@ -2,9 +2,10 @@
 
 namespace App\Actions\Home;
 
-use App\Actions\Reporting\EquivalentMonthPeriods;
+use App\Actions\Reporting\EquivalentPeriods;
 use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
+use App\Actions\Reporting\ReportingPeriod;
 use App\Currency;
 use App\DataSources\ReadRecordedCoverage;
 use App\ExactInteger;
@@ -13,6 +14,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Arr;
 
 /**
  * @phpstan-type AnalysisPeriod array{label: string, date_from: string, date_to: string}
@@ -29,25 +31,41 @@ final class ReadHome
         private ReadRecordedCoverage $readRecordedCoverage,
     ) {}
 
-    /** @return array{primary: Briefing|null, secondary: Briefing|null} */
-    public function handle(User $owner): array
+    /**
+     * @param  array{currency?: string, period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
+     * @return array{currency_filter: string|null, period: array{unit: string, label: string, anchor: string, date_from: string, date_to: string}, primary: Briefing|null, secondary: Briefing|null, today: string}
+     */
+    public function handle(User $owner, array $filters = []): array
     {
+        $currencyFilter = isset($filters['currency'])
+            ? Currency::from($filters['currency'])
+            : null;
+        $currencies = $currencyFilter === null
+            ? [Currency::Pen, Currency::Usd]
+            : [$currencyFilter];
+        $period = $this->reportingPeriod($owner, $currencies, $filters);
+        $primaryCurrency = $currencyFilter ?? Currency::Pen;
+
         return [
-            'primary' => $this->briefing($owner, Currency::Pen, true),
-            'secondary' => $this->briefing($owner, Currency::Usd, false),
+            'currency_filter' => $currencyFilter?->value,
+            'period' => $period->data(),
+            'primary' => $this->briefing($owner, $primaryCurrency, $period, true),
+            'secondary' => $currencyFilter === null
+                ? $this->briefing($owner, Currency::Usd, $period, false)
+                : null,
+            'today' => CarbonImmutable::today(config('app.timezone'))->toDateString(),
         ];
     }
 
     /** @return Briefing|null */
-    private function briefing(User $owner, Currency $currency, bool $includeGuidance): ?array
-    {
-        $period = $this->meaningfulPeriod($owner, $currency);
-
-        if ($period === null) {
-            return null;
-        }
-
-        [$dateFrom, $dateTo] = $period;
+    private function briefing(
+        User $owner,
+        Currency $currency,
+        ReportingPeriod $period,
+        bool $includeGuidance,
+    ): ?array {
+        $dateFrom = $period->dateFrom;
+        $dateTo = $period->dateTo;
         $coverageQuery = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
@@ -58,13 +76,13 @@ final class ReadHome
             ->selectRaw('min(occurred_on) as date_from, max(occurred_on) as date_to, count(*) as transaction_count')
             ->first();
 
+        if ((int) $coverage->transaction_count === 0) {
+            return null;
+        }
+
         return [
             'currency' => $currency->value,
-            'period' => [
-                'label' => $dateFrom->isoFormat('MMMM YYYY'),
-                'date_from' => $dateFrom->toDateString(),
-                'date_to' => $dateTo->toDateString(),
-            ],
+            'period' => $period->data(),
             'coverage' => [
                 'date_from' => (string) $coverage->date_from,
                 'date_to' => (string) $coverage->date_to,
@@ -73,7 +91,7 @@ final class ReadHome
             ],
             'summary' => $this->readPeriodSummary->handle($owner, $currency, $dateFrom, $dateTo),
             'material_change' => $includeGuidance
-                ? $this->materialCategoryChange($owner, $currency, $dateFrom, $dateTo)
+                ? $this->materialCategoryChange($owner, $currency, $period)
                 : null,
             'input_request' => $includeGuidance
                 ? $this->inputRequest($owner, $currency, $dateFrom, $dateTo)
@@ -81,27 +99,37 @@ final class ReadHome
         ];
     }
 
-    /** @return array{CarbonImmutable, CarbonImmutable}|null */
-    private function meaningfulPeriod(User $owner, Currency $currency): ?array
+    /**
+     * @param  list<Currency>  $currencies
+     * @param  array{currency?: string, period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
+     */
+    private function reportingPeriod(User $owner, array $currencies, array $filters): ReportingPeriod
     {
         $today = CarbonImmutable::today(config('app.timezone'));
+
+        if (Arr::hasAny($filters, ['period', 'anchor', 'preset', 'date_from', 'date_to'])) {
+            return ReportingPeriod::fromFilters($filters)->endingNoLaterThan($today);
+        }
+
         $latestOccurredOn = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
-            ->where('currency', $currency)
+            ->whereIn('currency', array_map(
+                fn (Currency $currency): string => $currency->value,
+                $currencies,
+            ))
             ->whereNull('voided_at')
             ->max('occurred_on');
 
         if (! is_string($latestOccurredOn)) {
-            return null;
+            return ReportingPeriod::fromFilters([])->endingNoLaterThan($today);
         }
 
         $latestDate = CarbonImmutable::parse($latestOccurredOn, config('app.timezone'));
 
-        if ($latestDate->isSameMonth($today)) {
-            return [$today->startOfMonth(), $today];
-        }
-
-        return [$latestDate->startOfMonth(), $latestDate->endOfMonth()];
+        return ReportingPeriod::fromFilters([
+            'period' => 'month',
+            'anchor' => $latestDate->toDateString(),
+        ])->endingNoLaterThan($today);
     }
 
     /** @return array{transaction_count: int}|null */
@@ -126,14 +154,15 @@ final class ReadHome
     private function materialCategoryChange(
         User $owner,
         Currency $currency,
-        CarbonImmutable $dateFrom,
-        CarbonImmutable $dateTo,
+        ReportingPeriod $reportingPeriod,
     ): ?array {
+        $dateFrom = $reportingPeriod->dateFrom;
+        $dateTo = $reportingPeriod->dateTo;
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
             ->get(['id', 'parent_id', 'name']);
         $categoriesById = $categories->keyBy('id');
-        $comparison = EquivalentMonthPeriods::forRange($dateFrom, $dateTo);
+        $comparison = EquivalentPeriods::forPeriod($reportingPeriod);
         $periods = $comparison->all();
 
         /** @var array<int|string, array<int, ExactInteger>> $amounts */

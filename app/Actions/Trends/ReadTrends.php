@@ -39,24 +39,73 @@ final class ReadTrends
     /**
      * @param  array{currency?: string, period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
      * @return array{
+     *     currency_filter: string|null,
      *     currency: string,
      *     period: TrendPeriod,
      *     comparison_periods: list<TrendComparisonPeriod>,
      *     summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}|null,
      *     findings: list<TrendFinding>,
      *     monthly_context: list<array{month: string, label: string, date_from: string, date_to: string, total_minor: string|null}>,
+     *     secondary: array{currency: string, summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}|null, findings: list<TrendFinding>, monthly_context: list<array{month: string, label: string, date_from: string, date_to: string, total_minor: string|null}>}|null,
      *     today: string
      * }
      */
-    public function handle(User $owner, Currency $currency, array $filters = []): array
+    public function handle(User $owner, ?Currency $currency, array $filters = []): array
     {
         $today = CarbonImmutable::today(config('app.timezone'));
         $reportingPeriod = ReportingPeriod::fromFilters($filters)->endingNoLaterThan($today);
         $comparison = EquivalentPeriods::forPeriod($reportingPeriod);
         $periods = $comparison->all();
-        $currentPeriod = $periods[0];
         $contextDateTo = $reportingPeriod->dateTo;
         $contextDateFrom = $contextDateTo->startOfMonth()->subMonthsNoOverflow(5)->startOfMonth();
+        $primaryCurrency = $currency ?? Currency::Pen;
+        $primary = $this->readCurrency(
+            $owner,
+            $primaryCurrency,
+            $comparison,
+            $contextDateFrom,
+            $contextDateTo,
+        );
+        $secondary = $currency === null
+            ? $this->readCurrency(
+                $owner,
+                Currency::Usd,
+                $comparison,
+                $contextDateFrom,
+                $contextDateTo,
+            )
+            : null;
+
+        if ($secondary !== null
+            && $secondary['summary'] === null
+            && $secondary['monthly_context'] === []) {
+            $secondary = null;
+        }
+
+        return [
+            'currency_filter' => $currency?->value,
+            ...$primary,
+            'period' => $reportingPeriod->data(),
+            'comparison_periods' => array_map(
+                fn (array $period): array => $this->periodData($period[0], $period[1]),
+                array_slice($periods, 1),
+            ),
+            'secondary' => $secondary,
+            'today' => $today->toDateString(),
+        ];
+    }
+
+    /**
+     * @return array{currency: string, summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}|null, findings: list<TrendFinding>, monthly_context: list<array{month: string, label: string, date_from: string, date_to: string, total_minor: string|null}>}
+     */
+    private function readCurrency(
+        User $owner,
+        Currency $currency,
+        EquivalentPeriods $comparison,
+        CarbonImmutable $contextDateFrom,
+        CarbonImmutable $contextDateTo,
+    ): array {
+        $currentPeriod = $comparison->all()[0];
         $hasContextActivity = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
@@ -72,11 +121,6 @@ final class ReadTrends
 
         return [
             'currency' => $currency->value,
-            'period' => $reportingPeriod->data(),
-            'comparison_periods' => array_map(
-                fn (array $period): array => $this->periodData($period[0], $period[1]),
-                array_slice($periods, 1),
-            ),
             'summary' => $hasCurrentActivity
                 ? $this->readPeriodSummary->handle($owner, $currency, $currentPeriod[0], $currentPeriod[1])
                 : null,
@@ -86,7 +130,6 @@ final class ReadTrends
             'monthly_context' => $hasContextActivity
                 ? $this->monthlyContext($owner, $currency, $contextDateTo)
                 : [],
-            'today' => $today->toDateString(),
         ];
     }
 

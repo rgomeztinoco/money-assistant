@@ -63,6 +63,7 @@ test('Trends compares month to date with three equivalent months and ranks finan
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('trends/index')
+            ->where('currency_filter', null)
             ->where('currency', 'PEN')
             ->where('period.unit', 'month')
             ->where('period.anchor', '2026-08-01')
@@ -98,6 +99,7 @@ test('Trends compares month to date with three equivalent months and ranks finan
             ->where('findings.1.current_transaction_count', 2)
             ->where('findings.1.typical_transaction_count', 1)
             ->where('findings.1.unusual_transaction.id', $unusualTransaction->id)
+            ->where('secondary', null)
             ->missing('comparison_builder'));
 });
 
@@ -123,10 +125,12 @@ test('Trends keeps currencies separate and selects USD through a persistent filt
     $response = $this->actingAs($owner)
         ->get(route('trends.index', ['currency' => 'USD']))
         ->assertInertia(fn (Assert $page) => $page
+            ->where('currency_filter', 'USD')
             ->where('currency', 'USD')
             ->missing('available_currencies')
             ->where('summary.net_spending_minor', '2500')
-            ->where('findings.0.currency', 'USD'));
+            ->where('findings.0.currency', 'USD')
+            ->where('secondary', null));
 
     expect(json_encode($response->inertiaProps(), JSON_THROW_ON_ERROR))
         ->not->toContain('90000');
@@ -236,7 +240,31 @@ test('Trends has no currency context when the owner has no Transactions', functi
         ->assertInertia(fn (Assert $page) => $page
             ->where('summary', null)
             ->where('findings', [])
-            ->where('monthly_context', []));
+            ->where('monthly_context', [])
+            ->where('secondary', null));
+});
+
+test('Trends keeps currencies separate when all currencies are selected', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
+    $owner = User::factory()->create();
+
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 90_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 2_500,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('trends.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('currency_filter', null)
+            ->where('currency', 'PEN')
+            ->where('summary.net_spending_minor', '90000')
+            ->where('secondary.currency', 'USD')
+            ->where('secondary.summary.net_spending_minor', '2500'));
 });
 
 test('Trends rejects unsupported currency filters', function () {

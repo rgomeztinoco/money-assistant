@@ -30,6 +30,12 @@ final readonly class EquivalentPeriods
         return $this->periods;
     }
 
+    /** @return list<array{CarbonImmutable, CarbonImmutable}> */
+    public function comparisons(): array
+    {
+        return array_slice($this->periods, 1);
+    }
+
     /** @return list<int> */
     public function comparisonIndexes(): array
     {

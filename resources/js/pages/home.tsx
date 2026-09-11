@@ -5,8 +5,8 @@ import {
     CircleDollarSign,
     Landmark,
     PiggyBank,
-    ReceiptText,
 } from 'lucide-react';
+import { ReportingControls } from '@/components/reporting-controls';
 import { SourceCoverage } from '@/components/source-coverage';
 import type { RecordedCoverageSource } from '@/components/source-coverage';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +19,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import {
     categoryBreakdownUrl,
     periodBreakdownUrl,
@@ -26,13 +27,15 @@ import {
 import { home } from '@/routes';
 import { create as createStatementImport } from '@/routes/statement_imports';
 import { index as trendsIndex } from '@/routes/trends';
-import type { Currency } from '@/types';
+import type {
+    Currency,
+    ReportingPeriod,
+    ReportingPeriodSelection,
+} from '@/types';
 
-type Period = {
-    label: string;
-    date_from: string;
-    date_to: string;
-};
+type Period = ReportingPeriod;
+
+type ComparisonPeriod = Pick<Period, 'label' | 'date_from' | 'date_to'>;
 
 type Summary = {
     net_spending_minor: string;
@@ -45,7 +48,7 @@ type MaterialChange = {
     current_total_minor: string;
     typical_total_minor: string;
     change_minor: string;
-    comparison_periods: Period[];
+    comparison_periods: ComparisonPeriod[];
 };
 
 type Briefing = {
@@ -60,6 +63,14 @@ type Briefing = {
     summary: Summary;
     material_change: MaterialChange | null;
     input_request: { transaction_count: number } | null;
+};
+
+type HomeProps = {
+    currency_filter: Currency | null;
+    period: Period;
+    primary: Briefing | null;
+    secondary: Briefing | null;
+    today: string;
 };
 
 type SummaryItem = {
@@ -90,6 +101,18 @@ const summaryItems: SummaryItem[] = [
     },
 ];
 
+function homeReportingHref({
+    currencyFilter,
+    selection,
+}: {
+    currencyFilter: Currency | null;
+    selection: ReportingPeriodSelection;
+}): string {
+    return home.url({
+        query: reportingQuery(currencyFilter, selection),
+    });
+}
+
 function shortDate(date: string): string {
     return new Intl.DateTimeFormat('en', {
         month: 'short',
@@ -119,9 +142,6 @@ function PrimaryBriefing({ briefing }: { briefing: Briefing }) {
             <header className="grid gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                     <Badge>{briefing.currency}</Badge>
-                    <span className="text-sm font-medium">
-                        {briefing.period.label}
-                    </span>
                 </div>
                 <Link
                     href={periodBreakdownUrl({
@@ -293,9 +313,6 @@ function SecondaryCurrency({ briefing }: { briefing: Briefing }) {
             <CardHeader className="gap-2">
                 <div className="flex items-center justify-between gap-3">
                     <div>
-                        <CardDescription>
-                            {briefing.period.label}
-                        </CardDescription>
                         <CardTitle>{briefing.currency} summary</CardTitle>
                     </div>
                     <Badge variant="outline">{briefing.currency} only</Badge>
@@ -337,7 +354,11 @@ function SecondaryCurrency({ briefing }: { briefing: Briefing }) {
                     <Button asChild size="sm" variant="ghost">
                         <Link
                             href={trendsIndex({
-                                query: { currency: briefing.currency },
+                                query: reportingQuery(briefing.currency, {
+                                    unit: 'custom',
+                                    dateFrom: briefing.period.date_from,
+                                    dateTo: briefing.period.date_to,
+                                }),
                             })}
                         >
                             View Trends
@@ -349,37 +370,21 @@ function SecondaryCurrency({ briefing }: { briefing: Briefing }) {
     );
 }
 
-export default function Home({
-    primary,
-    secondary,
-}: {
-    primary: Briefing | null;
-    secondary: Briefing | null;
-}) {
+export default function Home(props: HomeProps) {
+    const emptyCurrency = props.currency_filter ?? 'PEN';
+
     return (
         <>
             <Head title="Home" />
 
             <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
-                <header className="grid gap-1">
-                    <div className="flex items-center gap-2">
-                        <ReceiptText className="size-5 text-muted-foreground" />
-                        <h1 className="text-2xl font-semibold tracking-tight">
-                            Home
-                        </h1>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                        What matters in your money right now.
-                    </p>
-                </header>
-
-                {primary === null ? (
+                {props.primary === null ? (
                     <Card className="border-dashed">
                         <CardContent className="grid justify-items-center gap-3 p-8 text-center">
                             <CircleDollarSign className="size-8 text-muted-foreground" />
                             <div>
                                 <p className="font-medium">
-                                    No PEN briefing yet
+                                    No {emptyCurrency} activity
                                 </p>
                                 <p className="text-sm text-muted-foreground">
                                     Import a recent statement first. You will
@@ -395,22 +400,37 @@ export default function Home({
                         </CardContent>
                     </Card>
                 ) : (
-                    <PrimaryBriefing briefing={primary} />
+                    <PrimaryBriefing briefing={props.primary} />
                 )}
 
-                {secondary !== null && (
-                    <SecondaryCurrency briefing={secondary} />
+                {props.secondary !== null && (
+                    <SecondaryCurrency briefing={props.secondary} />
                 )}
             </main>
         </>
     );
 }
 
-Home.layout = {
+Home.layout = (props: HomeProps) => ({
     breadcrumbs: [
         {
             title: 'Home',
-            href: home(),
+            href: home({
+                query: reportingQuery(
+                    props.currency_filter,
+                    reportingSelection(props.period),
+                ),
+            }),
         },
     ],
-};
+    headerActions: (
+        <ReportingControls
+            currencyFilter={props.currency_filter}
+            period={props.period}
+            today={props.today}
+            href={(currencyFilter, selection) =>
+                homeReportingHref({ currencyFilter, selection })
+            }
+        />
+    ),
+});

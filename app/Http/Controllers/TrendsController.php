@@ -15,7 +15,9 @@ class TrendsController extends Controller
     public function __invoke(IndexTrendsRequest $request): Response
     {
         $filters = $request->validated();
-        $currency = Currency::from($filters['currency'] ?? Currency::Pen->value);
+        $currency = isset($filters['currency'])
+            ? Currency::from($filters['currency'])
+            : null;
 
         return Inertia::render('trends/index', $this->readTrends->handle($request->user(), $currency, $filters));
     }

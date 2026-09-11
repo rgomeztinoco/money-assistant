@@ -60,6 +60,10 @@ function findingTestSegment(finding: Finding): string {
     return `merchant-${merchantKey}`;
 }
 
+function findingTestId(finding: Finding): string {
+    return `${finding.currency.toLowerCase()}-${findingTestSegment(finding)}`;
+}
+
 function findingUrl(
     finding: Finding,
     period: Period | ComparisonPeriod,
@@ -89,7 +93,7 @@ function findingUrl(
 function FindingChange({ finding }: { finding: Finding }) {
     const decreased = finding.change_minor.startsWith('-');
     const Icon = decreased ? ArrowDownRight : ArrowUpRight;
-    const testSegment = findingTestSegment(finding);
+    const testId = findingTestId(finding);
 
     return (
         <span
@@ -98,7 +102,7 @@ function FindingChange({ finding }: { finding: Finding }) {
                 decreased ? 'text-chart-2' : 'text-chart-1',
             )}
             data-direction={decreased ? 'down' : 'up'}
-            data-test={`trend-change-${testSegment}`}
+            data-test={`trend-change-${testId}`}
         >
             <Icon className="size-4" />
             <span className="sr-only">{decreased ? 'Down' : 'Up'} </span>
@@ -169,12 +173,12 @@ function FindingEvidence({
     period: Period;
     comparisonPeriods: ComparisonPeriod[];
 }) {
-    const testSegment = findingTestSegment(finding);
+    const testId = findingTestId(finding);
 
     return (
         <div
             className="grid gap-5 p-4 sm:p-5"
-            data-test={`trend-evidence-${testSegment}`}
+            data-test={`trend-evidence-${testId}`}
         >
             <div className="grid gap-5 lg:grid-cols-2">
                 <ComparisonBars finding={finding} />
@@ -233,7 +237,7 @@ function FindingEvidence({
                                     comparisonPeriod,
                                     false,
                                 )}
-                                data-test={`trend-finding-${testSegment}-comparison-${index}`}
+                                data-test={`trend-finding-${testId}-comparison-${index}`}
                                 className="rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                             >
                                 {comparisonPeriod.label}
@@ -245,7 +249,7 @@ function FindingEvidence({
                 <Button asChild size="sm" variant="outline">
                     <Link
                         href={findingUrl(finding, period)}
-                        data-test={`trend-breakdown-${testSegment}`}
+                        data-test={`trend-breakdown-${testId}`}
                     >
                         Open in Breakdown
                         <ArrowRight data-icon="inline-end" />
@@ -325,10 +329,14 @@ export function ChangeLedger({
     }
 
     return (
-        <Card className="min-w-0 gap-0 overflow-hidden py-0">
+        <Card
+            className="min-w-0 gap-0 overflow-hidden py-0"
+            data-test={`trends-ledger-${currency.toLowerCase()}`}
+        >
             <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
                     <h2 className="font-semibold">Changes by impact</h2>
+                    <Badge variant="outline">{currency}</Badge>
                     <Badge variant="secondary">{visibleFindings.length}</Badge>
                 </div>
                 <div
@@ -348,7 +356,7 @@ export function ChangeLedger({
                             size="sm"
                             variant={scope === value ? 'secondary' : 'ghost'}
                             aria-pressed={scope === value}
-                            data-test={`trends-filter-${value}`}
+                            data-test={`trends-${currency.toLowerCase()}-filter-${value}`}
                             onClick={() => setScope(value)}
                         >
                             {label}
@@ -393,7 +401,7 @@ export function ChangeLedger({
                     <ol>
                         {visibleFindings.map((finding) => {
                             const identity = findingIdentity(finding);
-                            const testSegment = findingTestSegment(finding);
+                            const testId = findingTestId(finding);
                             const expanded = expandedFindings.has(identity);
 
                             return (
@@ -414,7 +422,7 @@ export function ChangeLedger({
                                                     'group grid w-full items-center gap-x-3 gap-y-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden focus-visible:ring-inset data-[state=open]:bg-muted/40',
                                                     ledgerColumns,
                                                 )}
-                                                data-test={`trend-toggle-${testSegment}`}
+                                                data-test={`trend-toggle-${testId}`}
                                             >
                                                 <span className="col-span-3 col-start-1 row-start-1 min-w-0 md:col-span-1">
                                                     <span className="block truncate font-medium">
