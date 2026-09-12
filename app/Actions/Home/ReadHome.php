@@ -20,8 +20,12 @@ use Illuminate\Support\Arr;
  * @phpstan-type AnalysisPeriod array{label: string, date_from: string, date_to: string}
  * @phpstan-type Coverage array{date_from: string, date_to: string, transaction_count: int}
  * @phpstan-type Summary array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}
- * @phpstan-type MaterialChange array{category: array{id: int|null, name: string}, current_total_minor: string, typical_total_minor: string, change_minor: string, comparison_periods: list<AnalysisPeriod>}
- * @phpstan-type Briefing array{currency: string, period: AnalysisPeriod, coverage: Coverage, summary: Summary, material_change: MaterialChange|null, input_request: array{transaction_count: int}|null}
+ * @phpstan-type PulseEvidence array{id: int, description: string, occurred_on: string, amount_minor: string, period: 'current'|'previous', absolute_amount: ExactInteger}
+ * @phpstan-type PulseSignalBucket array{category: array{id: int|null, name: string}, amounts: array<int, ExactInteger>, transaction_counts: array<int, int>, evidence: list<PulseEvidence>}
+ * @phpstan-type PulseSignal array{category: array{id: int|null, name: string}, current_total_minor: string, previous_total_minor: string, change_minor: string, current_transaction_count: int, previous_transaction_count: int, evidence: list<array{id: int, description: string, occurred_on: string, amount_minor: string, period: 'current'|'previous'}>}
+ * @phpstan-type PulsePoint array{day: int, current_minor: string|null, previous_minor: string|null}
+ * @phpstan-type Pulse array{previous_period: AnalysisPeriod, previous_net_spending_minor: string, change_minor: string, percentage_change: int|null, daily_net_spending: list<PulsePoint>, signals: list<PulseSignal>}
+ * @phpstan-type Briefing array{currency: string, period: AnalysisPeriod, coverage: Coverage, summary: Summary, pulse: Pulse|null, input_request: array{transaction_count: int}|null}
  */
 final class ReadHome
 {
@@ -44,15 +48,16 @@ final class ReadHome
             ? [Currency::Pen, Currency::Usd]
             : [$currencyFilter];
         $period = $this->reportingPeriod($owner, $currencies, $filters);
-        $primaryCurrency = $currencyFilter ?? Currency::Pen;
+        $briefings = array_values(array_filter(array_map(
+            fn (Currency $currency): ?array => $this->briefing($owner, $currency, $period),
+            $currencies,
+        )));
 
         return [
             'currency_filter' => $currencyFilter?->value,
             'period' => $period->data(),
-            'primary' => $this->briefing($owner, $primaryCurrency, $period, true),
-            'secondary' => $currencyFilter === null
-                ? $this->briefing($owner, Currency::Usd, $period, false)
-                : null,
+            'primary' => $briefings[0] ?? null,
+            'secondary' => $briefings[1] ?? null,
             'today' => CarbonImmutable::today(config('app.timezone'))->toDateString(),
         ];
     }
@@ -62,7 +67,6 @@ final class ReadHome
         User $owner,
         Currency $currency,
         ReportingPeriod $period,
-        bool $includeGuidance,
     ): ?array {
         $dateFrom = $period->dateFrom;
         $dateTo = $period->dateTo;
@@ -76,27 +80,46 @@ final class ReadHome
             ->selectRaw('min(occurred_on) as date_from, max(occurred_on) as date_to, count(*) as transaction_count')
             ->first();
 
-        if ((int) $coverage->transaction_count === 0) {
+        $transactionCount = (int) $coverage->transaction_count;
+
+        if ($transactionCount === 0 && ! $this->hasPreviousNetSpendingActivity($owner, $currency, $period)) {
             return null;
         }
+
+        $summary = $this->readPeriodSummary->handle($owner, $currency, $dateFrom, $dateTo);
 
         return [
             'currency' => $currency->value,
             'period' => $period->data(),
             'coverage' => [
-                'date_from' => (string) $coverage->date_from,
-                'date_to' => (string) $coverage->date_to,
-                'transaction_count' => (int) $coverage->transaction_count,
+                'date_from' => $coverage->date_from === null ? $dateFrom->toDateString() : (string) $coverage->date_from,
+                'date_to' => $coverage->date_to === null ? $dateTo->toDateString() : (string) $coverage->date_to,
+                'transaction_count' => $transactionCount,
                 'source' => $this->readRecordedCoverage->handle($owner, $dateFrom, $dateTo),
             ],
-            'summary' => $this->readPeriodSummary->handle($owner, $currency, $dateFrom, $dateTo),
-            'material_change' => $includeGuidance
-                ? $this->materialCategoryChange($owner, $currency, $period)
-                : null,
-            'input_request' => $includeGuidance
-                ? $this->inputRequest($owner, $currency, $dateFrom, $dateTo)
-                : null,
+            'summary' => $summary,
+            'pulse' => $this->pulse($owner, $currency, $period, $summary),
+            'input_request' => $this->inputRequest($owner, $currency, $dateFrom, $dateTo),
         ];
+    }
+
+    private function hasPreviousNetSpendingActivity(
+        User $owner,
+        Currency $currency,
+        ReportingPeriod $reportingPeriod,
+    ): bool {
+        $previousPeriod = EquivalentPeriods::forPeriod($reportingPeriod, 1)->comparisons()[0];
+
+        return Transaction::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->where('currency', $currency)
+            ->whereNull('voided_at')
+            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+            ->whereBetween('occurred_on', [
+                $previousPeriod[0]->toDateString(),
+                $previousPeriod[1]->toDateString(),
+            ])
+            ->exists();
     }
 
     /**
@@ -150,33 +173,37 @@ final class ReadHome
         return $transactionCount === 0 ? null : ['transaction_count' => $transactionCount];
     }
 
-    /** @return MaterialChange|null */
-    private function materialCategoryChange(
+    /**
+     * @param  Summary  $summary
+     * @return Pulse
+     */
+    private function pulse(
         User $owner,
         Currency $currency,
         ReportingPeriod $reportingPeriod,
-    ): ?array {
-        $dateFrom = $reportingPeriod->dateFrom;
-        $dateTo = $reportingPeriod->dateTo;
+        array $summary,
+    ): array {
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
             ->get(['id', 'parent_id', 'name']);
         $categoriesById = $categories->keyBy('id');
-        $comparison = EquivalentPeriods::forPeriod($reportingPeriod);
+        $comparison = EquivalentPeriods::forPeriod($reportingPeriod, 1);
         $periods = $comparison->all();
 
-        /** @var array<int|string, array<int, ExactInteger>> $amounts */
-        $amounts = [];
+        /** @var array<string, PulseSignalBucket> $signalBuckets */
+        $signalBuckets = [];
+        /** @var array<int, array<int, ExactInteger>> $dailyAmounts */
+        $dailyAmounts = [];
         $transactions = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
             ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->whereBetween('occurred_on', [
-                $periods[3][0]->toDateString(),
-                $dateTo->toDateString(),
+                $periods[1][0]->toDateString(),
+                $periods[0][1]->toDateString(),
             ])
-            ->select(['id', 'occurred_on', 'amount_minor', 'kind', 'category_id'])
+            ->select(['id', 'occurred_on', 'amount_minor', 'kind', 'category_id', 'description'])
             ->with([
                 'receiptBreakdown:id,transaction_id',
                 'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id,line_total_minor',
@@ -190,45 +217,132 @@ final class ReadHome
                 continue;
             }
 
-            foreach ($this->netSpendingAllocation->byTopLevelCategory($transaction, $categoriesById) as $categoryKey => $amount) {
-                $amounts[$categoryKey][$periodIndex] = ($amounts[$categoryKey][$periodIndex] ?? ExactInteger::from(0))
-                    ->add($amount);
+            $day = (int) $periods[$periodIndex][0]->diffInDays($transaction->occurred_on) + 1;
+            $transactionAmount = $transaction->kind->netSpendingAmount($transaction->amount_minor);
+            $dailyAmounts[$periodIndex][$day] = ($dailyAmounts[$periodIndex][$day] ?? ExactInteger::from(0))
+                ->add($transactionAmount);
+
+            foreach ($this->netSpendingAllocation->byTopLevelCategory($transaction, $categoriesById) as $categoryKey => $allocation) {
+                $bucketKey = (string) $categoryKey;
+                $category = $categoryKey === 'uncategorized'
+                    ? ['id' => null, 'name' => 'Uncategorized']
+                    : [
+                        'id' => $categoriesById->get((int) $categoryKey)->id,
+                        'name' => $categoriesById->get((int) $categoryKey)->name,
+                    ];
+                $signalBuckets[$bucketKey] ??= [
+                    'category' => $category,
+                    'amounts' => [],
+                    'transaction_counts' => [],
+                    'evidence' => [],
+                ];
+                $signalBuckets[$bucketKey]['amounts'][$periodIndex] = ($signalBuckets[$bucketKey]['amounts'][$periodIndex] ?? ExactInteger::from(0))
+                    ->add($allocation);
+                $signalBuckets[$bucketKey]['transaction_counts'][$periodIndex] = ($signalBuckets[$bucketKey]['transaction_counts'][$periodIndex] ?? 0) + 1;
+
+                $signalBuckets[$bucketKey]['evidence'][] = [
+                    'id' => $transaction->id,
+                    'description' => $transaction->description,
+                    'occurred_on' => $transaction->occurred_on->toDateString(),
+                    'amount_minor' => $allocation->value(),
+                    'period' => $periodIndex === 0 ? 'current' : 'previous',
+                    'absolute_amount' => $this->absolute($allocation->value()),
+                ];
             }
         }
 
-        $changes = [];
+        $signals = [];
 
-        foreach ($amounts as $categoryKey => $periodAmounts) {
-            $current = $periodAmounts[0] ?? ExactInteger::from(0);
-            $typical = $comparison->typicalAmount($periodAmounts);
-            $change = $current->subtract($typical);
+        foreach ($signalBuckets as $bucket) {
+            $current = $bucket['amounts'][0] ?? ExactInteger::from(0);
+            $previous = $bucket['amounts'][1] ?? ExactInteger::from(0);
+            $change = $current->subtract($previous);
 
             if ($change->compare(ExactInteger::from(0)) === 0) {
                 continue;
             }
 
-            $category = $categoryKey === 'uncategorized'
-                ? ['id' => null, 'name' => 'Uncategorized']
-                : [
-                    'id' => $categoriesById->get($categoryKey)->id,
-                    'name' => $categoriesById->get($categoryKey)->name,
-                ];
-            $changes[] = [
-                'category' => $category,
+            usort($bucket['evidence'], fn (array $left, array $right): int => $right['absolute_amount']->compare($left['absolute_amount']));
+            $evidence = array_map(
+                fn (array $item): array => Arr::except($item, 'absolute_amount'),
+                Arr::take($bucket['evidence'], 4),
+            );
+            $signals[] = [
+                'category' => $bucket['category'],
                 'current_total_minor' => $current->value(),
-                'typical_total_minor' => $typical->value(),
+                'previous_total_minor' => $previous->value(),
                 'change_minor' => $change->value(),
-                'comparison_periods' => array_map(
-                    fn (array $period): array => $this->analysisPeriod($period[0], $period[1]),
-                    $comparison->comparisons(),
-                ),
+                'current_transaction_count' => $bucket['transaction_counts'][0] ?? 0,
+                'previous_transaction_count' => $bucket['transaction_counts'][1] ?? 0,
+                'evidence' => $evidence,
             ];
         }
 
-        usort($changes, fn (array $left, array $right): int => $this->absolute($right['change_minor'])
+        usort($signals, fn (array $left, array $right): int => $this->absolute($right['change_minor'])
             ->compare($this->absolute($left['change_minor'])));
+        $previousSummary = $this->readPeriodSummary->handle(
+            $owner,
+            $currency,
+            $periods[1][0],
+            $periods[1][1],
+        );
+        $change = ExactInteger::from($summary['net_spending_minor'])
+            ->subtract(ExactInteger::from($previousSummary['net_spending_minor']));
 
-        return $changes[0] ?? null;
+        return [
+            'previous_period' => $this->analysisPeriod($periods[1][0], $periods[1][1]),
+            'previous_net_spending_minor' => $previousSummary['net_spending_minor'],
+            'change_minor' => $change->value(),
+            'percentage_change' => $this->percentageChange(
+                $change,
+                ExactInteger::from($previousSummary['net_spending_minor']),
+            ),
+            'daily_net_spending' => $this->dailyNetSpending($periods, $dailyAmounts),
+            'signals' => array_values(Arr::take($signals, 3)),
+        ];
+    }
+
+    /**
+     * @param  non-empty-list<array{CarbonImmutable, CarbonImmutable}>  $periods
+     * @param  array<int, array<int, ExactInteger>>  $dailyAmounts
+     * @return list<PulsePoint>
+     */
+    private function dailyNetSpending(array $periods, array $dailyAmounts): array
+    {
+        $currentDays = (int) $periods[0][0]->diffInDays($periods[0][1]) + 1;
+        $previousDays = (int) $periods[1][0]->diffInDays($periods[1][1]) + 1;
+        $currentTotal = ExactInteger::from(0);
+        $previousTotal = ExactInteger::from(0);
+        $points = [[
+            'day' => 0,
+            'current_minor' => '0',
+            'previous_minor' => '0',
+        ]];
+
+        foreach (range(1, max($currentDays, $previousDays)) as $day) {
+            $currentTotal = $currentTotal->add($dailyAmounts[0][$day] ?? ExactInteger::from(0));
+            $previousTotal = $previousTotal->add($dailyAmounts[1][$day] ?? ExactInteger::from(0));
+            $points[] = [
+                'day' => $day,
+                'current_minor' => $day <= $currentDays ? $currentTotal->value() : null,
+                'previous_minor' => $day <= $previousDays ? $previousTotal->value() : null,
+            ];
+        }
+
+        return $points;
+    }
+
+    private function percentageChange(ExactInteger $change, ExactInteger $previous): ?int
+    {
+        if ($previous->compare(ExactInteger::from(0)) !== 1) {
+            return null;
+        }
+
+        return (int) round((float) bcdiv(
+            bcmul($change->value(), '100', 2),
+            $previous->value(),
+            2,
+        ));
     }
 
     /** @return AnalysisPeriod */
