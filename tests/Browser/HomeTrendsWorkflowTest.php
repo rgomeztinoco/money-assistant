@@ -10,7 +10,7 @@ beforeEach(function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
 });
 
-test('Home keeps the weekly briefing focused and every claim drills into Breakdown', function () {
+test('Home keeps the Pulse focused and every claim drills into Breakdown', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
 
@@ -36,8 +36,14 @@ test('Home keeps the weekly briefing focused and every claim drills into Breakdo
         'category_id' => null,
     ]);
     Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2026-07-10',
+        'amount_minor' => 1_000,
+        'description' => 'Previous USD purchase',
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'occurred_on' => '2026-08-10',
         'amount_minor' => 2_500,
+        'description' => 'Current USD purchase',
     ]);
     $this->actingAs($owner);
 
@@ -46,17 +52,80 @@ test('Home keeps the weekly briefing focused and every claim drills into Breakdo
     $page
         ->assertTitle('Home - Money Assistant')
         ->assertSee('Home')
-        ->assertPresent('[data-test="reporting-controls"]')
-        ->assertPresent('[data-test="reporting-currency-all"]')
+        ->assertPresent('header [data-test="period-controls"]')
+        ->assertNotPresent('header [data-test="reporting-currency-all"]')
+        ->assertPresent(
+            'main [data-test="home-context-bar"] [data-test="reporting-currency-all"]',
+        )
+        ->assertPresent('[data-test="home-overview-card"]')
+        ->assertPresent('[data-test="home-signals-card"]')
+        ->assertPresent(
+            '[data-test="home-signals-card"] [data-test="home-coverage"]',
+        )
+        ->assertNotPresent(
+            '[data-test="home-context-bar"] [data-test="home-coverage"]',
+        )
         ->assertNotPresent('main h1')
-        ->assertSee('Coverage')
         ->assertSee('Net Spending')
         ->assertSee('Income')
         ->assertSee('Moved to Savings')
-        ->assertSee('One material change')
+        ->assertSee('Behind the change')
+        ->assertPresent('[data-test="home-spending-chart"]')
+        ->assertPresent('[data-test="home-pen-signal-0"]')
+        ->assertPresent('[data-test="home-signal-currency-pen"]')
+        ->assertPresent('[data-test="home-signal-currency-usd"]')
         ->assertSee('Food')
-        ->assertSee('Needs your input')
-        ->assertSee('USD')
+        ->assertSee('1 Transaction needs review')
+        ->assertSeeIn('[data-test="home-overview-card"]', 'S/ 45.00')
+        ->assertSeeIn('[data-test="home-overview-card"]', '$ 25.00')
+        ->assertSeeIn('[data-test="home-spending-chart"]', 'PEN · Current')
+        ->assertSeeIn('[data-test="home-spending-chart"]', 'PEN · Previous')
+        ->assertSeeIn('[data-test="home-spending-chart"]', 'USD · Current')
+        ->assertSeeIn('[data-test="home-spending-chart"]', 'USD · Previous')
+        ->click('[data-test="home-signal-currency-usd"]')
+        ->assertPresent('[data-test="home-usd-signal-0"]')
+        ->assertSeeIn(
+            '[data-test="home-usd-signal-evidence"]',
+            'Current USD purchase',
+        )
+        ->assertSeeIn(
+            '[data-test="home-usd-signal-evidence"]',
+            'Previous USD purchase',
+        )
+        ->assertScript(<<<'JS'
+            (() => {
+                const overview = document.querySelector('[data-test="home-overview-card"]');
+                const signals = document.querySelector('[data-test="home-signals-card"]');
+                const chart = document.querySelector('[data-test="home-spending-chart"]');
+                const coverage = document.querySelector('[data-test="home-coverage-panel"]');
+                const usdList = document.querySelector('[data-test="home-usd-signal-list"]');
+                const usdEvidence = document.querySelector('[data-test="home-usd-signal-evidence"]');
+
+                if (
+                    overview === null || signals === null
+                    || chart === null || coverage === null
+                    || usdList === null || usdEvidence === null
+                ) {
+                    return false;
+                }
+
+                const overviewBounds = overview.getBoundingClientRect();
+                const signalsBounds = signals.getBoundingClientRect();
+                const chartBounds = chart.getBoundingClientRect();
+                const coverageBounds = coverage.getBoundingClientRect();
+                const usdListBounds = usdList.getBoundingClientRect();
+                const usdEvidenceBounds = usdEvidence.getBoundingClientRect();
+
+                return Math.abs(overviewBounds.top - signalsBounds.top) < 2
+                    && signalsBounds.left > overviewBounds.right
+                    && usdEvidenceBounds.top > usdListBounds.bottom
+                    && overviewBounds.bottom - chartBounds.bottom < 40
+                    && signalsBounds.bottom - coverageBounds.bottom < 2
+                    && signalsBounds.right <= document.documentElement.clientWidth;
+            })()
+            JS)
+        ->assertDontSee('Savings and income stay visible')
+        ->assertDontSee('Your Transactions are caught up')
         ->assertDontSee('Recent Transactions')
         ->assertDontSee('Review Queue')
         ->assertDontSeeIn('main', 'Parser Profiles')
@@ -88,14 +157,14 @@ test('Home keeps the weekly briefing focused and every claim drills into Breakdo
     $page = visit('/');
 
     $page
-        ->click('[data-test="home-material-change"]')
+        ->click('[data-test="home-pen-material-change"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('category', (string) $food->id);
 
     $page = visit('/');
 
     $page
-        ->click('[data-test="home-material-comparison-0"]')
+        ->click('[data-test="home-pen-material-comparison"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('category', (string) $food->id)
         ->assertQueryStringHas('date_from', '2026-07-01')
@@ -104,17 +173,88 @@ test('Home keeps the weekly briefing focused and every claim drills into Breakdo
     $page = visit('/');
 
     $page
-        ->click('[data-test="home-input-request"]')
+        ->click('[data-test="home-pen-input-request"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('attention', '1');
 
     $page = visit('/');
 
     $page
-        ->click('[data-test="home-usd-breakdown"]')
+        ->click('[data-test="home-usd-net-spending"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'USD')
         ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+
+    $page = visit('/');
+
+    $page
+        ->click('[data-test="home-signal-currency-usd"]')
+        ->click('[data-test="home-usd-material-change"]')
+        ->assertPathIs('/breakdown')
+        ->assertQueryStringHas('currency', 'USD')
+        ->assertQueryStringHas('date_from', '2026-08-01')
+        ->assertQueryStringHas('date_to', '2026-08-22');
+});
+
+test('Home explains the spending direction with selectable Transaction evidence', function () {
+    $owner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $transport = Category::factory()->for($owner, 'owner')->create(['name' => 'Transport']);
+    $housing = Category::factory()->for($owner, 'owner')->create(['name' => 'Housing']);
+
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-07-08',
+        'amount_minor' => 6_000,
+        'description' => 'Previous Neighborhood Market',
+        'category_id' => $food->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-07-09',
+        'amount_minor' => 100,
+        'description' => 'Previous uncategorized purchase',
+        'category_id' => null,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-08',
+        'amount_minor' => 1_000,
+        'description' => 'Current Neighborhood Market',
+        'category_id' => $food->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-09',
+        'amount_minor' => 3_200,
+        'description' => 'City Bus',
+        'category_id' => $transport->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-09',
+        'amount_minor' => 2_800,
+        'description' => 'Monthly rent',
+        'category_id' => $housing->id,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 100,
+        'description' => 'Needs a category',
+        'category_id' => null,
+    ]);
+
+    $this->actingAs($owner);
+
+    visit('/')
+        ->assertNoJavaScriptErrors()
+        ->assertSee('Transport is driving the change this month.')
+        ->assertSee('Net spending')
+        ->assertSee('Income')
+        ->assertSee('Moved to savings')
+        ->assertSeeIn('[data-test="home-pen-signal-evidence"]', 'Previous Neighborhood Market')
+        ->assertSeeIn('[data-test="home-pen-signal-evidence"]', 'Jul 8')
+        ->click('[data-test="home-pen-signal-1"]')
+        ->assertSeeIn('[data-test="home-pen-signal-evidence"]', 'City Bus')
+        ->resize(390, 844)
+        ->click('[data-test="home-pen-input-request"]')
+        ->assertPathIs('/breakdown')
         ->assertNoConsoleLogs();
 });
 
