@@ -15,14 +15,17 @@ use App\Models\StatementMovement;
 use App\Models\Transaction;
 use App\Models\User;
 use App\MovementDirection;
+use App\StatementImports\ProcessStatementPdfExtractor;
 use App\StatementImports\StatementImportPreview;
 use App\StatementImports\StatementImportValidationException;
 use App\StatementMovementClassification;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Process;
 use Tests\Support\ConcurrentStatementImportConfirmation;
 use Tests\SyntheticPdf;
 
@@ -992,6 +995,17 @@ test('PDF extraction resource limits fail closed before producing a preview', fu
     'page count' => ['statement-imports.max_pages', 0, 'page_limit'],
     'extracted output' => ['statement-imports.max_extracted_bytes', 16, 'extraction_limit'],
 ]);
+
+test('PDF extraction invokes the configured PHP CLI binary', function () {
+    Process::fake();
+
+    app(ProcessStatementPdfExtractor::class)->extract('/tmp/statement.pdf');
+
+    Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+        && $process->command[0] === config('statement-imports.php_binary')
+        && $process->command[0] !== '',
+    );
+});
 
 test('PDF extraction is terminated at the configured processing time limit', function () {
     config([

@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'php_binary' => PHP_BINDIR.DIRECTORY_SEPARATOR.'php',
     'max_file_kilobytes' => 8192,
     'max_pages' => 12,
     'max_extracted_bytes' => 1024 * 1024,

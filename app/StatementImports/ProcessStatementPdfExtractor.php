@@ -70,7 +70,7 @@ final class ProcessStatementPdfExtractor implements StatementPdfExtractor
         PHP;
 
         return [
-            PHP_BINARY,
+            (string) config('statement-imports.php_binary'),
             '-d',
             'display_errors=0',
             '-r',
