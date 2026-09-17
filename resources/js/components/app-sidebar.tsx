@@ -1,4 +1,4 @@
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import {
     Files,
     House,
@@ -20,6 +20,11 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import {
+    reportingQuery as buildReportingQuery,
+    reportingQueryFromUrl,
+    reportingSelection,
+} from '@/lib/reporting-query';
 import { home } from '@/routes';
 import { index as breakdownIndex } from '@/routes/breakdown';
 import { index as categoriesIndex } from '@/routes/categories';
@@ -27,23 +32,33 @@ import { gmail as gmailDataSource } from '@/routes/data_sources';
 import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import { index as statementImportsIndex } from '@/routes/statement_imports';
 import { index as trendsIndex } from '@/routes/trends';
-import type { NavItem } from '@/types';
+import type { Currency, NavItem, ReportingPeriod } from '@/types';
 
 export function AppSidebar() {
+    const page = usePage<{
+        currency_filter?: Currency | null;
+        period?: ReportingPeriod;
+    }>();
+    const reportingQuery = page.props.period
+        ? buildReportingQuery(
+              page.props.currency_filter ?? null,
+              reportingSelection(page.props.period),
+          )
+        : reportingQueryFromUrl(page.url);
     const mainNavItems: NavItem[] = [
         {
             title: 'Home',
-            href: home(),
+            href: home({ query: reportingQuery }),
             icon: House,
         },
         {
             title: 'Breakdown',
-            href: breakdownIndex(),
+            href: breakdownIndex({ query: reportingQuery }),
             icon: ReceiptText,
         },
         {
             title: 'Trends',
-            href: trendsIndex(),
+            href: trendsIndex({ query: reportingQuery }),
             icon: TrendingUp,
         },
     ];
@@ -78,7 +93,10 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href={home()} prefetch>
+                            <Link
+                                href={home({ query: reportingQuery })}
+                                prefetch
+                            >
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>

@@ -4,6 +4,7 @@ namespace App\Actions\Breakdown;
 
 use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
+use App\Actions\Reporting\ReportingPeriod;
 use App\Currency;
 use App\DataSources\ReadRecordedCoverage;
 use App\ExactInteger;
@@ -36,7 +37,10 @@ class ReadBreakdown
         $currencyFilter = isset($filters['currency'])
             ? Currency::from($filters['currency'])
             : null;
-        [$periodUnit, $dateFrom, $dateTo] = $this->period($filters);
+        $period = ReportingPeriod::fromFilters($filters);
+        $periodUnit = $period->unit;
+        $dateFrom = $period->dateFrom;
+        $dateTo = $period->dateTo;
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
             ->select(['id', 'user_id', 'parent_id', 'name', 'archived_at'])
@@ -121,13 +125,7 @@ class ReadBreakdown
 
         return [
             'currency_filter' => $currencyFilter?->value,
-            'period' => [
-                'unit' => $periodUnit,
-                'label' => $this->periodLabel($periodUnit, $dateFrom, $dateTo),
-                'anchor' => $this->periodAnchor($periodUnit, $dateFrom),
-                'date_from' => $dateFrom->toDateString(),
-                'date_to' => $dateTo->toDateString(),
-            ],
+            'period' => $period->data(),
             'coverage' => [
                 'date_from' => $coverageDates->min()?->toDateString(),
                 'date_to' => $coverageDates->max()?->toDateString(),
@@ -171,59 +169,6 @@ class ReadBreakdown
                 && $transaction->transfer_purpose === TransferPurpose::Savings,
             default => false,
         };
-    }
-
-    /**
-     * @param  array{period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
-     * @return array{string, CarbonImmutable, CarbonImmutable}
-     */
-    private function period(array $filters): array
-    {
-        $today = CarbonImmutable::today(config('app.timezone'));
-        $periodUnit = $filters['period'] ?? null;
-        $anchor = CarbonImmutable::parse($filters['anchor'] ?? $today, config('app.timezone'));
-        $preset = $filters['preset'] ?? null;
-
-        if (($periodUnit === 'custom' || $preset === 'custom')
-            && isset($filters['date_from'], $filters['date_to'])) {
-            return [
-                'custom',
-                CarbonImmutable::parse($filters['date_from'], config('app.timezone')),
-                CarbonImmutable::parse($filters['date_to'], config('app.timezone')),
-            ];
-        }
-
-        if ($periodUnit === 'week') {
-            return ['week', $anchor->startOfWeek(), $anchor->endOfWeek()];
-        }
-
-        if ($periodUnit === 'quarter') {
-            return ['quarter', $anchor->startOfQuarter(), $anchor->endOfQuarter()];
-        }
-
-        if ($periodUnit === 'year') {
-            return ['year', $anchor->startOfYear(), $anchor->endOfYear()];
-        }
-
-        if ($periodUnit === 'month') {
-            return ['month', $anchor->startOfMonth(), $anchor->endOfMonth()];
-        }
-
-        if ($preset === 'last_month') {
-            $month = $today->subMonthNoOverflow();
-
-            return ['month', $month->startOfMonth(), $month->endOfMonth()];
-        }
-
-        if ($preset === 'rolling_30') {
-            return ['custom', $today->subDays(29), $today];
-        }
-
-        if ($preset === 'this_month') {
-            return ['month', $today->startOfMonth(), $today->endOfMonth()];
-        }
-
-        return ['month', $today->startOfMonth(), $today->endOfMonth()];
     }
 
     /** @return array<string, array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}> */
@@ -275,17 +220,6 @@ class ReadBreakdown
         }
 
         return $summary;
-    }
-
-    private function periodAnchor(string $periodUnit, CarbonImmutable $dateFrom): string
-    {
-        return match ($periodUnit) {
-            'week' => $dateFrom->startOfWeek()->toDateString(),
-            'month' => $dateFrom->startOfMonth()->toDateString(),
-            'quarter' => $dateFrom->startOfQuarter()->toDateString(),
-            'year' => $dateFrom->startOfYear()->toDateString(),
-            default => $dateFrom->toDateString(),
-        };
     }
 
     /**
@@ -797,15 +731,5 @@ class ReadBreakdown
     {
         return collect($percentages)
             ->max(fn (string $percentage): float => abs((float) $percentage)) ?? 0;
-    }
-
-    private function periodLabel(string $periodUnit, CarbonImmutable $dateFrom, CarbonImmutable $dateTo): string
-    {
-        return match ($periodUnit) {
-            'month' => $dateFrom->isoFormat('MMMM YYYY'),
-            'quarter' => 'Q'.$dateFrom->quarter.' '.$dateFrom->year,
-            'year' => (string) $dateFrom->year,
-            default => $dateFrom->isoFormat('ll').' – '.$dateTo->isoFormat('ll'),
-        };
     }
 }

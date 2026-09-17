@@ -161,6 +161,9 @@ test('Category and day charts drill into the same supporting detail', function (
                 const transactionsScroll = document.querySelector(
                     '[data-test="breakdown-transactions-scroll"]',
                 );
+                const transactionsHeader = document.querySelector(
+                    '[data-test="breakdown-transactions-header"]',
+                );
                 const overviewScroll = document.querySelector(
                     '[data-test="breakdown-merchants-scroll"]',
                 );
@@ -172,6 +175,7 @@ test('Category and day charts drill into the same supporting detail', function (
                     || overviewCard === null
                     || transactionsCard === null
                     || transactionsScroll === null
+                    || transactionsHeader === null
                     || overviewScroll === null
                 ) {
                     return false;
@@ -179,6 +183,8 @@ test('Category and day charts drill into the same supporting detail', function (
 
                 const overviewBounds = overviewCard.getBoundingClientRect();
                 const transactionBounds = transactionsCard.getBoundingClientRect();
+                const transactionsHeaderStyle =
+                    getComputedStyle(transactionsHeader);
 
                 return Math.abs(
                     chart.getBoundingClientRect().width
@@ -186,6 +192,9 @@ test('Category and day charts drill into the same supporting detail', function (
                 ) < 1
                     && Math.abs(overviewBounds.top - transactionBounds.top) < 1
                     && Math.abs(overviewBounds.bottom - transactionBounds.bottom) < 1
+                    && transactionsHeaderStyle.paddingTop === '16px'
+                    && transactionsHeaderStyle.paddingBottom === '16px'
+                    && !transactionsHeader.classList.contains('h-12')
                     && transactionBounds.bottom <= innerHeight
                     && document.documentElement.scrollHeight
                         <= document.documentElement.clientHeight
