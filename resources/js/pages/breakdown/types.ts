@@ -1,13 +1,12 @@
 import type { RecordedCoverageSource } from '@/components/source-coverage';
-import type { Currency, IncomeSource, MoneyMovementDetails } from '@/types';
+import type {
+    Currency,
+    IncomeSource,
+    MoneyMovementDetails,
+    ReportingPeriod,
+} from '@/types';
 
-export type BreakdownPeriod = {
-    unit: 'week' | 'month' | 'quarter' | 'year' | 'custom';
-    label: string;
-    anchor: string;
-    date_from: string;
-    date_to: string;
-};
+export type BreakdownPeriod = ReportingPeriod;
 
 export type CurrencyAmounts = Record<Currency, string>;
 

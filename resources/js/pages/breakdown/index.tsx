@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { update as updateClassification } from '@/actions/App/Http/Controllers/BreakdownTransactionClassificationController';
+import { CurrencyFilter } from '@/components/currency-filter';
+import { PeriodControls } from '@/components/period-controls';
 import { SourceCoverage } from '@/components/source-coverage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,13 +47,13 @@ import {
     movementDescription,
     transferPurposeLabel,
 } from '@/lib/money-movement';
+import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { index as breakdownIndex } from '@/routes/breakdown';
-import type { Currency } from '@/types';
+import type { Currency, ReportingPeriodSelection } from '@/types';
 import { CategoryBreakdown, DailyChart } from './charts';
 import { groupCategoryOptions } from './classification-select';
 import { selectionUrl } from './links';
 import { ManualTransactionDialog } from './manual-transaction-dialog';
-import { PeriodControls } from './period-controls';
 import { TransactionDetails } from './transaction-details';
 import type {
     BreakdownProps,
@@ -65,6 +67,18 @@ const focusLabels = {
     income: 'Income',
     savings: 'To savings',
 } satisfies Record<NonNullable<BreakdownProps['filters']['focus']>, string>;
+
+function breakdownReportingHref({
+    currencyFilter,
+    selection,
+}: {
+    currencyFilter: Currency | null;
+    selection: ReportingPeriodSelection;
+}): string {
+    return breakdownIndex.url({
+        query: reportingQuery(currencyFilter, selection),
+    });
+}
 
 function shownCurrencies(currencyFilter: Currency | null): Currency[] {
     return currencyFilter === null ? currencies : [currencyFilter];
@@ -735,7 +749,6 @@ export default function BreakdownIndex(props: BreakdownProps) {
         .flatMap((day) => day.transactions)
         .find((transaction) => transaction.id === props.filters.selected);
     const hasFilters =
-        props.currency_filter !== null ||
         props.filters.category !== null ||
         props.filters.day !== null ||
         props.filters.focus !== null ||
@@ -765,44 +778,38 @@ export default function BreakdownIndex(props: BreakdownProps) {
                     className="flex shrink-0 flex-wrap items-center gap-2"
                     data-test="breakdown-filter-bar"
                 >
-                    <span className="text-sm font-medium">Currency</span>
-                    {(
-                        [
-                            { value: null, label: 'All' },
-                            { value: 'PEN', label: 'PEN' },
-                            { value: 'USD', label: 'USD' },
-                        ] satisfies Array<{
-                            value: Currency | null;
-                            label: string;
-                        }>
-                    ).map((option) => (
-                        <Button
-                            key={option.label}
-                            asChild
-                            size="sm"
-                            variant={
-                                props.currency_filter === option.value
-                                    ? 'secondary'
-                                    : 'ghost'
-                            }
-                        >
-                            <Link
-                                href={selectionUrl({
-                                    currencyFilter: option.value,
-                                    period: props.period,
-                                    category: props.filters.category,
-                                    day: props.filters.day,
-                                    focus: props.filters.focus,
-                                    merchant: props.filters.merchant,
-                                    attention: props.filters.attention,
-                                    selected: null,
-                                })}
-                                preserveScroll
-                            >
-                                {option.label}
-                            </Link>
-                        </Button>
-                    ))}
+                    <CurrencyFilter
+                        value={props.currency_filter}
+                        options={[
+                            {
+                                value: null,
+                                label: 'All',
+                                testId: 'reporting-currency-all',
+                            },
+                            {
+                                value: 'PEN',
+                                label: 'PEN',
+                                testId: 'reporting-currency-pen',
+                            },
+                            {
+                                value: 'USD',
+                                label: 'USD',
+                                testId: 'reporting-currency-usd',
+                            },
+                        ]}
+                        href={(currencyFilter) =>
+                            selectionUrl({
+                                currencyFilter,
+                                period: props.period,
+                                category: props.filters.category,
+                                day: props.filters.day,
+                                focus: props.filters.focus,
+                                merchant: props.filters.merchant,
+                                attention: props.filters.attention,
+                                selected: null,
+                            }).url
+                        }
+                    />
                     {selectedCategory !== null && (
                         <RemovableFilter
                             label={`Category: ${selectedCategory}`}
@@ -887,7 +894,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                         <Button asChild variant="ghost" size="sm">
                             <Link
                                 href={selectionUrl({
-                                    currencyFilter: null,
+                                    currencyFilter: props.currency_filter,
                                     period: props.period,
                                     category: null,
                                     day: null,
@@ -979,7 +986,10 @@ export default function BreakdownIndex(props: BreakdownProps) {
                         className="min-h-0 min-w-0 gap-0 overflow-hidden py-0 xl:h-full"
                         data-test="breakdown-transactions-card"
                     >
-                        <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+                        <div
+                            className="flex shrink-0 items-center justify-between border-b p-4"
+                            data-test="breakdown-transactions-header"
+                        >
                             <h2 className="font-semibold">Transactions</h2>
                             <Badge
                                 variant="secondary"
@@ -1042,14 +1052,24 @@ BreakdownIndex.layout = (props: BreakdownProps) => ({
     breadcrumbs: [
         {
             title: 'Breakdown',
-            href: breakdownIndex(),
+            href: breakdownIndex({
+                query: reportingQuery(
+                    props.currency_filter,
+                    reportingSelection(props.period),
+                ),
+            }),
         },
     ],
     headerActions: (
         <PeriodControls
-            currencyFilter={props.currency_filter}
             period={props.period}
             today={props.today}
+            href={(selection) =>
+                breakdownReportingHref({
+                    currencyFilter: props.currency_filter,
+                    selection,
+                })
+            }
         />
     ),
     viewportConstrained: true,

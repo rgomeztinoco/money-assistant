@@ -2,9 +2,10 @@
 
 namespace App\Actions\Trends;
 
-use App\Actions\Reporting\EquivalentMonthPeriods;
+use App\Actions\Reporting\EquivalentPeriods;
 use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
+use App\Actions\Reporting\ReportingPeriod;
 use App\Currency;
 use App\ExactInteger;
 use App\MerchantNormalizer;
@@ -16,10 +17,11 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Arr;
 
 /**
- * @phpstan-type TrendPeriod array{label: string, date_from: string, date_to: string}
- * @phpstan-type TrendFindingBase array{currency: string, current_total_minor: string, typical_total_minor: string, change_minor: string, current_transaction_count: int, typical_transaction_count: int, unusual_transaction: array{id: int, description: string, amount_minor: string}|null, scenario: array{difference_minor: string}|null}
- * @phpstan-type TrendCategoryFinding array{kind: 'category', category: array{id: int|null, name: string}, currency: string, current_total_minor: string, typical_total_minor: string, change_minor: string, current_transaction_count: int, typical_transaction_count: int, unusual_transaction: array{id: int, description: string, amount_minor: string}|null, scenario: array{difference_minor: string}|null}
- * @phpstan-type TrendMerchantFinding array{kind: 'merchant', merchant: string, currency: string, current_total_minor: string, typical_total_minor: string, change_minor: string, current_transaction_count: int, typical_transaction_count: int, unusual_transaction: array{id: int, description: string, amount_minor: string}|null, scenario: array{difference_minor: string}|null}
+ * @phpstan-type TrendPeriod array{unit: string, label: string, anchor: string, date_from: string, date_to: string}
+ * @phpstan-type TrendComparisonPeriod array{label: string, date_from: string, date_to: string}
+ * @phpstan-type TrendFindingBase array{currency: string, current_total_minor: string, typical_total_minor: string, change_minor: string, period_totals_minor: list<string>, current_transaction_count: int, typical_transaction_count: int, unusual_transaction: array{id: int, description: string, amount_minor: string}|null, scenario: array{difference_minor: string}|null}
+ * @phpstan-type TrendCategoryFinding array{kind: 'category', category: array{id: int|null, name: string}, currency: string, current_total_minor: string, typical_total_minor: string, change_minor: string, period_totals_minor: list<string>, current_transaction_count: int, typical_transaction_count: int, unusual_transaction: array{id: int, description: string, amount_minor: string}|null, scenario: array{difference_minor: string}|null}
+ * @phpstan-type TrendMerchantFinding array{kind: 'merchant', merchant: string, currency: string, current_total_minor: string, typical_total_minor: string, change_minor: string, period_totals_minor: list<string>, current_transaction_count: int, typical_transaction_count: int, unusual_transaction: array{id: int, description: string, amount_minor: string}|null, scenario: array{difference_minor: string}|null}
  * @phpstan-type TrendFinding TrendCategoryFinding|TrendMerchantFinding
  * @phpstan-type TrendEvidence array<int, array{id: int, description: string, amount_minor: string, absolute_amount: ExactInteger}>
  * @phpstan-type TrendBucket array{amounts: array<int, ExactInteger>, counts: array<int, int>, largest: TrendEvidence}
@@ -28,6 +30,8 @@ use Illuminate\Support\Arr;
  */
 final class ReadTrends
 {
+    private const int PreviousPeriodCount = 6;
+
     public function __construct(
         private ReadPeriodSummary $readPeriodSummary,
         private MerchantNormalizer $merchantNormalizer,
@@ -35,26 +39,79 @@ final class ReadTrends
     ) {}
 
     /**
+     * @param  array{currency?: string, period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
      * @return array{
+     *     currency_filter: string|null,
      *     currency: string,
-     *     available_currencies: list<string>,
      *     period: TrendPeriod,
-     *     comparison_periods: list<TrendPeriod>,
+     *     comparison_periods: list<TrendComparisonPeriod>,
      *     summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}|null,
      *     findings: list<TrendFinding>,
-     *     monthly_context: list<array{month: string, label: string, date_from: string, date_to: string, total_minor: string|null}>
+     *     monthly_context: list<array{month: string, label: string, date_from: string, date_to: string, total_minor: string|null}>,
+     *     secondary: array{currency: string, summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}|null, findings: list<TrendFinding>, monthly_context: list<array{month: string, label: string, date_from: string, date_to: string, total_minor: string|null}>}|null,
+     *     today: string
      * }
      */
-    public function handle(User $owner, Currency $currency): array
+    public function handle(User $owner, ?Currency $currency, array $filters = []): array
     {
         $today = CarbonImmutable::today(config('app.timezone'));
-        $comparison = EquivalentMonthPeriods::forRange($today->startOfMonth(), $today);
+        $reportingPeriod = ReportingPeriod::fromFilters($filters)->endingNoLaterThan($today);
+        $comparison = EquivalentPeriods::forPeriod(
+            $reportingPeriod,
+            self::PreviousPeriodCount,
+        );
         $periods = $comparison->all();
-        $currentPeriod = $periods[0];
-        $contextDateFrom = $today->startOfMonth()->subMonthsNoOverflow(5)->startOfMonth();
-        $availableCurrencies = $this->availableCurrencies($owner, $contextDateFrom, $today);
-        $hasContextActivity = in_array($currency->value, $availableCurrencies, true);
-        $hasCurrentActivity = $hasContextActivity && Transaction::query()
+        $contextDateTo = $reportingPeriod->dateTo;
+        $contextDateFrom = $contextDateTo->startOfMonth()->subMonthsNoOverflow(self::PreviousPeriodCount)->startOfMonth();
+        $primaryCurrency = $currency ?? Currency::Pen;
+        $primary = $this->readCurrency(
+            $owner,
+            $primaryCurrency,
+            $comparison,
+            $contextDateFrom,
+            $contextDateTo,
+        );
+        $secondary = $currency === null
+            ? $this->readCurrency(
+                $owner,
+                Currency::Usd,
+                $comparison,
+                $contextDateFrom,
+                $contextDateTo,
+            )
+            : null;
+
+        return [
+            'currency_filter' => $currency?->value,
+            ...$primary,
+            'period' => $reportingPeriod->data(),
+            'comparison_periods' => array_map(
+                fn (array $period): array => $this->periodData($period[0], $period[1]),
+                array_slice($periods, 1),
+            ),
+            'secondary' => $secondary,
+            'today' => $today->toDateString(),
+        ];
+    }
+
+    /**
+     * @return array{currency: string, summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}|null, findings: list<TrendFinding>, monthly_context: list<array{month: string, label: string, date_from: string, date_to: string, total_minor: string|null}>}
+     */
+    private function readCurrency(
+        User $owner,
+        Currency $currency,
+        EquivalentPeriods $comparison,
+        CarbonImmutable $contextDateFrom,
+        CarbonImmutable $contextDateTo,
+    ): array {
+        $currentPeriod = $comparison->all()[0];
+        $hasContextActivity = Transaction::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->where('currency', $currency)
+            ->whereNull('voided_at')
+            ->whereBetween('occurred_on', [$contextDateFrom->toDateString(), $contextDateTo->toDateString()])
+            ->exists();
+        $hasCurrentActivity = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
@@ -63,12 +120,6 @@ final class ReadTrends
 
         return [
             'currency' => $currency->value,
-            'available_currencies' => $availableCurrencies,
-            'period' => $this->periodData($currentPeriod[0], $currentPeriod[1]),
-            'comparison_periods' => array_map(
-                fn (array $period): array => $this->periodData($period[0], $period[1]),
-                array_slice($periods, 1),
-            ),
             'summary' => $hasCurrentActivity
                 ? $this->readPeriodSummary->handle($owner, $currency, $currentPeriod[0], $currentPeriod[1])
                 : null,
@@ -76,36 +127,12 @@ final class ReadTrends
                 ? $this->findings($owner, $currency, $comparison)
                 : [],
             'monthly_context' => $hasContextActivity
-                ? $this->monthlyContext($owner, $currency, $today)
+                ? $this->monthlyContext($owner, $currency, $contextDateTo)
                 : [],
         ];
     }
 
-    /** @return list<string> */
-    private function availableCurrencies(
-        User $owner,
-        CarbonImmutable $dateFrom,
-        CarbonImmutable $dateTo,
-    ): array {
-        $available = [];
-
-        foreach ([Currency::Pen, Currency::Usd] as $currency) {
-            $hasActivity = Transaction::query()
-                ->whereBelongsTo($owner, 'owner')
-                ->where('currency', $currency)
-                ->whereNull('voided_at')
-                ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
-                ->exists();
-
-            if ($hasActivity) {
-                $available[] = $currency->value;
-            }
-        }
-
-        return $available;
-    }
-
-    /** @return TrendPeriod */
+    /** @return TrendComparisonPeriod */
     private function periodData(CarbonImmutable $dateFrom, CarbonImmutable $dateTo): array
     {
         return [
@@ -121,7 +148,7 @@ final class ReadTrends
     private function findings(
         User $owner,
         Currency $currency,
-        EquivalentMonthPeriods $comparison,
+        EquivalentPeriods $comparison,
     ): array {
         $periods = $comparison->all();
         $categories = Category::query()
@@ -139,7 +166,7 @@ final class ReadTrends
             ->whereNull('voided_at')
             ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->whereBetween('occurred_on', [
-                $periods[3][0]->toDateString(),
+                Arr::last($periods)[0]->toDateString(),
                 $periods[0][1]->toDateString(),
             ])
             ->select(['id', 'occurred_on', 'amount_minor', 'kind', 'category_id', 'description'])
@@ -272,7 +299,7 @@ final class ReadTrends
     private function findingBase(
         array $bucket,
         Currency $currency,
-        EquivalentMonthPeriods $comparison,
+        EquivalentPeriods $comparison,
     ): array {
         $current = $bucket['amounts'][0] ?? ExactInteger::from(0);
         $typical = $comparison->typicalAmount($bucket['amounts']);
@@ -303,6 +330,10 @@ final class ReadTrends
             'current_total_minor' => $current->value(),
             'typical_total_minor' => $typical->value(),
             'change_minor' => $current->subtract($typical)->value(),
+            'period_totals_minor' => array_map(
+                fn (int $index): string => ($bucket['amounts'][$index] ?? ExactInteger::from(0))->value(),
+                array_reverse(array_keys($comparison->all())),
+            ),
             'current_transaction_count' => $bucket['counts'][0] ?? 0,
             'typical_transaction_count' => intdiv(
                 array_sum(array_map(
@@ -319,15 +350,15 @@ final class ReadTrends
     /**
      * @return list<array{month: string, label: string, date_from: string, date_to: string, total_minor: string|null}>
      */
-    private function monthlyContext(User $owner, Currency $currency, CarbonImmutable $today): array
+    private function monthlyContext(User $owner, Currency $currency, CarbonImmutable $contextDateTo): array
     {
-        $dateFrom = $today->startOfMonth()->subMonthsNoOverflow(5)->startOfMonth();
+        $dateFrom = $contextDateTo->startOfMonth()->subMonthsNoOverflow(self::PreviousPeriodCount)->startOfMonth();
 
         /** @var array<string, array{amount: ExactInteger, transaction_count: int}> $months */
         $months = [];
         $month = $dateFrom;
 
-        while ($month->lessThanOrEqualTo($today)) {
+        while ($month->lessThanOrEqualTo($contextDateTo)) {
             $months[$month->format('Y-m')] = [
                 'amount' => ExactInteger::from(0),
                 'transaction_count' => 0,
@@ -339,7 +370,7 @@ final class ReadTrends
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
-            ->whereBetween('occurred_on', [$dateFrom->toDateString(), $today->toDateString()])
+            ->whereBetween('occurred_on', [$dateFrom->toDateString(), $contextDateTo->toDateString()])
             ->select(['id', 'occurred_on', 'amount_minor', 'kind'])
             ->cursor();
 
@@ -354,9 +385,9 @@ final class ReadTrends
             ];
         }
 
-        return array_map(function (string $monthKey, array $monthData) use ($today): array {
+        return array_map(function (string $monthKey, array $monthData) use ($contextDateTo): array {
             $month = CarbonImmutable::parse($monthKey.'-01', config('app.timezone'));
-            $dateTo = $month->isSameMonth($today) ? $today : $month->endOfMonth();
+            $dateTo = $month->isSameMonth($contextDateTo) ? $contextDateTo : $month->endOfMonth();
 
             return [
                 'month' => $monthKey,
