@@ -12,6 +12,7 @@ use App\Jobs\ProcessGmailMessage;
 use App\Jobs\SynchronizeGmail;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
+use App\Models\SpendingNotificationReference;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -634,6 +635,61 @@ test('the owner can safely retry the matching retained failed Gmail message job'
         ->and(app('queue.failer')->find($uuid))->toBeNull()
         ->and(DB::table('jobs')->count())->toBe(1);
 });
+
+test('the owner can queue unsupported Gmail notifications for idempotent reprocessing', function () {
+    Queue::fake();
+    $connection = GmailConnection::factory()->create();
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
+        'processed_at' => now(),
+    ]);
+    SpendingNotificationReference::factory()->create([
+        'user_id' => $connection->user_id,
+        'transaction_id' => null,
+        'gmail_message_discovery_id' => $discovery->id,
+        'gmail_account_identity' => $connection->gmail_account_identity,
+        'message_id' => $discovery->message_id,
+        'processing_outcome' => 'unsupported',
+    ]);
+
+    $this->actingAs($connection->owner)
+        ->get(route('data_sources.gmail'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('gmail.retryable_unsupported_count', 1));
+
+    $this->post(route('gmail.unsupported_messages.retry'))
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('data_sources.gmail'));
+
+    Queue::assertPushed(
+        ProcessGmailMessage::class,
+        fn (ProcessGmailMessage $job): bool => $job->discoveryId === $discovery->id
+            && $job->retryUnsupported,
+    );
+});
+
+test('unsupported Gmail notifications cannot be queued without an active connection', function (
+    bool $hasPausedConnection,
+) {
+    Queue::fake();
+    $owner = User::factory()->create();
+
+    if ($hasPausedConnection) {
+        GmailConnection::factory()
+            ->for($owner, 'owner')
+            ->reauthorizationRequired()
+            ->create();
+    }
+
+    $this->actingAs($owner)
+        ->post(route('gmail.unsupported_messages.retry'))
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('data_sources.gmail'));
+
+    Queue::assertNothingPushed();
+})->with([
+    'disconnected' => false,
+    'reauthorization required' => true,
+]);
 
 test('a failed Gmail job requires the owner and a matching retained payload', function () {
     $connection = GmailConnection::factory()->create();

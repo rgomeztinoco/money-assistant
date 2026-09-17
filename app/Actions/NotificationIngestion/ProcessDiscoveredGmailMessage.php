@@ -12,8 +12,10 @@ final class ProcessDiscoveredGmailMessage
         private ProcessSpendingNotification $processSpendingNotification,
     ) {}
 
-    public function handle(int $discoveryId): SpendingNotificationReference
-    {
+    public function handle(
+        int $discoveryId,
+        bool $retryUnsupported = false,
+    ): SpendingNotificationReference {
         $discovery = GmailMessageDiscovery::query()
             ->with(['gmailConnection.owner'])
             ->findOrFail($discoveryId);
@@ -27,7 +29,8 @@ final class ProcessDiscoveredGmailMessage
                 ->where('message_id', $discovery->message_id)
                 ->first();
 
-            if ($existingReference !== null) {
+            if ($existingReference !== null
+                && (! $retryUnsupported || ! $existingReference->isRetryable())) {
                 return $existingReference;
             }
         }
@@ -36,6 +39,7 @@ final class ProcessDiscoveredGmailMessage
             owner: $owner,
             discovery: $discovery,
             message: $this->readGmailMessage->handle($owner, $discovery),
+            retryUnsupported: $retryUnsupported,
         );
 
         $discovery->forceFill([

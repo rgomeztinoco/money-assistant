@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-bcp-third-party-transfer",
+        "received_at": "2026-09-15T14:00:00Z",
+        "from_address": "notificaciones@notificacionesbcp.com.pe",
+        "subject": "Constancia de Transferencia a Terceros BCP - Servicio de Notificaciones BCP",
+        "authentication": {
+            "spf": { "result": "pass", "domain": null },
+            "dkim": { "result": "pass", "domain": null },
+            "dmarc": { "result": "pass", "domain": null }
+        },
+        "html_body": "<html><body><p>Hola CLIENTE EJEMPLO,</p><p>Realizaste una transferencia de S/ 286.39 desde tu Clasica.</p><h2>Montos</h2><p>Monto transferido</p><p>S/ 286.39</p><h2>Datos de la operación</h2><p>Operación realizada</p><p>Transferencia a terceros BCP</p><p>Fecha y hora</p><p>15 de Septiembre de 2026 - 07:30 AM</p><p>Enviado a</p><p>SAMPLE RECIPIENT</p><p>C. ****7034</p><p>Moneda</p><p>Soles</p><p>Desde</p><p>Clasica ****3057</p><p>Moneda</p><p>Soles</p><p>Mensaje</p><p>Canal Banca Móvil BCP</p></body></html>"
+    },
+    "expected": {
+        "format_identifier": "bcp.third_party_transfer",
+        "occurred_on": "2026-09-15",
+        "amount_minor": 28639,
+        "currency": "PEN",
+        "kind": "spending",
+        "direction": "debit",
+        "income_source": null,
+        "transfer_purpose": null,
+        "description": "Transfer to SAMPLE RECIPIENT",
+        "instrument_label": "BCP account",
+        "instrument_last_four": "3057"
+    }
+}

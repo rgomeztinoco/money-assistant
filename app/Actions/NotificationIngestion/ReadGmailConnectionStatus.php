@@ -6,6 +6,7 @@ use App\Contracts\Gmail;
 use App\GmailSynchronizationType;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
+use App\Models\SpendingNotificationReference;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Cron\CronExpression;
@@ -24,6 +25,7 @@ final class ReadGmailConnectionStatus
      *     last_successful_check_at: string|null,
      *     last_successful_sync_at: string|null,
      *     next_scheduled_sync_at: string|null,
+     *     retryable_unsupported_count: int,
      *     latest_failure: array{type: 'synchronization'|'message', occurred_at: string, error_code: string, discovery_id: int|null, message_id: string|null, retryable: bool}|null,
      *     last_check_failed_at: string|null,
      *     reauthorization_required_at: string|null
@@ -64,6 +66,11 @@ final class ReadGmailConnectionStatus
             'next_scheduled_sync_at' => $connection !== null && ! $connection->ingestionIsPaused()
                 ? $this->nextScheduledSynchronizationAt()
                 : null,
+            'retryable_unsupported_count' => $connection === null
+                ? 0
+                : SpendingNotificationReference::query()
+                    ->whereRetryableUnsupportedFor($connection)
+                    ->count(),
             'latest_failure' => $latestFailure,
             'last_check_failed_at' => $connection?->last_check_failed_at?->toIso8601String(),
             'reauthorization_required_at' => $connection?->reauthorization_required_at?->toIso8601String(),

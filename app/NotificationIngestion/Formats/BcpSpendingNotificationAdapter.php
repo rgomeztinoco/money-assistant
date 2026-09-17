@@ -9,6 +9,7 @@ use App\Integrations\Gmail\GmailMessage;
 use App\MovementDirection;
 use App\NotificationIngestion\NotificationMessageText;
 use App\NotificationIngestion\SupportedSpendingNotification;
+use App\ReviewableTransactionField;
 use App\SpendingNotificationExtraction;
 use App\TransactionKind;
 use App\TransferPurpose;
@@ -20,21 +21,29 @@ final class BcpSpendingNotificationAdapter implements SpendingNotificationFormat
 {
     private const SENDER = 'notificaciones@notificacionesbcp.com.pe';
 
+    private const ELECTRONIC_RECEIPT_SENDER = 'comprobante-electronico@notificacionesbcp.com.pe';
+
     public function __construct(private NotificationMessageText $messageText) {}
 
     public function fixtureFiles(): array
     {
         return [
             'bcp.debit_card_spending' => 'bcp-debit-card-spending.json',
+            'bcp.electronic_fee_invoice' => 'bcp-electronic-fee-invoice.json',
             'bcp.foreign_transfer_income' => 'bcp-foreign-transfer-income.json',
             'bcp.other_bank_transfer_spending' => 'bcp-other-bank-transfer-spending.json',
             'bcp.own_account_transfer' => 'bcp-own-account-transfer.json',
+            'bcp.third_party_transfer' => 'bcp-third-party-transfer.json',
             'bcp.warda_withdrawal' => 'bcp-warda-withdrawal.json',
         ];
     }
 
     public function match(GmailMessage $message): ?SupportedSpendingNotification
     {
+        if ($this->messageText->trusts($message, self::ELECTRONIC_RECEIPT_SENDER)) {
+            return $this->electronicFeeInvoice($message);
+        }
+
         if (! $this->messageText->trusts($message, self::SENDER)) {
             return null;
         }
@@ -50,9 +59,41 @@ final class BcpSpendingNotificationAdapter implements SpendingNotificationFormat
             Str::startsWith($message->subject, 'Transferencia del Exterior') => $this->foreignTransferIncome($body),
             $message->subject === 'Constancia de Transferencia a Otros Bancos - Servicio de Notificaciones BCP' => $this->otherBankTransferSpending($body),
             $message->subject === 'Constancia de Transferencia Entre mis Cuentas - Servicio de Notificaciones BCP' => $this->ownAccountTransfer($body),
+            $message->subject === 'Constancia de Transferencia a Terceros BCP - Servicio de Notificaciones BCP' => $this->thirdPartyTransfer($body),
             Str::contains(Str::lower($message->subject), 'retiro de tu wardadito') => $this->wardaWithdrawal($body),
             default => null,
         };
+    }
+
+    private function electronicFeeInvoice(GmailMessage $message): ?SupportedSpendingNotification
+    {
+        if (! Str::startsWith($message->subject, 'BCP - ¡Te enviamos tu nuevo comprobante electrónico! - FN01-')) {
+            return null;
+        }
+
+        $body = $this->messageText->visibleBody($message);
+
+        if ($body === null) {
+            return null;
+        }
+
+        $matches = $this->capture(
+            '/Tipo\s+FACTURA DE VENTA ELECTRÓNICA\s+Número\s+FN01-\d+\s+Monto\s+(S\/?\.?|US\$|USD|\$)\s*([\d.,]+)\s+Fecha de Emisión\s+(\d{2}\/\d{2}\/\d{4})/iu',
+            $body,
+        );
+        [$amountMinor, $currency] = $this->messageText->money($matches[1], $matches[2]);
+
+        return $this->result(
+            identifier: 'bcp.electronic_fee_invoice',
+            occurredOn: $this->messageText->date($matches[3]),
+            amountMinor: $amountMinor,
+            currency: $currency,
+            kind: TransactionKind::Spending,
+            direction: MovementDirection::Debit,
+            description: 'BCP interest and commissions',
+            instrumentLabel: 'BCP account',
+            instrumentLastFour: null,
+        );
     }
 
     private function debitCardSpending(string $body): SupportedSpendingNotification
@@ -148,6 +189,28 @@ final class BcpSpendingNotificationAdapter implements SpendingNotificationFormat
         );
     }
 
+    private function thirdPartyTransfer(string $body): SupportedSpendingNotification
+    {
+        $matches = $this->capture(
+            '/Monto transferido\s+(S\/?\.?|US\$|USD|\$)\s*([\d.,]+).*?Fecha y hora\s+(.+?)\s+-\s+\d{1,2}:\d{2}\s+[AP]M\s+Enviado a\s+(.+?)\s+(?:[A-Z]\.\s*)?\d{4}\s+Moneda.*?Desde\s+(.+?)\s+Moneda/iu',
+            $body,
+        );
+        [$amountMinor, $currency] = $this->messageText->money($matches[1], $matches[2]);
+
+        return $this->result(
+            identifier: 'bcp.third_party_transfer',
+            occurredOn: $this->messageText->date($matches[3]),
+            amountMinor: $amountMinor,
+            currency: $currency,
+            kind: TransactionKind::Spending,
+            direction: MovementDirection::Debit,
+            description: Str::limit('Transfer to '.Str::squish($matches[4]), 255, ''),
+            instrumentLabel: 'BCP account',
+            instrumentLastFour: $this->messageText->lastFour($matches[5]),
+            provisionalFields: [ReviewableTransactionField::Kind],
+        );
+    }
+
     private function wardaWithdrawal(string $body): SupportedSpendingNotification
     {
         $matches = $this->capture(
@@ -170,6 +233,7 @@ final class BcpSpendingNotificationAdapter implements SpendingNotificationFormat
         );
     }
 
+    /** @param list<ReviewableTransactionField> $provisionalFields */
     private function result(
         string $identifier,
         CarbonImmutable $occurredOn,
@@ -182,6 +246,7 @@ final class BcpSpendingNotificationAdapter implements SpendingNotificationFormat
         ?string $instrumentLastFour,
         ?IncomeSource $incomeSource = null,
         ?TransferPurpose $transferPurpose = null,
+        array $provisionalFields = [],
     ): SupportedSpendingNotification {
         return new SupportedSpendingNotification(
             formatIdentifier: $identifier,
@@ -191,7 +256,7 @@ final class BcpSpendingNotificationAdapter implements SpendingNotificationFormat
                 currency: $currency,
                 kind: $kind,
                 description: $description,
-                provisionalFields: [],
+                provisionalFields: $provisionalFields,
                 direction: $direction,
                 incomeSource: $incomeSource,
                 transferPurpose: $transferPurpose,

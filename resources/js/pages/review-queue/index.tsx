@@ -9,6 +9,7 @@ import {
     Sparkles,
     Tags,
 } from 'lucide-react';
+import { useState } from 'react';
 import { update as assignLineItemCategory } from '@/actions/App/Http/Controllers/ReviewQueueLineItemCategoryController';
 import { update as assignTransactionCategory } from '@/actions/App/Http/Controllers/ReviewQueueTransactionCategoryController';
 import { update as resolveTransactionField } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
@@ -28,7 +29,12 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { formatMinorUnits } from '@/lib/format-minor-units';
-import { movementKindLabel, movementKindOptions } from '@/lib/money-movement';
+import {
+    movementKindFromValue,
+    movementKindLabel,
+    movementKindOptions,
+    transferPurposeOptions,
+} from '@/lib/money-movement';
 import { index } from '@/routes/review_queue';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type {
@@ -426,17 +432,7 @@ function FieldCorrectionInput({
                 />
             );
         case 'kind':
-            return (
-                <NativeSelect
-                    id={id}
-                    name="value"
-                    defaultValue={field.value}
-                    options={movementKindOptions.filter(
-                        ({ value }) =>
-                            value === 'spending' || value === 'refund',
-                    )}
-                />
-            );
+            return <KindCorrectionInput id={id} field={field} />;
         case 'description':
             return (
                 <Input
@@ -453,6 +449,47 @@ function FieldCorrectionInput({
             return exhaustiveField;
         }
     }
+}
+
+function KindCorrectionInput({
+    id,
+    field,
+}: {
+    id: string;
+    field: ReviewField;
+}) {
+    const [kind, setKind] = useState<TransactionKind>(() =>
+        movementKindFromValue(field.value),
+    );
+
+    return (
+        <div className="grid gap-2">
+            <NativeSelect
+                id={id}
+                name="value"
+                value={kind}
+                onChange={(event) =>
+                    setKind(movementKindFromValue(event.target.value))
+                }
+                options={movementKindOptions.filter(({ value }) =>
+                    field.allowed_values?.includes(value),
+                )}
+            />
+            {kind === 'transfer' && (
+                <div className="grid gap-2">
+                    <Label htmlFor={`${id}-transfer-purpose`}>
+                        Transfer purpose
+                    </Label>
+                    <NativeSelect
+                        id={`${id}-transfer-purpose`}
+                        name="transfer_purpose"
+                        defaultValue="internal"
+                        options={transferPurposeOptions}
+                    />
+                </div>
+            )}
+        </div>
+    );
 }
 
 function FieldDecision({
@@ -539,6 +576,7 @@ function FieldDecision({
                                 transactionId={item.transaction.id}
                             />
                             <InputError message={errors.value} />
+                            <InputError message={errors.transfer_purpose} />
                             <Button type="submit" disabled={processing}>
                                 {processing && <Spinner />}
                                 Save {reason.field.label.toLowerCase()}

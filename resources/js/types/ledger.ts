@@ -31,6 +31,7 @@ export type ReviewField = {
     name: ReviewableFieldName;
     label: string;
     value: string;
+    allowed_values: TransactionKind[] | null;
 };
 
 export type CategoryAssignmentProvenance = {

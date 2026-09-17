@@ -4,6 +4,7 @@ use App\Http\Controllers\Settings\GmailAuthorizationController;
 use App\Http\Controllers\Settings\GmailConnectionCheckController;
 use App\Http\Controllers\Settings\GmailFailedMessageRetryController;
 use App\Http\Controllers\Settings\GmailImportController;
+use App\Http\Controllers\Settings\GmailUnsupportedMessagesRetryController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Middleware\RequirePasswordForOwnerEmailChange;
@@ -48,6 +49,11 @@ Route::middleware(['auth'])->group(function () {
         'data-sources/gmail/failed-messages/{gmailMessageDiscovery}/retry',
         GmailFailedMessageRetryController::class,
     )->name('gmail.failed_messages.retry');
+
+    Route::post(
+        'data-sources/gmail/unsupported-messages/retry',
+        GmailUnsupportedMessagesRetryController::class,
+    )->name('gmail.unsupported_messages.retry');
 
     Route::inertia('settings/appearance', 'settings/appearance')->name('appearance.edit');
 });

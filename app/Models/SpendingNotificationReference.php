@@ -5,6 +5,7 @@ namespace App\Models;
 use App\SpendingNotificationProcessingOutcome;
 use Database\Factories\SpendingNotificationReferenceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -67,6 +68,22 @@ class SpendingNotificationReference extends Model
         return $this->transaction_id === null
             && SpendingNotificationProcessingOutcome::tryFrom($this->processing_outcome)
                 ?->isRetryable() === true;
+    }
+
+    /**
+     * @param  Builder<SpendingNotificationReference>  $query
+     * @return Builder<SpendingNotificationReference>
+     */
+    public function scopeWhereRetryableUnsupportedFor(
+        Builder $query,
+        GmailConnection $connection,
+    ): Builder {
+        return $query
+            ->where('user_id', $connection->user_id)
+            ->where('gmail_account_identity', $connection->gmail_account_identity)
+            ->where('processing_outcome', SpendingNotificationProcessingOutcome::Unsupported->value)
+            ->whereNull('transaction_id')
+            ->whereNotNull('gmail_message_discovery_id');
     }
 
     /** @return array<string, string> */

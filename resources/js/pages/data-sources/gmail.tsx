@@ -14,6 +14,7 @@ import { create as createGmailAuthorization } from '@/actions/App/Http/Controlle
 import GmailConnectionCheckController from '@/actions/App/Http/Controllers/Settings/GmailConnectionCheckController';
 import GmailFailedMessageRetryController from '@/actions/App/Http/Controllers/Settings/GmailFailedMessageRetryController';
 import GmailImportController from '@/actions/App/Http/Controllers/Settings/GmailImportController';
+import GmailUnsupportedMessagesRetryController from '@/actions/App/Http/Controllers/Settings/GmailUnsupportedMessagesRetryController';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,7 @@ type GmailStatus = {
     last_successful_check_at: string | null;
     last_successful_sync_at: string | null;
     next_scheduled_sync_at: string | null;
+    retryable_unsupported_count: number;
     last_check_failed_at: string | null;
     reauthorization_required_at: string | null;
     latest_failure: {
@@ -419,6 +421,48 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                                             )}
                                         </Form>
                                     )}
+                            </CardHeader>
+                        </Card>
+                    )}
+
+                    {gmail.retryable_unsupported_count > 0 && (
+                        <Card className="gap-0 py-0">
+                            <CardHeader className="gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                                <div className="grid gap-1">
+                                    <CardTitle className="text-base">
+                                        Retry unsupported notifications
+                                    </CardTitle>
+                                    <CardDescription>
+                                        {gmail.retryable_unsupported_count}{' '}
+                                        {gmail.retryable_unsupported_count === 1
+                                            ? 'notification can be retried from Gmail.'
+                                            : 'notifications can be retried from Gmail.'}
+                                    </CardDescription>
+                                </div>
+
+                                <Form
+                                    {...GmailUnsupportedMessagesRetryController.form()}
+                                    options={{ preserveScroll: true }}
+                                >
+                                    {({ processing }) => (
+                                        <Button
+                                            type="submit"
+                                            size="sm"
+                                            disabled={processing || !canImport}
+                                        >
+                                            <RefreshCw
+                                                className={
+                                                    processing
+                                                        ? 'animate-spin'
+                                                        : ''
+                                                }
+                                            />
+                                            {processing
+                                                ? 'Queueing...'
+                                                : 'Retry unsupported'}
+                                        </Button>
+                                    )}
+                                </Form>
                             </CardHeader>
                         </Card>
                     )}
