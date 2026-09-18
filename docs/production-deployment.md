@@ -8,6 +8,7 @@ Deployment support lives in `production/`:
 
 | Command | Purpose |
 | --- | --- |
+| `release-production` | Back up, promote, deploy, and verify the current `main` revision. |
 | `deploy-production` | Build, migrate, and replace the application containers. |
 | `install-production-services` | Install the application, private-access, and backup systemd units and backup commands. |
 | `export-production-backup` | Stream the database into an encrypted backup. |
@@ -17,74 +18,29 @@ Deployment support lives in `production/`:
 
 Host security updates use Ubuntu's `unattended-upgrades`; this repository no longer maintains a separate security policy checker or vulnerability ledger. Existing host update settings remain installed.
 
-## 1. Prepare the release
+## Release
 
-From the development checkout, confirm there are no local changes, update `main`, and run the test suite:
+After the change has merged and passed its required GitHub checks, run the test suite from the development checkout:
 
 ```bash
-git status --short --branch
-git fetch origin
-git switch main
-git pull --ff-only origin main
 vendor/bin/sail artisan test --compact
 ```
 
-Stop if the worktree is not clean, `main` cannot fast-forward, the commit has not passed its required GitHub checks, or a test fails.
-
-Record the revision being deployed:
+Then release it with one command:
 
 ```bash
-git rev-parse HEAD
+production/release-production
 ```
 
-## 2. Create the pre-deployment backup
+The command requires a clean `main` checkout, fetches and fast-forwards from `origin/main`, and records the exact revision. It creates a fresh encrypted backup before copying any files, promotes only Git-tracked files into `/opt/money-assistant`, reinstalls the systemd units, deploys the production containers, and verifies private ingress. It prints the deployed revision when every step succeeds.
 
-Run the installed backup unit and require it to succeed before changing production code:
-
-```bash
-sudo systemctl start money-assistant-backup.service
-sudo systemctl --no-pager --full status money-assistant-backup.service
-sudo find /var/backups/money-assistant -maxdepth 1 -type f -name 'money-assistant-*.dump.age' -printf '%TY-%Tm-%TdT%TH:%TM:%TS %f\n' | sort | tail -n 1
-```
-
-The service must report `status=0/SUCCESS`, and the final command must show a new encrypted backup. Do not deploy when the backup fails.
-
-## 3. Promote the tracked snapshot
-
-Build a temporary archive from Git-tracked files only, then synchronize that exact snapshot into `/opt/money-assistant`:
-
-```bash
-release_directory="$(mktemp -d /tmp/money-assistant-release.XXXXXX)"
-trap 'rm -rf -- "$release_directory"' EXIT
-chmod 0755 "$release_directory"
-
-git archive --format=tar HEAD | tar -xf - -C "$release_directory"
-sudo install -d -o root -g root -m 0755 /opt/money-assistant
-sudo rsync --archive --delete --chown=root:root "$release_directory"/ /opt/money-assistant/
-sudo chmod 0755 /opt/money-assistant
-```
-
-`rsync --delete` is intentionally scoped to the fixed `/opt/money-assistant/` code directory. Production state is stored in Docker volumes, while host-managed configuration and secrets are under `/etc/money-assistant`.
-
-This release moves the deployment command into `production/`. Reinstall the units after promoting the snapshot so the next reboot uses the new path. Repeat this whenever a release changes the units or backup commands:
-
-```bash
-sudo /opt/money-assistant/production/install-production-services
-```
-
-## 4. Deploy
-
-Run the production deployment command from the installed snapshot:
-
-```bash
-sudo /opt/money-assistant/production/deploy-production
-```
-
-The command validates Compose configuration, builds the application image, waits for PostgreSQL, runs migrations with `--force --isolated`, and replaces the web, worker, scheduler, and proxy containers only after migrations succeed. The recreated worker and scheduler containers load the new code automatically.
+`rsync --delete` remains scoped to `/opt/money-assistant/`. Production state is stored in Docker volumes. Host-managed configuration and secrets remain under `/etc/money-assistant`.
 
 Do not run the development Sail deployment commands against the production Compose file. Production uses the fixed `money-assistant-production` Compose project, `/etc/money-assistant/production.env`, dedicated networks and volumes, and loopback port 8443.
 
-## 5. Verify
+## Manual verification and recovery
+
+The release command performs the private-ingress check. Use the lower-level commands below when investigating a failed release.
 
 Require every production container to be running and healthy:
 

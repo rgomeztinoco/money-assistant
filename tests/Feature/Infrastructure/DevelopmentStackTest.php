@@ -12,8 +12,8 @@ test('development application ports use standard Sail bindings', function (): vo
     $services = $this->developmentCompose['services'];
 
     expect($services['laravel.test']['ports'])->toBe([
-        '${APP_PORT:-8080}:80',
-        '${VITE_PORT:-5173}:${VITE_PORT:-5173}',
+        '127.0.0.1:${APP_PORT:-8080}:80',
+        '127.0.0.1:${VITE_PORT:-5173}:${VITE_PORT:-5173}',
     ])->and($services['pgsql']['ports'])->toBe([
         '127.0.0.1:${FORWARD_DB_PORT:-5433}:5432',
     ])->and($services['mailpit']['ports'])->toBe([
