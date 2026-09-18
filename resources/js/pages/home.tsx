@@ -164,6 +164,18 @@ function shortDate(date: string): string {
     }).format(new Date(`${date}T00:00:00Z`));
 }
 
+function oneBasedDayWithinPeriod(dateFrom: string, date: string): number {
+    const millisecondsPerDay = 24 * 60 * 60 * 1000;
+
+    return (
+        Math.round(
+            (Date.parse(`${date}T00:00:00Z`) -
+                Date.parse(`${dateFrom}T00:00:00Z`)) /
+                millisecondsPerDay,
+        ) + 1
+    );
+}
+
 function coverageText(briefing: Briefing): string {
     if (briefing.coverage.transaction_count === 0) {
         return `${shortDate(briefing.coverage.date_from)} to ${shortDate(briefing.coverage.date_to)}`;
@@ -211,7 +223,13 @@ function percentageChangeLabel(briefing: Briefing): string {
     return `${percentageChange > 0 ? '+' : ''}${percentageChange}%`;
 }
 
-function SpendingComparisonChart({ briefings }: { briefings: Briefing[] }) {
+function SpendingComparisonChart({
+    briefings,
+    today,
+}: {
+    briefings: Briefing[];
+    today: string;
+}) {
     const primary = briefings[0];
     const primaryPulse = primary?.pulse;
 
@@ -266,13 +284,21 @@ function SpendingComparisonChart({ briefings }: { briefings: Briefing[] }) {
 
         return point;
     });
+    const hasFutureDates =
+        primary.period.date_from <= today && today < primary.period.date_to;
+    const todayLabel = shortDate(today);
+    const chartDescription = `Cumulative Net Spending in ${primary.period.label} compared with ${primaryPulse.previous_period.label} for ${briefings.map((briefing) => briefing.currency).join(' and ')}`;
 
     return (
         <ChartContainer
             config={chartConfig}
             className="h-64 w-full max-w-full min-w-0 md:h-72"
             role="img"
-            aria-label={`Cumulative Net Spending in ${primary.period.label} compared with ${primaryPulse.previous_period.label} for ${briefings.map((briefing) => briefing.currency).join(' and ')}`}
+            aria-label={
+                hasFutureDates
+                    ? `${chartDescription}. Observed through ${todayLabel}; future dates have no values.`
+                    : chartDescription
+            }
             data-test="home-spending-chart"
         >
             <LineChart
@@ -282,6 +308,31 @@ function SpendingComparisonChart({ briefings }: { briefings: Briefing[] }) {
             >
                 <CartesianGrid vertical={false} />
                 <ReferenceLine y={0} stroke="var(--border)" />
+                {hasFutureDates && (
+                    <ReferenceLine
+                        x={oneBasedDayWithinPeriod(
+                            primary.period.date_from,
+                            today,
+                        )}
+                        stroke="var(--muted-foreground)"
+                        strokeDasharray="3 4"
+                        strokeOpacity={0.55}
+                        label={{
+                            value: 'Today',
+                            position: 'insideTopRight',
+                            fill: 'var(--muted-foreground)',
+                            fontSize: 11,
+                        }}
+                        shape={(line) => (
+                            <line
+                                {...line}
+                                className="recharts-reference-line-line"
+                                aria-label={`Today, ${todayLabel}. Observed data ends here.`}
+                                data-test="home-today-marker"
+                            />
+                        )}
+                    />
+                )}
                 <XAxis
                     dataKey="day"
                     tickLine={false}
@@ -705,7 +756,7 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
                                 key={briefing.currency}
                                 href={periodBreakdownUrl({
                                     currency: briefing.currency,
-                                    period: briefing.coverage,
+                                    period: briefing.period,
                                 })}
                                 data-test={
                                     index === 0
@@ -732,7 +783,13 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
     );
 }
 
-function HomeBriefing({ briefings }: { briefings: Briefing[] }) {
+function HomeBriefing({
+    briefings,
+    today,
+}: {
+    briefings: Briefing[];
+    today: string;
+}) {
     const primary = briefings[0];
     const pulse = primary?.pulse;
 
@@ -810,7 +867,10 @@ function HomeBriefing({ briefings }: { briefings: Briefing[] }) {
                                 ))}
                             </div>
                         </div>
-                        <SpendingComparisonChart briefings={briefings} />
+                        <SpendingComparisonChart
+                            briefings={briefings}
+                            today={today}
+                        />
                     </section>
                 </CardContent>
             </Card>
@@ -894,7 +954,7 @@ export default function Home(props: HomeProps) {
                 {briefings.length === 0 ? (
                     <EmptyHome currency={props.currency_filter} />
                 ) : (
-                    <HomeBriefing briefings={briefings} />
+                    <HomeBriefing briefings={briefings} today={props.today} />
                 )}
             </main>
         </>

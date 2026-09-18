@@ -60,13 +60,17 @@ final readonly class ReportingPeriod
         return new self('month', $today->startOfMonth(), $today->endOfMonth());
     }
 
-    public function endingNoLaterThan(CarbonImmutable $latestDate): self
+    public function elapsedThrough(CarbonImmutable $cutoff): ?self
     {
-        if ($this->dateFrom->greaterThan($latestDate) || ! $this->dateTo->greaterThan($latestDate)) {
+        if ($this->dateFrom->greaterThan($cutoff)) {
+            return null;
+        }
+
+        if (! $this->dateTo->greaterThan($cutoff)) {
             return $this;
         }
 
-        return new self($this->unit, $this->dateFrom, $latestDate);
+        return new self($this->unit, $this->dateFrom, $cutoff);
     }
 
     /** @return array{unit: string, label: string, anchor: string, date_from: string, date_to: string} */

@@ -71,6 +71,17 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
         ->assertSee('Moved to Savings')
         ->assertSee('Behind the change')
         ->assertPresent('[data-test="home-spending-chart"]')
+        ->assertPresent('[data-test="home-today-marker"]')
+        ->assertAttribute(
+            '[data-test="home-today-marker"]',
+            'aria-label',
+            'Today, Aug 22. Observed data ends here.',
+        )
+        ->assertAttribute(
+            '[data-test="home-spending-chart"]',
+            'aria-label',
+            'Cumulative Net Spending in August 2026 compared with Jul 1 – Jul 22, 2026 for PEN and USD. Observed through Aug 22; future dates have no values.',
+        )
         ->assertPresent('[data-test="home-pen-signal-0"]')
         ->assertPresent('[data-test="home-signal-currency-pen"]')
         ->assertPresent('[data-test="home-signal-currency-usd"]')
@@ -82,6 +93,7 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
         ->assertSeeIn('[data-test="home-spending-chart"]', 'PEN · Previous')
         ->assertSeeIn('[data-test="home-spending-chart"]', 'USD · Current')
         ->assertSeeIn('[data-test="home-spending-chart"]', 'USD · Previous')
+        ->assertSeeIn('[data-test="home-spending-chart"]', 'Today')
         ->click('[data-test="home-signal-currency-usd"]')
         ->assertPresent('[data-test="home-usd-signal-0"]')
         ->assertSeeIn(
@@ -124,6 +136,29 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
                     && signalsBounds.right <= document.documentElement.clientWidth;
             })()
             JS)
+        ->assertScript(<<<'JS'
+            (() => {
+                const chart = document.querySelector('[data-test="home-spending-chart"]');
+                const marker = chart?.querySelector('[data-test="home-today-marker"]');
+                const paths = chart?.querySelectorAll('path.recharts-line-curve');
+
+                if (chart === null || marker === null || paths === undefined || paths.length !== 4) {
+                    return false;
+                }
+
+                const markerX = Number(marker.getAttribute('x1'));
+                const chartRight = chart.getBoundingClientRect().right;
+                const markerRight = marker.getBoundingClientRect().right;
+                const pathEnds = Array.from(paths).map((path) => {
+                    const line = path;
+                    return line.getPointAtLength(line.getTotalLength()).x;
+                });
+
+                return Number.isFinite(markerX)
+                    && markerRight < chartRight - 20
+                    && pathEnds.every((x) => Math.abs(x - markerX) < 2);
+            })()
+            JS)
         ->assertDontSee('Savings and income stay visible')
         ->assertDontSee('Your Transactions are caught up')
         ->assertDontSee('Recent Transactions')
@@ -141,8 +176,8 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
         ->click('[data-test="home-coverage"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'PEN')
-        ->assertQueryStringHas('date_from', '2026-08-08')
-        ->assertQueryStringHas('date_to', '2026-08-09');
+        ->assertQueryStringHas('date_from', '2026-08-01')
+        ->assertQueryStringHas('date_to', '2026-08-31');
 
     $page = visit('/');
 
@@ -152,7 +187,7 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
         ->assertQueryStringHas('currency', 'PEN')
         ->assertQueryStringHas('focus', 'net_spending')
         ->assertQueryStringHas('date_from', '2026-08-01')
-        ->assertQueryStringHas('date_to', '2026-08-22');
+        ->assertQueryStringHas('date_to', '2026-08-31');
 
     $page = visit('/');
 
@@ -194,7 +229,7 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'USD')
         ->assertQueryStringHas('date_from', '2026-08-01')
-        ->assertQueryStringHas('date_to', '2026-08-22');
+        ->assertQueryStringHas('date_to', '2026-08-31');
 });
 
 test('Home explains the spending direction with selectable Transaction evidence', function () {
@@ -324,6 +359,7 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
         ->assertSee('Compared with')
         ->assertSee('Previous 6 months')
         ->assertSee('Feb–Jul 2026')
+        ->assertSee('August 2026')
         ->assertSee('Food')
         ->assertSee('Central Market')
         ->assertSee('Category and merchant views overlap')
@@ -349,7 +385,7 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
     $page
         ->click('[data-test="trends-all-filter-category"]')
         ->assertPathIs('/trends')
-        ->assertSee('Aug 1 to Aug 22')
+        ->assertSee('Aug 1 to Aug 31')
         ->assertPresent('[data-test="trend-breakdown-pen-category-'.$food->id.'"]')
         ->assertNotPresent('[data-test="trend-breakdown-pen-merchant-central-market"]');
 
@@ -360,7 +396,7 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
         ->assertQueryStringHas('category', (string) $food->id)
         ->assertQueryStringHas('currency', 'PEN')
         ->assertQueryStringHas('date_from', '2026-08-01')
-        ->assertQueryStringHas('date_to', '2026-08-22')
+        ->assertQueryStringHas('date_to', '2026-08-31')
         ->assertQueryStringMissing('selected');
 
     $page = visit('/trends');
