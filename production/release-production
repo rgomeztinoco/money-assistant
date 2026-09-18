@@ -64,7 +64,8 @@ fresh_backup="$(sudo find "$backup_directory" -maxdepth 1 -type f -name 'money-a
 
 release_directory="$(mktemp -d /tmp/money-assistant-release.XXXXXX)"
 chmod 0755 "$release_directory"
-git -C "$source_directory" archive --format=tar "$revision" | tar -xf - -C "$release_directory"
+git -C "$source_directory" archive --format=tar "$revision" |
+    (umask 022; tar -xf - -C "$release_directory")
 
 sudo install -d -o root -g root -m 0755 "$application_directory"
 sudo rsync --archive --delete --chown=root:root "$release_directory"/ "$application_directory"/

@@ -22,12 +22,14 @@ function createReleaseRepository(string $temporaryDirectory): array
     $remoteDirectory = $temporaryDirectory.'/origin.git';
 
     mkdir($sourceDirectory, 0700, true);
+    mkdir($sourceDirectory.'/production', 0755);
     file_put_contents($sourceDirectory.'/tracked.txt', "release contents\n");
+    file_put_contents($sourceDirectory.'/production/Caddyfile.production', "http:// { respond 200 }\n");
 
     runReleaseSetupCommand(['git', 'init', '--initial-branch=main', $sourceDirectory]);
     runReleaseSetupCommand(['git', '-C', $sourceDirectory, 'config', 'user.email', 'release@example.test']);
     runReleaseSetupCommand(['git', '-C', $sourceDirectory, 'config', 'user.name', 'Release Test']);
-    runReleaseSetupCommand(['git', '-C', $sourceDirectory, 'add', 'tracked.txt']);
+    runReleaseSetupCommand(['git', '-C', $sourceDirectory, 'add', '.']);
     runReleaseSetupCommand(['git', '-C', $sourceDirectory, 'commit', '-m', 'Release fixture']);
     runReleaseSetupCommand(['git', 'init', '--bare', $remoteDirectory]);
     runReleaseSetupCommand(['git', '-C', $sourceDirectory, 'remote', 'add', 'origin', $remoteDirectory]);
@@ -154,6 +156,10 @@ test('the production release creates a fresh backup before promoting and deployi
             ->toContain($repository['revision'])
             ->and(file_get_contents($environment['MONEY_ASSISTANT_APPLICATION_DIRECTORY'].'/tracked.txt'))
             ->toBe("release contents\n")
+            ->and(fileperms($environment['MONEY_ASSISTANT_APPLICATION_DIRECTORY'].'/production') & 0777)
+            ->toBe(0755)
+            ->and(fileperms($environment['MONEY_ASSISTANT_APPLICATION_DIRECTORY'].'/production/Caddyfile.production') & 0777)
+            ->toBe(0644)
             ->and($commands)
             ->toContain('sudo systemctl start money-assistant-backup.service')
             ->toContain('sudo '.$environment['MONEY_ASSISTANT_APPLICATION_DIRECTORY'].'/production/install-production-services')
