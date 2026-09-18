@@ -55,15 +55,30 @@ final class ReadTrends
     public function handle(User $owner, ?Currency $currency, array $filters = []): array
     {
         $today = CarbonImmutable::today(config('app.timezone'));
-        $reportingPeriod = ReportingPeriod::fromFilters($filters)->endingNoLaterThan($today);
+        $selectedPeriod = ReportingPeriod::fromFilters($filters);
+        $analysisPeriod = $selectedPeriod->elapsedThrough($today);
+        $primaryCurrency = $currency ?? Currency::Pen;
+
+        if ($analysisPeriod === null) {
+            return [
+                'currency_filter' => $currency?->value,
+                ...$this->emptyCurrency($primaryCurrency),
+                'period' => $selectedPeriod->data(),
+                'comparison_periods' => [],
+                'secondary' => $currency === null
+                    ? $this->emptyCurrency(Currency::Usd)
+                    : null,
+                'today' => $today->toDateString(),
+            ];
+        }
+
         $comparison = EquivalentPeriods::forPeriod(
-            $reportingPeriod,
+            $analysisPeriod,
             self::PreviousPeriodCount,
         );
         $periods = $comparison->all();
-        $contextDateTo = $reportingPeriod->dateTo;
+        $contextDateTo = $analysisPeriod->dateTo;
         $contextDateFrom = $contextDateTo->startOfMonth()->subMonthsNoOverflow(self::PreviousPeriodCount)->startOfMonth();
-        $primaryCurrency = $currency ?? Currency::Pen;
         $primary = $this->readCurrency(
             $owner,
             $primaryCurrency,
@@ -84,13 +99,26 @@ final class ReadTrends
         return [
             'currency_filter' => $currency?->value,
             ...$primary,
-            'period' => $reportingPeriod->data(),
+            'period' => $selectedPeriod->data(),
             'comparison_periods' => array_map(
                 fn (array $period): array => $this->periodData($period[0], $period[1]),
                 array_slice($periods, 1),
             ),
             'secondary' => $secondary,
             'today' => $today->toDateString(),
+        ];
+    }
+
+    /**
+     * @return array{currency: string, summary: null, findings: array{}, monthly_context: array{}}
+     */
+    private function emptyCurrency(Currency $currency): array
+    {
+        return [
+            'currency' => $currency->value,
+            'summary' => null,
+            'findings' => [],
+            'monthly_context' => [],
         ];
     }
 

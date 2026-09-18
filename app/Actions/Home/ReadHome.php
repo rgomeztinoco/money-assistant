@@ -47,18 +47,25 @@ final class ReadHome
         $currencies = $currencyFilter === null
             ? [Currency::Pen, Currency::Usd]
             : [$currencyFilter];
-        $period = $this->reportingPeriod($owner, $currencies, $filters);
+        $today = CarbonImmutable::today(config('app.timezone'));
+        $selectedPeriod = $this->reportingPeriod($owner, $currencies, $filters, $today);
+        $analysisPeriod = $selectedPeriod->elapsedThrough($today);
         $briefings = array_values(array_filter(array_map(
-            fn (Currency $currency): ?array => $this->briefing($owner, $currency, $period),
+            fn (Currency $currency): ?array => $this->briefing(
+                $owner,
+                $currency,
+                $selectedPeriod,
+                $analysisPeriod,
+            ),
             $currencies,
         )));
 
         return [
             'currency_filter' => $currencyFilter?->value,
-            'period' => $period->data(),
+            'period' => $selectedPeriod->data(),
             'primary' => $briefings[0] ?? null,
             'secondary' => $briefings[1] ?? null,
-            'today' => CarbonImmutable::today(config('app.timezone'))->toDateString(),
+            'today' => $today->toDateString(),
         ];
     }
 
@@ -66,10 +73,15 @@ final class ReadHome
     private function briefing(
         User $owner,
         Currency $currency,
-        ReportingPeriod $period,
+        ReportingPeriod $selectedPeriod,
+        ?ReportingPeriod $analysisPeriod,
     ): ?array {
-        $dateFrom = $period->dateFrom;
-        $dateTo = $period->dateTo;
+        if ($analysisPeriod === null) {
+            return null;
+        }
+
+        $dateFrom = $analysisPeriod->dateFrom;
+        $dateTo = $analysisPeriod->dateTo;
         $coverageQuery = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
@@ -82,7 +94,7 @@ final class ReadHome
 
         $transactionCount = (int) $coverage->transaction_count;
 
-        if ($transactionCount === 0 && ! $this->hasPreviousNetSpendingActivity($owner, $currency, $period)) {
+        if ($transactionCount === 0 && ! $this->hasPreviousNetSpendingActivity($owner, $currency, $analysisPeriod)) {
             return null;
         }
 
@@ -90,7 +102,7 @@ final class ReadHome
 
         return [
             'currency' => $currency->value,
-            'period' => $period->data(),
+            'period' => $selectedPeriod->data(),
             'coverage' => [
                 'date_from' => $coverage->date_from === null ? $dateFrom->toDateString() : (string) $coverage->date_from,
                 'date_to' => $coverage->date_to === null ? $dateTo->toDateString() : (string) $coverage->date_to,
@@ -98,7 +110,13 @@ final class ReadHome
                 'source' => $this->readRecordedCoverage->handle($owner, $dateFrom, $dateTo),
             ],
             'summary' => $summary,
-            'pulse' => $this->pulse($owner, $currency, $period, $summary),
+            'pulse' => $this->pulse(
+                $owner,
+                $currency,
+                $selectedPeriod,
+                $analysisPeriod,
+                $summary,
+            ),
             'input_request' => $this->inputRequest($owner, $currency, $dateFrom, $dateTo),
         ];
     }
@@ -126,12 +144,14 @@ final class ReadHome
      * @param  list<Currency>  $currencies
      * @param  array{currency?: string, period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
      */
-    private function reportingPeriod(User $owner, array $currencies, array $filters): ReportingPeriod
-    {
-        $today = CarbonImmutable::today(config('app.timezone'));
-
+    private function reportingPeriod(
+        User $owner,
+        array $currencies,
+        array $filters,
+        CarbonImmutable $today,
+    ): ReportingPeriod {
         if (Arr::hasAny($filters, ['period', 'anchor', 'preset', 'date_from', 'date_to'])) {
-            return ReportingPeriod::fromFilters($filters)->endingNoLaterThan($today);
+            return ReportingPeriod::fromFilters($filters);
         }
 
         $latestOccurredOn = Transaction::query()
@@ -141,10 +161,11 @@ final class ReadHome
                 $currencies,
             ))
             ->whereNull('voided_at')
+            ->whereDate('occurred_on', '<=', $today->toDateString())
             ->max('occurred_on');
 
         if (! is_string($latestOccurredOn)) {
-            return ReportingPeriod::fromFilters([])->endingNoLaterThan($today);
+            return ReportingPeriod::fromFilters([]);
         }
 
         $latestDate = CarbonImmutable::parse($latestOccurredOn, config('app.timezone'));
@@ -152,7 +173,7 @@ final class ReadHome
         return ReportingPeriod::fromFilters([
             'period' => 'month',
             'anchor' => $latestDate->toDateString(),
-        ])->endingNoLaterThan($today);
+        ]);
     }
 
     /** @return array{transaction_count: int}|null */
@@ -180,14 +201,15 @@ final class ReadHome
     private function pulse(
         User $owner,
         Currency $currency,
-        ReportingPeriod $reportingPeriod,
+        ReportingPeriod $selectedPeriod,
+        ReportingPeriod $analysisPeriod,
         array $summary,
     ): array {
         $categories = Category::query()
             ->whereBelongsTo($owner, 'owner')
             ->get(['id', 'parent_id', 'name']);
         $categoriesById = $categories->keyBy('id');
-        $comparison = EquivalentPeriods::forPeriod($reportingPeriod, 1);
+        $comparison = EquivalentPeriods::forPeriod($analysisPeriod, 1);
         $periods = $comparison->all();
 
         /** @var array<string, PulseSignalBucket> $signalBuckets */
@@ -297,7 +319,11 @@ final class ReadHome
                 $change,
                 ExactInteger::from($previousSummary['net_spending_minor']),
             ),
-            'daily_net_spending' => $this->dailyNetSpending($periods, $dailyAmounts),
+            'daily_net_spending' => $this->dailyNetSpending(
+                $selectedPeriod,
+                $periods,
+                $dailyAmounts,
+            ),
             'signals' => array_values(Arr::take($signals, 3)),
         ];
     }
@@ -307,10 +333,14 @@ final class ReadHome
      * @param  array<int, array<int, ExactInteger>>  $dailyAmounts
      * @return list<PulsePoint>
      */
-    private function dailyNetSpending(array $periods, array $dailyAmounts): array
-    {
+    private function dailyNetSpending(
+        ReportingPeriod $selectedPeriod,
+        array $periods,
+        array $dailyAmounts,
+    ): array {
         $currentDays = (int) $periods[0][0]->diffInDays($periods[0][1]) + 1;
         $previousDays = (int) $periods[1][0]->diffInDays($periods[1][1]) + 1;
+        $selectedDays = (int) $selectedPeriod->dateFrom->diffInDays($selectedPeriod->dateTo) + 1;
         $currentTotal = ExactInteger::from(0);
         $previousTotal = ExactInteger::from(0);
         $points = [[
@@ -319,7 +349,7 @@ final class ReadHome
             'previous_minor' => '0',
         ]];
 
-        foreach (range(1, max($currentDays, $previousDays)) as $day) {
+        foreach (range(1, max($selectedDays, $currentDays, $previousDays)) as $day) {
             $currentTotal = $currentTotal->add($dailyAmounts[0][$day] ?? ExactInteger::from(0));
             $previousTotal = $previousTotal->add($dailyAmounts[1][$day] ?? ExactInteger::from(0));
             $points[] = [
