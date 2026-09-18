@@ -358,6 +358,54 @@ test('an unsupported Spending Notification can be reprocessed idempotently after
         ->and($gmail->messageCalls)->toHaveCount(1);
 });
 
+test('a Gmail message removed after discovery is recorded as ignored instead of failing forever', function () {
+    $connection = GmailConnection::factory()->create([
+        'access_token' => 'current-access-token',
+        'access_token_expires_at' => now()->addHour(),
+    ]);
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
+        'message_id' => 'removed-message',
+        'processing_failed_at' => now()->subMinute(),
+        'last_error_code' => 'gmail_message_processing_failed',
+        'failed_job_uuid' => (string) Str::uuid(),
+    ]);
+    $gmail = new FakeGmail;
+    $gmail->messageFailure = GmailRequestFailed::message()->withHttpStatus(404);
+    app()->instance(Gmail::class, $gmail);
+    $job = new ProcessGmailMessage($discovery->id);
+
+    app()->call([$job, 'handle']);
+    app()->call([$job, 'handle']);
+
+    expect(Transaction::query()->doesntExist())->toBeTrue()
+        ->and(SpendingNotificationReference::query()->sole())
+        ->processing_outcome->toBe('ignored')
+        ->attempt_count->toBe(1)
+        ->and($gmail->messageCalls)->toHaveCount(1)
+        ->and($discovery->fresh())
+        ->processed_at->not->toBeNull()
+        ->processing_failed_at->toBeNull()
+        ->last_error_code->toBeNull()
+        ->failed_job_uuid->toBeNull();
+});
+
+test('a Gmail message fetch error other than not found remains retryable', function () {
+    $connection = GmailConnection::factory()->create([
+        'access_token' => 'current-access-token',
+        'access_token_expires_at' => now()->addHour(),
+    ]);
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create();
+    $gmail = new FakeGmail;
+    $gmail->messageFailure = GmailRequestFailed::message()->withHttpStatus(500);
+    app()->instance(Gmail::class, $gmail);
+
+    expect(fn () => app()->call([(new ProcessGmailMessage($discovery->id)), 'handle']))
+        ->toThrow(GmailRequestFailed::class);
+
+    expect(SpendingNotificationReference::query()->doesntExist())->toBeTrue()
+        ->and($discovery->fresh()->processed_at)->toBeNull();
+});
+
 test('incremental synchronization paginates added messages and advances to the final cursor idempotently', function () {
     CarbonImmutable::setTestNow('2026-07-28 19:00:00 UTC');
     $connection = GmailConnection::factory()->create([

@@ -30,6 +30,8 @@ final class FakeGmail implements Gmail
 
     public ?Throwable $historyFailure = null;
 
+    public ?Throwable $messageFailure = null;
+
     /** @var list<string> */
     public array $operations = [];
 
@@ -177,6 +179,10 @@ final class FakeGmail implements Gmail
             'access_token' => $accessToken,
             'message_id' => $messageId,
         ];
+
+        if ($this->messageFailure !== null) {
+            throw $this->messageFailure;
+        }
 
         return $this->messages[$messageId]
             ?? throw new RuntimeException("No fake Gmail message was configured for [{$messageId}].");

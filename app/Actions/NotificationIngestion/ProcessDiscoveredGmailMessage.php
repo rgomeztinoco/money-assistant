@@ -2,6 +2,7 @@
 
 namespace App\Actions\NotificationIngestion;
 
+use App\Integrations\Gmail\GmailRequestFailed;
 use App\Models\GmailMessageDiscovery;
 use App\Models\SpendingNotificationReference;
 
@@ -35,13 +36,37 @@ final class ProcessDiscoveredGmailMessage
             }
         }
 
-        $reference = $this->processSpendingNotification->handle(
-            owner: $owner,
-            discovery: $discovery,
-            message: $this->readGmailMessage->handle($owner, $discovery),
-            retryUnsupported: $retryUnsupported,
-        );
+        try {
+            $message = $this->readGmailMessage->handle($owner, $discovery);
+        } catch (GmailRequestFailed $exception) {
+            if ($exception->httpStatus() !== 404) {
+                throw $exception;
+            }
 
+            return $this->completeProcessing(
+                $discovery,
+                $this->processSpendingNotification->recordMissingMessage(
+                    owner: $owner,
+                    discovery: $discovery,
+                ),
+            );
+        }
+
+        return $this->completeProcessing(
+            $discovery,
+            $this->processSpendingNotification->handle(
+                owner: $owner,
+                discovery: $discovery,
+                message: $message,
+                retryUnsupported: $retryUnsupported,
+            ),
+        );
+    }
+
+    private function completeProcessing(
+        GmailMessageDiscovery $discovery,
+        SpendingNotificationReference $reference,
+    ): SpendingNotificationReference {
         $discovery->forceFill([
             'processing_failed_at' => null,
             'last_error_code' => null,
