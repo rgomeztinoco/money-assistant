@@ -20,7 +20,6 @@ import { store as confirmStatementImport } from '@/actions/App/Http/Controllers/
 import { store as previewStatementImport } from '@/actions/App/Http/Controllers/StatementImportPreviewController';
 import AlertError from '@/components/alert-error';
 import InputError from '@/components/input-error';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -51,14 +50,12 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { formatMinorUnits } from '@/lib/format-minor-units';
-import { movementKindLabel, transferPurposeLabel } from '@/lib/money-movement';
 import {
     statementMovementClassificationOptions,
     statementMovementContributesToSpending,
@@ -82,15 +79,6 @@ type ConfirmationData = {
     instrument_last_four: string;
     movements: ConfirmationMovement[];
 };
-
-type MovementFilter = 'review' | 'linked' | 'created' | 'all';
-
-const movementFilters: MovementFilter[] = [
-    'review',
-    'linked',
-    'created',
-    'all',
-];
 
 type MovementEditorProps = {
     movement: ConfirmationMovement;
@@ -175,7 +163,15 @@ const movementStatusDetails = {
     }
 >;
 
-function MovementStatusBadge({ status }: { status: MovementStatus }) {
+function MovementStatusBadge({
+    status,
+    label,
+    detail,
+}: {
+    status: MovementStatus;
+    label?: string;
+    detail?: string;
+}) {
     const details = movementStatusDetails[status];
     const StatusIcon = details.icon;
 
@@ -185,14 +181,14 @@ function MovementStatusBadge({ status }: { status: MovementStatus }) {
                 <Badge
                     variant="outline"
                     className={`size-5 justify-center rounded-full p-0 shadow-none [&>svg]:size-2.5 ${details.className}`}
-                    aria-label={details.label}
+                    aria-label={label ?? details.label}
                     data-status={status}
                     tabIndex={0}
                 >
                     <StatusIcon />
                 </Badge>
             </TooltipTrigger>
-            <TooltipContent>{details.detail}</TooltipContent>
+            <TooltipContent>{detail ?? details.detail}</TooltipContent>
         </Tooltip>
     );
 }
@@ -222,11 +218,23 @@ function hasOwnProperty<Key extends PropertyKey>(
     return Object.hasOwn(value, key);
 }
 
-const reviewReasonLabels = {
-    multiple_matches: 'Multiple possible matches',
-    conflicting_data: 'Conflicting recorded data',
-    low_confidence: 'Low-confidence match',
-} satisfies Record<StatementMatchReviewReason, string>;
+const reviewReasonDetails = {
+    multiple_matches: {
+        label: 'Needs review: Multiple possible matches',
+        detail: 'More than one recorded Transaction could match this movement.',
+    },
+    conflicting_data: {
+        label: 'Needs review: Conflicting recorded data',
+        detail: 'A likely recorded Transaction has different financial details.',
+    },
+    low_confidence: {
+        label: 'Needs review: Low-confidence match',
+        detail: 'The available evidence is not strong enough to link automatically.',
+    },
+} satisfies Record<
+    StatementMatchReviewReason,
+    { label: string; detail: string }
+>;
 
 function dateDifferenceDays(left: string, right: string): number {
     return Math.round(
@@ -255,10 +263,6 @@ function candidateLabel(candidate: StatementMatchCandidate): string {
     const sign = candidate.direction === 'credit' ? '+' : '−';
 
     return `${candidate.occurred_on} · ${sign}${formatMinorUnits(candidate.amount_minor, candidate.currency)} · ${candidate.description}`;
-}
-
-function isMovementFilter(value: string): value is MovementFilter {
-    return movementFilters.some((filter) => filter === value);
 }
 
 function invalidateLinkedMovements(
@@ -375,12 +379,26 @@ function MovementEditor({
                                 className="flex items-center gap-1"
                                 data-test={`statement-movement-status-${movementIndex}`}
                             >
-                                {movementStatuses.map((status) => (
-                                    <MovementStatusBadge
-                                        key={status}
-                                        status={status}
-                                    />
-                                ))}
+                                {movementStatuses.map((status) => {
+                                    const reviewReason =
+                                        status === 'needs_transaction' &&
+                                        sourceMovement.match.status ===
+                                            'ambiguous'
+                                            ? reviewReasonDetails[
+                                                  sourceMovement.match
+                                                      .review_reason
+                                              ]
+                                            : undefined;
+
+                                    return (
+                                        <MovementStatusBadge
+                                            key={status}
+                                            status={status}
+                                            label={reviewReason?.label}
+                                            detail={reviewReason?.detail}
+                                        />
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
@@ -448,30 +466,11 @@ function MovementEditor({
                         message={classificationError}
                         className="mt-1"
                     />
-                    {needsClassification &&
-                        sourceMovement.match.status === 'ambiguous' && (
-                            <Badge variant="outline" className="mt-1 w-fit">
-                                {
-                                    reviewReasonLabels[
-                                        sourceMovement.match.review_reason
-                                    ]
-                                }
-                            </Badge>
-                        )}
                 </TableCell>
                 <TableCell className="min-w-64 whitespace-normal">
                     {sourceMovement.match.candidates.length > 0 &&
                     !needsClassification ? (
                         <div className="grid gap-1">
-                            {sourceMovement.match.status === 'ambiguous' && (
-                                <Badge variant="outline" className="w-fit">
-                                    {
-                                        reviewReasonLabels[
-                                            sourceMovement.match.review_reason
-                                        ]
-                                    }
-                                </Badge>
-                            )}
                             <Label
                                 htmlFor={`movement-${movementIndex}-resolution`}
                                 className="sr-only"
@@ -510,7 +509,7 @@ function MovementEditor({
                                 options={[
                                     {
                                         value: '',
-                                        label: 'Choose a resolution',
+                                        label: 'Choose a match',
                                     },
                                     ...compatibleCandidates.map(
                                         (candidate) => ({
@@ -534,172 +533,6 @@ function MovementEditor({
                                 id={`movement-${movementIndex}-resolution-error`}
                                 message={resolutionError}
                             />
-                            <div className="grid gap-2 pt-1">
-                                {sourceMovement.match.candidates.map(
-                                    (candidate) => {
-                                        const dateDifference =
-                                            dateDifferenceDays(
-                                                candidate.occurred_on,
-                                                movement.occurred_on,
-                                            );
-                                        const amountMatches =
-                                            candidate.amount_minor ===
-                                            movement.amount_minor;
-                                        const currencyMatches =
-                                            candidate.currency ===
-                                            movement.currency;
-                                        const directionMatches =
-                                            candidate.direction ===
-                                            sourceMovement.direction;
-                                        const classificationMatches =
-                                            candidate.compatible_classifications.includes(
-                                                movement.classification,
-                                            );
-
-                                        return (
-                                            <div
-                                                key={candidate.id}
-                                                className="grid gap-1 rounded-md border p-2 text-xs"
-                                                data-test={`match-candidate-${candidate.id}`}
-                                            >
-                                                <span className="font-medium">
-                                                    {candidateLabel(candidate)}
-                                                </span>
-                                                <span className="text-muted-foreground">
-                                                    {movementKindLabel(
-                                                        candidate.kind,
-                                                    )}
-                                                    {candidate.transfer_purpose ===
-                                                    null
-                                                        ? ''
-                                                        : ` · ${transferPurposeLabel(candidate.transfer_purpose)}`}
-                                                    {candidate.instrument_label ===
-                                                    null
-                                                        ? ''
-                                                        : ` · ${candidate.instrument_label}`}
-                                                    {candidate.instrument_last_four ===
-                                                    null
-                                                        ? ''
-                                                        : ` •••• ${candidate.instrument_last_four}`}
-                                                </span>
-                                                <div className="flex flex-wrap gap-1">
-                                                    <Badge
-                                                        variant={
-                                                            dateDifference === 0
-                                                                ? 'secondary'
-                                                                : 'outline'
-                                                        }
-                                                    >
-                                                        {dateDifference === 0
-                                                            ? 'Same date'
-                                                            : `${dateDifference} day${dateDifference === 1 ? '' : 's'} apart`}
-                                                    </Badge>
-                                                    <Badge
-                                                        variant={
-                                                            amountMatches
-                                                                ? 'secondary'
-                                                                : 'destructive'
-                                                        }
-                                                    >
-                                                        {amountMatches
-                                                            ? 'Same amount'
-                                                            : 'Amount differs'}
-                                                    </Badge>
-                                                    <Badge
-                                                        variant={
-                                                            currencyMatches
-                                                                ? 'secondary'
-                                                                : 'destructive'
-                                                        }
-                                                    >
-                                                        {currencyMatches
-                                                            ? 'Same currency'
-                                                            : 'Currency differs'}
-                                                    </Badge>
-                                                    <Badge
-                                                        variant={
-                                                            directionMatches ||
-                                                            movement.classification ===
-                                                                'card_payment'
-                                                                ? 'secondary'
-                                                                : 'destructive'
-                                                        }
-                                                    >
-                                                        {directionMatches
-                                                            ? 'Same direction'
-                                                            : movement.classification ===
-                                                                'card_payment'
-                                                              ? 'Card counterpart'
-                                                              : 'Direction differs'}
-                                                    </Badge>
-                                                    <Badge
-                                                        variant={
-                                                            classificationMatches
-                                                                ? 'secondary'
-                                                                : 'destructive'
-                                                        }
-                                                    >
-                                                        {classificationMatches
-                                                            ? 'Compatible classification'
-                                                            : 'Classification conflicts'}
-                                                    </Badge>
-                                                    <Badge
-                                                        variant={
-                                                            candidate.evidence
-                                                                .description
-                                                                ? 'secondary'
-                                                                : 'outline'
-                                                        }
-                                                    >
-                                                        {candidate.evidence
-                                                            .description
-                                                            ? 'Description matches'
-                                                            : 'Description differs'}
-                                                    </Badge>
-                                                    <Badge
-                                                        variant={
-                                                            candidate.evidence
-                                                                .instrument
-                                                                ? 'secondary'
-                                                                : 'outline'
-                                                        }
-                                                    >
-                                                        {candidate.evidence
-                                                            .instrument
-                                                            ? 'Instrument matches'
-                                                            : 'Instrument not matched'}
-                                                    </Badge>
-                                                    <Badge
-                                                        variant={
-                                                            candidate.evidence
-                                                                .kind
-                                                                ? 'secondary'
-                                                                : 'destructive'
-                                                        }
-                                                    >
-                                                        {candidate.evidence.kind
-                                                            ? 'Transaction Kind matches'
-                                                            : 'Transaction Kind conflicts'}
-                                                    </Badge>
-                                                    <Badge
-                                                        variant={
-                                                            candidate.evidence
-                                                                .transfer_purpose
-                                                                ? 'secondary'
-                                                                : 'destructive'
-                                                        }
-                                                    >
-                                                        {candidate.evidence
-                                                            .transfer_purpose
-                                                            ? 'Transfer Purpose matches'
-                                                            : 'Transfer Purpose conflicts'}
-                                                    </Badge>
-                                                </div>
-                                            </div>
-                                        );
-                                    },
-                                )}
-                            </div>
                         </div>
                     ) : (
                         <span className="text-muted-foreground" aria-hidden>
@@ -881,8 +714,6 @@ export default function CreateStatementImport() {
     const [selectedStatement, setSelectedStatement] = useState<File | null>(
         null,
     );
-    const [movementFilter, setMovementFilter] =
-        useState<MovementFilter>('review');
     const unresolvedMovementIndexes = confirmation.data.movements
         .map((movement, movementIndex) => ({ movement, movementIndex }))
         .filter(
@@ -892,40 +723,14 @@ export default function CreateStatementImport() {
         )
         .map(({ movementIndex }) => movementIndex);
     const unresolvedCount = unresolvedMovementIndexes.length;
-    const autoLinkedCount = confirmation.data.movements.filter(
-        (movement) => movement.resolution === 'link',
-    ).length;
-    const createdCount = confirmation.data.movements.filter(
+    const spendingMovementCount = confirmation.data.movements.filter(
         (movement) =>
-            movement.resolution === 'create' &&
-            movement.classification !== 'needs_classification',
+            statementMovementContributesToSpending(movement.classification),
     ).length;
-    const visibleMovementIndexes = confirmation.data.movements
-        .map((movement, movementIndex) => ({ movement, movementIndex }))
-        .filter(({ movement }) => {
-            switch (movementFilter) {
-                case 'review':
-                    return (
-                        movement.classification === 'needs_classification' ||
-                        movement.resolution === 'needs_resolution'
-                    );
-                case 'linked':
-                    return movement.resolution === 'link';
-                case 'created':
-                    return (
-                        movement.resolution === 'create' &&
-                        movement.classification !== 'needs_classification'
-                    );
-                case 'all':
-                    return true;
-                default: {
-                    const exhaustiveFilter: never = movementFilter;
-
-                    return exhaustiveFilter;
-                }
-            }
-        })
-        .map(({ movementIndex }) => movementIndex);
+    const outsideNetSpendingCount =
+        confirmation.data.movements.length -
+        spendingMovementCount -
+        unresolvedCount;
     function requestPreview(event: React.FormEvent<HTMLFormElement>): void {
         event.preventDefault();
 
@@ -934,7 +739,6 @@ export default function CreateStatementImport() {
         }
 
         setPreview(null);
-        setMovementFilter('review');
         confirmation.reset();
         confirmation.clearErrors();
         previewRequest.transform((data) => ({
@@ -944,7 +748,6 @@ export default function CreateStatementImport() {
         previewRequest.post(previewStatementImport.url(), {
             onSuccess: (response) => {
                 setPreview(response);
-                setMovementFilter('review');
                 confirmation.setData({
                     statement: selectedStatement,
                     ...response.confirmation,
@@ -1009,8 +812,8 @@ export default function CreateStatementImport() {
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             Choose a supported BCP or Interbank text PDF once,
-                            then review only the movements that need a decision.
-                            Confident matches are linked automatically.
+                            then review every parsed movement. Rows that need a
+                            decision are marked for your attention.
                         </p>
                     </div>
                     <Button asChild variant="outline">
@@ -1041,8 +844,7 @@ export default function CreateStatementImport() {
                                                 {preview.financial_statement_format.toUpperCase()}
                                             </Badge>
                                             <Badge variant="secondary">
-                                                <FileCheck2 /> Statement totals
-                                                verified
+                                                <FileCheck2 /> Reconciled
                                             </Badge>
                                         </div>
                                     )}
@@ -1124,7 +926,7 @@ export default function CreateStatementImport() {
                                         >
                                             <div className="grid gap-1">
                                                 <h2 className="font-semibold">
-                                                    Statement totals
+                                                    Reconciliation
                                                 </h2>
                                                 <p className="text-sm text-muted-foreground">
                                                     Printed statement totals
@@ -1183,7 +985,7 @@ export default function CreateStatementImport() {
                                             >
                                                 <div className="grid gap-1 px-3">
                                                     <dt className="text-xs text-muted-foreground">
-                                                        Movements
+                                                        Proposed movements
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
                                                         {
@@ -1195,23 +997,25 @@ export default function CreateStatementImport() {
                                                 </div>
                                                 <div className="grid gap-1 px-3">
                                                     <dt className="text-xs text-muted-foreground">
-                                                        Auto-linked
+                                                        Affect Net Spending
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
-                                                        {autoLinkedCount}
+                                                        {spendingMovementCount}
                                                     </dd>
                                                 </div>
                                                 <div className="grid gap-1 px-3">
                                                     <dt className="text-xs text-muted-foreground">
-                                                        Will be added
+                                                        Outside Net Spending
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
-                                                        {createdCount}
+                                                        {
+                                                            outsideNetSpendingCount
+                                                        }
                                                     </dd>
                                                 </div>
                                                 <div className="grid gap-1 px-3">
                                                     <dt className="text-xs text-muted-foreground">
-                                                        Needs review
+                                                        Unresolved
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
                                                         {unresolvedCount}
@@ -1363,9 +1167,9 @@ export default function CreateStatementImport() {
                                                 2. Review movements
                                             </CardTitle>
                                             <CardDescription>
-                                                {autoLinkedCount} auto-linked ·{' '}
-                                                {createdCount} will be added ·{' '}
-                                                {unresolvedCount} need review
+                                                Review the full statement. Rows
+                                                that need a classification or
+                                                match decision are marked.
                                             </CardDescription>
                                         </div>
                                         <Badge
@@ -1376,125 +1180,68 @@ export default function CreateStatementImport() {
                                             }
                                         >
                                             {unresolvedCount > 0 ? (
-                                                <CircleAlert data-icon="inline-start" />
+                                                <CircleAlert />
                                             ) : (
-                                                <CheckCircle2 data-icon="inline-start" />
+                                                <CheckCircle2 />
                                             )}
                                             {unresolvedCount} unresolved
                                         </Badge>
                                     </div>
-                                    <Tabs
-                                        value={movementFilter}
-                                        onValueChange={(value) => {
-                                            if (isMovementFilter(value)) {
-                                                setMovementFilter(value);
-                                            }
-                                        }}
-                                    >
-                                        <TabsList className="h-auto flex-wrap justify-start">
-                                            <TabsTrigger value="review">
-                                                Needs review {unresolvedCount}
-                                            </TabsTrigger>
-                                            <TabsTrigger value="linked">
-                                                Auto-linked {autoLinkedCount}
-                                            </TabsTrigger>
-                                            <TabsTrigger value="created">
-                                                Will be added {createdCount}
-                                            </TabsTrigger>
-                                            <TabsTrigger value="all">
-                                                All{' '}
-                                                {
-                                                    confirmation.data.movements
-                                                        .length
-                                                }
-                                            </TabsTrigger>
-                                        </TabsList>
-                                    </Tabs>
                                 </CardHeader>
                                 <CardContent
                                     className="min-w-0 p-0 lg:min-h-0 lg:flex-1 lg:[&>[data-slot=table-container]]:h-full lg:[&>[data-slot=table-container]]:overflow-auto"
                                     data-test="statement-movements"
                                 >
-                                    {visibleMovementIndexes.length === 0 ? (
-                                        <div className="p-6">
-                                            <Alert>
-                                                <CheckCircle2 />
-                                                <AlertTitle>
-                                                    No movements need review
-                                                </AlertTitle>
-                                                <AlertDescription>
-                                                    The remaining movements are
-                                                    already linked or ready to
-                                                    add. You can inspect them
-                                                    with the filters above.
-                                                </AlertDescription>
-                                            </Alert>
-                                        </div>
-                                    ) : (
-                                        <Table className="min-w-[64rem]">
-                                            <TableHeader className="sticky top-0 z-10 bg-card">
-                                                <TableRow className="hover:bg-transparent">
-                                                    <TableHead className="w-14 px-6">
-                                                        <span className="sr-only">
-                                                            Direction
-                                                        </span>
-                                                    </TableHead>
-                                                    <TableHead>
-                                                        Movement
-                                                    </TableHead>
-                                                    <TableHead className="text-right">
-                                                        Amount
-                                                    </TableHead>
-                                                    <TableHead>
-                                                        Categorization
-                                                    </TableHead>
-                                                    <TableHead>
-                                                        Recorded Transaction
-                                                    </TableHead>
-                                                    <TableHead className="pr-6 text-right">
-                                                        Actions
-                                                    </TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {visibleMovementIndexes.map(
-                                                    (movementIndex) => (
-                                                        <MovementEditor
-                                                            key={
-                                                                confirmation
-                                                                    .data
-                                                                    .movements[
-                                                                    movementIndex
-                                                                ].source_row_id
-                                                            }
-                                                            movement={
-                                                                confirmation
-                                                                    .data
-                                                                    .movements[
-                                                                    movementIndex
-                                                                ]
-                                                            }
-                                                            movementIndex={
+                                    <Table className="min-w-[64rem]">
+                                        <TableHeader className="sticky top-0 z-10 bg-card">
+                                            <TableRow className="hover:bg-transparent">
+                                                <TableHead className="w-14 px-6">
+                                                    <span className="sr-only">
+                                                        Direction
+                                                    </span>
+                                                </TableHead>
+                                                <TableHead>Movement</TableHead>
+                                                <TableHead className="text-right">
+                                                    Amount
+                                                </TableHead>
+                                                <TableHead>
+                                                    Categorization
+                                                </TableHead>
+                                                <TableHead>
+                                                    Recorded Transaction
+                                                </TableHead>
+                                                <TableHead className="pr-6 text-right">
+                                                    Actions
+                                                </TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {confirmation.data.movements.map(
+                                                (movement, movementIndex) => (
+                                                    <MovementEditor
+                                                        key={
+                                                            movement.source_row_id
+                                                        }
+                                                        movement={movement}
+                                                        movementIndex={
+                                                            movementIndex
+                                                        }
+                                                        sourceMovement={
+                                                            preview.movements[
                                                                 movementIndex
-                                                            }
-                                                            sourceMovement={
-                                                                preview
-                                                                    .movements[
-                                                                    movementIndex
-                                                                ]
-                                                            }
-                                                            updateMovement={
-                                                                updateMovement
-                                                            }
-                                                            movementError={
-                                                                movementError
-                                                            }
-                                                        />
-                                                    ),
-                                                )}
-                                            </TableBody>
-                                        </Table>
-                                    )}
+                                                            ]
+                                                        }
+                                                        updateMovement={
+                                                            updateMovement
+                                                        }
+                                                        movementError={
+                                                            movementError
+                                                        }
+                                                    />
+                                                ),
+                                            )}
+                                        </TableBody>
+                                    </Table>
                                 </CardContent>
                             </Card>
                         </div>
