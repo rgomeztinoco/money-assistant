@@ -20,6 +20,7 @@ import { store as confirmStatementImport } from '@/actions/App/Http/Controllers/
 import { store as previewStatementImport } from '@/actions/App/Http/Controllers/StatementImportPreviewController';
 import AlertError from '@/components/alert-error';
 import InputError from '@/components/input-error';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,12 +51,14 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import { movementKindLabel, transferPurposeLabel } from '@/lib/money-movement';
 import {
     statementMovementClassificationOptions,
     statementMovementContributesToSpending,
@@ -65,6 +68,8 @@ import type {
     StatementConfirmationMovement,
     StatementClassification,
     StatementImportPreview,
+    StatementMatchCandidate,
+    StatementMatchReviewReason,
     StatementPreviewMovement,
 } from '@/types';
 
@@ -77,6 +82,15 @@ type ConfirmationData = {
     instrument_last_four: string;
     movements: ConfirmationMovement[];
 };
+
+type MovementFilter = 'review' | 'linked' | 'created' | 'all';
+
+const movementFilters: MovementFilter[] = [
+    'review',
+    'linked',
+    'created',
+    'all',
+];
 
 type MovementEditorProps = {
     movement: ConfirmationMovement;
@@ -208,6 +222,60 @@ function hasOwnProperty<Key extends PropertyKey>(
     return Object.hasOwn(value, key);
 }
 
+const reviewReasonLabels = {
+    multiple_matches: 'Multiple possible matches',
+    conflicting_data: 'Conflicting recorded data',
+    low_confidence: 'Low-confidence match',
+} satisfies Record<StatementMatchReviewReason, string>;
+
+function dateDifferenceDays(left: string, right: string): number {
+    return Math.round(
+        Math.abs(Date.parse(left) - Date.parse(right)) / 86_400_000,
+    );
+}
+
+function candidateSupportsMovement(
+    candidate: StatementMatchCandidate,
+    movement: ConfirmationMovement,
+    sourceMovement: StatementPreviewMovement,
+): boolean {
+    return (
+        candidate.compatible_classifications.includes(
+            movement.classification,
+        ) &&
+        candidate.amount_minor === movement.amount_minor &&
+        candidate.currency === movement.currency &&
+        (candidate.direction === sourceMovement.direction ||
+            movement.classification === 'card_payment') &&
+        dateDifferenceDays(candidate.occurred_on, movement.occurred_on) <= 3
+    );
+}
+
+function candidateLabel(candidate: StatementMatchCandidate): string {
+    const sign = candidate.direction === 'credit' ? '+' : '−';
+
+    return `${candidate.occurred_on} · ${sign}${formatMinorUnits(candidate.amount_minor, candidate.currency)} · ${candidate.description}`;
+}
+
+function isMovementFilter(value: string): value is MovementFilter {
+    return movementFilters.some((filter) => filter === value);
+}
+
+function invalidateLinkedMovements(
+    movements: ConfirmationMovement[],
+): ConfirmationMovement[] {
+    return movements.map((movement) =>
+        movement.resolution === 'link'
+            ? {
+                  ...movement,
+                  resolution: 'needs_resolution',
+                  transaction_id: null,
+                  owner_confirmed_match: false,
+              }
+            : movement,
+    );
+}
+
 function MovementEditor({
     movement,
     movementIndex,
@@ -232,10 +300,20 @@ function MovementEditor({
     const resolutionError = movementError(movementIndex, 'resolution');
     const compatibleCandidates = sourceMovement.match.candidates.filter(
         (candidate) =>
-            candidate.compatible_classifications.includes(
-                movement.classification,
-            ),
+            candidateSupportsMovement(candidate, movement, sourceMovement),
     );
+    const invalidateMatch = (
+        changedFields: Partial<ConfirmationMovement>,
+    ): ConfirmationMovement => ({
+        ...movement,
+        ...changedFields,
+        resolution:
+            sourceMovement.match.candidates.length > 0
+                ? 'needs_resolution'
+                : 'create',
+        transaction_id: null,
+        owner_confirmed_match: false,
+    });
     const matchSelection =
         movement.resolution === 'link' && movement.transaction_id !== null
             ? `link:${movement.transaction_id}`
@@ -340,26 +418,20 @@ function MovementEditor({
                                         ? {
                                               resolution: 'exclude',
                                               transaction_id: null,
+                                              owner_confirmed_match: false,
                                           }
-                                        : sourceMovement.match.status ===
-                                            'matched'
+                                        : sourceMovement.match.candidates
+                                                .length > 0
                                           ? {
-                                                resolution: 'link',
-                                                transaction_id:
-                                                    sourceMovement.match
-                                                        .transaction_id,
+                                                resolution: 'needs_resolution',
+                                                transaction_id: null,
+                                                owner_confirmed_match: false,
                                             }
-                                          : sourceMovement.match.status ===
-                                              'ambiguous'
-                                            ? {
-                                                  resolution:
-                                                      'needs_resolution',
-                                                  transaction_id: null,
-                                              }
-                                            : {
-                                                  resolution: 'create',
-                                                  transaction_id: null,
-                                              }),
+                                          : {
+                                                resolution: 'create',
+                                                transaction_id: null,
+                                                owner_confirmed_match: false,
+                                            }),
                                 });
                             }
                         }}
@@ -376,11 +448,30 @@ function MovementEditor({
                         message={classificationError}
                         className="mt-1"
                     />
+                    {needsClassification &&
+                        sourceMovement.match.status === 'ambiguous' && (
+                            <Badge variant="outline" className="mt-1 w-fit">
+                                {
+                                    reviewReasonLabels[
+                                        sourceMovement.match.review_reason
+                                    ]
+                                }
+                            </Badge>
+                        )}
                 </TableCell>
                 <TableCell className="min-w-64 whitespace-normal">
-                    {sourceMovement.match.status === 'ambiguous' &&
+                    {sourceMovement.match.candidates.length > 0 &&
                     !needsClassification ? (
                         <div className="grid gap-1">
+                            {sourceMovement.match.status === 'ambiguous' && (
+                                <Badge variant="outline" className="w-fit">
+                                    {
+                                        reviewReasonLabels[
+                                            sourceMovement.match.review_reason
+                                        ]
+                                    }
+                                </Badge>
+                            )}
                             <Label
                                 htmlFor={`movement-${movementIndex}-resolution`}
                                 className="sr-only"
@@ -399,6 +490,7 @@ function MovementEditor({
                                             ...movement,
                                             resolution: 'create',
                                             transaction_id: null,
+                                            owner_confirmed_match: false,
                                         });
 
                                         return;
@@ -411,18 +503,19 @@ function MovementEditor({
                                             transaction_id: Number(
                                                 selection.slice(5),
                                             ),
+                                            owner_confirmed_match: true,
                                         });
                                     }
                                 }}
                                 options={[
                                     {
                                         value: '',
-                                        label: 'Choose a match',
+                                        label: 'Choose a resolution',
                                     },
                                     ...compatibleCandidates.map(
                                         (candidate) => ({
                                             value: `link:${candidate.id}`,
-                                            label: `${candidate.occurred_on} · ${candidate.description}`,
+                                            label: candidateLabel(candidate),
                                         }),
                                     ),
                                     {
@@ -441,6 +534,172 @@ function MovementEditor({
                                 id={`movement-${movementIndex}-resolution-error`}
                                 message={resolutionError}
                             />
+                            <div className="grid gap-2 pt-1">
+                                {sourceMovement.match.candidates.map(
+                                    (candidate) => {
+                                        const dateDifference =
+                                            dateDifferenceDays(
+                                                candidate.occurred_on,
+                                                movement.occurred_on,
+                                            );
+                                        const amountMatches =
+                                            candidate.amount_minor ===
+                                            movement.amount_minor;
+                                        const currencyMatches =
+                                            candidate.currency ===
+                                            movement.currency;
+                                        const directionMatches =
+                                            candidate.direction ===
+                                            sourceMovement.direction;
+                                        const classificationMatches =
+                                            candidate.compatible_classifications.includes(
+                                                movement.classification,
+                                            );
+
+                                        return (
+                                            <div
+                                                key={candidate.id}
+                                                className="grid gap-1 rounded-md border p-2 text-xs"
+                                                data-test={`match-candidate-${candidate.id}`}
+                                            >
+                                                <span className="font-medium">
+                                                    {candidateLabel(candidate)}
+                                                </span>
+                                                <span className="text-muted-foreground">
+                                                    {movementKindLabel(
+                                                        candidate.kind,
+                                                    )}
+                                                    {candidate.transfer_purpose ===
+                                                    null
+                                                        ? ''
+                                                        : ` · ${transferPurposeLabel(candidate.transfer_purpose)}`}
+                                                    {candidate.instrument_label ===
+                                                    null
+                                                        ? ''
+                                                        : ` · ${candidate.instrument_label}`}
+                                                    {candidate.instrument_last_four ===
+                                                    null
+                                                        ? ''
+                                                        : ` •••• ${candidate.instrument_last_four}`}
+                                                </span>
+                                                <div className="flex flex-wrap gap-1">
+                                                    <Badge
+                                                        variant={
+                                                            dateDifference === 0
+                                                                ? 'secondary'
+                                                                : 'outline'
+                                                        }
+                                                    >
+                                                        {dateDifference === 0
+                                                            ? 'Same date'
+                                                            : `${dateDifference} day${dateDifference === 1 ? '' : 's'} apart`}
+                                                    </Badge>
+                                                    <Badge
+                                                        variant={
+                                                            amountMatches
+                                                                ? 'secondary'
+                                                                : 'destructive'
+                                                        }
+                                                    >
+                                                        {amountMatches
+                                                            ? 'Same amount'
+                                                            : 'Amount differs'}
+                                                    </Badge>
+                                                    <Badge
+                                                        variant={
+                                                            currencyMatches
+                                                                ? 'secondary'
+                                                                : 'destructive'
+                                                        }
+                                                    >
+                                                        {currencyMatches
+                                                            ? 'Same currency'
+                                                            : 'Currency differs'}
+                                                    </Badge>
+                                                    <Badge
+                                                        variant={
+                                                            directionMatches ||
+                                                            movement.classification ===
+                                                                'card_payment'
+                                                                ? 'secondary'
+                                                                : 'destructive'
+                                                        }
+                                                    >
+                                                        {directionMatches
+                                                            ? 'Same direction'
+                                                            : movement.classification ===
+                                                                'card_payment'
+                                                              ? 'Card counterpart'
+                                                              : 'Direction differs'}
+                                                    </Badge>
+                                                    <Badge
+                                                        variant={
+                                                            classificationMatches
+                                                                ? 'secondary'
+                                                                : 'destructive'
+                                                        }
+                                                    >
+                                                        {classificationMatches
+                                                            ? 'Compatible classification'
+                                                            : 'Classification conflicts'}
+                                                    </Badge>
+                                                    <Badge
+                                                        variant={
+                                                            candidate.evidence
+                                                                .description
+                                                                ? 'secondary'
+                                                                : 'outline'
+                                                        }
+                                                    >
+                                                        {candidate.evidence
+                                                            .description
+                                                            ? 'Description matches'
+                                                            : 'Description differs'}
+                                                    </Badge>
+                                                    <Badge
+                                                        variant={
+                                                            candidate.evidence
+                                                                .instrument
+                                                                ? 'secondary'
+                                                                : 'outline'
+                                                        }
+                                                    >
+                                                        {candidate.evidence
+                                                            .instrument
+                                                            ? 'Instrument matches'
+                                                            : 'Instrument not matched'}
+                                                    </Badge>
+                                                    <Badge
+                                                        variant={
+                                                            candidate.evidence
+                                                                .kind
+                                                                ? 'secondary'
+                                                                : 'destructive'
+                                                        }
+                                                    >
+                                                        {candidate.evidence.kind
+                                                            ? 'Transaction Kind matches'
+                                                            : 'Transaction Kind conflicts'}
+                                                    </Badge>
+                                                    <Badge
+                                                        variant={
+                                                            candidate.evidence
+                                                                .transfer_purpose
+                                                                ? 'secondary'
+                                                                : 'destructive'
+                                                        }
+                                                    >
+                                                        {candidate.evidence
+                                                            .transfer_purpose
+                                                            ? 'Transfer Purpose matches'
+                                                            : 'Transfer Purpose conflicts'}
+                                                    </Badge>
+                                                </div>
+                                            </div>
+                                        );
+                                    },
+                                )}
+                            </div>
                         </div>
                     ) : (
                         <span className="text-muted-foreground" aria-hidden>
@@ -476,10 +735,12 @@ function MovementEditor({
                             type="date"
                             value={movement.occurred_on}
                             onChange={(event) =>
-                                updateMovement(movementIndex, {
-                                    ...movement,
-                                    occurred_on: event.currentTarget.value,
-                                })
+                                updateMovement(
+                                    movementIndex,
+                                    invalidateMatch({
+                                        occurred_on: event.currentTarget.value,
+                                    }),
+                                )
                             }
                             aria-invalid={Boolean(
                                 movementError(movementIndex, 'occurred_on'),
@@ -506,10 +767,12 @@ function MovementEditor({
                             value={movement.description}
                             maxLength={255}
                             onChange={(event) =>
-                                updateMovement(movementIndex, {
-                                    ...movement,
-                                    description: event.currentTarget.value,
-                                })
+                                updateMovement(
+                                    movementIndex,
+                                    invalidateMatch({
+                                        description: event.currentTarget.value,
+                                    }),
+                                )
                             }
                             aria-invalid={Boolean(
                                 movementError(movementIndex, 'description'),
@@ -535,10 +798,12 @@ function MovementEditor({
                             inputMode="numeric"
                             pattern="\d+"
                             onChange={(event) =>
-                                updateMovement(movementIndex, {
-                                    ...movement,
-                                    amount_minor: event.currentTarget.value,
-                                })
+                                updateMovement(
+                                    movementIndex,
+                                    invalidateMatch({
+                                        amount_minor: event.currentTarget.value,
+                                    }),
+                                )
                             }
                             aria-invalid={Boolean(
                                 movementError(movementIndex, 'amount_minor'),
@@ -578,10 +843,10 @@ function MovementEditor({
                                 const currency = event.currentTarget.value;
 
                                 if (currency === 'PEN' || currency === 'USD') {
-                                    updateMovement(movementIndex, {
-                                        ...movement,
-                                        currency,
-                                    });
+                                    updateMovement(
+                                        movementIndex,
+                                        invalidateMatch({ currency }),
+                                    );
                                 }
                             }}
                             options={[
@@ -616,6 +881,8 @@ export default function CreateStatementImport() {
     const [selectedStatement, setSelectedStatement] = useState<File | null>(
         null,
     );
+    const [movementFilter, setMovementFilter] =
+        useState<MovementFilter>('review');
     const unresolvedMovementIndexes = confirmation.data.movements
         .map((movement, movementIndex) => ({ movement, movementIndex }))
         .filter(
@@ -625,14 +892,40 @@ export default function CreateStatementImport() {
         )
         .map(({ movementIndex }) => movementIndex);
     const unresolvedCount = unresolvedMovementIndexes.length;
-    const spendingMovementCount = confirmation.data.movements.filter(
-        (movement) =>
-            statementMovementContributesToSpending(movement.classification),
+    const autoLinkedCount = confirmation.data.movements.filter(
+        (movement) => movement.resolution === 'link',
     ).length;
-    const outsideNetSpendingCount =
-        confirmation.data.movements.length -
-        spendingMovementCount -
-        unresolvedCount;
+    const createdCount = confirmation.data.movements.filter(
+        (movement) =>
+            movement.resolution === 'create' &&
+            movement.classification !== 'needs_classification',
+    ).length;
+    const visibleMovementIndexes = confirmation.data.movements
+        .map((movement, movementIndex) => ({ movement, movementIndex }))
+        .filter(({ movement }) => {
+            switch (movementFilter) {
+                case 'review':
+                    return (
+                        movement.classification === 'needs_classification' ||
+                        movement.resolution === 'needs_resolution'
+                    );
+                case 'linked':
+                    return movement.resolution === 'link';
+                case 'created':
+                    return (
+                        movement.resolution === 'create' &&
+                        movement.classification !== 'needs_classification'
+                    );
+                case 'all':
+                    return true;
+                default: {
+                    const exhaustiveFilter: never = movementFilter;
+
+                    return exhaustiveFilter;
+                }
+            }
+        })
+        .map(({ movementIndex }) => movementIndex);
     function requestPreview(event: React.FormEvent<HTMLFormElement>): void {
         event.preventDefault();
 
@@ -641,6 +934,7 @@ export default function CreateStatementImport() {
         }
 
         setPreview(null);
+        setMovementFilter('review');
         confirmation.reset();
         confirmation.clearErrors();
         previewRequest.transform((data) => ({
@@ -650,6 +944,7 @@ export default function CreateStatementImport() {
         previewRequest.post(previewStatementImport.url(), {
             onSuccess: (response) => {
                 setPreview(response);
+                setMovementFilter('review');
                 confirmation.setData({
                     statement: selectedStatement,
                     ...response.confirmation,
@@ -714,8 +1009,8 @@ export default function CreateStatementImport() {
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             Choose a supported BCP or Interbank text PDF once,
-                            then review every parsed movement. Rows that need a
-                            decision are marked for your attention.
+                            then review only the movements that need a decision.
+                            Confident matches are linked automatically.
                         </p>
                     </div>
                     <Button asChild variant="outline">
@@ -746,7 +1041,8 @@ export default function CreateStatementImport() {
                                                 {preview.financial_statement_format.toUpperCase()}
                                             </Badge>
                                             <Badge variant="secondary">
-                                                <FileCheck2 /> Reconciled
+                                                <FileCheck2 /> Statement totals
+                                                verified
                                             </Badge>
                                         </div>
                                     )}
@@ -828,7 +1124,7 @@ export default function CreateStatementImport() {
                                         >
                                             <div className="grid gap-1">
                                                 <h2 className="font-semibold">
-                                                    Reconciliation
+                                                    Statement totals
                                                 </h2>
                                                 <p className="text-sm text-muted-foreground">
                                                     Printed statement totals
@@ -887,7 +1183,7 @@ export default function CreateStatementImport() {
                                             >
                                                 <div className="grid gap-1 px-3">
                                                     <dt className="text-xs text-muted-foreground">
-                                                        Proposed movements
+                                                        Movements
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
                                                         {
@@ -899,25 +1195,23 @@ export default function CreateStatementImport() {
                                                 </div>
                                                 <div className="grid gap-1 px-3">
                                                     <dt className="text-xs text-muted-foreground">
-                                                        Affect Net Spending
+                                                        Auto-linked
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
-                                                        {spendingMovementCount}
+                                                        {autoLinkedCount}
                                                     </dd>
                                                 </div>
                                                 <div className="grid gap-1 px-3">
                                                     <dt className="text-xs text-muted-foreground">
-                                                        Outside Net Spending
+                                                        Will be added
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
-                                                        {
-                                                            outsideNetSpendingCount
-                                                        }
+                                                        {createdCount}
                                                     </dd>
                                                 </div>
                                                 <div className="grid gap-1 px-3">
                                                     <dt className="text-xs text-muted-foreground">
-                                                        Unresolved
+                                                        Needs review
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
                                                         {unresolvedCount}
@@ -942,10 +1236,19 @@ export default function CreateStatementImport() {
                                                                 'instrument_label',
                                                             );
                                                             confirmation.setData(
-                                                                'instrument_label',
-                                                                event
-                                                                    .currentTarget
-                                                                    .value,
+                                                                {
+                                                                    ...confirmation.data,
+                                                                    instrument_label:
+                                                                        event
+                                                                            .currentTarget
+                                                                            .value,
+                                                                    movements:
+                                                                        invalidateLinkedMovements(
+                                                                            confirmation
+                                                                                .data
+                                                                                .movements,
+                                                                        ),
+                                                                },
                                                             );
                                                         }}
                                                         required
@@ -975,10 +1278,19 @@ export default function CreateStatementImport() {
                                                                 'instrument_last_four',
                                                             );
                                                             confirmation.setData(
-                                                                'instrument_last_four',
-                                                                event
-                                                                    .currentTarget
-                                                                    .value,
+                                                                {
+                                                                    ...confirmation.data,
+                                                                    instrument_last_four:
+                                                                        event
+                                                                            .currentTarget
+                                                                            .value,
+                                                                    movements:
+                                                                        invalidateLinkedMovements(
+                                                                            confirmation
+                                                                                .data
+                                                                                .movements,
+                                                                        ),
+                                                                },
                                                             );
                                                         }}
                                                     />
@@ -1051,9 +1363,9 @@ export default function CreateStatementImport() {
                                                 2. Review movements
                                             </CardTitle>
                                             <CardDescription>
-                                                Review the full statement. Rows
-                                                that need a classification or
-                                                match decision are marked.
+                                                {autoLinkedCount} auto-linked ·{' '}
+                                                {createdCount} will be added ·{' '}
+                                                {unresolvedCount} need review
                                             </CardDescription>
                                         </div>
                                         <Badge
@@ -1064,68 +1376,125 @@ export default function CreateStatementImport() {
                                             }
                                         >
                                             {unresolvedCount > 0 ? (
-                                                <CircleAlert />
+                                                <CircleAlert data-icon="inline-start" />
                                             ) : (
-                                                <CheckCircle2 />
+                                                <CheckCircle2 data-icon="inline-start" />
                                             )}
                                             {unresolvedCount} unresolved
                                         </Badge>
                                     </div>
+                                    <Tabs
+                                        value={movementFilter}
+                                        onValueChange={(value) => {
+                                            if (isMovementFilter(value)) {
+                                                setMovementFilter(value);
+                                            }
+                                        }}
+                                    >
+                                        <TabsList className="h-auto flex-wrap justify-start">
+                                            <TabsTrigger value="review">
+                                                Needs review {unresolvedCount}
+                                            </TabsTrigger>
+                                            <TabsTrigger value="linked">
+                                                Auto-linked {autoLinkedCount}
+                                            </TabsTrigger>
+                                            <TabsTrigger value="created">
+                                                Will be added {createdCount}
+                                            </TabsTrigger>
+                                            <TabsTrigger value="all">
+                                                All{' '}
+                                                {
+                                                    confirmation.data.movements
+                                                        .length
+                                                }
+                                            </TabsTrigger>
+                                        </TabsList>
+                                    </Tabs>
                                 </CardHeader>
                                 <CardContent
                                     className="min-w-0 p-0 lg:min-h-0 lg:flex-1 lg:[&>[data-slot=table-container]]:h-full lg:[&>[data-slot=table-container]]:overflow-auto"
                                     data-test="statement-movements"
                                 >
-                                    <Table className="min-w-[64rem]">
-                                        <TableHeader className="sticky top-0 z-10 bg-card">
-                                            <TableRow className="hover:bg-transparent">
-                                                <TableHead className="w-14 px-6">
-                                                    <span className="sr-only">
-                                                        Direction
-                                                    </span>
-                                                </TableHead>
-                                                <TableHead>Movement</TableHead>
-                                                <TableHead className="text-right">
-                                                    Amount
-                                                </TableHead>
-                                                <TableHead>
-                                                    Categorization
-                                                </TableHead>
-                                                <TableHead>
-                                                    Recorded Transaction
-                                                </TableHead>
-                                                <TableHead className="pr-6 text-right">
-                                                    Actions
-                                                </TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {confirmation.data.movements.map(
-                                                (movement, movementIndex) => (
-                                                    <MovementEditor
-                                                        key={
-                                                            movement.source_row_id
-                                                        }
-                                                        movement={movement}
-                                                        movementIndex={
-                                                            movementIndex
-                                                        }
-                                                        sourceMovement={
-                                                            preview.movements[
+                                    {visibleMovementIndexes.length === 0 ? (
+                                        <div className="p-6">
+                                            <Alert>
+                                                <CheckCircle2 />
+                                                <AlertTitle>
+                                                    No movements need review
+                                                </AlertTitle>
+                                                <AlertDescription>
+                                                    The remaining movements are
+                                                    already linked or ready to
+                                                    add. You can inspect them
+                                                    with the filters above.
+                                                </AlertDescription>
+                                            </Alert>
+                                        </div>
+                                    ) : (
+                                        <Table className="min-w-[64rem]">
+                                            <TableHeader className="sticky top-0 z-10 bg-card">
+                                                <TableRow className="hover:bg-transparent">
+                                                    <TableHead className="w-14 px-6">
+                                                        <span className="sr-only">
+                                                            Direction
+                                                        </span>
+                                                    </TableHead>
+                                                    <TableHead>
+                                                        Movement
+                                                    </TableHead>
+                                                    <TableHead className="text-right">
+                                                        Amount
+                                                    </TableHead>
+                                                    <TableHead>
+                                                        Categorization
+                                                    </TableHead>
+                                                    <TableHead>
+                                                        Recorded Transaction
+                                                    </TableHead>
+                                                    <TableHead className="pr-6 text-right">
+                                                        Actions
+                                                    </TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {visibleMovementIndexes.map(
+                                                    (movementIndex) => (
+                                                        <MovementEditor
+                                                            key={
+                                                                confirmation
+                                                                    .data
+                                                                    .movements[
+                                                                    movementIndex
+                                                                ].source_row_id
+                                                            }
+                                                            movement={
+                                                                confirmation
+                                                                    .data
+                                                                    .movements[
+                                                                    movementIndex
+                                                                ]
+                                                            }
+                                                            movementIndex={
                                                                 movementIndex
-                                                            ]
-                                                        }
-                                                        updateMovement={
-                                                            updateMovement
-                                                        }
-                                                        movementError={
-                                                            movementError
-                                                        }
-                                                    />
-                                                ),
-                                            )}
-                                        </TableBody>
-                                    </Table>
+                                                            }
+                                                            sourceMovement={
+                                                                preview
+                                                                    .movements[
+                                                                    movementIndex
+                                                                ]
+                                                            }
+                                                            updateMovement={
+                                                                updateMovement
+                                                            }
+                                                            movementError={
+                                                                movementError
+                                                            }
+                                                        />
+                                                    ),
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    )}
                                 </CardContent>
                             </Card>
                         </div>

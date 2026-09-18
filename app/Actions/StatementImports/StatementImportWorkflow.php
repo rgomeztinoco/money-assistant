@@ -129,7 +129,7 @@ final class StatementImportWorkflow
                 $taxCategory = $this->activeCategoryNamed($owner, 'Taxes');
                 $feeCategory = $this->activeCategoryNamed($owner, 'Bank Fees');
 
-                foreach ($editedMovements as $editedMovement) {
+                foreach ($editedMovements as $movementIndex => $editedMovement) {
                     $sourceMovement = $editedMovement['source'];
                     $classification = $editedMovement['classification'];
 
@@ -143,12 +143,11 @@ final class StatementImportWorkflow
                         default => null,
                     };
                     $transaction = match ($editedMovement['resolution']) {
-                        StatementMovementResolution::Linked => Transaction::query()
-                            ->whereBelongsTo($owner, 'owner')
-                            ->whereKey($editedMovement['transaction_id'])
-                            ->whereDoesntHave('statementMovement')
-                            ->lockForUpdate()
-                            ->firstOrFail(),
+                        StatementMovementResolution::Linked => $this->linkableTransaction(
+                            owner: $owner,
+                            transactionId: $editedMovement['transaction_id'],
+                            movementIndex: $movementIndex,
+                        ),
                         StatementMovementResolution::Created => $this->createTransaction(
                             owner: $owner,
                             movement: $editedMovement,
@@ -159,21 +158,37 @@ final class StatementImportWorkflow
                         ),
                     };
 
-                    StatementMovement::create([
-                        'statement_import_id' => $statementImport->getKey(),
-                        'transaction_id' => $transaction->getKey(),
-                        'source_row_id' => $sourceMovement->sourceRowId,
-                        'position' => $sourceMovement->position,
-                        'occurred_on' => $editedMovement['occurred_on'],
-                        'amount_minor' => $editedMovement['amount_minor'],
-                        'currency' => $editedMovement['currency'],
-                        'direction' => $sourceMovement->direction,
-                        'classification' => $classification,
-                        'description' => $editedMovement['description'],
-                        'source_metadata' => $sourceMovement->sourceMetadata,
-                        'resolution' => $editedMovement['resolution'],
-                        'match_evidence' => $editedMovement['match_evidence'],
-                    ]);
+                    try {
+                        StatementMovement::create([
+                            'statement_import_id' => $statementImport->getKey(),
+                            'transaction_id' => $transaction->getKey(),
+                            'source_row_id' => $sourceMovement->sourceRowId,
+                            'position' => $sourceMovement->position,
+                            'occurred_on' => $editedMovement['occurred_on'],
+                            'amount_minor' => $editedMovement['amount_minor'],
+                            'currency' => $editedMovement['currency'],
+                            'direction' => $sourceMovement->direction,
+                            'classification' => $classification,
+                            'description' => $editedMovement['description'],
+                            'source_metadata' => $sourceMovement->sourceMetadata,
+                            'resolution' => $editedMovement['resolution'],
+                            'match_evidence' => $editedMovement['match_evidence'],
+                        ]);
+                    } catch (QueryException $exception) {
+                        if ($exception->getCode() === '23505'
+                            && Str::contains(
+                                (string) ($exception->errorInfo[2] ?? ''),
+                                'statement_movements_transaction_id_unique',
+                            )) {
+                            throw new StatementImportValidationException(
+                                'The selected Transaction was linked to another Statement Movement after preview. Refresh and review this movement again.',
+                                'movement_match_changed',
+                                "movements.{$movementIndex}.resolution",
+                            );
+                        }
+
+                        throw $exception;
+                    }
                 }
 
                 return $statementImport->load(['movements' => fn ($query) => $query->orderBy('position')]);
@@ -185,6 +200,26 @@ final class StatementImportWorkflow
 
             throw $exception;
         }
+    }
+
+    private function linkableTransaction(User $owner, ?int $transactionId, int $movementIndex): Transaction
+    {
+        $transaction = Transaction::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->whereKey($transactionId)
+            ->whereDoesntHave('statementMovement')
+            ->lockForUpdate()
+            ->first();
+
+        if ($transaction !== null) {
+            return $transaction;
+        }
+
+        throw new StatementImportValidationException(
+            'The selected Transaction was linked to another Statement Movement after preview. Refresh and review this movement again.',
+            'movement_match_changed',
+            "movements.{$movementIndex}.resolution",
+        );
     }
 
     /**

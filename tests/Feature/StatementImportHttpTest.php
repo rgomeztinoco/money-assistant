@@ -6,6 +6,8 @@ use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\Transaction;
 use App\Models\User;
+use App\MovementDirection;
+use App\TransactionKind;
 use Illuminate\Http\UploadedFile;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\SyntheticPdf;
@@ -27,6 +29,16 @@ test('Statement Import pages and mutations require an authenticated owner', func
 
 test('the owner can preview a statement through the standalone HTTP endpoint', function () {
     $owner = User::factory()->create();
+    $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-01-20',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Spending,
+        'direction' => MovementDirection::Debit,
+        'description' => 'Grocery',
+        'instrument_label' => 'Interbank Amex',
+        'instrument_last_four' => '1234',
+    ]);
 
     $this->actingAs($owner)
         ->post(route('statement_import_previews.store'), [
@@ -39,7 +51,17 @@ test('the owner can preview a statement through the standalone HTTP endpoint', f
         ->assertJsonPath('financial_statement_format', 'interbank')
         ->assertJsonPath('movements.0.contributes_to_spending', false)
         ->assertJsonPath('movements.0.can_be_excluded', false)
+        ->assertJsonPath('movements.0.match.status', 'ambiguous')
+        ->assertJsonPath('movements.0.match.review_reason', 'low_confidence')
+        ->assertJsonPath('movements.2.match.status', 'matched')
+        ->assertJsonPath('movements.2.match.review_reason', null)
+        ->assertJsonPath('movements.2.match.transaction_id', $recordedTransaction->id)
+        ->assertJsonPath('movements.2.match.candidates.0.amount_minor', '2000')
+        ->assertJsonPath('movements.2.match.candidates.0.currency', 'PEN')
+        ->assertJsonPath('movements.2.match.candidates.0.direction', 'debit')
         ->assertJsonPath('confirmation.file_hash', fn (string $hash): bool => strlen($hash) === 64)
+        ->assertJsonPath('confirmation.movements.2.resolution', 'link')
+        ->assertJsonPath('confirmation.movements.2.owner_confirmed_match', false)
         ->assertJsonPath('confirmation.movements.0.source_row_id', fn (string $sourceRowId): bool => strlen($sourceRowId) === 64)
         ->assertJsonPath('reconciliation.payment_total_pen_minor', '2700')
         ->assertJsonCount(0, 'informational_values')
@@ -241,8 +263,14 @@ test('the owner can link a statement movement when multipart form data serialize
 
     expect($movementIndex)->toBeInt()
         ->and($preview->movements[$movementIndex]->match?->status->value)->toBe('ambiguous')
+        ->and($preview->movements[$movementIndex]->match?->reviewReason?->value)->toBe('low_confidence')
         ->and($preview->movements[$movementIndex]->match?->candidates)->toHaveCount(1)
-        ->and($preview->movements[$movementIndex]->match?->candidates[0]['id'])->toBe($transaction->id);
+        ->and($preview->movements[$movementIndex]->match?->candidates[0])->toMatchArray([
+            'id' => $transaction->id,
+            'amount_minor' => '1500',
+            'currency' => 'PEN',
+            'direction' => 'debit',
+        ]);
 
     $confirmation['movements'] = collect($confirmation['movements'])
         ->map(fn (array $movement): array => [

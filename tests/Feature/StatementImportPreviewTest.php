@@ -9,6 +9,7 @@ use App\StatementImports\StatementImportValidationException;
 use App\StatementImports\StatementMovementMatch;
 use App\StatementMovementClassification;
 use App\StatementMovementMatchStatus;
+use App\StatementMovementReviewReason;
 use Carbon\CarbonImmutable;
 
 function statementImportPreviewForLifecycle(?StatementMovementMatch $match = null): StatementImportPreview
@@ -58,6 +59,7 @@ test('Import Preview prepares confirmation data without exposing parser metadata
             'classification' => 'purchase',
             'resolution' => 'create',
             'transaction_id' => null,
+            'owner_confirmed_match' => false,
         ]],
     ]);
 });
@@ -103,6 +105,9 @@ test('Import Preview explains why a proposed Transaction is incompatible with th
         candidates: [[
             'id' => 42,
             'occurred_on' => '2026-08-10',
+            'amount_minor' => '1299',
+            'currency' => 'PEN',
+            'direction' => 'debit',
             'description' => 'Market purchase',
             'instrument_label' => null,
             'instrument_last_four' => null,
@@ -111,15 +116,20 @@ test('Import Preview explains why a proposed Transaction is incompatible with th
             'compatible_classifications' => ['purchase', 'fee', 'tax'],
             'date_difference_days' => 0,
             'evidence' => [
-                'amount_currency' => true,
+                'amount' => true,
+                'currency' => true,
                 'direction' => true,
                 'date_proximity' => true,
                 'instrument' => false,
                 'description' => false,
+                'kind' => true,
+                'transfer_purpose' => true,
                 'card_payment_counterpart' => false,
+                'plausible' => true,
             ],
         ]],
         evidence: [],
+        reviewReason: StatementMovementReviewReason::LowConfidence,
     ));
     $confirmation = $preview->confirmationData();
     $confirmation['movements'][0]['classification'] = 'transfer';

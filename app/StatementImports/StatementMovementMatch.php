@@ -4,11 +4,41 @@ namespace App\StatementImports;
 
 use App\StatementMovementClassification;
 use App\StatementMovementMatchStatus;
+use App\StatementMovementReviewReason;
 
+/**
+ * @phpstan-type CandidateEvidence array{
+ *     amount: bool,
+ *     currency: bool,
+ *     direction: bool,
+ *     date_proximity: bool,
+ *     instrument: bool,
+ *     description: bool,
+ *     kind: bool,
+ *     transfer_purpose: bool,
+ *     card_payment_counterpart: bool,
+ *     plausible: bool
+ * }
+ * @phpstan-type Candidate array{
+ *     id: int,
+ *     occurred_on: string,
+ *     amount_minor: string,
+ *     currency: string,
+ *     direction: string,
+ *     description: string,
+ *     instrument_label: string|null,
+ *     instrument_last_four: string|null,
+ *     kind: string,
+ *     transfer_purpose: string|null,
+ *     compatible_classifications: list<string>,
+ *     date_difference_days: int,
+ *     evidence: CandidateEvidence
+ * }
+ */
 final readonly class StatementMovementMatch
 {
     /**
-     * @param  list<array{id: int, occurred_on: string, description: string, instrument_label: string|null, instrument_last_four: string|null, kind: string, transfer_purpose: string|null, compatible_classifications: list<string>, date_difference_days: int, evidence: array<string, bool>}>  $candidates
+     * @param  array<int, Candidate>  $candidates
      * @param  array<string, bool|int|string|null>  $evidence
      */
     public function __construct(
@@ -16,6 +46,7 @@ final readonly class StatementMovementMatch
         public ?int $transactionId,
         public array $candidates,
         public array $evidence,
+        public ?StatementMovementReviewReason $reviewReason = null,
     ) {}
 
     public static function fresh(): self
@@ -24,7 +55,7 @@ final readonly class StatementMovementMatch
     }
 
     /**
-     * @return array{id: int, occurred_on: string, description: string, instrument_label: string|null, instrument_last_four: string|null, kind: string, transfer_purpose: string|null, compatible_classifications: list<string>, date_difference_days: int, evidence: array<string, bool>}|null
+     * @return Candidate|null
      */
     public function compatibleCandidate(
         int $transactionId,

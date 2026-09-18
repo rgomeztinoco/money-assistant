@@ -8,10 +8,12 @@ use App\FinancialStatementFormat;
 use App\StatementMovementClassification;
 use App\StatementMovementMatchStatus;
 use App\StatementMovementResolution;
+use App\StatementMovementReviewReason;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Str;
 use Throwable;
 
+/** @phpstan-import-type Candidate from StatementMovementMatch */
 final readonly class StatementImportPreview
 {
     /**
@@ -45,7 +47,8 @@ final readonly class StatementImportPreview
      *         currency: string,
      *         classification: string,
      *         resolution: 'create'|'exclude'|'link'|'needs_resolution',
-     *         transaction_id: int|null
+     *         transaction_id: int|null,
+     *         owner_confirmed_match: bool
      *     }>
      * }
      */
@@ -125,7 +128,11 @@ final readonly class StatementImportPreview
         return [
             'instrument_label' => $instrumentLabel,
             'instrument_last_four' => $instrumentLastFour,
-            'movements' => $this->validateMovementEdits($confirmation['movements'] ?? null),
+            'movements' => $this->validateMovementEdits(
+                edits: $confirmation['movements'] ?? null,
+                instrumentLabel: $instrumentLabel,
+                instrumentLastFour: $instrumentLastFour,
+            ),
         ];
     }
 
@@ -163,8 +170,11 @@ final readonly class StatementImportPreview
      *     match_evidence: array<string, mixed>
      * }>
      */
-    private function validateMovementEdits(mixed $edits): array
-    {
+    private function validateMovementEdits(
+        mixed $edits,
+        string $instrumentLabel,
+        ?string $instrumentLastFour,
+    ): array {
         if (! is_array($edits) || count($edits) !== count($this->movements)) {
             throw new StatementImportValidationException(
                 'Every source movement must be included exactly once.',
@@ -274,6 +284,12 @@ final readonly class StatementImportPreview
                 edit: $edit,
                 movementIndex: $movementIndex,
                 classification: $classification,
+                occurredOn: $occurredOn,
+                amountMinor: $amountMinor,
+                currency: $currency,
+                description: $description,
+                instrumentLabel: $instrumentLabel,
+                instrumentLastFour: $instrumentLastFour,
             );
 
             if ($resolution === StatementMovementResolution::Linked
@@ -325,6 +341,12 @@ final readonly class StatementImportPreview
         array $edit,
         int $movementIndex,
         StatementMovementClassification $classification,
+        CarbonImmutable $occurredOn,
+        string $amountMinor,
+        Currency $currency,
+        string $description,
+        string $instrumentLabel,
+        ?string $instrumentLastFour,
     ): array {
         $match = $source->match ?? StatementMovementMatch::fresh();
         $resolution = $edit['resolution'] ?? null;
@@ -333,6 +355,16 @@ final readonly class StatementImportPreview
         $validationField = "movements.{$movementIndex}.resolution";
 
         if ($match->status === StatementMovementMatchStatus::Matched) {
+            if ($resolution === 'create'
+                && $transactionId === null
+                && $transactionIdInput === null) {
+                return [
+                    StatementMovementResolution::Created,
+                    null,
+                    ['owner_confirmed_new' => true],
+                ];
+            }
+
             if ($resolution !== 'link'
                 || ! is_int($transactionId)
                 || $transactionId !== $match->transactionId) {
@@ -343,7 +375,11 @@ final readonly class StatementImportPreview
                 );
             }
 
-            if ($match->compatibleCandidate($transactionId, $classification) === null) {
+            $ownerConfirmedMatch = ($edit['owner_confirmed_match'] ?? false) === true;
+
+            $candidate = $match->compatibleCandidate($transactionId, $classification);
+
+            if ($candidate === null) {
                 throw new StatementImportValidationException(
                     $match->incompatibilityMessage($transactionId, $classification)
                         ?? 'The selected Transaction is not compatible with this statement movement.',
@@ -352,7 +388,37 @@ final readonly class StatementImportPreview
                 );
             }
 
-            return [StatementMovementResolution::Linked, $transactionId, $match->evidence];
+            if (! $ownerConfirmedMatch && ($occurredOn->toDateString() !== $source->occurredOn->toDateString()
+                || $amountMinor !== $source->amountMinor
+                || $currency !== $source->currency
+                || $classification !== $source->classification
+                || $description !== $source->description
+                || $instrumentLabel !== $this->instrumentLabel
+                || $instrumentLastFour !== $this->instrumentLastFour)) {
+                throw new StatementImportValidationException(
+                    'The automatic match needs review because match-defining details changed after preview.',
+                    'movement_match_changed',
+                    $validationField,
+                );
+            }
+
+            $this->validateCandidateDetails(
+                candidate: $candidate,
+                source: $source,
+                classification: $classification,
+                occurredOn: $occurredOn,
+                amountMinor: $amountMinor,
+                currency: $currency,
+                validationField: $validationField,
+            );
+
+            return [
+                StatementMovementResolution::Linked,
+                $transactionId,
+                $ownerConfirmedMatch
+                    ? [...$match->evidence, 'owner_confirmed' => true]
+                    : $match->evidence,
+            ];
         }
 
         if ($match->status === StatementMovementMatchStatus::New) {
@@ -366,6 +432,12 @@ final readonly class StatementImportPreview
                 );
             }
 
+            return [StatementMovementResolution::Created, null, []];
+        }
+
+        if ($resolution === 'needs_resolution'
+            && $match->reviewReason === StatementMovementReviewReason::LowConfidence
+            && $match->candidates === []) {
             return [StatementMovementResolution::Created, null, []];
         }
 
@@ -406,6 +478,16 @@ final readonly class StatementImportPreview
             );
         }
 
+        $this->validateCandidateDetails(
+            candidate: $candidate,
+            source: $source,
+            classification: $classification,
+            occurredOn: $occurredOn,
+            amountMinor: $amountMinor,
+            currency: $currency,
+            validationField: $validationField,
+        );
+
         return [
             StatementMovementResolution::Linked,
             $transactionId,
@@ -415,6 +497,36 @@ final readonly class StatementImportPreview
                 'owner_confirmed' => true,
             ],
         ];
+    }
+
+    /**
+     * @param  Candidate  $candidate
+     */
+    private function validateCandidateDetails(
+        array $candidate,
+        StatementImportPreviewMovement $source,
+        StatementMovementClassification $classification,
+        CarbonImmutable $occurredOn,
+        string $amountMinor,
+        Currency $currency,
+        string $validationField,
+    ): void {
+        $candidateDate = CarbonImmutable::parse($candidate['occurred_on']);
+        $directionMatches = $candidate['direction'] === $source->direction->value
+            || $classification === StatementMovementClassification::CardPayment;
+
+        if ($candidate['amount_minor'] === $amountMinor
+            && $candidate['currency'] === $currency->value
+            && $directionMatches
+            && $occurredOn->diffInDays($candidateDate) <= StatementMovementMatcher::DATE_PROXIMITY_DAYS) {
+            return;
+        }
+
+        throw new StatementImportValidationException(
+            'The selected Transaction no longer matches the edited date, amount, currency, or Movement Direction.',
+            'invalid_movement_match',
+            $validationField,
+        );
     }
 
     private function positiveInteger(mixed $value): ?int

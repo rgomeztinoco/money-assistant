@@ -19,6 +19,9 @@ export type StatementClassification =
 export type StatementMatchCandidate = {
     id: number;
     occurred_on: string;
+    amount_minor: string;
+    currency: Currency;
+    direction: StatementDirection;
     description: string;
     instrument_label: string | null;
     instrument_last_four: string | null;
@@ -29,24 +32,30 @@ export type StatementMatchCandidate = {
     evidence: Record<string, boolean>;
 };
 
+export type StatementMatchReviewReason =
+    'multiple_matches' | 'conflicting_data' | 'low_confidence';
+
 export type StatementMovementMatch =
     | {
           status: 'new';
           transaction_id: null;
           candidates: StatementMatchCandidate[];
           evidence: Record<string, boolean | number | string | null>;
+          review_reason: null;
       }
     | {
           status: 'matched';
           transaction_id: number;
           candidates: StatementMatchCandidate[];
           evidence: Record<string, boolean | number | string | null>;
+          review_reason: null;
       }
     | {
           status: 'ambiguous';
           transaction_id: null;
           candidates: StatementMatchCandidate[];
           evidence: Record<string, boolean | number | string | null>;
+          review_reason: StatementMatchReviewReason;
       };
 
 export type StatementPreviewMovement = {
@@ -75,8 +84,9 @@ type StatementConfirmationMovementDetails = Pick<
 >;
 
 export type StatementConfirmationMovement =
-    StatementConfirmationMovementDetails &
-        (
+    StatementConfirmationMovementDetails & {
+        owner_confirmed_match: boolean;
+    } & (
             | { resolution: 'link'; transaction_id: number }
             | {
                   resolution: 'create' | 'exclude' | 'needs_resolution';

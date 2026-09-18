@@ -35,20 +35,33 @@ test('the owner selects a statement once resolves exceptions and confirms the im
         ->assertSee('Import a recent statement first')
         ->click('Import a recent statement')
         ->assertPathIs('/statement-imports/create');
+    $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-01-20',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Spending,
+        'direction' => MovementDirection::Debit,
+        'description' => 'Grocery',
+        'instrument_label' => 'Interbank Amex',
+        'instrument_last_four' => '1234',
+    ]);
     selectPdfInBrowser($page, '#preview-statement', $pdf);
     expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
     $page->press('Upload and check');
     $page
         ->assertSee('INTERBANK')
-        ->assertSee('Reconciled')
-        ->assertSee('Reconciliation')
+        ->assertSee('Statement totals verified')
+        ->assertSee('Statement totals')
         ->assertDontSee('Minimum payment')
         ->assertSee('1 unresolved')
-        ->assertDontSee('View all movements')
-        ->assertSee('Proposed movements')
-        ->assertSee('Affect Net Spending')
-        ->assertSee('Outside Net Spending')
-        ->assertSee('Unresolved')
+        ->assertSee('1 auto-linked')
+        ->assertSee('4 will be added')
+        ->assertSee('Needs review 1')
+        ->assertSee('Low-confidence match')
+        ->assertSee('Auto-linked 1')
+        ->assertSee('Will be added 4')
+        ->assertSee('All 6')
+        ->assertDontSee('Grocery')
         ->assertButtonDisabled('Confirm import');
     expect($page->value('select[aria-label="Classification for Mercado Pago"]'))
         ->toBe('needs_classification')
@@ -62,6 +75,8 @@ test('the owner selects a statement once resolves exceptions and confirms the im
         ->toBeTrue()
         ->and($page->script("document.querySelector('[data-test=statement-movements] table') !== null"))
         ->toBeTrue()
+        ->and($page->script("document.querySelectorAll('[data-test=statement-movements] tbody tr').length"))
+        ->toBe(1)
         ->and($page->script("document.querySelector('[data-test=statement-movements]').textContent.includes('Statement Movement 1')"))
         ->toBeFalse()
         ->and($page->script("document.querySelector('#instrument-label').closest('[data-slot=card]').querySelector('button[type=submit]') !== null"))
@@ -75,6 +90,27 @@ test('the owner selects a statement once resolves exceptions and confirms the im
         ->and($page->script("Math.abs(document.querySelector('[data-test=statement-import-overview]').getBoundingClientRect().height - document.querySelector('[data-test=statement-movements-column]').getBoundingClientRect().height) <= 1"))
         ->toBeTrue();
     $page
+        ->click('Auto-linked 1')
+        ->assertSee('Grocery')
+        ->assertSee('2026-01-20 · −S/ 20.00 · Grocery')
+        ->assertSee('Same date')
+        ->assertSee('Same amount')
+        ->assertSee('Description matches')
+        ->assertSee('Instrument matches')
+        ->assertSee('Transaction Kind matches')
+        ->assertSee('Transfer Purpose matches');
+    expect($page->value('#movement-2-resolution'))->toBe("link:{$recordedTransaction->id}");
+    $page
+        ->select('#movement-2-resolution', 'create')
+        ->assertSee('Auto-linked 0')
+        ->assertSee('Will be added 5')
+        ->click('Will be added 5')
+        ->select('#movement-2-resolution', "link:{$recordedTransaction->id}")
+        ->assertSee('Auto-linked 1')
+        ->assertSee('Will be added 4')
+        ->click('Needs review 1')
+        ->assertSee('Mercado Pago');
+    $page
         ->hover('[data-test=statement-movement-status-0] [data-status=needs_classification]')
         ->assertSee('Choose what kind of movement this is before confirming.');
     expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
@@ -85,7 +121,12 @@ test('the owner selects a statement once resolves exceptions and confirms the im
     );
     $page
         ->assertSee('0 unresolved')
+        ->assertSee('No movements need review')
+        ->assertSee('Will be added 5')
         ->assertButtonEnabled('Confirm import');
+    expect($page->script("document.querySelector('[data-test=statement-movement-0]') === null"))
+        ->toBeTrue();
+    $page->click('Will be added 5');
     expect($page->script("document.querySelector('[data-test=statement-movement-status-0] [aria-label=\"Will be added\"]') !== null"))
         ->toBeTrue()
         ->and($page->script("document.querySelector('[data-test=statement-movement-status-0] [aria-label=\"Outside Net Spending\"]') !== null"))
@@ -116,8 +157,10 @@ test('the owner selects a statement once resolves exceptions and confirms the im
 
     expect(StatementImport::query()->count())->toBe(1)
         ->and(StatementMovement::query()->count())->toBe(6)
+        ->and(StatementMovement::query()->where('resolution', 'linked')->count())->toBe(1)
         ->and(StatementMovement::query()->whereNull('transaction_id')->count())->toBe(0)
-        ->and(Transaction::query()->count())->toBe(6);
+        ->and(Transaction::query()->count())->toBe(6)
+        ->and($recordedTransaction->fresh()->statementMovement)->not->toBeNull();
 });
 
 test('BCP WARDA rows preview and confirm as Savings', function () {
@@ -152,7 +195,7 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
         ->press('Upload and check')
         ->assertSee('BCP')
         ->assertDontSee('Category for Savings movements')
-        ->assertSee('2 unresolved');
+        ->assertSee('3 unresolved');
 
     expect($page->value('#movement-0-classification'))
         ->toBe('savings')
@@ -172,6 +215,7 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
         ->assertSee('Choose a recorded Transaction or add this movement as a new one.');
 
     $page->select('#movement-0-resolution', 'create');
+    $page->select('#movement-1-resolution', 'create');
 
     $page->select(
         'select[aria-label="Classification for DEPOSITO"]',
@@ -212,7 +256,7 @@ test('an abandoned preview remains transient and is editable on a mobile viewpor
     selectPdfInBrowser($page, '#preview-statement', $pdf);
     $page
         ->press('Upload and check')
-        ->assertSee('Reconciled')
+        ->assertSee('Statement totals verified')
         ->assertSee('1 unresolved')
         ->assertVisible(
             'select[aria-label="Classification for Mercado Pago"]',
@@ -227,26 +271,26 @@ test('an abandoned preview remains transient and is editable on a mobile viewpor
 
     $page
         ->refresh()
-        ->assertDontSee('Reconciled');
+        ->assertDontSee('Statement totals verified');
 
     expect(StatementImport::query()->doesntExist())->toBeTrue();
 
     selectPdfInBrowser($page, '#preview-statement', $pdf);
     $page
         ->press('Upload and check')
-        ->assertSee('Reconciled')
+        ->assertSee('Statement totals verified')
         ->click('Statement Imports')
         ->assertPathIs('/statement-imports')
         ->back()
         ->assertPathIs('/statement-imports/create')
-        ->assertDontSee('Reconciled');
+        ->assertDontSee('Statement totals verified');
 
     expect(StatementImport::query()->doesntExist())->toBeTrue();
 
     selectPdfInBrowser($page, '#preview-statement', $pdf);
     $page
         ->press('Upload and check')
-        ->assertSee('Reconciled')
+        ->assertSee('Statement totals verified')
         ->resize(1280, 720)
         ->click('[data-test="sidebar-menu-button"]')
         ->click('[data-test="logout-button"]')
