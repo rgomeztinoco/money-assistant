@@ -1,0 +1,77 @@
+#!/bin/sh
+
+set -eu
+
+umask 077
+
+script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+source_directory="${MONEY_ASSISTANT_RELEASE_SOURCE_DIRECTORY:-${script_directory}/..}"
+application_directory="${MONEY_ASSISTANT_APPLICATION_DIRECTORY:-/opt/money-assistant}"
+environment_file="${ENVIRONMENT_FILE:-/etc/money-assistant/production.env}"
+backup_directory="${BACKUP_DIRECTORY:-/var/backups/money-assistant}"
+lock_file="${RELEASE_LOCK_FILE:-/tmp/money-assistant-production-release.lock}"
+release_directory=''
+backup_marker=''
+
+fail()
+{
+    printf 'Production release failed: %s\n' "$1" >&2
+    exit 1
+}
+
+cleanup()
+{
+    if [ -n "$release_directory" ]; then
+        rm -rf -- "$release_directory"
+    fi
+
+    if [ -n "$backup_marker" ]; then
+        rm -f -- "$backup_marker"
+    fi
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+command -v flock >/dev/null 2>&1 || fail 'flock is required'
+command -v git >/dev/null 2>&1 || fail 'Git is required'
+command -v sudo >/dev/null 2>&1 || fail 'sudo is required'
+command -v tar >/dev/null 2>&1 || fail 'tar is required'
+[ -d "$source_directory/.git" ] || fail "release source is not a Git checkout: $source_directory"
+
+exec 9> "$lock_file"
+flock --nonblock 9 || fail 'another production release is already running'
+
+current_branch="$(git -C "$source_directory" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+[ "$current_branch" = 'main' ] || fail 'release source must be a clean main checkout'
+[ -z "$(git -C "$source_directory" status --porcelain)" ] || fail 'release source must be a clean main checkout'
+
+git -C "$source_directory" fetch origin
+git -C "$source_directory" merge --ff-only origin/main
+[ -z "$(git -C "$source_directory" status --porcelain)" ] || fail 'release source must remain clean after updating main'
+revision="$(git -C "$source_directory" rev-parse HEAD)"
+
+sudo -v
+
+backup_marker="$(mktemp /tmp/money-assistant-backup-marker.XXXXXX)"
+sudo systemctl start money-assistant-backup.service || fail 'fresh production backup failed'
+backup_result="$(sudo systemctl show money-assistant-backup.service --property=Result --value)"
+[ "$backup_result" = 'success' ] || fail 'fresh production backup failed'
+fresh_backup="$(sudo find "$backup_directory" -maxdepth 1 -type f -name 'money-assistant-*.dump.age' -newer "$backup_marker" -print -quit)"
+[ -n "$fresh_backup" ] || fail 'fresh production backup was not created'
+
+release_directory="$(mktemp -d /tmp/money-assistant-release.XXXXXX)"
+chmod 0755 "$release_directory"
+git -C "$source_directory" archive --format=tar "$revision" | tar -xf - -C "$release_directory"
+
+sudo install -d -o root -g root -m 0755 "$application_directory"
+sudo rsync --archive --delete --chown=root:root "$release_directory"/ "$application_directory"/
+sudo chmod 0755 "$application_directory"
+
+sudo "$application_directory/production/install-production-services"
+sudo "$application_directory/production/deploy-production"
+sudo "$application_directory/production/verify-private-ingress" "$environment_file"
+
+printf 'Production release completed successfully. Deployed revision: %s\n' "$revision"
