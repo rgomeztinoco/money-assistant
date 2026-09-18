@@ -4,9 +4,9 @@ import {
     DayPicker,
     getDefaultClassNames,
     type DayButton,
-    type Locale,
 } from 'react-day-picker';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { formatCalendarMonth } from '@/lib/date-presentation';
 import { cn } from '@/lib/utils';
 
 function Calendar({
@@ -32,10 +32,10 @@ function Calendar({
                 className,
             )}
             captionLayout={captionLayout}
+            weekStartsOn={1}
             locale={locale}
             formatters={{
-                formatMonthDropdown: (date) =>
-                    date.toLocaleString(locale?.code, { month: 'short' }),
+                formatMonthDropdown: formatCalendarMonth,
                 ...formatters,
             }}
             classNames={{
@@ -105,7 +105,7 @@ function Calendar({
                     return <Icon className={cn('size-4', iconClassName)} />;
                 },
                 DayButton: (dayButtonProps) => (
-                    <CalendarDayButton locale={locale} {...dayButtonProps} />
+                    <CalendarDayButton {...dayButtonProps} />
                 ),
                 ...components,
             }}
@@ -118,9 +118,8 @@ function CalendarDayButton({
     className,
     day,
     modifiers,
-    locale,
     ...props
-}: React.ComponentProps<typeof DayButton> & { locale?: Partial<Locale> }) {
+}: React.ComponentProps<typeof DayButton>) {
     const ref = React.useRef<HTMLButtonElement>(null);
 
     React.useEffect(() => {
@@ -134,7 +133,7 @@ function CalendarDayButton({
             ref={ref}
             variant="ghost"
             size="icon"
-            data-day={day.date.toLocaleDateString(locale?.code)}
+            data-day={`${day.date.getFullYear()}-${String(day.date.getMonth() + 1).padStart(2, '0')}-${String(day.date.getDate()).padStart(2, '0')}`}
             data-range-start={modifiers.range_start}
             data-range-end={modifiers.range_end}
             data-range-middle={modifiers.range_middle}

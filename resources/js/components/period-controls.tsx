@@ -24,6 +24,10 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import {
+    formatDateRange,
+    formatReportingPeriod,
+} from '@/lib/date-presentation';
 import type { ReportingPeriod, ReportingPeriodSelection } from '@/types';
 
 const periodUnits = [
@@ -69,10 +73,8 @@ export function PeriodControls({
         to: parseISO(period.date_to),
     });
     const navigationUnit = period.unit === 'custom' ? 'month' : period.unit;
-    const compactLabel =
-        period.date_from === period.date_to
-            ? format(parseISO(period.date_from), 'MMM d, yyyy')
-            : `${format(parseISO(period.date_from), 'MMM d')} to ${format(parseISO(period.date_to), 'MMM d')}`;
+    const periodLabel = formatReportingPeriod(period);
+    const dateRangeLabel = formatDateRange(period.date_from, period.date_to);
 
     function applyRange() {
         if (range?.from === undefined || range.to === undefined) {
@@ -117,14 +119,13 @@ export function PeriodControls({
                 </Button>
                 <div
                     className="w-28 min-w-0 text-center sm:w-36 lg:w-52"
-                    title={period.label}
+                    title={periodLabel}
                 >
                     <p className="truncate text-sm font-semibold tabular-nums">
-                        <span className="lg:hidden">{compactLabel}</span>
-                        <span className="hidden lg:inline">{period.label}</span>
+                        {dateRangeLabel}
                     </p>
                     <p className="hidden truncate text-xs text-muted-foreground lg:block">
-                        {period.date_from} to {period.date_to}
+                        {periodLabel}
                     </p>
                 </div>
                 <Button

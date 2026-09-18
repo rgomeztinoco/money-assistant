@@ -3,7 +3,6 @@ export type ReportingPeriodUnit =
 
 export type ReportingPeriod = {
     unit: ReportingPeriodUnit;
-    label: string;
     anchor: string;
     date_from: string;
     date_to: string;

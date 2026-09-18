@@ -9,12 +9,12 @@ import {
     ShieldCheck,
     TriangleAlert,
 } from 'lucide-react';
-import { useSyncExternalStore } from 'react';
 import { create as createGmailAuthorization } from '@/actions/App/Http/Controllers/Settings/GmailAuthorizationController';
 import GmailConnectionCheckController from '@/actions/App/Http/Controllers/Settings/GmailConnectionCheckController';
 import GmailFailedMessageRetryController from '@/actions/App/Http/Controllers/Settings/GmailFailedMessageRetryController';
 import GmailImportController from '@/actions/App/Http/Controllers/Settings/GmailImportController';
 import GmailUnsupportedMessagesRetryController from '@/actions/App/Http/Controllers/Settings/GmailUnsupportedMessagesRetryController';
+import { LocalTimestamp } from '@/components/date-time';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -91,44 +91,6 @@ const statusDetails = {
         tone: 'neutral' | 'healthy' | 'warning' | 'danger';
     }
 >;
-
-function formatTimestamp(
-    timestamp: string | null,
-    timeZone: string,
-    missingLabel: string,
-): string {
-    if (timestamp === null) {
-        return missingLabel;
-    }
-
-    return new Intl.DateTimeFormat('en-US', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone,
-    }).format(new Date(timestamp));
-}
-
-function LocalTimestamp({
-    timestamp,
-    missingLabel,
-    className,
-}: {
-    timestamp: string | null;
-    missingLabel: string;
-    className?: string;
-}) {
-    const timeZone = useSyncExternalStore(
-        () => () => undefined,
-        () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-        () => 'UTC',
-    );
-
-    return (
-        <time dateTime={timestamp ?? undefined} className={className}>
-            {formatTimestamp(timestamp, timeZone, missingLabel)}
-        </time>
-    );
-}
 
 function ManualImportButton() {
     return (
@@ -298,7 +260,7 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                                     automatic import
                                 </span>
                                 <LocalTimestamp
-                                    timestamp={gmail.next_scheduled_sync_at}
+                                    value={gmail.next_scheduled_sync_at}
                                     missingLabel={
                                         gmail.state ===
                                         'reauthorization_required'
@@ -317,11 +279,13 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                                     <Download className="size-4" /> Last
                                     successful import
                                 </span>
-                                <LocalTimestamp
-                                    timestamp={gmail.last_successful_sync_at}
-                                    missingLabel="No imports yet"
-                                    className="font-medium tabular-nums"
-                                />
+                                <span data-test="gmail-last-successful-sync">
+                                    <LocalTimestamp
+                                        value={gmail.last_successful_sync_at}
+                                        missingLabel="No imports yet"
+                                        className="font-medium tabular-nums"
+                                    />
+                                </span>
                             </div>
 
                             <div className="grid gap-1 p-5 lg:p-6">
@@ -330,7 +294,7 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                                     checked
                                 </span>
                                 <LocalTimestamp
-                                    timestamp={gmail.last_successful_check_at}
+                                    value={gmail.last_successful_check_at}
                                     missingLabel="Not checked yet"
                                     className="font-medium tabular-nums"
                                 />
@@ -379,7 +343,7 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                                     </CardTitle>
                                     <CardDescription className="flex flex-wrap items-center gap-1">
                                         <LocalTimestamp
-                                            timestamp={
+                                            value={
                                                 gmail.latest_failure.occurred_at
                                             }
                                             missingLabel="Unknown time"

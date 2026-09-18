@@ -122,3 +122,47 @@ test('the owner sees Gmail connection health without credentials reaching the pa
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
+
+test('Gmail instants use the browser timezone and expose their exact value', function () {
+    $connection = GmailConnection::factory()->create([
+        'last_successful_sync_at' => '2026-09-18 02:30:00 UTC',
+    ]);
+    $this->actingAs($connection->owner);
+
+    $page = visit(route('data_sources.gmail'))
+        ->withLocale('en-US')
+        ->withTimezone('America/Lima');
+
+    $page
+        ->assertSee('17 Sep 2026, 9:30 PM')
+        ->assertScript(<<<'JS'
+            (() => {
+                const timestamp = document.querySelector(
+                    '[data-test="gmail-last-successful-sync"] time',
+                );
+
+                return timestamp !== null
+                    && timestamp.dateTime.startsWith('2026-09-18T02:30:00')
+                    && timestamp.title.includes('America/Lima');
+            })()
+            JS);
+    $page->wait(0.1);
+    $page->script(<<<'JS'
+        (() => {
+            const nativeResolvedOptions =
+                Intl.DateTimeFormat.prototype.resolvedOptions;
+            Intl.DateTimeFormat.prototype.resolvedOptions = function () {
+                return {
+                    ...nativeResolvedOptions.call(this),
+                    timeZone: 'Asia/Tokyo',
+                };
+            };
+            globalThis.dispatchEvent(new Event('focus'));
+        })()
+        JS);
+    $page
+        ->waitForText('18 Sep 2026, 11:30 AM')
+        ->assertSee('18 Sep 2026, 11:30 AM')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+});

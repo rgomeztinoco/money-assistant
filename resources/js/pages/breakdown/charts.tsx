@@ -16,6 +16,12 @@ import {
     ChartTooltipContent,
 } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
+import {
+    formatCompactMonthYear,
+    formatContextualDate,
+    formatDateRange,
+    formatFullDate,
+} from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import type { Currency } from '@/types';
 import { selectionUrl } from './links';
@@ -225,7 +231,7 @@ function DailyBar({
             aria-label={
                 !selectable || date === null
                     ? undefined
-                    : `Filter transactions on ${date}`
+                    : `Filter transactions on ${formatFullDate(date)}`
             }
             data-test={
                 !selectable || date === null
@@ -272,12 +278,8 @@ export function DailyChart({
         label: day.date,
         tooltipLabel:
             day.date === day.date_to
-                ? formatChartDate(day.date, {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                  })
-                : `${formatChartDate(day.date, { month: 'short', day: 'numeric' })} – ${formatChartDate(day.date_to, { month: 'short', day: 'numeric', year: 'numeric' })}`,
+                ? formatFullDate(day.date)
+                : formatDateRange(day.date, day.date_to),
         PEN: Number(day.net_spending_minor.PEN) / 100,
         USD: Number(day.net_spending_minor.USD) / 100,
     }));
@@ -338,11 +340,8 @@ export function DailyChart({
                             dataKey="label"
                             tickFormatter={(date: string) =>
                                 granularity === 'month'
-                                    ? formatChartDate(date, { month: 'short' })
-                                    : formatChartDate(date, {
-                                          month: 'short',
-                                          day: 'numeric',
-                                      })
+                                    ? formatCompactMonthYear(date).split(' ')[0]
+                                    : formatContextualDate(date)
                             }
                             tickLine={false}
                             axisLine={false}
@@ -408,14 +407,4 @@ export function DailyChart({
             )}
         </section>
     );
-}
-
-function formatChartDate(
-    date: string,
-    options: Intl.DateTimeFormatOptions,
-): string {
-    return new Intl.DateTimeFormat(undefined, {
-        ...options,
-        timeZone: 'UTC',
-    }).format(new Date(`${date}T00:00:00Z`));
 }

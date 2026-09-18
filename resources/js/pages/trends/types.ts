@@ -3,7 +3,6 @@ import type { Currency, ReportingPeriod } from '@/types';
 export type Period = ReportingPeriod;
 
 export type ComparisonPeriod = {
-    label: string;
     date_from: string;
     date_to: string;
 };

@@ -4,6 +4,10 @@ import { CurrencyFilter } from '@/components/currency-filter';
 import { PeriodControls } from '@/components/period-controls';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+    formatMonthSpan,
+    formatReportingPeriod,
+} from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { periodBreakdownUrl } from '@/lib/transaction-filter-url';
@@ -79,21 +83,7 @@ function comparisonRange(comparisonPeriods: ComparisonPeriod[]): string {
         return '';
     }
 
-    const dateFrom = new Date(`${oldest.date_from}T00:00:00Z`);
-    const dateTo = new Date(`${newest.date_to}T00:00:00Z`);
-    const sameYear = dateFrom.getUTCFullYear() === dateTo.getUTCFullYear();
-    const fromLabel = new Intl.DateTimeFormat('en', {
-        month: 'short',
-        year: sameYear ? undefined : 'numeric',
-        timeZone: 'UTC',
-    }).format(dateFrom);
-    const toLabel = new Intl.DateTimeFormat('en', {
-        month: 'short',
-        year: 'numeric',
-        timeZone: 'UTC',
-    }).format(dateTo);
-
-    return `${fromLabel}–${toLabel}`;
+    return formatMonthSpan(oldest.date_from, newest.date_to);
 }
 
 function ComparisonPeriodIndicator({
@@ -183,7 +173,9 @@ export default function Trends(props: TrendsProps) {
                                             Net spending
                                         </h2>
                                         <p className="text-sm text-muted-foreground">
-                                            {props.period.label}
+                                            {formatReportingPeriod(
+                                                props.period,
+                                            )}
                                         </p>
                                     </div>
                                     <div

@@ -17,7 +17,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Arr;
 
 /**
- * @phpstan-type AnalysisPeriod array{label: string, date_from: string, date_to: string}
+ * @phpstan-type AnalysisPeriod array{date_from: string, date_to: string}
  * @phpstan-type Coverage array{date_from: string, date_to: string, transaction_count: int}
  * @phpstan-type Summary array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}
  * @phpstan-type PulseEvidence array{id: int, description: string, occurred_on: string, amount_minor: string, period: 'current'|'previous', absolute_amount: ExactInteger}
@@ -37,7 +37,7 @@ final class ReadHome
 
     /**
      * @param  array{currency?: string, period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
-     * @return array{currency_filter: string|null, period: array{unit: string, label: string, anchor: string, date_from: string, date_to: string}, primary: Briefing|null, secondary: Briefing|null, today: string}
+     * @return array{currency_filter: string|null, period: array{unit: string, anchor: string, date_from: string, date_to: string}, primary: Briefing|null, secondary: Briefing|null, today: string}
      */
     public function handle(User $owner, array $filters = []): array
     {
@@ -379,7 +379,6 @@ final class ReadHome
     private function analysisPeriod(CarbonImmutable $dateFrom, CarbonImmutable $dateTo): array
     {
         return [
-            'label' => $dateFrom->isoFormat('MMM D').' – '.$dateTo->isoFormat('MMM D, YYYY'),
             'date_from' => $dateFrom->toDateString(),
             'date_to' => $dateTo->toDateString(),
         ];

@@ -75,12 +75,12 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
         ->assertAttribute(
             '[data-test="home-today-marker"]',
             'aria-label',
-            'Today, Aug 22. Observed data ends here.',
+            'Today, 22 Aug. Observed data ends here.',
         )
         ->assertAttribute(
             '[data-test="home-spending-chart"]',
             'aria-label',
-            'Cumulative Net Spending in August 2026 compared with Jul 1 – Jul 22, 2026 for PEN and USD. Observed through Aug 22; future dates have no values.',
+            'Cumulative Net Spending in August 2026 compared with 1 Jul – 22 Jul 2026 for PEN and USD. Observed through 22 Aug; future dates have no values.',
         )
         ->assertPresent('[data-test="home-pen-signal-0"]')
         ->assertPresent('[data-test="home-signal-currency-pen"]')
@@ -284,7 +284,7 @@ test('Home explains the spending direction with selectable Transaction evidence'
         ->assertSee('Income')
         ->assertSee('Moved to savings')
         ->assertSeeIn('[data-test="home-pen-signal-evidence"]', 'Previous Neighborhood Market')
-        ->assertSeeIn('[data-test="home-pen-signal-evidence"]', 'Jul 8')
+        ->assertSeeIn('[data-test="home-pen-signal-evidence"]', '8 Jul')
         ->click('[data-test="home-pen-signal-1"]')
         ->assertSeeIn('[data-test="home-pen-signal-evidence"]', 'City Bus')
         ->resize(390, 844)
@@ -358,12 +358,12 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
         ->assertSeeIn('[data-test="trends-summary-usd"]', 'USD')
         ->assertSee('Compared with')
         ->assertSee('Previous 6 months')
-        ->assertSee('Feb–Jul 2026')
+        ->assertSee('Feb – Jul 2026')
         ->assertSee('August 2026')
         ->assertSee('Food')
         ->assertSee('Central Market')
         ->assertSee('Category and merchant views overlap')
-        ->assertSee('Partial month through Aug 22')
+        ->assertSee('Partial month through 22 Aug')
         ->assertPresent('[data-test="trends-ledger-all"]')
         ->assertNotPresent('[data-test="trends-ledger-pen"]')
         ->assertNotPresent('[data-test="trends-ledger-usd"]')
@@ -385,7 +385,7 @@ test('Trends scans and filters the combined change ledger before opening Breakdo
     $page
         ->click('[data-test="trends-all-filter-category"]')
         ->assertPathIs('/trends')
-        ->assertSee('Aug 1 to Aug 31')
+        ->assertSee('August 2026')
         ->assertPresent('[data-test="trend-breakdown-pen-category-'.$food->id.'"]')
         ->assertNotPresent('[data-test="trend-breakdown-pen-merchant-central-market"]');
 
@@ -587,6 +587,46 @@ test('Reporting period and currency persist between the main money pages', funct
         ->assertNoConsoleLogs();
 });
 
+test('Reporting labels use the shared period and range grammar', function () {
+    $owner = User::factory()->create();
+    $this->actingAs($owner);
+
+    visit(route('trends.index', [
+        'period' => 'custom',
+        'date_from' => '2026-07-01',
+        'date_to' => '2026-07-22',
+    ]))
+        ->assertSee('1 Jul – 22 Jul 2026');
+
+    visit(route('trends.index', [
+        'period' => 'custom',
+        'date_from' => '2026-07-28',
+        'date_to' => '2026-08-03',
+    ]))
+        ->assertSee('28 Jul – 3 Aug 2026');
+
+    visit(route('trends.index', [
+        'period' => 'custom',
+        'date_from' => '2025-12-28',
+        'date_to' => '2026-01-03',
+    ]))
+        ->assertSee('28 Dec 2025 – 3 Jan 2026');
+
+    visit(route('trends.index', [
+        'period' => 'quarter',
+        'anchor' => '2026-08-22',
+    ]))
+        ->assertSee('Q3 2026');
+
+    visit(route('trends.index', [
+        'period' => 'year',
+        'anchor' => '2026-08-22',
+    ]))
+        ->assertSee('2026')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+});
+
 test('Trends distinguishes empty activity, missing context, and no material findings', function () {
     $historicalOwner = User::factory()->create();
     Transaction::factory()->for($historicalOwner, 'owner')->spending()->pen()->create([
@@ -597,7 +637,7 @@ test('Trends distinguishes empty activity, missing context, and no material find
 
     visit('/trends')
         ->assertSee('No activity')
-        ->assertSee('Partial month through Aug 22')
+        ->assertSee('Partial month through 22 Aug')
         ->assertSee('No USD activity');
 
     $emptyOwner = User::factory()->create();

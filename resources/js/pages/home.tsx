@@ -17,6 +17,7 @@ import {
     YAxis,
 } from 'recharts';
 import { CurrencyFilter } from '@/components/currency-filter';
+import { DateText } from '@/components/date-time';
 import { PeriodControls } from '@/components/period-controls';
 import { SourceCoverage } from '@/components/source-coverage';
 import type { RecordedCoverageSource } from '@/components/source-coverage';
@@ -39,6 +40,11 @@ import {
 } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+    formatContextualDate,
+    formatDateRange,
+    formatReportingPeriod,
+} from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import {
@@ -80,7 +86,7 @@ type PulseSignal = {
 };
 
 type Pulse = {
-    previous_period: Pick<Period, 'label' | 'date_from' | 'date_to'>;
+    previous_period: Pick<Period, 'date_from' | 'date_to'>;
     previous_net_spending_minor: string;
     change_minor: string;
     percentage_change: number | null;
@@ -157,11 +163,7 @@ function homeReportingHref({
 }
 
 function shortDate(date: string): string {
-    return new Intl.DateTimeFormat('en', {
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC',
-    }).format(new Date(`${date}T00:00:00Z`));
+    return formatContextualDate(date);
 }
 
 function oneBasedDayWithinPeriod(dateFrom: string, date: string): number {
@@ -178,7 +180,10 @@ function oneBasedDayWithinPeriod(dateFrom: string, date: string): number {
 
 function coverageText(briefing: Briefing): string {
     if (briefing.coverage.transaction_count === 0) {
-        return `${shortDate(briefing.coverage.date_from)} to ${shortDate(briefing.coverage.date_to)}`;
+        return formatDateRange(
+            briefing.coverage.date_from,
+            briefing.coverage.date_to,
+        );
     }
 
     const transactionLabel =
@@ -186,7 +191,7 @@ function coverageText(briefing: Briefing): string {
             ? 'Transaction'
             : 'Transactions';
 
-    return `${shortDate(briefing.coverage.date_from)} to ${shortDate(briefing.coverage.date_to)} · ${briefing.coverage.transaction_count} ${transactionLabel}`;
+    return `${formatDateRange(briefing.coverage.date_from, briefing.coverage.date_to)} · ${briefing.coverage.transaction_count} ${transactionLabel}`;
 }
 
 function absoluteAmount(amount: string): string {
@@ -205,12 +210,12 @@ function spendingChangeDescription(briefing: Briefing): string {
     const pulse = briefing.pulse;
 
     if (pulse === null || pulse.change_minor === '0') {
-        return `unchanged from ${pulse?.previous_period.label ?? 'the previous period'}`;
+        return `unchanged from ${pulse === null ? 'the previous period' : formatDateRange(pulse.previous_period.date_from, pulse.previous_period.date_to)}`;
     }
 
     const changedDown = pulse.change_minor.startsWith('-');
 
-    return `${formatMinorUnits(absoluteAmount(pulse.change_minor), briefing.currency)} ${changedDown ? 'lower' : 'higher'} than ${pulse.previous_period.label}`;
+    return `${formatMinorUnits(absoluteAmount(pulse.change_minor), briefing.currency)} ${changedDown ? 'lower' : 'higher'} than ${formatDateRange(pulse.previous_period.date_from, pulse.previous_period.date_to)}`;
 }
 
 function percentageChangeLabel(briefing: Briefing): string {
@@ -287,7 +292,7 @@ function SpendingComparisonChart({
     const hasFutureDates =
         primary.period.date_from <= today && today < primary.period.date_to;
     const todayLabel = shortDate(today);
-    const chartDescription = `Cumulative Net Spending in ${primary.period.label} compared with ${primaryPulse.previous_period.label} for ${briefings.map((briefing) => briefing.currency).join(' and ')}`;
+    const chartDescription = `Cumulative Net Spending in ${formatReportingPeriod(primary.period)} compared with ${formatDateRange(primaryPulse.previous_period.date_from, primaryPulse.previous_period.date_to)} for ${briefings.map((briefing) => briefing.currency).join(' and ')}`;
 
     return (
         <ChartContainer
@@ -515,7 +520,12 @@ function SignalEvidence({
                         signal.previous_total_minor,
                         briefing.currency,
                     )}{' '}
-                    in {pulse.previous_period.label}.
+                    in{' '}
+                    {formatDateRange(
+                        pulse.previous_period.date_from,
+                        pulse.previous_period.date_to,
+                    )}
+                    .
                 </p>
             </div>
 
@@ -529,10 +539,17 @@ function SignalEvidence({
                             <div className="min-w-0">
                                 <dt className="truncate">{item.description}</dt>
                                 <dd className="text-muted-foreground">
-                                    {shortDate(item.occurred_on)} ·{' '}
+                                    <DateText
+                                        value={item.occurred_on}
+                                        format="contextual"
+                                    />{' '}
+                                    ·{' '}
                                     {item.period === 'current'
-                                        ? briefing.period.label
-                                        : pulse.previous_period.label}
+                                        ? formatReportingPeriod(briefing.period)
+                                        : formatDateRange(
+                                              pulse.previous_period.date_from,
+                                              pulse.previous_period.date_to,
+                                          )}
                                 </dd>
                             </div>
                             <dd className="shrink-0 tabular-nums">
@@ -849,8 +866,12 @@ function HomeBriefing({
                                     Cumulative Net Spending
                                 </h3>
                                 <p className="text-sm text-muted-foreground">
-                                    {primary.period.label} compared with{' '}
-                                    {pulse.previous_period.label}
+                                    {formatReportingPeriod(primary.period)}{' '}
+                                    compared with{' '}
+                                    {formatDateRange(
+                                        pulse.previous_period.date_from,
+                                        pulse.previous_period.date_to,
+                                    )}
                                 </p>
                             </div>
                             <div className="flex flex-wrap gap-2">

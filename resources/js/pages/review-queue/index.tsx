@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { update as assignLineItemCategory } from '@/actions/App/Http/Controllers/ReviewQueueLineItemCategoryController';
 import { update as assignTransactionCategory } from '@/actions/App/Http/Controllers/ReviewQueueTransactionCategoryController';
 import { update as resolveTransactionField } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
+import { DateText } from '@/components/date-time';
 import InputError from '@/components/input-error';
 import { TransactionInspector } from '@/components/transaction-inspector';
 import { Badge } from '@/components/ui/badge';
@@ -155,7 +156,9 @@ function TransactionSummary({
             </div>
             <div>
                 <p className="text-sm text-muted-foreground">Date</p>
-                <p className="font-medium">{transaction.occurred_on}</p>
+                <p className="font-medium">
+                    <DateText value={transaction.occurred_on} />
+                </p>
             </div>
             <div>
                 <p className="text-sm text-muted-foreground">Kind</p>

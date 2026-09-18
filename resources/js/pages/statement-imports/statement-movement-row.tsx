@@ -1,5 +1,6 @@
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { DateText } from '@/components/date-time';
 import { Badge } from '@/components/ui/badge';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { formatMinorUnits } from '@/lib/format-minor-units';
@@ -63,7 +64,7 @@ export default function StatementMovementRow({
                         {description}
                     </span>
                     <span className="text-xs text-muted-foreground tabular-nums">
-                        {occurredOn} · Movement {position}
+                        <DateText value={occurredOn} /> · Movement {position}
                     </span>
                     {detail}
                 </div>

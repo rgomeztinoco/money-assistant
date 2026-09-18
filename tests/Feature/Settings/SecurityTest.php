@@ -23,6 +23,33 @@ test('security page displays passkey and recovery password settings', function (
         );
 });
 
+test('security page sends passkey instants for browser-relative presentation', function () {
+    Features::passkeys([
+        'confirmPassword' => true,
+    ]);
+
+    $owner = User::factory()->create();
+    $passkey = $owner->passkeys()->create([
+        'name' => 'Laptop passkey',
+        'credential_id' => 'security-page-credential',
+        'credential' => [],
+    ]);
+    $passkey->forceFill([
+        'created_at' => '2026-09-18 12:00:00 UTC',
+        'last_used_at' => '2026-09-18 13:30:00 UTC',
+    ])->save();
+
+    $this->actingAs($owner)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('security.edit'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('passkeys.0.created_at', '2026-09-18T12:00:00+00:00')
+            ->where('passkeys.0.last_used_at', '2026-09-18T13:30:00+00:00')
+            ->missing('passkeys.0.created_at_diff')
+            ->missing('passkeys.0.last_used_at_diff'),
+        );
+});
+
 test('security page requires fresh authentication', function () {
     $owner = User::factory()->create();
 
