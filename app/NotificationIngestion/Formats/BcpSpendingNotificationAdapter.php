@@ -67,7 +67,10 @@ final class BcpSpendingNotificationAdapter implements SpendingNotificationFormat
 
     private function electronicFeeInvoice(GmailMessage $message): ?SupportedSpendingNotification
     {
-        if (! Str::startsWith($message->subject, 'BCP - ¡Te enviamos tu nuevo comprobante electrónico! - FN01-')) {
+        if (! Str::startsWith(
+            Str::squish($message->subject),
+            'BCP - ¡Te enviamos tu nuevo comprobante electrónico! - FN01-',
+        )) {
             return null;
         }
 
@@ -142,7 +145,7 @@ final class BcpSpendingNotificationAdapter implements SpendingNotificationFormat
     private function otherBankTransferSpending(string $body): SupportedSpendingNotification
     {
         $matches = $this->capture(
-            '/Total cobrado\s+(S\/?\.?|US\$|USD|\$)\s*([\d.,]+).*?Fecha y hora\s+(.+?)\s+-\s+\d{1,2}:\d{2}\s+[AP]M\s+Enviado a\s+(.+?)\s+Banco destino.*?Desde\s+(.+?)\s+Mensaje/iu',
+            '/Monto enviado\s+(S\/?\.?|US\$|USD|\$)\s*([\d.,]+).*?Fecha y hora\s+(.+?)\s+-\s+\d{1,2}:\d{2}\s+[AP]M\s+Enviado a\s+(.+?)\s+Banco destino.*?Desde\s+(.+?)\s+Mensaje/iu',
             $body,
         );
         [$amountMinor, $currency] = $this->messageText->money($matches[1], $matches[2]);

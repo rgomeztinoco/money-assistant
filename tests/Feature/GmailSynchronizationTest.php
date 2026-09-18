@@ -281,6 +281,19 @@ test('a newly supported Gmail message creates its agreed Transaction exactly onc
             'instrument_last_four' => null,
         ],
     ],
+    'BCP other-bank transfer excludes its separately invoiced commission' => [
+        'bcp-other-bank-transfer-spending.json',
+        'created',
+        [
+            'amount_minor' => 2500,
+            'currency' => 'PEN',
+            'kind' => 'spending',
+            'description' => 'Transfer to SAMPLE RECIPIENT',
+            'provisional_fields' => [],
+            'instrument_label' => 'BCP account',
+            'instrument_last_four' => '1234',
+        ],
+    ],
     'BCP third-party transfer' => [
         'bcp-third-party-transfer.json',
         'created_with_review',
@@ -647,10 +660,15 @@ test('Gmail jobs use bounded Laravel queue retries and backoff', function () {
         GmailSynchronizationType::Incremental,
     );
 
+    $messageJob = new ProcessGmailMessage(42);
+    $unsupportedRetryJob = new ProcessGmailMessage(42, retryUnsupported: true);
+
     expect($job->tries)->toBe(5)
         ->and($job->backoff())->toBe([60, 300, 900])
-        ->and((new ProcessGmailMessage(42))->tries)->toBe(5)
-        ->and((new ProcessGmailMessage(42))->backoff())->toBe([60, 300, 900]);
+        ->and($messageJob->tries)->toBe(5)
+        ->and($messageJob->backoff())->toBe([60, 300, 900])
+        ->and($messageJob->uniqueId())->toBe('42:process')
+        ->and($unsupportedRetryJob->uniqueId())->toBe('42:retry-unsupported');
 
     expect(fn () => app()->call([$job, 'handle']))
         ->toThrow(GmailRequestFailed::class);

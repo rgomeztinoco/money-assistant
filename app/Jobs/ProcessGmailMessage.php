@@ -28,7 +28,7 @@ class ProcessGmailMessage implements ShouldBeUnique, ShouldQueue
 
     public function uniqueId(): string
     {
-        return (string) $this->discoveryId;
+        return $this->discoveryId.($this->retryUnsupported ? ':retry-unsupported' : ':process');
     }
 
     /** @return list<object> */

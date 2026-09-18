@@ -14,7 +14,7 @@
     "expected": {
         "format_identifier": "bcp.other_bank_transfer_spending",
         "occurred_on": "2026-08-06",
-        "amount_minor": 2750,
+        "amount_minor": 2500,
         "currency": "PEN",
         "kind": "spending",
         "direction": "debit",

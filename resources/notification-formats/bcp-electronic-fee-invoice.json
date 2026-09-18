@@ -3,7 +3,7 @@
         "message_id": "fixture-bcp-electronic-fee-invoice",
         "received_at": "2026-09-03T14:00:00Z",
         "from_address": "comprobante-electronico@notificacionesbcp.com.pe",
-        "subject": "BCP - ¡Te enviamos tu nuevo comprobante electrónico! - FN01-50000001",
+        "subject": "BCP - ¡Te enviamos tu nuevo comprobante electrónico! -  FN01-50000001",
         "authentication": {
             "spf": { "result": "pass", "domain": null },
             "dkim": { "result": "pass", "domain": null },
