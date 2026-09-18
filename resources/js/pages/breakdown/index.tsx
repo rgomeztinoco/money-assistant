@@ -14,6 +14,7 @@ import {
 import { useState } from 'react';
 import { update as updateClassification } from '@/actions/App/Http/Controllers/BreakdownTransactionClassificationController';
 import { CurrencyFilter } from '@/components/currency-filter';
+import { DateText } from '@/components/date-time';
 import { PeriodControls } from '@/components/period-controls';
 import { SourceCoverage } from '@/components/source-coverage';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +42,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { formatReportingPeriod } from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import {
     incomeSourceLabel,
@@ -178,7 +180,9 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
         >
             <header className="flex items-start justify-between gap-4">
                 <div>
-                    <h2 className="font-semibold">{props.period.label}</h2>
+                    <h2 className="font-semibold">
+                        {formatReportingPeriod(props.period)}
+                    </h2>
                 </div>
                 <span className="text-right text-xs text-muted-foreground tabular-nums">
                     {props.coverage.transaction_count}{' '}
@@ -688,7 +692,10 @@ function TransactionTable({ props }: { props: BreakdownProps }) {
                                             {transaction.description}
                                         </span>
                                         <span className="text-xs text-muted-foreground tabular-nums">
-                                            {transaction.occurred_on} ·{' '}
+                                            <DateText
+                                                value={transaction.occurred_on}
+                                            />{' '}
+                                            ·{' '}
                                             {movementDescription({
                                                 kind: transaction.kind,
                                                 transferPurpose:

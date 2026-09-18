@@ -2,6 +2,7 @@ import { Form, Head, Link } from '@inertiajs/react';
 import { ArrowLeft, ExternalLink, FileCheck2, PencilLine } from 'lucide-react';
 import { useState } from 'react';
 import { update as updateStatementMovementClassification } from '@/actions/App/Http/Controllers/StatementMovementClassificationController';
+import { DateText, LocalTimestamp } from '@/components/date-time';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { formatDateRange } from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import {
     incomeSourceLabel,
@@ -358,8 +360,10 @@ export default function StatementImportShow({
                                         Verified statement period
                                     </CardTitle>
                                     <CardDescription>
-                                        {statement_import.period_start} through{' '}
-                                        {statement_import.period_end}
+                                        {formatDateRange(
+                                            statement_import.period_start,
+                                            statement_import.period_end,
+                                        )}
                                     </CardDescription>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -414,9 +418,11 @@ export default function StatementImportShow({
                                     </span>
                                     <span>
                                         Confirmed{' '}
-                                        {new Date(
-                                            statement_import.confirmed_at,
-                                        ).toLocaleString()}
+                                        <LocalTimestamp
+                                            value={
+                                                statement_import.confirmed_at
+                                            }
+                                        />
                                     </span>
                                     <span>
                                         Parser {statement_import.parser_version}
@@ -579,9 +585,11 @@ export default function StatementImportShow({
                                                                 }
                                                             </span>
                                                             <span className="text-xs text-muted-foreground tabular-nums">
-                                                                {
-                                                                    value.occurred_on
-                                                                }
+                                                                <DateText
+                                                                    value={
+                                                                        value.occurred_on
+                                                                    }
+                                                                />
                                                             </span>
                                                             {Object.keys(
                                                                 value.source_metadata,

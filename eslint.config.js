@@ -95,10 +95,41 @@ export default [
             '@stylistic': stylistic,
         },
         rules: {
-            '@stylistic/brace-style': ['error', '1tbs', { allowSingleLine: false }],
+            '@stylistic/brace-style': [
+                'error',
+                '1tbs',
+                { allowSingleLine: false },
+            ],
             '@stylistic/padding-line-between-statements': [
                 'error',
                 ...paddingAroundControl,
+            ],
+        },
+    },
+    {
+        files: ['resources/js/**/*.{ts,tsx}'],
+        ignores: ['resources/js/lib/date-presentation.ts'],
+        rules: {
+            'no-restricted-syntax': [
+                'error',
+                {
+                    selector:
+                        "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+                    message:
+                        'Use the shared date presentation API in @/lib/date-presentation.',
+                },
+                {
+                    selector:
+                        "CallExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+                    message:
+                        'Use the shared date presentation API in @/lib/date-presentation.',
+                },
+                {
+                    selector:
+                        'CallExpression[callee.property.name=/^toLocale(DateString|TimeString|String)$/]',
+                    message:
+                        'Use the shared date presentation API in @/lib/date-presentation.',
+                },
             ],
         },
     },
@@ -124,7 +155,11 @@ export default [
         },
         rules: {
             curly: ['error', 'all'],
-            '@stylistic/brace-style': ['error', '1tbs', { allowSingleLine: false }],
+            '@stylistic/brace-style': [
+                'error',
+                '1tbs',
+                { allowSingleLine: false },
+            ],
         },
     },
 ];

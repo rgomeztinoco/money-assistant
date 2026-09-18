@@ -16,6 +16,7 @@ import {
     store as voidTransaction,
 } from '@/actions/App/Http/Controllers/TransactionVoidController';
 import AlertError from '@/components/alert-error';
+import { DateText } from '@/components/date-time';
 import InputError from '@/components/input-error';
 import { TransactionInspector } from '@/components/transaction-inspector';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +32,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
+import { formatFullDate } from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import {
     incomeSourceOptions,
@@ -170,8 +172,8 @@ function LedgerFiltersForm({
 }) {
     const activeFilters = [
         filters.search ? `Search: ${filters.search}` : null,
-        filters.date_from ? `From: ${filters.date_from}` : null,
-        filters.date_to ? `To: ${filters.date_to}` : null,
+        filters.date_from ? `From: ${formatFullDate(filters.date_from)}` : null,
+        filters.date_to ? `To: ${formatFullDate(filters.date_to)}` : null,
         filters.currency === 'all' ? null : `Currency: ${filters.currency}`,
         filters.kind === 'all'
             ? null
@@ -624,8 +626,11 @@ function LedgerList({
                                     )}
                                 </p>
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                                {transaction.occurred_on}
+                            <p
+                                className="text-xs text-muted-foreground"
+                                data-test={`transaction-${transaction.id}-occurred-on`}
+                            >
+                                <DateText value={transaction.occurred_on} />
                             </p>
                             <div className="flex flex-wrap gap-1">
                                 <Badge

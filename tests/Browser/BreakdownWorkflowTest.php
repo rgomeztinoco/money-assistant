@@ -88,8 +88,8 @@ test('Category and day charts drill into the same supporting detail', function (
                     && style.boxShadow !== 'none';
             })()
             JS)
-        ->assertSee(str($yesterday)->after('-')->toString())
-        ->assertSee(str($today)->after('-')->toString())
+        ->assertSee(now()->subDay()->format('j M'))
+        ->assertSee(now()->format('j M'))
         ->click('[aria-label="Choose a custom date range"]')
         ->assertSee('Apply range')
         ->press('Apply range')

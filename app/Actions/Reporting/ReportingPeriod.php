@@ -73,12 +73,11 @@ final readonly class ReportingPeriod
         return new self($this->unit, $this->dateFrom, $cutoff);
     }
 
-    /** @return array{unit: string, label: string, anchor: string, date_from: string, date_to: string} */
+    /** @return array{unit: string, anchor: string, date_from: string, date_to: string} */
     public function data(): array
     {
         return [
             'unit' => $this->unit,
-            'label' => $this->label(),
             'anchor' => $this->anchor(),
             'date_from' => $this->dateFrom->toDateString(),
             'date_to' => $this->dateTo->toDateString(),
@@ -94,28 +93,5 @@ final readonly class ReportingPeriod
             'year' => $this->dateFrom->startOfYear()->toDateString(),
             default => $this->dateFrom->toDateString(),
         };
-    }
-
-    private function label(): string
-    {
-        if ($this->unit === 'month'
-            && $this->dateFrom->isStartOfMonth()
-            && $this->dateTo->isEndOfMonth()) {
-            return $this->dateFrom->isoFormat('MMMM YYYY');
-        }
-
-        if ($this->unit === 'quarter'
-            && $this->dateFrom->isStartOfQuarter()
-            && $this->dateTo->isEndOfQuarter()) {
-            return 'Q'.$this->dateFrom->quarter.' '.$this->dateFrom->year;
-        }
-
-        if ($this->unit === 'year'
-            && $this->dateFrom->isStartOfYear()
-            && $this->dateTo->isEndOfYear()) {
-            return (string) $this->dateFrom->year;
-        }
-
-        return $this->dateFrom->isoFormat('ll').' – '.$this->dateTo->isoFormat('ll');
     }
 }

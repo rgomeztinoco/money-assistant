@@ -31,8 +31,8 @@ class SecurityController extends Controller
                         'id' => $passkey->id,
                         'name' => $passkey->name,
                         'authenticator' => $passkey->authenticator,
-                        'created_at_diff' => $passkey->created_at->diffForHumans(),
-                        'last_used_at_diff' => $passkey->last_used_at?->diffForHumans(),
+                        'created_at' => $passkey->created_at->toIso8601String(),
+                        'last_used_at' => $passkey->last_used_at?->toIso8601String(),
                     ])
                     ->values()
                     ->all()

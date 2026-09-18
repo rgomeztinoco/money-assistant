@@ -4,6 +4,7 @@ import { ChevronUp, CircleDollarSign, FileText, Save, Tag } from 'lucide-react';
 import { useState } from 'react';
 import { update as updateClassification } from '@/actions/App/Http/Controllers/BreakdownTransactionClassificationController';
 import { update as updateTransaction } from '@/actions/App/Http/Controllers/TransactionController';
+import { LocalTimestamp } from '@/components/date-time';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -510,7 +511,7 @@ export function TransactionDetails({
                     <div>
                         <dt className="text-muted-foreground">Confirmed</dt>
                         <dd className="font-medium">
-                            {transaction.confirmed_at.slice(0, 10)}
+                            <LocalTimestamp value={transaction.confirmed_at} />
                         </dd>
                     </div>
                     <div>

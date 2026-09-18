@@ -19,6 +19,7 @@ import { useState } from 'react';
 import { store as confirmStatementImport } from '@/actions/App/Http/Controllers/StatementImportController';
 import { store as previewStatementImport } from '@/actions/App/Http/Controllers/StatementImportPreviewController';
 import AlertError from '@/components/alert-error';
+import { DateText } from '@/components/date-time';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { formatDateRange, formatFullDate } from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import {
     statementMovementClassificationOptions,
@@ -262,7 +264,7 @@ function candidateSupportsMovement(
 function candidateLabel(candidate: StatementMatchCandidate): string {
     const sign = candidate.direction === 'credit' ? '+' : '−';
 
-    return `${candidate.occurred_on} · ${sign}${formatMinorUnits(candidate.amount_minor, candidate.currency)} · ${candidate.description}`;
+    return `${formatFullDate(candidate.occurred_on)} · ${sign}${formatMinorUnits(candidate.amount_minor, candidate.currency)} · ${candidate.description}`;
 }
 
 function invalidateLinkedMovements(
@@ -373,7 +375,7 @@ function MovementEditor({
                                 className="tabular-nums"
                                 data-test={`statement-movement-date-${movementIndex}`}
                             >
-                                {movement.occurred_on}
+                                <DateText value={movement.occurred_on} />
                             </span>
                             <div
                                 className="flex items-center gap-1"
@@ -974,8 +976,10 @@ export default function CreateStatementImport() {
                                                     3. Confirm
                                                 </h2>
                                                 <p className="text-sm text-muted-foreground">
-                                                    {preview.period_start}{' '}
-                                                    through {preview.period_end}
+                                                    {formatDateRange(
+                                                        preview.period_start,
+                                                        preview.period_end,
+                                                    )}
                                                 </p>
                                             </div>
                                             <dl

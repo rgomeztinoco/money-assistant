@@ -5,9 +5,60 @@ use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
+use Carbon\CarbonImmutable;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
+});
+
+test('date-only values stay fixed while instants follow the browser timezone', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-07-20',
+        'confirmed_at' => CarbonImmutable::parse('2026-07-20 02:30:00 UTC'),
+        'description' => 'Timezone boundary purchase',
+    ]);
+    $this->actingAs($owner);
+
+    $limaPage = visit(route('transactions.index', [
+        'selected' => $transaction->id,
+    ]))
+        ->withLocale('en-US')
+        ->withTimezone('America/Lima');
+
+    $limaPage
+        ->assertSeeIn(
+            '[data-test="transaction-'.$transaction->id.'-occurred-on"]',
+            '20 Jul 2026',
+        )
+        ->assertSeeIn(
+            '[data-test="transaction-confirmed-at"]',
+            '19 Jul 2026, 9:30 PM',
+        )
+        ->assertScript(
+            'document.querySelector(\'[data-test="transaction-'.$transaction->id.'-occurred-on"] time\')?.dateTime === \'2026-07-20\'',
+        )
+        ->assertScript(
+            'document.querySelector(\'[data-test="transaction-confirmed-at"] time\')?.dateTime.startsWith(\'2026-07-20T02:30:00\')',
+        );
+
+    $tokyoPage = visit(route('transactions.index', [
+        'selected' => $transaction->id,
+    ]))
+        ->withLocale('en-US')
+        ->withTimezone('Asia/Tokyo');
+
+    $tokyoPage
+        ->assertSeeIn(
+            '[data-test="transaction-'.$transaction->id.'-occurred-on"]',
+            '20 Jul 2026',
+        )
+        ->assertSeeIn(
+            '[data-test="transaction-confirmed-at"]',
+            '20 Jul 2026, 11:30 AM',
+        )
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
 });
 
 test('filters, selection, and scroll context persist while directly editing a Transaction in the inspector', function () {

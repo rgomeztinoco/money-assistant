@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { ArrowRight, FilePlus2, FileText } from 'lucide-react';
+import { LocalTimestamp } from '@/components/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,6 +18,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { formatDateRange } from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { create, index, show } from '@/routes/statement_imports';
 
@@ -155,13 +157,10 @@ export default function StatementImportsIndex({
                                                             }
                                                         </Link>
                                                         <p className="text-sm text-muted-foreground tabular-nums">
-                                                            {
-                                                                statementImport.period_start
-                                                            }{' '}
-                                                            through{' '}
-                                                            {
-                                                                statementImport.period_end
-                                                            }
+                                                            {formatDateRange(
+                                                                statementImport.period_start,
+                                                                statementImport.period_end,
+                                                            )}
                                                         </p>
                                                     </div>
                                                     <Badge variant="outline">
@@ -234,9 +233,11 @@ export default function StatementImportsIndex({
                                                 <div className="flex items-end justify-between gap-3 border-t pt-3">
                                                     <p className="text-xs text-muted-foreground tabular-nums">
                                                         Confirmed{' '}
-                                                        {new Date(
-                                                            statementImport.confirmed_at,
-                                                        ).toLocaleString()}
+                                                        <LocalTimestamp
+                                                            value={
+                                                                statementImport.confirmed_at
+                                                            }
+                                                        />
                                                     </p>
                                                     <Button
                                                         asChild
@@ -341,13 +342,10 @@ export default function StatementImportsIndex({
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="min-w-48 tabular-nums">
-                                                            {
-                                                                statementImport.period_start
-                                                            }{' '}
-                                                            through{' '}
-                                                            {
-                                                                statementImport.period_end
-                                                            }
+                                                            {formatDateRange(
+                                                                statementImport.period_start,
+                                                                statementImport.period_end,
+                                                            )}
                                                         </TableCell>
                                                         <TableCell className="text-center font-medium tabular-nums">
                                                             {
@@ -385,9 +383,11 @@ export default function StatementImportsIndex({
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="min-w-44 text-sm text-muted-foreground tabular-nums">
-                                                            {new Date(
-                                                                statementImport.confirmed_at,
-                                                            ).toLocaleString()}
+                                                            <LocalTimestamp
+                                                                value={
+                                                                    statementImport.confirmed_at
+                                                                }
+                                                            />
                                                         </TableCell>
                                                         <TableCell className="pr-6 text-right">
                                                             <Button

@@ -59,6 +59,8 @@ test('the owner reviews the full statement with automatic matches and confirms t
         ->assertSee('Outside Net Spending')
         ->assertSee('Unresolved')
         ->assertSee('Grocery')
+        ->assertSee('20 Jan 2026')
+        ->assertDontSee('2026-01-20')
         ->assertButtonDisabled('Confirm import');
     expect($page->value('select[aria-label="Classification for Mercado Pago"]'))
         ->toBe('needs_classification')
@@ -91,7 +93,7 @@ test('the owner reviews the full statement with automatic matches and confirms t
         ->and($page->value('#movement-2-resolution'))
         ->toBe("link:{$recordedTransaction->id}")
         ->and($page->script("document.querySelector('#movement-2-resolution').selectedOptions[0].textContent"))
-        ->toBe('2026-01-20 · −S/ 20.00 · Grocery')
+        ->toBe('20 Jan 2026 · −S/ 20.00 · Grocery')
         ->and($page->script("document.querySelector('[data-test=statement-movements]').textContent.includes('Low-confidence match')"))
         ->toBeFalse();
     $page
@@ -136,6 +138,8 @@ test('the owner reviews the full statement with automatic matches and confirms t
     $page
         ->assertPathBeginsWith('/statement-imports/')
         ->assertSee('Statement Import')
+        ->assertSee('21 Jan – 20 Feb 2026')
+        ->assertDontSee('2026-01-20')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 

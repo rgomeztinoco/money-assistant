@@ -124,11 +124,33 @@ test('the owner can register a passkey and use it for normal sign-in', function 
         ->press('Add passkey')
         ->type('Passkey name', 'Browser test passkey')
         ->press('Register passkey')
-        ->assertSee('Browser test passkey');
+        ->assertSee('Browser test passkey')
+        ->assertSee('Added just now')
+        ->assertScript(<<<'JS'
+            (() => {
+                const timestamp = document.querySelector(
+                    '[datetime][aria-label*="("]',
+                );
+
+                return timestamp !== null
+                    && timestamp.textContent.trim() === 'just now'
+                    && timestamp.dateTime !== '';
+            })()
+            JS);
 
     $credentials = browserPasskeyCredentials($page);
 
     expect($credentials)->toHaveCount(1);
+
+    $page->assertSee('Added just now');
+    $page->script(<<<'JS'
+        (() => {
+            const nativeNow = Date.now.bind(Date);
+            Date.now = () => nativeNow() + 149_000;
+            globalThis.dispatchEvent(new Event('focus'));
+        })()
+    JS);
+    $page->assertSee('Added 2 minutes ago');
 
     $page
         ->click('[data-test="sidebar-menu-button"]')
