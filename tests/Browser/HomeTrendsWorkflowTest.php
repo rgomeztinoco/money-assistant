@@ -176,8 +176,8 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
         ->click('[data-test="home-coverage"]')
         ->assertPathIs('/breakdown')
         ->assertQueryStringHas('currency', 'PEN')
-        ->assertQueryStringHas('date_from', '2026-08-08')
-        ->assertQueryStringHas('date_to', '2026-08-09');
+        ->assertQueryStringHas('date_from', '2026-08-01')
+        ->assertQueryStringHas('date_to', '2026-08-31');
 
     $page = visit('/');
 

@@ -164,7 +164,7 @@ function shortDate(date: string): string {
     }).format(new Date(`${date}T00:00:00Z`));
 }
 
-function dayNumber(dateFrom: string, date: string): number {
+function oneBasedDayWithinPeriod(dateFrom: string, date: string): number {
     const millisecondsPerDay = 24 * 60 * 60 * 1000;
 
     return (
@@ -310,7 +310,10 @@ function SpendingComparisonChart({
                 <ReferenceLine y={0} stroke="var(--border)" />
                 {hasFutureDates && (
                     <ReferenceLine
-                        x={dayNumber(primary.period.date_from, today)}
+                        x={oneBasedDayWithinPeriod(
+                            primary.period.date_from,
+                            today,
+                        )}
                         stroke="var(--muted-foreground)"
                         strokeDasharray="3 4"
                         strokeOpacity={0.55}
@@ -753,7 +756,7 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
                                 key={briefing.currency}
                                 href={periodBreakdownUrl({
                                     currency: briefing.currency,
-                                    period: briefing.coverage,
+                                    period: briefing.period,
                                 })}
                                 data-test={
                                     index === 0
