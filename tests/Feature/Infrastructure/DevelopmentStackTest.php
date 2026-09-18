@@ -1,11 +1,17 @@
 <?php
 
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Vite;
 use Symfony\Component\Yaml\Yaml;
 
 beforeEach(function (): void {
     $this->developmentCompose = Yaml::parseFile(base_path('compose.yaml'));
     $this->productionCompose = Yaml::parseFile(base_path('compose.production.yaml'));
+});
+
+test('the test runtime does not send SSR requests to the development Vite server', function (): void {
+    expect(config('inertia.ssr.enabled'))->toBeFalse()
+        ->and(Vite::isRunningHot())->toBeFalse();
 });
 
 test('development application ports use standard Sail bindings', function (): void {

@@ -140,6 +140,17 @@ function runProductionRelease(array $environment): Process
     return $process;
 }
 
+test('pre-deployment checks build current assets and mirror the CI test partitions', function (): void {
+    $composer = json_decode(file_get_contents(base_path('composer.json')), true, flags: JSON_THROW_ON_ERROR);
+    $runbook = file_get_contents(base_path('docs/production-deployment.md'));
+
+    expect($composer['scripts']['test:deployment'] ?? null)->toBe([
+        'pnpm run build',
+        '@php artisan test --compact tests/Feature',
+        '@php artisan test --compact --parallel --processes=2 tests/Browser',
+    ])->and($runbook)->toContain('vendor/bin/sail composer test:deployment');
+});
+
 test('the production release creates a fresh backup before promoting and deploying one clean main revision', function () {
     $temporaryDirectory = sys_get_temp_dir().'/money-assistant-release-'.str()->uuid();
     mkdir($temporaryDirectory, 0700, true);
