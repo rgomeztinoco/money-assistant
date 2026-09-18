@@ -4,6 +4,7 @@ use App\Integrations\Gmail\GmailRequestFailed;
 use App\Jobs\ProcessGmailMessage;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
+use App\Models\SpendingNotificationReference;
 use App\Models\User;
 use Illuminate\Support\Str;
 
@@ -70,6 +71,32 @@ test('the owner sees the latest failed Gmail message and its retry action', func
         ->processing_failed_at->toBeNull()
         ->last_error_code->toBeNull()
         ->failed_job_uuid->toBeNull();
+});
+
+test('the owner sees and retries unsupported Gmail notifications', function () {
+    $connection = GmailConnection::factory()->create([
+        'last_successful_sync_at' => now()->subMinute(),
+    ]);
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
+        'processed_at' => now()->subMinute(),
+    ]);
+    SpendingNotificationReference::factory()->create([
+        'user_id' => $connection->user_id,
+        'transaction_id' => null,
+        'gmail_message_discovery_id' => $discovery->id,
+        'gmail_account_identity' => $connection->gmail_account_identity,
+        'message_id' => $discovery->message_id,
+        'processing_outcome' => 'unsupported',
+    ]);
+    $this->actingAs($connection->owner);
+
+    visit(route('data_sources.gmail'))
+        ->assertSee('Retry unsupported notifications')
+        ->assertSee('1 notification can be retried from Gmail.')
+        ->press('Retry unsupported')
+        ->assertSee('One unsupported Gmail notification was queued for retry.')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
 });
 
 test('the owner sees Gmail connection health without credentials reaching the page', function () {

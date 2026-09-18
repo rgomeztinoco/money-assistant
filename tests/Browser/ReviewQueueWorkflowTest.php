@@ -6,11 +6,13 @@ use App\Currency;
 use App\Models\Category;
 use App\Models\MerchantRule;
 use App\Models\ReceiptBreakdown;
+use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
 use App\TransactionKind;
+use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 
 beforeEach(function () {
@@ -113,6 +115,41 @@ test('the owner resolves flagged Transaction fields without returning to the led
         ->assertSee('Neighborhood market')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
+});
+
+test('the owner classifies a provisional Spending as another kind of Transfer', function () {
+    $owner = User::factory()->create();
+    $this->actingAs($owner);
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $transaction = Transaction::factory()
+        ->for($owner, 'owner')
+        ->provisional([ReviewableTransactionField::Kind])
+        ->create([
+            'description' => 'Transfer to SAMPLE RECIPIENT',
+            'category_id' => $category->id,
+            'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+        ]);
+    SpendingNotificationReference::factory()->for($transaction)->create([
+        'user_id' => $owner->id,
+        'format_identifier' => 'bcp.third_party_transfer',
+    ]);
+
+    $page = visit('/review-queue');
+
+    $page
+        ->select('Correct transaction kind', 'transfer')
+        ->assertDontSee('Refund or reimbursement')
+        ->assertSee('Transfer purpose')
+        ->select('Transfer purpose', 'internal')
+        ->press('Save transaction kind')
+        ->assertSee('Review Queue is clear')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+
+    expect($transaction->fresh())
+        ->kind->toBe(TransactionKind::Transfer)
+        ->transfer_purpose->toBe(TransferPurpose::Internal)
+        ->category_id->toBeNull();
 });
 
 test('categorizing a Transaction with another review reason keeps the owner on that item', function () {

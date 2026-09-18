@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-bcp-electronic-fee-invoice",
+        "received_at": "2026-09-03T14:00:00Z",
+        "from_address": "comprobante-electronico@notificacionesbcp.com.pe",
+        "subject": "BCP - ¡Te enviamos tu nuevo comprobante electrónico! -  FN01-50000001",
+        "authentication": {
+            "spf": { "result": "pass", "domain": null },
+            "dkim": { "result": "pass", "domain": null },
+            "dmarc": { "result": "pass", "domain": null }
+        },
+        "html_body": "<html><body><p>Hola,</p><p>El comprobante adjunto muestra los pagos de intereses y comisiones que realizaste este mes por el producto que tienes con BCP.</p><table><tr><td>Tipo</td><td>FACTURA DE VENTA ELECTRÓNICA</td></tr><tr><td>Número</td><td>FN01-50000001</td></tr><tr><td>Monto</td><td>$ 1.39</td></tr><tr><td>Fecha de Emisión</td><td>03/09/2026</td></tr></table></body></html>"
+    },
+    "expected": {
+        "format_identifier": "bcp.electronic_fee_invoice",
+        "occurred_on": "2026-09-03",
+        "amount_minor": 139,
+        "currency": "USD",
+        "kind": "spending",
+        "direction": "debit",
+        "income_source": null,
+        "transfer_purpose": null,
+        "description": "BCP interest and commissions",
+        "instrument_label": "BCP account",
+        "instrument_last_four": null
+    }
+}

@@ -8,6 +8,8 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
 use App\TransactionFieldResolution;
+use App\TransactionKind;
+use App\TransferPurpose;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -19,6 +21,7 @@ class ResolveTransactionField
         ReviewableTransactionField $field,
         TransactionFieldResolution $resolution,
         mixed $replacementValue = null,
+        ?TransferPurpose $transferPurpose = null,
     ): Transaction {
         return DB::transaction(function () use (
             $owner,
@@ -26,6 +29,7 @@ class ResolveTransactionField
             $field,
             $resolution,
             $replacementValue,
+            $transferPurpose,
         ): Transaction {
             $currentTransaction = Transaction::query()
                 ->whereKey($transaction->getKey())
@@ -38,8 +42,16 @@ class ResolveTransactionField
             }
 
             if ($resolution === TransactionFieldResolution::Correct) {
-                $normalizedValue = $field->normalizeReplacement($replacementValue);
+                $normalizedValue = $field->normalizeReplacement(
+                    $replacementValue,
+                    $currentTransaction,
+                );
                 $currentTransaction->setAttribute($field->value, $normalizedValue);
+                $this->reconcileCorrectedKind(
+                    transaction: $currentTransaction,
+                    field: $field,
+                    transferPurpose: $transferPurpose,
+                );
                 $this->removeInvalidatedReceiptBreakdown($currentTransaction, $field);
             }
 
@@ -56,6 +68,30 @@ class ResolveTransactionField
 
             return $currentTransaction;
         });
+    }
+
+    private function reconcileCorrectedKind(
+        Transaction $transaction,
+        ReviewableTransactionField $field,
+        ?TransferPurpose $transferPurpose,
+    ): void {
+        if ($field !== ReviewableTransactionField::Kind) {
+            return;
+        }
+
+        if ($transaction->kind === TransactionKind::Transfer && $transferPurpose === null) {
+            throw new InvalidArgumentException('A Transfer purpose is required.');
+        }
+
+        $transaction->transfer_purpose = $transaction->kind === TransactionKind::Transfer
+            ? $transferPurpose
+            : null;
+
+        if (! $transaction->kind->supportsCategory()) {
+            $transaction->category_id = null;
+            $transaction->category_assignment_provenance = null;
+            $transaction->merchant_rule_id = null;
+        }
     }
 
     private function removeInvalidatedReceiptBreakdown(

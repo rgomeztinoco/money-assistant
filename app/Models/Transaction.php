@@ -96,6 +96,20 @@ class Transaction extends Model
         return $this->hasMany(SpendingNotificationReference::class);
     }
 
+    /** @return list<TransactionKind> */
+    public function kindReviewReplacementOptions(): array
+    {
+        $this->loadMissing([
+            'spendingNotificationReferences:id,transaction_id,format_identifier',
+        ]);
+        $isThirdPartyTransfer = $this->spendingNotificationReferences
+            ->contains('format_identifier', 'bcp.third_party_transfer');
+
+        return $isThirdPartyTransfer
+            ? [TransactionKind::Spending, TransactionKind::Transfer]
+            : [TransactionKind::Spending, TransactionKind::Refund];
+    }
+
     /** @return HasOne<StatementMovement, $this> */
     public function statementMovement(): HasOne
     {

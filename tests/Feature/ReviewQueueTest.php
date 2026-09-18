@@ -10,10 +10,12 @@ use App\Models\Category;
 use App\Models\LineItem;
 use App\Models\MerchantRule;
 use App\Models\ReceiptBreakdown;
+use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
 use App\TransactionKind;
+use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -484,6 +486,61 @@ test('the owner can accept one provisional field and replace another value', fun
         ->provisional_fields->toBe([]);
 });
 
+test('the owner can resolve a provisional Spending as an uncategorized Transfer', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $merchantRule = MerchantRule::factory()
+        ->for($owner, 'owner')
+        ->for($category)
+        ->create();
+    $transaction = Transaction::factory()
+        ->for($owner, 'owner')
+        ->provisional([ReviewableTransactionField::Kind])
+        ->create([
+            'kind' => TransactionKind::Spending,
+            'category_id' => $category->id,
+            'category_assignment_provenance' => CategoryAssignmentProvenance::MerchantRule,
+            'merchant_rule_id' => $merchantRule->id,
+        ]);
+    SpendingNotificationReference::factory()->for($transaction)->create([
+        'user_id' => $owner->id,
+        'format_identifier' => 'bcp.third_party_transfer',
+    ]);
+    $route = route('review_queue.fields.update', [
+        'transaction' => $transaction,
+        'field' => ReviewableTransactionField::Kind,
+    ]);
+
+    $this->actingAs($owner)
+        ->from(route('review_queue.index'))
+        ->patch($route, [
+            'resolution' => 'correct',
+            'value' => 'refund',
+        ])
+        ->assertSessionHasErrors('value');
+
+    $this->from(route('review_queue.index'))
+        ->patch($route, [
+            'resolution' => 'correct',
+            'value' => 'transfer',
+        ])
+        ->assertSessionHasErrors('transfer_purpose');
+
+    $this->patch($route, [
+        'resolution' => 'correct',
+        'value' => 'transfer',
+        'transfer_purpose' => 'internal',
+    ])->assertSessionHasNoErrors();
+
+    expect($transaction->refresh())
+        ->kind->toBe(TransactionKind::Transfer)
+        ->transfer_purpose->toBe(TransferPurpose::Internal)
+        ->category_id->toBeNull()
+        ->category_assignment_provenance->toBeNull()
+        ->merchant_rule_id->toBeNull()
+        ->provisional_fields->toBe([]);
+});
+
 test('resolving the last flagged Transaction field advances to the next Review Queue item', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
@@ -593,7 +650,7 @@ test('invalid field review input leaves the confirmed Transaction unchanged', fu
     'fractional amount' => [ReviewableTransactionField::AmountMinor, ['value' => '1.5'], 'value'],
     'unsupported currency' => [ReviewableTransactionField::Currency, ['value' => 'EUR'], 'value'],
     'unsupported kind' => [ReviewableTransactionField::Kind, ['value' => 'unsupported'], 'value'],
-    'kind requiring full movement details' => [ReviewableTransactionField::Kind, ['value' => 'transfer'], 'value'],
+    'unsupported transfer purpose' => [ReviewableTransactionField::Kind, ['value' => 'transfer', 'transfer_purpose' => 'cash'], 'transfer_purpose'],
     'merchant above maximum length' => [ReviewableTransactionField::Description, ['value' => str_repeat('a', 256)], 'value'],
     'unsupported resolution' => [ReviewableTransactionField::Description, ['resolution' => 'revise'], 'resolution'],
 ]);

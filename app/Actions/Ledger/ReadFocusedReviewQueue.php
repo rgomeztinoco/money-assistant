@@ -7,12 +7,13 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
+use App\TransactionKind;
 use InvalidArgumentException;
 
 /**
  * @phpstan-type ReviewTransactionData array{id: int, occurred_on: string, amount_minor: string, currency: string, kind: string, description: string, confirmed_at: string, category: array{id: int, name: string}|null}
  * @phpstan-type CategoryReasonData array{type: 'category', label: string}
- * @phpstan-type ReviewFieldData array{name: string, label: string, value: string}
+ * @phpstan-type ReviewFieldData array{name: string, label: string, value: string, allowed_values: list<string>|null}
  * @phpstan-type FieldReasonData array{type: 'field', label: string, field: ReviewFieldData}
  * @phpstan-type RefundRelationshipReasonData array{type: 'refund_relationship', name: string, label: string}
  * @phpstan-type MerchantContextData array{normalized_merchant: string|null, matching_uncategorized_count: int}
@@ -56,6 +57,7 @@ class ReadFocusedReviewQueue
             ])
             ->with([
                 'category:id,name',
+                'spendingNotificationReferences:id,transaction_id,format_identifier',
                 'receiptBreakdown:id,transaction_id',
                 'receiptBreakdown.lineItems:id,line_item_id,receipt_breakdown_id,category_id,description,quantity,unit_price_minor,line_total_minor',
             ])
@@ -86,6 +88,12 @@ class ReadFocusedReviewQueue
                         'name' => $field->value,
                         'label' => $field->label(),
                         'value' => $field->valueFor($transaction),
+                        'allowed_values' => $field === ReviewableTransactionField::Kind
+                            ? array_map(
+                                static fn (TransactionKind $kind): string => $kind->value,
+                                $transaction->kindReviewReplacementOptions(),
+                            )
+                            : null,
                     ],
                 ];
             }

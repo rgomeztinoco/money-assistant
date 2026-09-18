@@ -1,0 +1,27 @@
+{
+    "message": {
+        "message_id": "fixture-yape-outgoing-spending",
+        "received_at": "2026-09-17T22:41:00Z",
+        "from_address": "notificaciones@yape.pe",
+        "subject": "Por tu seguridad, te notificaremos por cada yapeo que realices",
+        "authentication": {
+            "spf": { "result": "pass", "domain": "yape.pe" },
+            "dkim": { "result": "pass", "domain": "yape.pe" },
+            "dmarc": { "result": "pass", "domain": "yape.pe" }
+        },
+        "html_body": "<html><body><p>¡Hola, CLIENTE EJEMPLO!</p><p>¡Acabas de yapear exitosamente!</p><p>Monto de yapeo</p><p>S/ 12.00</p><p>Yapero</p><p>CLIENTE EJEMPLO</p><p>Tu número de celular</p><p>XXXXXXXXX936</p><p>Fecha y Hora de la operación</p><p>17 septiembre 2026 - 05:41 p. m.</p><p>Celular del Beneficiario</p><p>XXXXXXXXX129</p><p>Nombre del Beneficiario</p><p>SAMPLE RECIPIENT</p><p>Nº de operación</p><p>10000001</p></body></html>"
+    },
+    "expected": {
+        "format_identifier": "yape.outgoing_spending",
+        "occurred_on": "2026-09-17",
+        "amount_minor": 1200,
+        "currency": "PEN",
+        "kind": "spending",
+        "direction": "debit",
+        "income_source": null,
+        "transfer_purpose": null,
+        "description": "Yape to SAMPLE RECIPIENT",
+        "instrument_label": "Yape",
+        "instrument_last_four": null
+    }
+}

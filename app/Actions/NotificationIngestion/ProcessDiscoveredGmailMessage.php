@@ -2,6 +2,7 @@
 
 namespace App\Actions\NotificationIngestion;
 
+use App\Integrations\Gmail\GmailRequestFailed;
 use App\Models\GmailMessageDiscovery;
 use App\Models\SpendingNotificationReference;
 
@@ -12,8 +13,10 @@ final class ProcessDiscoveredGmailMessage
         private ProcessSpendingNotification $processSpendingNotification,
     ) {}
 
-    public function handle(int $discoveryId): SpendingNotificationReference
-    {
+    public function handle(
+        int $discoveryId,
+        bool $retryUnsupported = false,
+    ): SpendingNotificationReference {
         $discovery = GmailMessageDiscovery::query()
             ->with(['gmailConnection.owner'])
             ->findOrFail($discoveryId);
@@ -27,17 +30,43 @@ final class ProcessDiscoveredGmailMessage
                 ->where('message_id', $discovery->message_id)
                 ->first();
 
-            if ($existingReference !== null) {
+            if ($existingReference !== null
+                && (! $retryUnsupported || ! $existingReference->isRetryable())) {
                 return $existingReference;
             }
         }
 
-        $reference = $this->processSpendingNotification->handle(
-            owner: $owner,
-            discovery: $discovery,
-            message: $this->readGmailMessage->handle($owner, $discovery),
-        );
+        try {
+            $message = $this->readGmailMessage->handle($owner, $discovery);
+        } catch (GmailRequestFailed $exception) {
+            if ($exception->httpStatus() !== 404) {
+                throw $exception;
+            }
 
+            return $this->completeProcessing(
+                $discovery,
+                $this->processSpendingNotification->recordMissingMessage(
+                    owner: $owner,
+                    discovery: $discovery,
+                ),
+            );
+        }
+
+        return $this->completeProcessing(
+            $discovery,
+            $this->processSpendingNotification->handle(
+                owner: $owner,
+                discovery: $discovery,
+                message: $message,
+                retryUnsupported: $retryUnsupported,
+            ),
+        );
+    }
+
+    private function completeProcessing(
+        GmailMessageDiscovery $discovery,
+        SpendingNotificationReference $reference,
+    ): SpendingNotificationReference {
         $discovery->forceFill([
             'processing_failed_at' => null,
             'last_error_code' => null,

@@ -104,6 +104,26 @@ final class ProcessSpendingNotification
         }, 3);
     }
 
+    public function recordMissingMessage(
+        User $owner,
+        GmailMessageDiscovery $discovery,
+    ): SpendingNotificationReference {
+        return DB::transaction(function () use ($owner, $discovery): SpendingNotificationReference {
+            $discovery = GmailMessageDiscovery::query()
+                ->with('gmailConnection')
+                ->lockForUpdate()
+                ->findOrFail($discovery->id);
+
+            return $this->recordOutcome(
+                owner: $owner,
+                discovery: $discovery,
+                accountIdentity: $discovery->gmailConnection->gmail_account_identity,
+                messageId: $discovery->message_id,
+                outcome: SpendingNotificationProcessingOutcome::Ignored,
+            );
+        }, 3);
+    }
+
     private function recordOutcome(
         User $owner,
         GmailMessageDiscovery $discovery,

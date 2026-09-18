@@ -39,12 +39,13 @@ enum ReviewableTransactionField: string
 
     public function normalizeReplacement(
         mixed $value,
+        Transaction $transaction,
     ): CarbonImmutable|Currency|TransactionKind|int|string {
         return match ($this) {
             self::OccurredOn => $this->normalizeOccurrenceDate($value),
             self::AmountMinor => $this->normalizeAmountMinor($value),
             self::Currency => $this->normalizeCurrency($value),
-            self::Kind => $this->normalizeKind($value),
+            self::Kind => $this->normalizeKind($value, $transaction),
             self::Description => $this->normalizeDescription($value),
         };
     }
@@ -92,12 +93,12 @@ enum ReviewableTransactionField: string
         return $currency ?? throw new InvalidArgumentException('The replacement currency is not supported.');
     }
 
-    private function normalizeKind(mixed $value): TransactionKind
+    private function normalizeKind(mixed $value, Transaction $transaction): TransactionKind
     {
         $kind = is_string($value) ? TransactionKind::tryFrom($value) : null;
 
-        if (! in_array($kind, [TransactionKind::Spending, TransactionKind::Refund], true)) {
-            throw new InvalidArgumentException('Review Queue kind corrections support only Spending or Refund.');
+        if (! in_array($kind, $transaction->kindReviewReplacementOptions(), true)) {
+            throw new InvalidArgumentException('The replacement Transaction kind is not supported.');
         }
 
         return $kind;

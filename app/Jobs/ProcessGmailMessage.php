@@ -21,11 +21,14 @@ class ProcessGmailMessage implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 90000;
 
-    public function __construct(public int $discoveryId) {}
+    public function __construct(
+        public int $discoveryId,
+        public bool $retryUnsupported = false,
+    ) {}
 
     public function uniqueId(): string
     {
-        return (string) $this->discoveryId;
+        return $this->discoveryId.($this->retryUnsupported ? ':retry-unsupported' : ':process');
     }
 
     /** @return list<object> */
@@ -44,7 +47,10 @@ class ProcessGmailMessage implements ShouldBeUnique, ShouldQueue
 
     public function handle(ProcessDiscoveredGmailMessage $processDiscoveredGmailMessage): void
     {
-        $processDiscoveredGmailMessage->handle($this->discoveryId);
+        $processDiscoveredGmailMessage->handle(
+            $this->discoveryId,
+            $this->retryUnsupported,
+        );
     }
 
     public function failed(?Throwable $exception): void

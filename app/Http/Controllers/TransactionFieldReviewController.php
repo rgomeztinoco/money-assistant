@@ -7,6 +7,7 @@ use App\Http\Requests\ResolveTransactionFieldRequest;
 use App\Models\Transaction;
 use App\ReviewableTransactionField;
 use App\TransactionFieldResolution;
+use App\TransferPurpose;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 
@@ -28,6 +29,9 @@ class TransactionFieldReviewController extends Controller
             field: $field,
             resolution: $resolution,
             replacementValue: $validated['value'] ?? null,
+            transferPurpose: isset($validated['transfer_purpose'])
+                ? TransferPurpose::from($validated['transfer_purpose'])
+                : null,
         );
 
         Inertia::flash('toast', [

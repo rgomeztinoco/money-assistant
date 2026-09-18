@@ -74,12 +74,15 @@ test('every app-owned Gmail format is fixture-backed and extracts its agreed Tra
 
     expect($results)->toHaveKeys([
         'bcp.debit_card_spending',
+        'bcp.electronic_fee_invoice',
         'bcp.foreign_transfer_income',
         'bcp.other_bank_transfer_spending',
         'bcp.own_account_transfer',
+        'bcp.third_party_transfer',
         'bcp.warda_withdrawal',
         'interbank.card_spending',
         'interbank.plin_card_spending',
+        'yape.outgoing_spending',
     ])->each->toBeTrue();
 });
 

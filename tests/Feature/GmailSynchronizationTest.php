@@ -213,6 +213,199 @@ test('an existing supported inbox message in the selected window creates a Trans
         ->and($discovery->fresh()->processed_at)->not->toBeNull();
 });
 
+test('a newly supported Gmail message creates its agreed Transaction exactly once', function (
+    string $fixtureFile,
+    string $expectedOutcome,
+    array $expectedTransaction,
+) {
+    $connection = GmailConnection::factory()->create([
+        'access_token' => 'current-access-token',
+        'access_token_expires_at' => now()->addHour(),
+    ]);
+    $fixture = json_decode(
+        (string) file_get_contents(resource_path("notification-formats/{$fixtureFile}")),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $message = $fixture['message'];
+    $gmailMessage = new GmailMessage(
+        messageId: $message['message_id'],
+        receivedAt: CarbonImmutable::parse($message['received_at']),
+        fromAddress: $message['from_address'],
+        subject: $message['subject'],
+        authentication: $message['authentication'],
+        textBody: $message['text_body'] ?? null,
+        htmlBody: $message['html_body'] ?? null,
+    );
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
+        'message_id' => $gmailMessage->messageId,
+    ]);
+    $gmail = new FakeGmail;
+    $gmail->messages = [$gmailMessage->messageId => $gmailMessage];
+    app()->instance(Gmail::class, $gmail);
+    $job = new ProcessGmailMessage($discovery->id);
+
+    app()->call([$job, 'handle']);
+    app()->call([$job, 'handle']);
+
+    expect(Transaction::query()->sole())
+        ->toMatchArray($expectedTransaction)
+        ->and(SpendingNotificationReference::query()->sole())
+        ->processing_outcome->toBe($expectedOutcome)
+        ->attempt_count->toBe(1)
+        ->and($gmail->messageCalls)->toHaveCount(1);
+})->with([
+    'outgoing Yape' => [
+        'yape-outgoing-spending.json',
+        'created',
+        [
+            'amount_minor' => 1200,
+            'currency' => 'PEN',
+            'kind' => 'spending',
+            'description' => 'Yape to SAMPLE RECIPIENT',
+            'provisional_fields' => [],
+            'instrument_label' => 'Yape',
+            'instrument_last_four' => null,
+        ],
+    ],
+    'BCP electronic fee invoice' => [
+        'bcp-electronic-fee-invoice.json',
+        'created',
+        [
+            'amount_minor' => 139,
+            'currency' => 'USD',
+            'kind' => 'spending',
+            'description' => 'BCP interest and commissions',
+            'provisional_fields' => [],
+            'instrument_label' => 'BCP account',
+            'instrument_last_four' => null,
+        ],
+    ],
+    'BCP other-bank transfer excludes its separately invoiced commission' => [
+        'bcp-other-bank-transfer-spending.json',
+        'created',
+        [
+            'amount_minor' => 2500,
+            'currency' => 'PEN',
+            'kind' => 'spending',
+            'description' => 'Transfer to SAMPLE RECIPIENT',
+            'provisional_fields' => [],
+            'instrument_label' => 'BCP account',
+            'instrument_last_four' => '1234',
+        ],
+    ],
+    'BCP third-party transfer' => [
+        'bcp-third-party-transfer.json',
+        'created_with_review',
+        [
+            'amount_minor' => 28639,
+            'currency' => 'PEN',
+            'kind' => 'spending',
+            'description' => 'Transfer to SAMPLE RECIPIENT',
+            'provisional_fields' => ['kind'],
+            'instrument_label' => 'BCP account',
+            'instrument_last_four' => '3057',
+        ],
+    ],
+]);
+
+test('an unsupported Spending Notification can be reprocessed idempotently after its format ships', function () {
+    $connection = GmailConnection::factory()->create([
+        'access_token' => 'current-access-token',
+        'access_token_expires_at' => now()->addHour(),
+    ]);
+    $fixture = json_decode(
+        (string) file_get_contents(resource_path('notification-formats/yape-outgoing-spending.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $message = $fixture['message'];
+    $gmailMessage = new GmailMessage(
+        messageId: $message['message_id'],
+        receivedAt: CarbonImmutable::parse($message['received_at']),
+        fromAddress: $message['from_address'],
+        subject: $message['subject'],
+        authentication: $message['authentication'],
+        textBody: null,
+        htmlBody: $message['html_body'],
+    );
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
+        'message_id' => $gmailMessage->messageId,
+        'processed_at' => now()->subMinute(),
+    ]);
+    SpendingNotificationReference::factory()->create([
+        'user_id' => $connection->user_id,
+        'transaction_id' => null,
+        'gmail_message_discovery_id' => $discovery->id,
+        'gmail_account_identity' => $connection->gmail_account_identity,
+        'message_id' => $gmailMessage->messageId,
+        'processing_outcome' => 'unsupported',
+        'attempt_count' => 1,
+    ]);
+    $gmail = new FakeGmail;
+    $gmail->messages = [$gmailMessage->messageId => $gmailMessage];
+    app()->instance(Gmail::class, $gmail);
+    $job = new ProcessGmailMessage($discovery->id, retryUnsupported: true);
+
+    app()->call([$job, 'handle']);
+    app()->call([$job, 'handle']);
+
+    expect(Transaction::query()->sole())
+        ->description->toBe('Yape to SAMPLE RECIPIENT')
+        ->and(SpendingNotificationReference::query()->sole())
+        ->processing_outcome->toBe('created')
+        ->attempt_count->toBe(2)
+        ->and($gmail->messageCalls)->toHaveCount(1);
+});
+
+test('a Gmail message removed after discovery is recorded as ignored instead of failing forever', function () {
+    $connection = GmailConnection::factory()->create([
+        'access_token' => 'current-access-token',
+        'access_token_expires_at' => now()->addHour(),
+    ]);
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
+        'message_id' => 'removed-message',
+        'processing_failed_at' => now()->subMinute(),
+        'last_error_code' => 'gmail_message_processing_failed',
+        'failed_job_uuid' => (string) Str::uuid(),
+    ]);
+    $gmail = new FakeGmail;
+    $gmail->messageFailure = GmailRequestFailed::message()->withHttpStatus(404);
+    app()->instance(Gmail::class, $gmail);
+    $job = new ProcessGmailMessage($discovery->id);
+
+    app()->call([$job, 'handle']);
+    app()->call([$job, 'handle']);
+
+    expect(Transaction::query()->doesntExist())->toBeTrue()
+        ->and(SpendingNotificationReference::query()->sole())
+        ->processing_outcome->toBe('ignored')
+        ->attempt_count->toBe(1)
+        ->and($gmail->messageCalls)->toHaveCount(1)
+        ->and($discovery->fresh())
+        ->processed_at->not->toBeNull()
+        ->processing_failed_at->toBeNull()
+        ->last_error_code->toBeNull()
+        ->failed_job_uuid->toBeNull();
+});
+
+test('a Gmail message fetch error other than not found remains retryable', function () {
+    $connection = GmailConnection::factory()->create([
+        'access_token' => 'current-access-token',
+        'access_token_expires_at' => now()->addHour(),
+    ]);
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create();
+    $gmail = new FakeGmail;
+    $gmail->messageFailure = GmailRequestFailed::message()->withHttpStatus(500);
+    app()->instance(Gmail::class, $gmail);
+
+    expect(fn () => app()->call([(new ProcessGmailMessage($discovery->id)), 'handle']))
+        ->toThrow(GmailRequestFailed::class);
+
+    expect(SpendingNotificationReference::query()->doesntExist())->toBeTrue()
+        ->and($discovery->fresh()->processed_at)->toBeNull();
+});
+
 test('incremental synchronization paginates added messages and advances to the final cursor idempotently', function () {
     CarbonImmutable::setTestNow('2026-07-28 19:00:00 UTC');
     $connection = GmailConnection::factory()->create([
@@ -515,10 +708,15 @@ test('Gmail jobs use bounded Laravel queue retries and backoff', function () {
         GmailSynchronizationType::Incremental,
     );
 
+    $messageJob = new ProcessGmailMessage(42);
+    $unsupportedRetryJob = new ProcessGmailMessage(42, retryUnsupported: true);
+
     expect($job->tries)->toBe(5)
         ->and($job->backoff())->toBe([60, 300, 900])
-        ->and((new ProcessGmailMessage(42))->tries)->toBe(5)
-        ->and((new ProcessGmailMessage(42))->backoff())->toBe([60, 300, 900]);
+        ->and($messageJob->tries)->toBe(5)
+        ->and($messageJob->backoff())->toBe([60, 300, 900])
+        ->and($messageJob->uniqueId())->toBe('42:process')
+        ->and($unsupportedRetryJob->uniqueId())->toBe('42:retry-unsupported');
 
     expect(fn () => app()->call([$job, 'handle']))
         ->toThrow(GmailRequestFailed::class);

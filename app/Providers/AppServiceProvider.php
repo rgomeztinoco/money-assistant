@@ -8,6 +8,7 @@ use App\Contracts\StatementPdfExtractor;
 use App\Integrations\Gmail\GoogleGmail;
 use App\NotificationIngestion\Formats\BcpSpendingNotificationAdapter;
 use App\NotificationIngestion\Formats\InterbankSpendingNotificationAdapter;
+use App\NotificationIngestion\Formats\YapeSpendingNotificationAdapter;
 use App\NotificationIngestion\SupportedSpendingNotificationRegistry;
 use App\StatementImports\FinancialStatementFormatRegistry;
 use App\StatementImports\Formats\BcpFinancialStatementAdapter;
@@ -46,6 +47,7 @@ class AppServiceProvider extends ServiceProvider
             fn (Application $application): SupportedSpendingNotificationRegistry => new SupportedSpendingNotificationRegistry([
                 $application->make(BcpSpendingNotificationAdapter::class),
                 $application->make(InterbankSpendingNotificationAdapter::class),
+                $application->make(YapeSpendingNotificationAdapter::class),
             ]),
         );
 
