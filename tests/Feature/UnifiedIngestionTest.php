@@ -119,10 +119,13 @@ test('a clear statement match links statement and Gmail evidence to one Transact
             'transaction_id' => $recordedTransaction->id,
         ]);
 
+    $confirmation = unifiedIngestionConfirmation($preview);
+    $confirmation['movements'][1]['resolution'] = 'create';
+    $confirmation['movements'][1]['transaction_id'] = null;
     $statementImport = $workflow->confirm(
         $owner,
         UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
-        unifiedIngestionConfirmation($preview),
+        $confirmation,
     );
 
     expect($statementImport->movements->first()->transaction_id)
@@ -161,7 +164,7 @@ test('an Interbank statement card payment links opposite account and card moveme
         ->transactionId->toBe($recordedTransaction->id);
 });
 
-test('one existing Transaction is reserved for only one repeated statement movement', function () {
+test('one existing Transaction claimed by repeated statement movements requires review', function () {
     $owner = User::factory()->create();
     Transaction::factory()->for($owner, 'owner')->create([
         'occurred_on' => '2026-02-01',
@@ -183,7 +186,11 @@ test('one existing Transaction is reserved for only one repeated statement movem
     );
 
     expect(collect($preview->movements)->take(2)->pluck('match.status.value')->all())
-        ->toBe(['matched', 'new']);
+        ->toBe(['ambiguous', 'ambiguous'])
+        ->and(collect($preview->movements)->take(2)->pluck('match.reviewReason.value')->all())
+        ->toBe(['multiple_matches', 'multiple_matches'])
+        ->and(collect($preview->movements)->take(2)->pluck('match.candidates.0.id')->unique()->all())
+        ->toBe([Transaction::query()->whereBelongsTo($owner, 'owner')->sole()->id]);
 });
 
 test('voided Transactions are not statement match candidates', function () {
@@ -210,6 +217,182 @@ test('voided Transactions are not statement match candidates', function () {
 
     expect($preview->movements[0]->match->status->value)->toBe('new');
 });
+
+test("another owner's Transactions are not statement match candidates", function () {
+    $owner = User::factory()->create();
+    $otherOwner = User::factory()->create();
+    Transaction::factory()->for($otherOwner, 'owner')->create([
+        'occurred_on' => '2026-02-01',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+        'instrument_label' => 'BCP Cuenta Digital',
+        'instrument_last_four' => '1234',
+    ]);
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            unifiedIngestionStatementPdf(),
+        ),
+    );
+
+    expect($preview->movements[0]->match->status->value)->toBe('new');
+});
+
+test('Transactions already linked to a Statement Movement are not match candidates', function () {
+    $owner = User::factory()->create();
+    $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-02-01',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+        'instrument_label' => 'BCP Cuenta Digital',
+        'instrument_last_four' => '1234',
+    ]);
+    $statementImport = StatementImport::factory()->for($owner, 'owner')->create();
+    StatementMovement::factory()
+        ->for($statementImport)
+        ->for($recordedTransaction)
+        ->create();
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            unifiedIngestionStatementPdf(),
+        ),
+    );
+
+    expect($preview->movements[0]->match->status->value)->toBe('new');
+});
+
+test('statement matching uses the three-day date proximity boundary', function (
+    string $occurredOn,
+    string $expectedStatus,
+) {
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => $occurredOn,
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+        'instrument_label' => 'BCP Cuenta Digital',
+        'instrument_last_four' => '1234',
+    ]);
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            unifiedIngestionStatementPdf(),
+        ),
+    );
+
+    expect($preview->movements[0]->match->status->value)->toBe($expectedStatus);
+})->with([
+    'three days before' => ['2026-01-29', 'matched'],
+    'four days before' => ['2026-01-28', 'new'],
+]);
+
+test('an identity match with a different amount requires conflicting data review', function () {
+    $owner = User::factory()->create();
+    $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-02-01',
+        'amount_minor' => 2100,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+        'instrument_label' => 'BCP Cuenta Digital',
+        'instrument_last_four' => '1234',
+    ]);
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            unifiedIngestionStatementPdf(),
+        ),
+    );
+    $match = $preview->movements[0]->match;
+
+    expect($match->status->value)->toBe('ambiguous')
+        ->and($match->reviewReason?->value)->toBe('conflicting_data')
+        ->and($match->candidates)->toHaveCount(1)
+        ->and($match->candidates[0])->toMatchArray([
+            'id' => $recordedTransaction->id,
+            'amount_minor' => '2100',
+            'currency' => 'PEN',
+            'direction' => 'debit',
+        ])
+        ->and($match->candidates[0]['evidence'])->toMatchArray([
+            'amount' => false,
+            'currency' => true,
+            'direction' => true,
+            'date_proximity' => true,
+            'instrument' => true,
+            'description' => true,
+        ]);
+});
+
+test('an identity match with conflicting financial data requires review', function (
+    array $transactionAttributes,
+    string $conflictingEvidence,
+) {
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-02-01',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+        'instrument_label' => 'BCP Cuenta Digital',
+        'instrument_last_four' => '1234',
+        ...$transactionAttributes,
+    ]);
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent(
+            'statement.pdf',
+            unifiedIngestionStatementPdf(),
+        ),
+    );
+    $match = $preview->movements[0]->match;
+
+    expect($match->status->value)->toBe('ambiguous')
+        ->and($match->reviewReason?->value)->toBe('conflicting_data')
+        ->and($match->candidates)->toHaveCount(1)
+        ->and($match->candidates[0]['evidence'][$conflictingEvidence])->toBeFalse();
+})->with([
+    'currency' => [['currency' => 'USD'], 'currency'],
+    'amount and currency' => [[
+        'amount_minor' => 2100,
+        'currency' => 'USD',
+    ], 'amount'],
+    'Movement Direction' => [['direction' => MovementDirection::Credit], 'direction'],
+    'Transaction Kind' => [[
+        'kind' => TransactionKind::Spending,
+        'transfer_purpose' => null,
+    ], 'kind'],
+    'Transfer Purpose' => [[
+        'transfer_purpose' => TransferPurpose::Internal,
+    ], 'transfer_purpose'],
+]);
 
 test('ambiguous statement movements cannot select the same Transaction twice', function () {
     $owner = User::factory()->create();
@@ -283,6 +466,150 @@ test('a clear match rejects an incompatible owner classification', function () {
     );
 });
 
+test('a clear match rejects an edited amount that conflicts with the selected Transaction', function () {
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-02-02',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+        'instrument_label' => 'BCP Cuenta Digital',
+        'instrument_last_four' => '1234',
+    ]);
+    $workflow = app(StatementImportWorkflow::class);
+    $pdf = unifiedIngestionStatementPdf();
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = unifiedIngestionConfirmation($preview);
+    $confirmation['movements'][0]['amount_minor'] = '2100';
+
+    expect(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    ))->toThrow(function (StatementImportValidationException $exception): void {
+        expect($exception->errorCode)->toBe('movement_match_changed')
+            ->and($exception->validationField)->toBe('movements.0.resolution');
+    });
+});
+
+test('a clear automatic match rejects edited instrument identity', function (
+    string $field,
+    string $value,
+) {
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-02-02',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+        'instrument_label' => 'BCP Cuenta Digital',
+        'instrument_last_four' => '1234',
+    ]);
+    $workflow = app(StatementImportWorkflow::class);
+    $pdf = unifiedIngestionStatementPdf();
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = unifiedIngestionConfirmation($preview);
+    $confirmation[$field] = $value;
+
+    expect(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    ))->toThrow(function (StatementImportValidationException $exception): void {
+        expect($exception->errorCode)->toBe('movement_match_changed')
+            ->and($exception->validationField)->toBe('movements.0.resolution');
+    });
+})->with([
+    'instrument label' => ['instrument_label', 'BCP Savings Account'],
+    'last four' => ['instrument_last_four', '5678'],
+]);
+
+test('confirmation reports a row error when an automatic match was linked after preview', function () {
+    $owner = User::factory()->create();
+    $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-02-02',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+        'instrument_label' => 'BCP Cuenta Digital',
+        'instrument_last_four' => '1234',
+    ]);
+    $workflow = app(StatementImportWorkflow::class);
+    $pdf = unifiedIngestionStatementPdf();
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = unifiedIngestionConfirmation($preview);
+    $statementImport = StatementImport::factory()->for($owner, 'owner')->create();
+    StatementMovement::factory()
+        ->for($statementImport)
+        ->for($recordedTransaction)
+        ->create();
+
+    expect(fn () => $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    ))->toThrow(function (StatementImportValidationException $exception): void {
+        expect($exception->errorCode)->toBe('invalid_movement_resolution')
+            ->and($exception->validationField)->toBe('movements.0.resolution');
+    });
+});
+
+test('the owner can reject a clear match and add the Statement Movement as a new Transaction', function () {
+    $owner = User::factory()->create();
+    $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-02-02',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+        'instrument_label' => 'BCP Cuenta Digital',
+        'instrument_last_four' => '1234',
+    ]);
+    $workflow = app(StatementImportWorkflow::class);
+    $pdf = unifiedIngestionStatementPdf();
+    $preview = $workflow->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+    $confirmation = unifiedIngestionConfirmation($preview);
+    $confirmation['movements'][0]['resolution'] = 'create';
+    $confirmation['movements'][0]['transaction_id'] = null;
+    $confirmation['movements'][1]['resolution'] = 'create';
+    $confirmation['movements'][1]['transaction_id'] = null;
+
+    $statementImport = $workflow->confirm(
+        $owner,
+        UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+        $confirmation,
+    );
+    $statementMovement = $statementImport->movements->firstWhere('position', 1);
+
+    expect($statementMovement->resolution->value)->toBe('created')
+        ->and($statementMovement->transaction_id)->not->toBe($recordedTransaction->id)
+        ->and($statementMovement->match_evidence)->toBe(['owner_confirmed_new' => true])
+        ->and($recordedTransaction->fresh()->statementMovement)->toBeNull();
+});
+
 test('an ambiguous statement match requires an explicit owner resolution', function () {
     $owner = User::factory()->create();
 
@@ -310,6 +637,7 @@ test('an ambiguous statement match requires an explicit owner resolution', funct
 
     expect($preview->movements[0]->match)
         ->status->value->toBe('ambiguous')
+        ->reviewReason->value->toBe('multiple_matches')
         ->and($preview->movements[0]->match->candidates)->toHaveCount(2)
         ->and($confirmation['movements'][0]['resolution'])->toBe('needs_resolution');
 
@@ -335,7 +663,8 @@ test('a statement gap creates a Transaction and marks the fully resolved period 
     );
 
     expect(collect($preview->movements)->pluck('match.status.value')->unique()->all())
-        ->toBe(['new']);
+        ->toBe([0 => 'new', 4 => 'ambiguous'])
+        ->and($preview->movements[4]->match->reviewReason?->value)->toBe('low_confidence');
 
     $statementImport = $workflow->confirm(
         $owner,

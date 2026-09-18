@@ -20,7 +20,7 @@ afterEach(function () {
     $this->browserApplication->stop();
 });
 
-test('the owner selects a statement once resolves exceptions and confirms the import', function () {
+test('the owner reviews the full statement with automatic matches and confirms the import', function () {
     $owner = User::factory()->create();
     $pdf = SyntheticPdf::fromText((string) file_get_contents(
         base_path('tests/Fixtures/Statements/interbank.txt'),
@@ -35,6 +35,16 @@ test('the owner selects a statement once resolves exceptions and confirms the im
         ->assertSee('Import a recent statement first')
         ->click('Import a recent statement')
         ->assertPathIs('/statement-imports/create');
+    $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2026-01-20',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Spending,
+        'direction' => MovementDirection::Debit,
+        'description' => 'Grocery',
+        'instrument_label' => 'Interbank Amex',
+        'instrument_last_four' => '1234',
+    ]);
     selectPdfInBrowser($page, '#preview-statement', $pdf);
     expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
     $page->press('Upload and check');
@@ -44,11 +54,11 @@ test('the owner selects a statement once resolves exceptions and confirms the im
         ->assertSee('Reconciliation')
         ->assertDontSee('Minimum payment')
         ->assertSee('1 unresolved')
-        ->assertDontSee('View all movements')
         ->assertSee('Proposed movements')
         ->assertSee('Affect Net Spending')
         ->assertSee('Outside Net Spending')
         ->assertSee('Unresolved')
+        ->assertSee('Grocery')
         ->assertButtonDisabled('Confirm import');
     expect($page->value('select[aria-label="Classification for Mercado Pago"]'))
         ->toBe('needs_classification')
@@ -62,6 +72,8 @@ test('the owner selects a statement once resolves exceptions and confirms the im
         ->toBeTrue()
         ->and($page->script("document.querySelector('[data-test=statement-movements] table') !== null"))
         ->toBeTrue()
+        ->and($page->script("document.querySelectorAll('[data-test=statement-movements] tbody tr').length"))
+        ->toBe(6)
         ->and($page->script("document.querySelector('[data-test=statement-movements]').textContent.includes('Statement Movement 1')"))
         ->toBeFalse()
         ->and($page->script("document.querySelector('#instrument-label').closest('[data-slot=card]').querySelector('button[type=submit]') !== null"))
@@ -73,10 +85,21 @@ test('the owner selects a statement once resolves exceptions and confirms the im
         ->and($page->script("document.querySelector('[data-test=statement-import-totals]').classList.contains('divide-x') && document.querySelector('[data-test=statement-import-totals]').classList.contains('bg-muted/50')"))
         ->toBeTrue()
         ->and($page->script("Math.abs(document.querySelector('[data-test=statement-import-overview]').getBoundingClientRect().height - document.querySelector('[data-test=statement-movements-column]').getBoundingClientRect().height) <= 1"))
-        ->toBeTrue();
+        ->toBeTrue()
+        ->and($page->script("document.querySelector('[data-slot=tabs-list]') === null"))
+        ->toBeTrue()
+        ->and($page->value('#movement-2-resolution'))
+        ->toBe("link:{$recordedTransaction->id}")
+        ->and($page->script("document.querySelector('#movement-2-resolution').selectedOptions[0].textContent"))
+        ->toBe('2026-01-20 · −S/ 20.00 · Grocery')
+        ->and($page->script("document.querySelector('[data-test=statement-movements]').textContent.includes('Low-confidence match')"))
+        ->toBeFalse();
     $page
-        ->hover('[data-test=statement-movement-status-0] [data-status=needs_classification]')
-        ->assertSee('Choose what kind of movement this is before confirming.');
+        ->hover('[data-test=statement-movement-status-0] [data-status=needs_transaction]')
+        ->assertSee('The available evidence is not strong enough to link automatically.');
+    $page
+        ->select('#movement-2-resolution', 'create')
+        ->select('#movement-2-resolution', "link:{$recordedTransaction->id}");
     expect($page->script("document.querySelector('#preview-statement').files.length"))->toBe(1);
 
     $page->select(
@@ -86,7 +109,9 @@ test('the owner selects a statement once resolves exceptions and confirms the im
     $page
         ->assertSee('0 unresolved')
         ->assertButtonEnabled('Confirm import');
-    expect($page->script("document.querySelector('[data-test=statement-movement-status-0] [aria-label=\"Will be added\"]') !== null"))
+    expect($page->script("document.querySelectorAll('[data-test=statement-movements] tbody tr').length"))
+        ->toBe(6)
+        ->and($page->script("document.querySelector('[data-test=statement-movement-status-0] [aria-label=\"Will be added\"]') !== null"))
         ->toBeTrue()
         ->and($page->script("document.querySelector('[data-test=statement-movement-status-0] [aria-label=\"Outside Net Spending\"]') !== null"))
         ->toBeTrue()
@@ -116,8 +141,10 @@ test('the owner selects a statement once resolves exceptions and confirms the im
 
     expect(StatementImport::query()->count())->toBe(1)
         ->and(StatementMovement::query()->count())->toBe(6)
+        ->and(StatementMovement::query()->where('resolution', 'linked')->count())->toBe(1)
         ->and(StatementMovement::query()->whereNull('transaction_id')->count())->toBe(0)
-        ->and(Transaction::query()->count())->toBe(6);
+        ->and(Transaction::query()->count())->toBe(6)
+        ->and($recordedTransaction->fresh()->statementMovement)->not->toBeNull();
 });
 
 test('BCP WARDA rows preview and confirm as Savings', function () {
@@ -152,7 +179,7 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
         ->press('Upload and check')
         ->assertSee('BCP')
         ->assertDontSee('Category for Savings movements')
-        ->assertSee('2 unresolved');
+        ->assertSee('3 unresolved');
 
     expect($page->value('#movement-0-classification'))
         ->toBe('savings')
@@ -169,9 +196,10 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
 
     $page
         ->hover('[data-test=statement-movement-status-0] [data-status=needs_transaction]')
-        ->assertSee('Choose a recorded Transaction or add this movement as a new one.');
+        ->assertSee('More than one recorded Transaction could match this movement.');
 
     $page->select('#movement-0-resolution', 'create');
+    $page->select('#movement-1-resolution', 'create');
 
     $page->select(
         'select[aria-label="Classification for DEPOSITO"]',
@@ -192,7 +220,7 @@ test('BCP WARDA rows preview and confirm as Savings', function () {
     expect(StatementMovement::query()->where('classification', 'savings')->count())->toBe(2)
         ->and(Transaction::query()->where('kind', 'transfer')->where('transfer_purpose', 'savings')->whereHas('statementMovement')->count())->toBe(2)
         ->and(Transaction::query()->whereNotNull('category_id')->doesntExist())->toBeTrue();
-})->depends('the owner selects a statement once resolves exceptions and confirms the import');
+})->depends('the owner reviews the full statement with automatic matches and confirms the import');
 
 test('an abandoned preview remains transient and is editable on a mobile viewport', function () {
     $owner = User::factory()->create();

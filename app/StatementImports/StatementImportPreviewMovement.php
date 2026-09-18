@@ -53,7 +53,8 @@ final readonly class StatementImportPreviewMovement
      *     currency: string,
      *     classification: string,
      *     resolution: 'create'|'exclude'|'link'|'needs_resolution',
-     *     transaction_id: int|null
+     *     transaction_id: int|null,
+     *     owner_confirmed_match: bool
      * }
      */
     public function confirmationData(): array
@@ -73,6 +74,7 @@ final readonly class StatementImportPreviewMovement
                     default => 'create',
                 },
             'transaction_id' => $this->match?->transactionId,
+            'owner_confirmed_match' => false,
         ];
     }
 
@@ -98,6 +100,7 @@ final readonly class StatementImportPreviewMovement
                 'transaction_id' => $match->transactionId,
                 'candidates' => $match->candidates,
                 'evidence' => $match->evidence,
+                'review_reason' => $match->reviewReason?->value,
             ],
         ];
     }

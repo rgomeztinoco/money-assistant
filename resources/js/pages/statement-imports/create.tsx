@@ -65,6 +65,8 @@ import type {
     StatementConfirmationMovement,
     StatementClassification,
     StatementImportPreview,
+    StatementMatchCandidate,
+    StatementMatchReviewReason,
     StatementPreviewMovement,
 } from '@/types';
 
@@ -161,7 +163,15 @@ const movementStatusDetails = {
     }
 >;
 
-function MovementStatusBadge({ status }: { status: MovementStatus }) {
+function MovementStatusBadge({
+    status,
+    label,
+    detail,
+}: {
+    status: MovementStatus;
+    label?: string;
+    detail?: string;
+}) {
     const details = movementStatusDetails[status];
     const StatusIcon = details.icon;
 
@@ -171,14 +181,14 @@ function MovementStatusBadge({ status }: { status: MovementStatus }) {
                 <Badge
                     variant="outline"
                     className={`size-5 justify-center rounded-full p-0 shadow-none [&>svg]:size-2.5 ${details.className}`}
-                    aria-label={details.label}
+                    aria-label={label ?? details.label}
                     data-status={status}
                     tabIndex={0}
                 >
                     <StatusIcon />
                 </Badge>
             </TooltipTrigger>
-            <TooltipContent>{details.detail}</TooltipContent>
+            <TooltipContent>{detail ?? details.detail}</TooltipContent>
         </Tooltip>
     );
 }
@@ -208,6 +218,68 @@ function hasOwnProperty<Key extends PropertyKey>(
     return Object.hasOwn(value, key);
 }
 
+const reviewReasonDetails = {
+    multiple_matches: {
+        label: 'Needs review: Multiple possible matches',
+        detail: 'More than one recorded Transaction could match this movement.',
+    },
+    conflicting_data: {
+        label: 'Needs review: Conflicting recorded data',
+        detail: 'A likely recorded Transaction has different financial details.',
+    },
+    low_confidence: {
+        label: 'Needs review: Low-confidence match',
+        detail: 'The available evidence is not strong enough to link automatically.',
+    },
+} satisfies Record<
+    StatementMatchReviewReason,
+    { label: string; detail: string }
+>;
+
+function dateDifferenceDays(left: string, right: string): number {
+    return Math.round(
+        Math.abs(Date.parse(left) - Date.parse(right)) / 86_400_000,
+    );
+}
+
+function candidateSupportsMovement(
+    candidate: StatementMatchCandidate,
+    movement: ConfirmationMovement,
+    sourceMovement: StatementPreviewMovement,
+): boolean {
+    return (
+        candidate.compatible_classifications.includes(
+            movement.classification,
+        ) &&
+        candidate.amount_minor === movement.amount_minor &&
+        candidate.currency === movement.currency &&
+        (candidate.direction === sourceMovement.direction ||
+            movement.classification === 'card_payment') &&
+        dateDifferenceDays(candidate.occurred_on, movement.occurred_on) <= 3
+    );
+}
+
+function candidateLabel(candidate: StatementMatchCandidate): string {
+    const sign = candidate.direction === 'credit' ? '+' : '−';
+
+    return `${candidate.occurred_on} · ${sign}${formatMinorUnits(candidate.amount_minor, candidate.currency)} · ${candidate.description}`;
+}
+
+function invalidateLinkedMovements(
+    movements: ConfirmationMovement[],
+): ConfirmationMovement[] {
+    return movements.map((movement) =>
+        movement.resolution === 'link'
+            ? {
+                  ...movement,
+                  resolution: 'needs_resolution',
+                  transaction_id: null,
+                  owner_confirmed_match: false,
+              }
+            : movement,
+    );
+}
+
 function MovementEditor({
     movement,
     movementIndex,
@@ -232,10 +304,20 @@ function MovementEditor({
     const resolutionError = movementError(movementIndex, 'resolution');
     const compatibleCandidates = sourceMovement.match.candidates.filter(
         (candidate) =>
-            candidate.compatible_classifications.includes(
-                movement.classification,
-            ),
+            candidateSupportsMovement(candidate, movement, sourceMovement),
     );
+    const invalidateMatch = (
+        changedFields: Partial<ConfirmationMovement>,
+    ): ConfirmationMovement => ({
+        ...movement,
+        ...changedFields,
+        resolution:
+            sourceMovement.match.candidates.length > 0
+                ? 'needs_resolution'
+                : 'create',
+        transaction_id: null,
+        owner_confirmed_match: false,
+    });
     const matchSelection =
         movement.resolution === 'link' && movement.transaction_id !== null
             ? `link:${movement.transaction_id}`
@@ -297,12 +379,26 @@ function MovementEditor({
                                 className="flex items-center gap-1"
                                 data-test={`statement-movement-status-${movementIndex}`}
                             >
-                                {movementStatuses.map((status) => (
-                                    <MovementStatusBadge
-                                        key={status}
-                                        status={status}
-                                    />
-                                ))}
+                                {movementStatuses.map((status) => {
+                                    const reviewReason =
+                                        status === 'needs_transaction' &&
+                                        sourceMovement.match.status ===
+                                            'ambiguous'
+                                            ? reviewReasonDetails[
+                                                  sourceMovement.match
+                                                      .review_reason
+                                              ]
+                                            : undefined;
+
+                                    return (
+                                        <MovementStatusBadge
+                                            key={status}
+                                            status={status}
+                                            label={reviewReason?.label}
+                                            detail={reviewReason?.detail}
+                                        />
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
@@ -340,26 +436,20 @@ function MovementEditor({
                                         ? {
                                               resolution: 'exclude',
                                               transaction_id: null,
+                                              owner_confirmed_match: false,
                                           }
-                                        : sourceMovement.match.status ===
-                                            'matched'
+                                        : sourceMovement.match.candidates
+                                                .length > 0
                                           ? {
-                                                resolution: 'link',
-                                                transaction_id:
-                                                    sourceMovement.match
-                                                        .transaction_id,
+                                                resolution: 'needs_resolution',
+                                                transaction_id: null,
+                                                owner_confirmed_match: false,
                                             }
-                                          : sourceMovement.match.status ===
-                                              'ambiguous'
-                                            ? {
-                                                  resolution:
-                                                      'needs_resolution',
-                                                  transaction_id: null,
-                                              }
-                                            : {
-                                                  resolution: 'create',
-                                                  transaction_id: null,
-                                              }),
+                                          : {
+                                                resolution: 'create',
+                                                transaction_id: null,
+                                                owner_confirmed_match: false,
+                                            }),
                                 });
                             }
                         }}
@@ -378,7 +468,7 @@ function MovementEditor({
                     />
                 </TableCell>
                 <TableCell className="min-w-64 whitespace-normal">
-                    {sourceMovement.match.status === 'ambiguous' &&
+                    {sourceMovement.match.candidates.length > 0 &&
                     !needsClassification ? (
                         <div className="grid gap-1">
                             <Label
@@ -399,6 +489,7 @@ function MovementEditor({
                                             ...movement,
                                             resolution: 'create',
                                             transaction_id: null,
+                                            owner_confirmed_match: false,
                                         });
 
                                         return;
@@ -411,6 +502,7 @@ function MovementEditor({
                                             transaction_id: Number(
                                                 selection.slice(5),
                                             ),
+                                            owner_confirmed_match: true,
                                         });
                                     }
                                 }}
@@ -422,7 +514,7 @@ function MovementEditor({
                                     ...compatibleCandidates.map(
                                         (candidate) => ({
                                             value: `link:${candidate.id}`,
-                                            label: `${candidate.occurred_on} · ${candidate.description}`,
+                                            label: candidateLabel(candidate),
                                         }),
                                     ),
                                     {
@@ -476,10 +568,12 @@ function MovementEditor({
                             type="date"
                             value={movement.occurred_on}
                             onChange={(event) =>
-                                updateMovement(movementIndex, {
-                                    ...movement,
-                                    occurred_on: event.currentTarget.value,
-                                })
+                                updateMovement(
+                                    movementIndex,
+                                    invalidateMatch({
+                                        occurred_on: event.currentTarget.value,
+                                    }),
+                                )
                             }
                             aria-invalid={Boolean(
                                 movementError(movementIndex, 'occurred_on'),
@@ -506,10 +600,12 @@ function MovementEditor({
                             value={movement.description}
                             maxLength={255}
                             onChange={(event) =>
-                                updateMovement(movementIndex, {
-                                    ...movement,
-                                    description: event.currentTarget.value,
-                                })
+                                updateMovement(
+                                    movementIndex,
+                                    invalidateMatch({
+                                        description: event.currentTarget.value,
+                                    }),
+                                )
                             }
                             aria-invalid={Boolean(
                                 movementError(movementIndex, 'description'),
@@ -535,10 +631,12 @@ function MovementEditor({
                             inputMode="numeric"
                             pattern="\d+"
                             onChange={(event) =>
-                                updateMovement(movementIndex, {
-                                    ...movement,
-                                    amount_minor: event.currentTarget.value,
-                                })
+                                updateMovement(
+                                    movementIndex,
+                                    invalidateMatch({
+                                        amount_minor: event.currentTarget.value,
+                                    }),
+                                )
                             }
                             aria-invalid={Boolean(
                                 movementError(movementIndex, 'amount_minor'),
@@ -578,10 +676,10 @@ function MovementEditor({
                                 const currency = event.currentTarget.value;
 
                                 if (currency === 'PEN' || currency === 'USD') {
-                                    updateMovement(movementIndex, {
-                                        ...movement,
-                                        currency,
-                                    });
+                                    updateMovement(
+                                        movementIndex,
+                                        invalidateMatch({ currency }),
+                                    );
                                 }
                             }}
                             options={[
@@ -942,10 +1040,19 @@ export default function CreateStatementImport() {
                                                                 'instrument_label',
                                                             );
                                                             confirmation.setData(
-                                                                'instrument_label',
-                                                                event
-                                                                    .currentTarget
-                                                                    .value,
+                                                                {
+                                                                    ...confirmation.data,
+                                                                    instrument_label:
+                                                                        event
+                                                                            .currentTarget
+                                                                            .value,
+                                                                    movements:
+                                                                        invalidateLinkedMovements(
+                                                                            confirmation
+                                                                                .data
+                                                                                .movements,
+                                                                        ),
+                                                                },
                                                             );
                                                         }}
                                                         required
@@ -975,10 +1082,19 @@ export default function CreateStatementImport() {
                                                                 'instrument_last_four',
                                                             );
                                                             confirmation.setData(
-                                                                'instrument_last_four',
-                                                                event
-                                                                    .currentTarget
-                                                                    .value,
+                                                                {
+                                                                    ...confirmation.data,
+                                                                    instrument_last_four:
+                                                                        event
+                                                                            .currentTarget
+                                                                            .value,
+                                                                    movements:
+                                                                        invalidateLinkedMovements(
+                                                                            confirmation
+                                                                                .data
+                                                                                .movements,
+                                                                        ),
+                                                                },
                                                             );
                                                         }}
                                                     />
