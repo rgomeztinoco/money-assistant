@@ -30,6 +30,7 @@
         <env name="DB_PORT" value="5432"/>
         <env name="DB_USERNAME" value="sail"/>
         <env name="DB_URL" value=""/>
+        <env name="INERTIA_SSR_ENABLED" value="false"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="database"/>
         <env name="SESSION_DRIVER" value="database"/>

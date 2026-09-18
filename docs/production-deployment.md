@@ -23,8 +23,10 @@ Host security updates use Ubuntu's `unattended-upgrades`; this repository no lon
 After the change has merged and passed its required GitHub checks, run the test suite from the development checkout:
 
 ```bash
-vendor/bin/sail artisan test --compact
+vendor/bin/sail composer test:deployment
 ```
+
+This builds the current frontend, runs the feature suite, then runs the browser suite with two workers. The suites stay separate because they use different database reset strategies.
 
 Then release it with one command:
 

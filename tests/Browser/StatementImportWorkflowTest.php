@@ -287,6 +287,7 @@ function startBrowserApplication(): array
             'DB_PASSWORD' => config('database.connections.pgsql.password'),
             'DB_PORT' => config('database.connections.pgsql.port'),
             'DB_USERNAME' => config('database.connections.pgsql.username'),
+            'INERTIA_SSR_ENABLED' => false,
             'PHP_CLI_SERVER_WORKERS' => false,
             'SESSION_DRIVER' => 'database',
         ])
