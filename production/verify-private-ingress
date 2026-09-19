@@ -5,6 +5,7 @@ set -eu
 script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 environment_file="${1:-.env.production}"
 project_name="${COMPOSE_PROJECT_NAME:-money-assistant-production}"
+service_name='svc:money-assistant'
 
 fail()
 {
@@ -36,11 +37,12 @@ serve_status="$(tailscale serve status --json)"
 
 printf '%s' "$serve_status" |
     jq -e \
-        --arg host_port "${PRIVATE_HOSTNAME}:8443" '
-        .TCP["8443"].HTTPS == true
-        and .Web[$host_port].Handlers["/"].Proxy == "http://127.0.0.1:8443"
-        and ((.Web[$host_port].Handlers | keys) == ["/"])
-    ' >/dev/null || fail 'Tailscale Serve does not exclusively route HTTPS to the loopback proxy'
+        --arg service "$service_name" \
+        --arg host_port "${PRIVATE_HOSTNAME}:443" '
+        .Services[$service].TCP["443"].HTTPS == true
+        and .Services[$service].Web[$host_port].Handlers["/"].Proxy == "http://127.0.0.1:8443"
+        and ((.Services[$service].Web[$host_port].Handlers | keys) == ["/"])
+    ' >/dev/null || fail 'the named Tailscale Service does not exclusively route HTTPS to the loopback proxy'
 
 funnel_status="$(tailscale funnel status --json)"
 
@@ -79,6 +81,21 @@ printf '%s' "$compose_status" | jq -e '
     and ([.services | to_entries[] | select(.key != "proxy") | .value.ports // []] | all(length == 0))
 ' >/dev/null || fail 'Compose publishes an application port outside loopback'
 
+printf '%s' "$compose_status" |
+    jq -e \
+        --arg app_url "https://${PRIVATE_HOSTNAME}" \
+        --arg gmail_redirect_uri "https://${PRIVATE_HOSTNAME}/settings/connections/gmail/callback" '
+        [
+            .services.migrate,
+            .services.web,
+            .services.worker,
+            .services.scheduler
+        ] | all(
+            .environment.APP_URL == $app_url
+            and .environment.GOOGLE_GMAIL_REDIRECT_URI == $gmail_redirect_uri
+        )
+    ' >/dev/null || fail 'Compose does not resolve the canonical application and Gmail origins'
+
 listeners="$(ss -H -lnt)"
 tailnet_ips="$(printf '%s' "$tailscale_status" | jq -r '.TailscaleIPs | join(" ")')"
 
@@ -89,28 +106,32 @@ fi
 printf '%s\n' "$listeners" | awk -v tailnet_ips="$tailnet_ips" '
     BEGIN {
         allowed["127.0.0.1:80"] = 1
+        allowed["127.0.0.1:443"] = 1
         allowed["127.0.0.1:5432"] = 1
         allowed["127.0.0.1:8080"] = 1
         allowed["127.0.0.1:8443"] = 1
         allowed["[::1]:80"] = 1
+        allowed["[::1]:443"] = 1
         allowed["[::1]:5432"] = 1
         allowed["[::1]:8080"] = 1
         allowed["[::1]:8443"] = 1
 
         address_count = split(tailnet_ips, addresses, " ")
         for (address_index = 1; address_index <= address_count; address_index++) {
+            allowed[addresses[address_index] ":443"] = 1
+            allowed["[" addresses[address_index] "]:443"] = 1
             allowed[addresses[address_index] ":8443"] = 1
             allowed["[" addresses[address_index] "]:8443"] = 1
         }
     }
-    $4 ~ /:(80|5432|8080|8443)$/ && !($4 in allowed) { exit 1 }
+    $4 ~ /:(80|443|5432|8080|8443)$/ && !($4 in allowed) { exit 1 }
 ' || fail 'an application listener is reachable outside its approved private interface'
 
 curl \
     --fail \
     --silent \
     --show-error \
-    "https://${PRIVATE_HOSTNAME}:8443/up" \
-    >/dev/null || fail 'tailnet HTTPS health probe failed'
+    "https://${PRIVATE_HOSTNAME}/up" \
+    >/dev/null || fail 'canonical tailnet HTTPS health probe failed'
 
 printf 'Private ingress verification passed.\n'

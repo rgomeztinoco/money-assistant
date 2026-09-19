@@ -13,7 +13,7 @@ Deployment support lives in `production/`:
 | `install-production-services` | Install the application, private-access, and backup systemd units and backup commands. |
 | `export-production-backup` | Stream the database into an encrypted backup. |
 | `restore-production-backup` | Restore a backup into a separate verification database. |
-| `verify-private-ingress` | Check Tailscale, firewall rules, exposed ports, and HTTPS health. |
+| `verify-private-ingress` | Check the named Tailscale Service, Funnel state, firewall rules, exposed ports, and canonical HTTPS health. |
 | `docker-entrypoint.production` | Load mounted secrets when an application container starts. |
 
 Host security updates use Ubuntu's `unattended-upgrades`; this repository no longer maintains a separate security policy checker or vulnerability ledger. Existing host update settings remain installed.
@@ -44,6 +44,8 @@ Do not run the development Sail deployment commands against the production Compo
 
 The release command performs the private-ingress check. Use the lower-level commands below when investigating a failed release.
 
+Never run `tailscale serve reset` on this host. Money Assistant must not remove unrelated Tailscale Serve routes.
+
 Require every production container to be running and healthy:
 
 ```bash
@@ -62,7 +64,7 @@ systemctl is-active money-assistant-production.service money-assistant-tailnet.s
 systemctl is-enabled money-assistant-production.service money-assistant-tailnet.service money-assistant-backup.timer
 ```
 
-Finally, open the configured `https://<PRIVATE_HOSTNAME>:8443` tailnet origin and exercise the feature that triggered the deployment. Check recent logs when verification fails:
+Finally, open the configured `APP_URL` tailnet origin and exercise the feature that triggered the deployment. Check recent logs when verification fails:
 
 ```bash
 sudo docker compose \

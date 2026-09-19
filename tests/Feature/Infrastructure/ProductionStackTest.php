@@ -66,14 +66,32 @@ test('only the private proxy publishes a loopback port', function (): void {
     expect($this->productionCompose['networks']['application']['driver'])->toBe('bridge')
         ->and(file_get_contents(base_path('production/Caddyfile.production')))
         ->toContain('reverse_proxy web:8080')
-        ->toContain('header_up X-Forwarded-Proto https')
-        ->and(file_get_contents(base_path('production/money-assistant-tailnet.service')))
-        ->toContain('tailscale serve --bg --https=8443 http://127.0.0.1:8443')
+        ->toContain('header_up X-Forwarded-Proto https');
+});
+
+test('production resolves the canonical origin and manages only its named Tailscale Service', function (): void {
+    $services = $this->productionCompose['services'];
+    $productionEnvironment = parse_ini_file(base_path('.env.production.example'));
+    $tailnetService = file_get_contents(base_path('production/money-assistant-tailnet.service'));
+
+    foreach (['migrate', 'web', 'worker', 'scheduler'] as $service) {
+        expect($services[$service]['environment']['APP_URL'])
+            ->toBe('https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}')
+            ->and($services[$service]['environment']['GOOGLE_GMAIL_REDIRECT_URI'])
+            ->toBe('https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}/settings/connections/gmail/callback');
+    }
+
+    expect($productionEnvironment['PRIVATE_HOSTNAME'])->toBe('money-assistant.example.ts.net')
+        ->and($productionEnvironment)->not->toHaveKeys(['APP_URL', 'GOOGLE_GMAIL_REDIRECT_URI'])
+        ->and($tailnetService)
+        ->toContain('tailscale serve --service=svc:money-assistant --https=443 http://127.0.0.1:8443')
+        ->toContain('tailscale serve --service=svc:money-assistant --https=443 off')
+        ->not->toContain('tailscale serve reset')
         ->and(file_get_contents(base_path('production/verify-private-ingress')))
         ->toContain('tailscale funnel status --json');
 });
 
-test('private ingress accepts tailnet and localhost listeners and rejects ordinary LAN listeners', function (): void {
+test('private ingress verifies the named service and rejects public or unhealthy routes', function (): void {
     $temporaryDirectory = sys_get_temp_dir().'/money-assistant-private-ingress-'.str()->uuid();
     $binaryDirectory = $temporaryDirectory.'/bin';
     $environmentFile = $temporaryDirectory.'/production.env';
@@ -83,13 +101,13 @@ test('private ingress accepts tailnet and localhost listeners and rejects ordina
 #!/bin/sh
 case "$1 $2" in
     'status --json')
-        printf '%s\n' '{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.0.10","fd7a:115c:a1e0::10"]}}'
+        printf '%s\n' '{"BackendState":"Running","TailscaleIPs":["100.64.0.10","fd7a:115c:a1e0::10"]}'
         ;;
     'serve status')
-        printf '%s\n' '{"TCP":{"8443":{"HTTPS":true}},"Web":{"money-assistant.example.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8443"}}}}}'
+        printf '%s\n' "$PRIVATE_INGRESS_TEST_SERVE_STATUS"
         ;;
     'funnel status')
-        printf '%s\n' '{"AllowFunnel":{"money-assistant.example.ts.net:8443":false}}'
+        printf '%s\n' "$PRIVATE_INGRESS_TEST_FUNNEL_STATUS"
         ;;
 esac
 SH);
@@ -106,7 +124,7 @@ esac
 SH);
     file_put_contents($binaryDirectory.'/docker', <<<'SH'
 #!/bin/sh
-printf '%s\n' '{"services":{"postgres":{},"migrate":{},"web":{},"worker":{},"scheduler":{},"proxy":{"ports":[{"host_ip":"127.0.0.1","mode":"ingress","protocol":"tcp","published":"8443","target":8080}]}}}'
+printf '%s\n' "$PRIVATE_INGRESS_TEST_COMPOSE_STATUS"
 SH);
     file_put_contents($binaryDirectory.'/ss', <<<'SH'
 #!/bin/sh
@@ -114,36 +132,148 @@ printf '%s\n' "$PRIVATE_INGRESS_TEST_LISTENERS"
 SH);
     file_put_contents($binaryDirectory.'/curl', <<<'SH'
 #!/bin/sh
-exit 0
+[ "$*" = '--fail --silent --show-error https://money-assistant.example.ts.net/up' ] || exit 64
+[ "${PRIVATE_INGRESS_TEST_HEALTHY:-true}" = true ]
 SH);
     file_put_contents($binaryDirectory.'/id', <<<'SH'
 #!/bin/sh
 printf '%s\n' '0'
 SH);
-    file_put_contents($binaryDirectory.'/jq', <<<'SH'
-#!/bin/sh
-filter=''
-for argument in "$@"; do
-    filter="$argument"
-done
-case "$filter" in
-    *TailscaleIPs*) printf '%s\n' '100.64.0.10 fd7a:115c:a1e0::10' ;;
-esac
-SH);
+    file_put_contents($binaryDirectory.'/jq', <<<'PHP'
+#!/usr/bin/env php
+<?php
+
+$arguments = array_slice($argv, 1);
+$variables = [];
+
+for ($index = 0; $index < count($arguments); $index++) {
+    if ($arguments[$index] === '--arg') {
+        $variables[$arguments[$index + 1]] = $arguments[$index + 2];
+        $index += 2;
+    }
+}
+
+$filter = end($arguments);
+$input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
+
+if (str_contains($filter, 'TailscaleIPs')) {
+    echo implode(' ', $input['TailscaleIPs']).PHP_EOL;
+    exit(0);
+}
+
+if (str_contains($filter, '.BackendState == "Running"')) {
+    exit($input['BackendState'] === 'Running' ? 0 : 1);
+}
+
+if (str_contains($filter, '.Services[$service]')) {
+    $service = $input['Services'][$variables['service']] ?? [];
+    $handlers = $service['Web'][$variables['host_port']]['Handlers'] ?? [];
+    $valid = ($service['TCP']['443']['HTTPS'] ?? false) === true
+        && ($handlers['/']['Proxy'] ?? null) === 'http://127.0.0.1:8443'
+        && array_keys($handlers) === ['/'];
+
+    exit($valid ? 0 : 1);
+}
+
+if (str_contains($filter, 'AllowFunnel')) {
+    $allowFunnel = $input['AllowFunnel'] ?? [];
+    exit(count(array_filter($allowFunnel)) === 0 ? 0 : 1);
+}
+
+if (str_contains($filter, '.services.proxy.ports')) {
+    $services = $input['services'];
+    $valid = $services['proxy']['ports'] === [[
+        'host_ip' => '127.0.0.1',
+        'mode' => 'ingress',
+        'protocol' => 'tcp',
+        'published' => '8443',
+        'target' => 8080,
+    ]];
+
+    foreach ($services as $name => $service) {
+        if ($name !== 'proxy' && ($service['ports'] ?? []) !== []) {
+            $valid = false;
+        }
+    }
+
+    exit($valid ? 0 : 1);
+}
+
+if (str_contains($filter, '.APP_URL')) {
+    $valid = str_contains($filter, '.GOOGLE_GMAIL_REDIRECT_URI');
+
+    foreach (['migrate', 'web', 'worker', 'scheduler'] as $name) {
+        $environment = $input['services'][$name]['environment'] ?? [];
+        $valid = $valid
+            && ($environment['APP_URL'] ?? null) === $variables['app_url']
+            && ($environment['GOOGLE_GMAIL_REDIRECT_URI'] ?? null) === $variables['gmail_redirect_uri'];
+    }
+
+    exit($valid ? 0 : 1);
+}
+
+exit(1);
+PHP);
 
     foreach (['tailscale', 'ufw', 'docker', 'ss', 'curl', 'id', 'jq'] as $command) {
         chmod($binaryDirectory.'/'.$command, 0700);
     }
 
     try {
+        $applicationEnvironment = [
+            'APP_URL' => 'https://money-assistant.example.ts.net',
+            'GOOGLE_GMAIL_REDIRECT_URI' => 'https://money-assistant.example.ts.net/settings/connections/gmail/callback',
+        ];
+        $serveStatus = [
+            'TCP' => ['8443' => ['HTTPS' => true]],
+            'Web' => [
+                'ricardo-server.example.ts.net:8443' => [
+                    'Handlers' => ['/' => ['Proxy' => 'http://127.0.0.1:8443']],
+                ],
+            ],
+            'Services' => [
+                'svc:money-assistant' => [
+                    'TCP' => ['443' => ['HTTPS' => true]],
+                    'Web' => [
+                        'money-assistant.example.ts.net:443' => [
+                            'Handlers' => ['/' => ['Proxy' => 'http://127.0.0.1:8443']],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $composeStatus = [
+            'services' => [
+                'postgres' => [],
+                'migrate' => ['environment' => $applicationEnvironment],
+                'web' => ['environment' => $applicationEnvironment],
+                'worker' => ['environment' => $applicationEnvironment],
+                'scheduler' => ['environment' => $applicationEnvironment],
+                'proxy' => [
+                    'ports' => [[
+                        'host_ip' => '127.0.0.1',
+                        'mode' => 'ingress',
+                        'protocol' => 'tcp',
+                        'published' => '8443',
+                        'target' => 8080,
+                    ]],
+                ],
+            ],
+        ];
         $environment = [
             'PATH' => $binaryDirectory.':'.getenv('PATH'),
+            'PRIVATE_INGRESS_TEST_COMPOSE_STATUS' => json_encode($composeStatus, JSON_THROW_ON_ERROR),
+            'PRIVATE_INGRESS_TEST_FUNNEL_STATUS' => json_encode([
+                'AllowFunnel' => ['ricardo-server.example.ts.net:8443' => false],
+            ], JSON_THROW_ON_ERROR),
             'PRIVATE_INGRESS_TEST_LISTENERS' => implode("\n", [
                 'LISTEN 0 4096 127.0.0.1:8443 0.0.0.0:*',
                 'LISTEN 0 4096 127.0.0.1:8080 0.0.0.0:*',
+                'LISTEN 0 4096 100.64.0.10:443 0.0.0.0:*',
                 'LISTEN 0 4096 100.64.0.10:8443 0.0.0.0:*',
                 'LISTEN 0 4096 [fd7a:115c:a1e0::10]:8443 [::]:*',
             ]),
+            'PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($serveStatus, JSON_THROW_ON_ERROR),
         ];
         $approvedIngress = new Process([
             base_path('production/verify-private-ingress'),
@@ -154,12 +284,72 @@ SH);
         expect($approvedIngress->getExitCode())->toBe(0, $approvedIngress->getErrorOutput())
             ->and($approvedIngress->getOutput())->toContain('Private ingress verification passed.');
 
+        $missingServiceStatus = $serveStatus;
+        unset($missingServiceStatus['Services']);
+
+        $wrongBackendStatus = $serveStatus;
+        $wrongBackendStatus['Services']['svc:money-assistant']['Web']['money-assistant.example.ts.net:443']['Handlers']['/']['Proxy'] = 'http://127.0.0.1:8444';
+
+        $publicComposeStatus = $composeStatus;
+        $publicComposeStatus['services']['proxy']['ports'][0]['host_ip'] = '0.0.0.0';
+
+        $oldOriginComposeStatus = $composeStatus;
+        foreach (['migrate', 'web', 'worker', 'scheduler'] as $service) {
+            $oldOriginComposeStatus['services'][$service]['environment'] = [
+                'APP_URL' => 'https://ricardo-server.example.ts.net:8443',
+                'GOOGLE_GMAIL_REDIRECT_URI' => 'https://ricardo-server.example.ts.net:8443/settings/connections/gmail/callback',
+            ];
+        }
+
+        $rejections = [
+            'missing named service' => [
+                ['PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($missingServiceStatus, JSON_THROW_ON_ERROR)],
+                'the named Tailscale Service does not exclusively route HTTPS to the loopback proxy',
+            ],
+            'incorrect backend target' => [
+                ['PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($wrongBackendStatus, JSON_THROW_ON_ERROR)],
+                'the named Tailscale Service does not exclusively route HTTPS to the loopback proxy',
+            ],
+            'Funnel-enabled ingress' => [
+                ['PRIVATE_INGRESS_TEST_FUNNEL_STATUS' => json_encode([
+                    'AllowFunnel' => ['money-assistant.example.ts.net:443' => true],
+                ], JSON_THROW_ON_ERROR)],
+                'Tailscale Funnel must remain disabled',
+            ],
+            'non-loopback Docker publication' => [
+                ['PRIVATE_INGRESS_TEST_COMPOSE_STATUS' => json_encode($publicComposeStatus, JSON_THROW_ON_ERROR)],
+                'Compose publishes an application port outside loopback',
+            ],
+            'stale application origin' => [
+                ['PRIVATE_INGRESS_TEST_COMPOSE_STATUS' => json_encode($oldOriginComposeStatus, JSON_THROW_ON_ERROR)],
+                'Compose does not resolve the canonical application and Gmail origins',
+            ],
+            'failed canonical health check' => [
+                ['PRIVATE_INGRESS_TEST_HEALTHY' => 'false'],
+                'canonical tailnet HTTPS health probe failed',
+            ],
+        ];
+
+        foreach ($rejections as [$environmentOverrides, $failureMessage]) {
+            $rejectedIngress = new Process([
+                base_path('production/verify-private-ingress'),
+                $environmentFile,
+            ], base_path(), [
+                ...$environment,
+                ...$environmentOverrides,
+            ]);
+            $rejectedIngress->run();
+
+            expect($rejectedIngress->getExitCode())->toBe(1)
+                ->and($rejectedIngress->getErrorOutput())->toContain($failureMessage);
+        }
+
         $lanIngress = new Process([
             base_path('production/verify-private-ingress'),
             $environmentFile,
         ], base_path(), [
             ...$environment,
-            'PRIVATE_INGRESS_TEST_LISTENERS' => 'LISTEN 0 4096 192.168.1.50:8443 0.0.0.0:*',
+            'PRIVATE_INGRESS_TEST_LISTENERS' => 'LISTEN 0 4096 192.168.1.50:443 0.0.0.0:*',
         ]);
         $lanIngress->run();
 
