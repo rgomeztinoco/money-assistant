@@ -89,7 +89,7 @@ test('development and production integrations retain Gmail configuration', funct
         ->toContain('GOOGLE_GMAIL_CLIENT_SECRET=')
         ->toContain('GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS=testing')
         ->and($productionEnvironment)
-        ->toContain('GOOGLE_GMAIL_REDIRECT_URI=https://money-assistant.example.ts.net:8443/settings/connections/gmail/callback')
+        ->toContain('GOOGLE_GMAIL_REDIRECT_URI=https://money-assistant.example.ts.net/settings/connections/gmail/callback')
         ->toContain('GOOGLE_GMAIL_OAUTH_PUBLISHING_STATUS=production')
         ->and($gmailContract)
         ->toContain("public const READ_ONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';")
