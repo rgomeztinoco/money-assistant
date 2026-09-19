@@ -81,6 +81,21 @@ printf '%s' "$compose_status" | jq -e '
     and ([.services | to_entries[] | select(.key != "proxy") | .value.ports // []] | all(length == 0))
 ' >/dev/null || fail 'Compose publishes an application port outside loopback'
 
+printf '%s' "$compose_status" |
+    jq -e \
+        --arg app_url "https://${PRIVATE_HOSTNAME}" \
+        --arg gmail_redirect_uri "https://${PRIVATE_HOSTNAME}/settings/connections/gmail/callback" '
+        [
+            .services.migrate,
+            .services.web,
+            .services.worker,
+            .services.scheduler
+        ] | all(
+            .environment.APP_URL == $app_url
+            and .environment.GOOGLE_GMAIL_REDIRECT_URI == $gmail_redirect_uri
+        )
+    ' >/dev/null || fail 'Compose does not resolve the canonical application and Gmail origins'
+
 listeners="$(ss -H -lnt)"
 tailnet_ips="$(printf '%s' "$tailscale_status" | jq -r '.TailscaleIPs | join(" ")')"
 

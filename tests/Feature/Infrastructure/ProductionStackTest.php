@@ -51,8 +51,6 @@ test('production Compose builds one hardened application image', function (): vo
 
 test('only the private proxy publishes a loopback port', function (): void {
     $services = $this->productionCompose['services'];
-    $productionEnvironment = parse_ini_file(base_path('.env.production.example'));
-    $tailnetService = file_get_contents(base_path('production/money-assistant-tailnet.service'));
 
     expect($services['proxy']['ports'])->toBe([[
         'target' => 8080,
@@ -65,6 +63,17 @@ test('only the private proxy publishes a loopback port', function (): void {
         expect($services[$service])->not->toHaveKey('ports');
     }
 
+    expect($this->productionCompose['networks']['application']['driver'])->toBe('bridge')
+        ->and(file_get_contents(base_path('production/Caddyfile.production')))
+        ->toContain('reverse_proxy web:8080')
+        ->toContain('header_up X-Forwarded-Proto https');
+});
+
+test('production resolves the canonical origin and manages only its named Tailscale Service', function (): void {
+    $services = $this->productionCompose['services'];
+    $productionEnvironment = parse_ini_file(base_path('.env.production.example'));
+    $tailnetService = file_get_contents(base_path('production/money-assistant-tailnet.service'));
+
     foreach (['migrate', 'web', 'worker', 'scheduler'] as $service) {
         expect($services[$service]['environment']['APP_URL'])
             ->toBe('${APP_URL:?Set APP_URL}')
@@ -76,10 +85,6 @@ test('only the private proxy publishes a loopback port', function (): void {
         ->and($productionEnvironment['APP_URL'])->toBe('https://money-assistant.example.ts.net')
         ->and($productionEnvironment['GOOGLE_GMAIL_REDIRECT_URI'])
         ->toBe('https://money-assistant.example.ts.net/settings/connections/gmail/callback')
-        ->and($this->productionCompose['networks']['application']['driver'])->toBe('bridge')
-        ->and(file_get_contents(base_path('production/Caddyfile.production')))
-        ->toContain('reverse_proxy web:8080')
-        ->toContain('header_up X-Forwarded-Proto https')
         ->and($tailnetService)
         ->toContain('tailscale serve --service=svc:money-assistant --https=443 http://127.0.0.1:8443')
         ->toContain('tailscale serve --service=svc:money-assistant --https=443 off')
@@ -196,6 +201,19 @@ if (str_contains($filter, '.services.proxy.ports')) {
     exit($valid ? 0 : 1);
 }
 
+if (str_contains($filter, '.APP_URL')) {
+    $valid = str_contains($filter, '.GOOGLE_GMAIL_REDIRECT_URI');
+
+    foreach (['migrate', 'web', 'worker', 'scheduler'] as $name) {
+        $environment = $input['services'][$name]['environment'] ?? [];
+        $valid = $valid
+            && ($environment['APP_URL'] ?? null) === $variables['app_url']
+            && ($environment['GOOGLE_GMAIL_REDIRECT_URI'] ?? null) === $variables['gmail_redirect_uri'];
+    }
+
+    exit($valid ? 0 : 1);
+}
+
 exit(1);
 PHP);
 
@@ -204,6 +222,10 @@ PHP);
     }
 
     try {
+        $applicationEnvironment = [
+            'APP_URL' => 'https://money-assistant.example.ts.net',
+            'GOOGLE_GMAIL_REDIRECT_URI' => 'https://money-assistant.example.ts.net/settings/connections/gmail/callback',
+        ];
         $serveStatus = [
             'TCP' => ['8443' => ['HTTPS' => true]],
             'Web' => [
@@ -225,10 +247,10 @@ PHP);
         $composeStatus = [
             'services' => [
                 'postgres' => [],
-                'migrate' => [],
-                'web' => [],
-                'worker' => [],
-                'scheduler' => [],
+                'migrate' => ['environment' => $applicationEnvironment],
+                'web' => ['environment' => $applicationEnvironment],
+                'worker' => ['environment' => $applicationEnvironment],
+                'scheduler' => ['environment' => $applicationEnvironment],
                 'proxy' => [
                     'ports' => [[
                         'host_ip' => '127.0.0.1',
@@ -273,6 +295,14 @@ PHP);
         $publicComposeStatus = $composeStatus;
         $publicComposeStatus['services']['proxy']['ports'][0]['host_ip'] = '0.0.0.0';
 
+        $oldOriginComposeStatus = $composeStatus;
+        foreach (['migrate', 'web', 'worker', 'scheduler'] as $service) {
+            $oldOriginComposeStatus['services'][$service]['environment'] = [
+                'APP_URL' => 'https://ricardo-server.example.ts.net:8443',
+                'GOOGLE_GMAIL_REDIRECT_URI' => 'https://ricardo-server.example.ts.net:8443/settings/connections/gmail/callback',
+            ];
+        }
+
         $rejections = [
             'missing named service' => [
                 ['PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($missingServiceStatus, JSON_THROW_ON_ERROR)],
@@ -291,6 +321,10 @@ PHP);
             'non-loopback Docker publication' => [
                 ['PRIVATE_INGRESS_TEST_COMPOSE_STATUS' => json_encode($publicComposeStatus, JSON_THROW_ON_ERROR)],
                 'Compose publishes an application port outside loopback',
+            ],
+            'stale application origin' => [
+                ['PRIVATE_INGRESS_TEST_COMPOSE_STATUS' => json_encode($oldOriginComposeStatus, JSON_THROW_ON_ERROR)],
+                'Compose does not resolve the canonical application and Gmail origins',
             ],
             'failed canonical health check' => [
                 ['PRIVATE_INGRESS_TEST_HEALTHY' => 'false'],
