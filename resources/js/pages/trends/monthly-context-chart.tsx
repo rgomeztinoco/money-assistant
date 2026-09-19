@@ -6,6 +6,7 @@ import {
     ReferenceLine,
     XAxis,
 } from 'recharts';
+import { DateText } from '@/components/date-time';
 import {
     ChartContainer,
     ChartLegend,
@@ -14,6 +15,10 @@ import {
     ChartTooltipContent,
 } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
+import {
+    formatCompactMonthYear,
+    isLastDayOfMonth,
+} from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { cn } from '@/lib/utils';
 import type { MonthlyContext, TrendReport } from './types';
@@ -23,26 +28,8 @@ const chartConfig = {
     USD: { label: 'USD', color: 'var(--chart-2)' },
 } satisfies ChartConfig;
 
-function shortDate(date: string): string {
-    return new Intl.DateTimeFormat('en', {
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC',
-    }).format(new Date(`${date}T00:00:00Z`));
-}
-
 function isPartialMonth(month: MonthlyContext): boolean {
-    const monthEnd = new Date(
-        Date.UTC(
-            Number(month.month.slice(0, 4)),
-            Number(month.month.slice(5, 7)),
-            0,
-        ),
-    )
-        .toISOString()
-        .slice(0, 10);
-
-    return month.date_to !== monthEnd;
+    return !isLastDayOfMonth(month.date_to);
 }
 
 export function MonthlyContextChart({
@@ -70,7 +57,7 @@ export function MonthlyContextChart({
     );
     const chartData = contextMonths.map((month) => ({
         ...month,
-        shortLabel: month.label.split(' ')[0],
+        shortLabel: formatCompactMonthYear(month.date_from).split(' ')[0],
         ...Object.fromEntries(
             currencies.map((currency) => {
                 const total = monthlyContextByCurrency
@@ -98,7 +85,7 @@ export function MonthlyContextChart({
                         .get(report.currency)
                         ?.get(month.month)?.total_minor == null,
             )
-            .map((month) => month.label),
+            .map((month) => formatCompactMonthYear(month.date_from)),
     }));
 
     return (
@@ -221,7 +208,10 @@ export function MonthlyContextChart({
                             <p className="flex items-center gap-2">
                                 <span className="size-2.5 rounded-sm border border-dashed border-chart-2 bg-chart-2/50" />
                                 Partial month through{' '}
-                                {shortDate(contextMonth.date_to)}
+                                <DateText
+                                    value={contextMonth.date_to}
+                                    format="contextual"
+                                />
                             </p>
                         )}
                         {missingActivity.map(

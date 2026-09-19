@@ -47,6 +47,8 @@ test('the owner navigates the guided queue and categorizes matching current and 
     $page
         ->assertSee('Item 1 of 3')
         ->assertSee('CAFÉ—Central!!!')
+        ->assertSee('20 Aug 2026')
+        ->assertDontSee('2026-08-20')
         ->click('Skip')
         ->assertSee('Item 2 of 3')
         ->assertSee('café central')

@@ -1,5 +1,6 @@
 import { KeyRound, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { RelativeTimestamp } from '@/components/date-time';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -43,13 +44,16 @@ export default function PasskeyItem({ passkey, onDelete }: Props) {
                         )}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                        Added {passkey.created_at_diff}
-                        {passkey.last_used_at_diff && (
+                        Added <RelativeTimestamp value={passkey.created_at} />
+                        {passkey.last_used_at && (
                             <>
                                 <span className="mx-1 text-muted-foreground/50">
                                     /
                                 </span>
-                                Last used {passkey.last_used_at_diff}
+                                Last used{' '}
+                                <RelativeTimestamp
+                                    value={passkey.last_used_at}
+                                />
                             </>
                         )}
                     </p>

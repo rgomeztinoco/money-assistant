@@ -15,6 +15,7 @@ import {
     update as saveReceiptBreakdown,
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
 import { update as updateTransaction } from '@/actions/App/Http/Controllers/TransactionController';
+import { DateText, LocalTimestamp } from '@/components/date-time';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
+import { formatFullDate } from '@/lib/date-presentation';
 import {
     currencyUnitsToMinorUnits,
     formatMinorUnits,
@@ -664,7 +666,7 @@ function TransactionEditForm({
                                     ...transaction.spending_options.map(
                                         (spending) => ({
                                             value: spending.id.toString(),
-                                            label: `${spending.occurred_on} · ${spending.description} · ${spending.currency}`,
+                                            label: `${formatFullDate(spending.occurred_on)} · ${spending.description} · ${spending.currency}`,
                                         }),
                                     ),
                                 ]}
@@ -785,8 +787,13 @@ export function TransactionInspector({
                                     <dt className="text-muted-foreground">
                                         Occurrence date
                                     </dt>
-                                    <dd className="font-medium">
-                                        {transaction.occurred_on}
+                                    <dd
+                                        className="font-medium"
+                                        data-test={`transaction-${transaction.id}-occurred-on`}
+                                    >
+                                        <DateText
+                                            value={transaction.occurred_on}
+                                        />
                                     </dd>
                                 </div>
                                 <div>
@@ -862,7 +869,10 @@ export function TransactionInspector({
                                     </div>
                                 )}
                             </dl>
-                            <p className="text-xs text-muted-foreground">
+                            <p
+                                className="text-xs text-muted-foreground"
+                                data-test="transaction-confirmed-at"
+                            >
                                 {transaction.voided_at
                                     ? 'Excluded from all period summaries while Voided.'
                                     : movementSupportsCategory(transaction.kind)
@@ -874,7 +884,10 @@ export function TransactionInspector({
                                           ? 'Included in Moved to Savings.'
                                           : 'Excluded from spending and income summaries.'}{' '}
                                 Confirmed{' '}
-                                {transaction.confirmed_at.slice(0, 10)}.
+                                <LocalTimestamp
+                                    value={transaction.confirmed_at}
+                                />
+                                .
                             </p>
                         </section>
 
@@ -988,9 +1001,16 @@ export function TransactionInspector({
                                                         '_',
                                                         ' ',
                                                     )}
-                                                    {reference.created_at
-                                                        ? ` · ${reference.created_at.slice(0, 10)}`
-                                                        : ''}
+                                                    {reference.created_at && (
+                                                        <>
+                                                            {' · '}
+                                                            <LocalTimestamp
+                                                                value={
+                                                                    reference.created_at
+                                                                }
+                                                            />
+                                                        </>
+                                                    )}
                                                 </p>
                                             ),
                                         )}

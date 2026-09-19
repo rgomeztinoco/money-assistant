@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { FileCheck2, Mail } from 'lucide-react';
+import { LocalTimestamp } from '@/components/date-time';
 import { gmail as gmailDataSource } from '@/routes/data_sources';
 import { show as showStatementImport } from '@/routes/statement_imports';
 
@@ -56,9 +57,14 @@ export function SourceCoverage({
                 className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
             >
                 <Mail className="size-4" />
-                {source.gmail_last_checked_at
-                    ? `Gmail checked ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(source.gmail_last_checked_at))}`
-                    : gmailMissingLabel}
+                {source.gmail_last_checked_at ? (
+                    <>
+                        Gmail checked{' '}
+                        <LocalTimestamp value={source.gmail_last_checked_at} />
+                    </>
+                ) : (
+                    gmailMissingLabel
+                )}
             </Link>
         </section>
     );

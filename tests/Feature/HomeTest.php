@@ -70,6 +70,14 @@ test('Home gives the owner equal PEN and USD briefings', function () {
         'amount_minor' => 1_500,
         'description' => 'Dollar Market',
     ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->provisional([
+        ReviewableTransactionField::Description,
+    ])->create([
+        'occurred_on' => '2026-08-29',
+        'amount_minor' => 999_999,
+        'description' => 'Future purchase',
+        'category_id' => $food->id,
+    ]);
 
     $this->actingAs($owner)
         ->get(route('home'))
@@ -80,11 +88,11 @@ test('Home gives the owner equal PEN and USD briefings', function () {
             ->where('period.unit', 'month')
             ->where('period.anchor', '2026-08-01')
             ->where('period.date_from', '2026-08-01')
-            ->where('period.date_to', '2026-08-22')
+            ->where('period.date_to', '2026-08-31')
             ->where('today', '2026-08-22')
             ->where('primary.currency', 'PEN')
             ->where('primary.period.date_from', '2026-08-01')
-            ->where('primary.period.date_to', '2026-08-22')
+            ->where('primary.period.date_to', '2026-08-31')
             ->where('primary.coverage.date_from', '2026-08-04')
             ->where('primary.coverage.date_to', '2026-08-08')
             ->where('primary.coverage.transaction_count', 5)
@@ -96,7 +104,7 @@ test('Home gives the owner equal PEN and USD briefings', function () {
             ->where('primary.pulse.previous_net_spending_minor', '3000')
             ->where('primary.pulse.change_minor', '800')
             ->where('primary.pulse.percentage_change', 27)
-            ->has('primary.pulse.daily_net_spending', 23)
+            ->has('primary.pulse.daily_net_spending', 32)
             ->where('primary.pulse.daily_net_spending.0.day', 0)
             ->where('primary.pulse.daily_net_spending.0.current_minor', '0')
             ->where('primary.pulse.daily_net_spending.0.previous_minor', '0')
@@ -104,6 +112,12 @@ test('Home gives the owner equal PEN and USD briefings', function () {
             ->where('primary.pulse.daily_net_spending.4.previous_minor', '0')
             ->where('primary.pulse.daily_net_spending.10.current_minor', '3800')
             ->where('primary.pulse.daily_net_spending.10.previous_minor', '3000')
+            ->where('primary.pulse.daily_net_spending.22.current_minor', '3800')
+            ->where('primary.pulse.daily_net_spending.22.previous_minor', '3000')
+            ->where('primary.pulse.daily_net_spending.23.current_minor', null)
+            ->where('primary.pulse.daily_net_spending.23.previous_minor', null)
+            ->where('primary.pulse.daily_net_spending.31.current_minor', null)
+            ->where('primary.pulse.daily_net_spending.31.previous_minor', null)
             ->where('primary.pulse.signals.0.category.id', $food->id)
             ->where('primary.pulse.signals.0.category.name', 'Food')
             ->where('primary.pulse.signals.0.current_total_minor', '3500')
@@ -143,6 +157,129 @@ test('Home gives the owner equal PEN and USD briefings', function () {
             ->missing('review_queue')
             ->missing('gmail')
             ->missing('parser_profiles'));
+});
+
+test('Home preserves unfinished selected periods while analysis stops today', function (
+    array $query,
+    string $dateFrom,
+    string $dateTo,
+    string $comparisonDateFrom,
+    string $comparisonDateTo,
+    int $observedDay,
+    int $cutoffDay,
+    int $pointCount,
+) {
+    $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
+    $owner = User::factory()->create();
+
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => CarbonImmutable::parse($dateFrom)->addDays($observedDay - 1)->toDateString(),
+        'amount_minor' => 1_000,
+        'description' => 'Observed purchase',
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => CarbonImmutable::parse($dateTo)->toDateString(),
+        'amount_minor' => 900_000,
+        'description' => 'Future purchase',
+    ]);
+
+    $response = $this->actingAs($owner)
+        ->get(route('home', $query))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('period.date_from', $dateFrom)
+            ->where('period.date_to', $dateTo)
+            ->where('primary.period.date_from', $dateFrom)
+            ->where('primary.period.date_to', $dateTo)
+            ->where('primary.coverage.transaction_count', 1)
+            ->where('primary.summary.net_spending_minor', '1000')
+            ->where('primary.pulse.previous_period.date_from', $comparisonDateFrom)
+            ->where('primary.pulse.previous_period.date_to', $comparisonDateTo)
+            ->has('primary.pulse.daily_net_spending', $pointCount)
+            ->where("primary.pulse.daily_net_spending.{$observedDay}.current_minor", '1000')
+            ->where("primary.pulse.daily_net_spending.{$cutoffDay}.current_minor", '1000')
+            ->where('primary.pulse.daily_net_spending.'.($cutoffDay + 1).'.current_minor', null)
+            ->where('primary.pulse.daily_net_spending.'.($cutoffDay + 1).'.previous_minor', null));
+
+    expect(json_encode($response->inertiaProps(), JSON_THROW_ON_ERROR))
+        ->not->toContain('900000')
+        ->not->toContain('Future purchase');
+})->with([
+    'week' => [
+        ['period' => 'week', 'anchor' => '2026-08-19'],
+        '2026-08-17',
+        '2026-08-23',
+        '2026-08-10',
+        '2026-08-15',
+        2,
+        6,
+        8,
+    ],
+    'month' => [
+        ['period' => 'month', 'anchor' => '2026-08-12'],
+        '2026-08-01',
+        '2026-08-31',
+        '2026-07-01',
+        '2026-07-22',
+        2,
+        22,
+        32,
+    ],
+    'quarter' => [
+        ['period' => 'quarter', 'anchor' => '2026-08-12'],
+        '2026-07-01',
+        '2026-09-30',
+        '2026-04-01',
+        '2026-05-23',
+        2,
+        53,
+        93,
+    ],
+    'year' => [
+        ['period' => 'year', 'anchor' => '2026-08-12'],
+        '2026-01-01',
+        '2026-12-31',
+        '2025-01-01',
+        '2025-08-22',
+        2,
+        234,
+        366,
+    ],
+    'custom' => [
+        [
+            'period' => 'custom',
+            'date_from' => '2026-08-20',
+            'date_to' => '2026-08-31',
+        ],
+        '2026-08-20',
+        '2026-08-31',
+        '2026-08-17',
+        '2026-08-19',
+        1,
+        3,
+        13,
+    ],
+]);
+
+test('Home treats an entirely future selection as unobserved', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
+    $owner = User::factory()->create();
+
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-09-03',
+        'amount_minor' => 1_000,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('home', [
+            'period' => 'custom',
+            'date_from' => '2026-09-01',
+            'date_to' => '2026-09-07',
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('period.date_from', '2026-09-01')
+            ->where('period.date_to', '2026-09-07')
+            ->where('primary', null)
+            ->where('secondary', null));
 });
 
 test('Home keeps previous-only activity for both currencies in All', function () {
