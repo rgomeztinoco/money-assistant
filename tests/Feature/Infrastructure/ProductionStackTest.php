@@ -76,15 +76,13 @@ test('production resolves the canonical origin and manages only its named Tailsc
 
     foreach (['migrate', 'web', 'worker', 'scheduler'] as $service) {
         expect($services[$service]['environment']['APP_URL'])
-            ->toBe('${APP_URL:?Set APP_URL}')
+            ->toBe('https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}')
             ->and($services[$service]['environment']['GOOGLE_GMAIL_REDIRECT_URI'])
-            ->toBe('${GOOGLE_GMAIL_REDIRECT_URI:?Set GOOGLE_GMAIL_REDIRECT_URI}');
+            ->toBe('https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME}/settings/connections/gmail/callback');
     }
 
     expect($productionEnvironment['PRIVATE_HOSTNAME'])->toBe('money-assistant.example.ts.net')
-        ->and($productionEnvironment['APP_URL'])->toBe('https://money-assistant.example.ts.net')
-        ->and($productionEnvironment['GOOGLE_GMAIL_REDIRECT_URI'])
-        ->toBe('https://money-assistant.example.ts.net/settings/connections/gmail/callback')
+        ->and($productionEnvironment)->not->toHaveKeys(['APP_URL', 'GOOGLE_GMAIL_REDIRECT_URI'])
         ->and($tailnetService)
         ->toContain('tailscale serve --service=svc:money-assistant --https=443 http://127.0.0.1:8443')
         ->toContain('tailscale serve --service=svc:money-assistant --https=443 off')
