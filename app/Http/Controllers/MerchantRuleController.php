@@ -56,7 +56,9 @@ class MerchantRuleController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Merchant Rule created.')]);
 
-        return to_route('merchant_rules.index');
+        return $request->validated('source_transaction_id') === null
+            ? back(fallback: route('merchant_rules.index'))
+            : to_route('merchant_rules.index');
     }
 
     public function update(SaveMerchantRuleRequest $request, MerchantRule $merchantRule): RedirectResponse
@@ -65,7 +67,7 @@ class MerchantRuleController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Merchant Rule updated.')]);
 
-        return to_route('merchant_rules.index');
+        return back(fallback: route('merchant_rules.index'));
     }
 
     public function destroy(DeleteMerchantRuleRequest $request, MerchantRule $merchantRule): RedirectResponse
@@ -74,7 +76,7 @@ class MerchantRuleController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Merchant Rule deleted.')]);
 
-        return to_route('merchant_rules.index');
+        return back(fallback: route('merchant_rules.index'));
     }
 
     private function save(SaveMerchantRuleRequest $request, ?MerchantRule $merchantRule = null): MerchantRule

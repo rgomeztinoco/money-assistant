@@ -9,6 +9,12 @@ export type CategoryItem = {
     archive_impact: {
         active_child_count: number;
         active_merchant_rule_count: number;
+        active_children: Array<{ id: number; name: string }>;
+        active_merchant_rules: Array<{
+            id: number;
+            merchant: string;
+            category_path: string;
+        }>;
     };
 };
 

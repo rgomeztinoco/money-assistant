@@ -49,7 +49,7 @@ class CategoryController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Category created.')]);
 
-        return to_route('categories.index');
+        return back(fallback: route('categories.index'));
     }
 
     public function update(UpdateCategoryRequest $request, Category $category): RedirectResponse
@@ -65,6 +65,6 @@ class CategoryController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Category updated.')]);
 
-        return to_route('categories.index');
+        return back(fallback: route('categories.index'));
     }
 }

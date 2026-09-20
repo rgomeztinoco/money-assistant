@@ -3,6 +3,7 @@
 namespace App\Actions\Categorization;
 
 use App\Models\Category;
+use App\Models\MerchantRule;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -19,8 +20,8 @@ final class ReadCategoryTaxonomy
      *     child_count: int,
      *     transaction_count: int,
      *     active_merchant_rule_count: int,
-     *     archive_impact: array{active_child_count: int, active_merchant_rule_count: int},
-     *     children: list<array{id: int, parent_id: int|null, name: string, archived_at: string|null, child_count: int, transaction_count: int, active_merchant_rule_count: int, archive_impact: array{active_child_count: int, active_merchant_rule_count: int}}>
+     *     archive_impact: array{active_child_count: int, active_merchant_rule_count: int, active_children: list<array{id: int, name: string}>, active_merchant_rules: list<array{id: int, merchant: string, category_path: string}>},
+     *     children: list<array{id: int, parent_id: int|null, name: string, archived_at: string|null, child_count: int, transaction_count: int, active_merchant_rule_count: int, archive_impact: array{active_child_count: int, active_merchant_rule_count: int, active_children: list<array{id: int, name: string}>, active_merchant_rules: list<array{id: int, merchant: string, category_path: string}>}}>
      * }>
      */
     public function handle(User $owner, array $filters = []): array
@@ -42,6 +43,11 @@ final class ReadCategoryTaxonomy
             ])
             ->orderByRaw('archived_at IS NOT NULL')
             ->orderByRaw('lower(name)')
+            ->get();
+        $activeMerchantRules = MerchantRule::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->where('enabled', true)
+            ->select(['id', 'category_id', 'merchant'])
             ->get();
 
         $archived = $filters['archived'] ?? 'with';
@@ -69,7 +75,7 @@ final class ReadCategoryTaxonomy
             $sort,
             $direction,
         )
-            ->map(function (Category $category) use ($categories, $archived, $search, $sort, $direction): ?array {
+            ->map(function (Category $category) use ($categories, $activeMerchantRules, $archived, $search, $sort, $direction): ?array {
                 $children = $this->sortCategories(
                     $categories
                         ->where('parent_id', $category->id)
@@ -94,9 +100,9 @@ final class ReadCategoryTaxonomy
                 }
 
                 return [
-                    ...$this->categoryData($category, $categories),
+                    ...$this->categoryData($category, $categories, $activeMerchantRules),
                     'children' => array_values($children
-                        ->map(fn (Category $child): array => $this->categoryData($child, $categories))
+                        ->map(fn (Category $child): array => $this->categoryData($child, $categories, $activeMerchantRules))
                         ->values()
                         ->all()),
                 ];
@@ -136,14 +142,41 @@ final class ReadCategoryTaxonomy
 
     /**
      * @param  Collection<int, Category>  $categories
-     * @return array{id: int, parent_id: int|null, name: string, archived_at: string|null, child_count: int, transaction_count: int, active_merchant_rule_count: int, archive_impact: array{active_child_count: int, active_merchant_rule_count: int}}
+     * @param  Collection<int, MerchantRule>  $activeMerchantRules
+     * @return array{id: int, parent_id: int|null, name: string, archived_at: string|null, child_count: int, transaction_count: int, active_merchant_rule_count: int, archive_impact: array{active_child_count: int, active_merchant_rule_count: int, active_children: list<array{id: int, name: string}>, active_merchant_rules: list<array{id: int, merchant: string, category_path: string}>}}
      */
-    private function categoryData(Category $category, Collection $categories): array
-    {
+    private function categoryData(
+        Category $category,
+        Collection $categories,
+        Collection $activeMerchantRules,
+    ): array {
         $affectedCategories = $category->parent_id === null
             ? $categories->filter(fn (Category $candidate): bool => $candidate->id === $category->id
                 || ($candidate->parent_id === $category->id && $candidate->archived_at === null))
             : collect([$category]);
+        $activeChildren = array_values($affectedCategories
+            ->filter(fn (Category $candidate): bool => $candidate->parent_id === $category->id)
+            ->map(fn (Category $child): array => [
+                'id' => $child->id,
+                'name' => $child->name,
+            ])
+            ->all());
+        $affectedCategoryIds = $affectedCategories->pluck('id');
+        $affectedMerchantRules = array_values($activeMerchantRules
+            ->filter(fn (MerchantRule $rule): bool => $affectedCategoryIds->contains($rule->category_id))
+            ->map(function (MerchantRule $rule) use ($categories): array {
+                $affectedCategory = $categories->firstWhere('id', $rule->category_id);
+
+                return [
+                    'id' => $rule->id,
+                    'merchant' => $rule->merchant,
+                    'category_path' => $affectedCategory === null
+                        ? ''
+                        : $this->categoryPath($affectedCategory, $categories),
+                ];
+            })
+            ->sortBy('merchant', SORT_NATURAL | SORT_FLAG_CASE)
+            ->all());
 
         return [
             'id' => $category->id,
@@ -155,9 +188,23 @@ final class ReadCategoryTaxonomy
             'active_merchant_rule_count' => $category->active_merchant_rule_count,
             'archive_impact' => [
                 'active_child_count' => $category->active_child_count,
-                'active_merchant_rule_count' => $affectedCategories->sum('active_merchant_rule_count'),
+                'active_merchant_rule_count' => count($affectedMerchantRules),
+                'active_children' => $activeChildren,
+                'active_merchant_rules' => $affectedMerchantRules,
             ],
         ];
+    }
+
+    /** @param  Collection<int, Category>  $categories */
+    private function categoryPath(Category $category, Collection $categories): string
+    {
+        if ($category->parent_id === null) {
+            return $category->name;
+        }
+
+        $parent = $categories->firstWhere('id', $category->parent_id);
+
+        return $parent === null ? $category->name : $parent->name.' > '.$category->name;
     }
 
     private function searchable(string $value): string

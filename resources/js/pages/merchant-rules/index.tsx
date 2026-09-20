@@ -162,6 +162,13 @@ function RuleDialog({
                 >
                     {({ errors, processing }) => (
                         <div className="flex flex-col gap-4">
+                            {prefill && (
+                                <input
+                                    type="hidden"
+                                    name="source_transaction_id"
+                                    value={prefill.transaction_id}
+                                />
+                            )}
                             <FieldGroup>
                                 <Field
                                     data-invalid={errors.merchant !== undefined}

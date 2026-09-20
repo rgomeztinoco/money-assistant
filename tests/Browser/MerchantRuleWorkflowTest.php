@@ -121,6 +121,7 @@ test('row controls update status and confirm deletion', function () {
     visit('/merchant-rules?status=disabled')
         ->click('[aria-label="Enable Airport Taxi"]')
         ->assertSee('Merchant Rule updated.')
+        ->assertQueryStringHas('status', 'disabled')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
@@ -182,6 +183,7 @@ test('a Transaction opens a Merchant Rule dialog with known values prefilled', f
         ->assertSelected('#rule-currency', 'PEN')
         ->select('#rule-category', $category->id)
         ->press('Create Merchant Rule')
+        ->assertPathIs('/merchant-rules')
         ->assertSee('Merchant Rule created.')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();

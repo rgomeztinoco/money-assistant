@@ -53,9 +53,15 @@ test('the Category management payload includes row counts and archive impact', f
     ]);
     Transaction::factory()->for($owner, 'owner')->for($food)->create();
     Transaction::factory()->count(2)->for($owner, 'owner')->for($dining)->create();
-    MerchantRule::factory()->for($owner, 'owner')->for($food)->create();
-    MerchantRule::factory()->for($owner, 'owner')->for($dining)->create();
-    MerchantRule::factory()->for($owner, 'owner')->for($dining)->disabled()->create();
+    $parentRule = MerchantRule::factory()->for($owner, 'owner')->for($food)->create([
+        'merchant' => 'Parent Market',
+    ]);
+    $childRule = MerchantRule::factory()->for($owner, 'owner')->for($dining)->create([
+        'merchant' => 'Dining Hall',
+    ]);
+    MerchantRule::factory()->for($owner, 'owner')->for($dining)->disabled()->create([
+        'merchant' => 'Disabled Cafe',
+    ]);
 
     $this->actingAs($owner)
         ->get(route('categories.index'))
@@ -67,12 +73,35 @@ test('the Category management payload includes row counts and archive impact', f
             ->where('categories.0.active_merchant_rule_count', 1)
             ->where('categories.0.archive_impact.active_child_count', 1)
             ->where('categories.0.archive_impact.active_merchant_rule_count', 2)
+            ->where('categories.0.archive_impact.active_children', [
+                ['id' => $dining->id, 'name' => 'Dining'],
+            ])
+            ->where('categories.0.archive_impact.active_merchant_rules', [
+                [
+                    'id' => $childRule->id,
+                    'merchant' => 'Dining Hall',
+                    'category_path' => 'Food > Dining',
+                ],
+                [
+                    'id' => $parentRule->id,
+                    'merchant' => 'Parent Market',
+                    'category_path' => 'Food',
+                ],
+            ])
             ->where('categories.0.children.0.id', $dining->id)
             ->where('categories.0.children.0.child_count', 0)
             ->where('categories.0.children.0.transaction_count', 2)
             ->where('categories.0.children.0.active_merchant_rule_count', 1)
             ->where('categories.0.children.0.archive_impact.active_child_count', 0)
-            ->where('categories.0.children.0.archive_impact.active_merchant_rule_count', 1));
+            ->where('categories.0.children.0.archive_impact.active_merchant_rule_count', 1)
+            ->where('categories.0.children.0.archive_impact.active_children', [])
+            ->where('categories.0.children.0.archive_impact.active_merchant_rules', [
+                [
+                    'id' => $childRule->id,
+                    'merchant' => 'Dining Hall',
+                    'category_path' => 'Food > Dining',
+                ],
+            ]));
 });
 
 test('Category search ignores case and accents and archived Categories stay hidden by default', function () {
@@ -304,10 +333,18 @@ test('an archived Category can be edited and unarchived', function () {
         ->delete(route('categories.archival.destroy', $archived))
         ->assertSessionHasErrors('category');
 
-    $this->patch(route('categories.update', $archived), [
-        'name' => 'Groceries',
-        'parent_id' => null,
-    ])->assertSessionHasNoErrors();
+    $context = route('categories.index', [
+        'archived' => 'only',
+        'sort' => 'transactions',
+        'direction' => 'desc',
+    ]);
+
+    $this->from($context)
+        ->patch(route('categories.update', $archived), [
+            'name' => 'Groceries',
+            'parent_id' => null,
+        ])->assertRedirect($context)
+        ->assertSessionHasNoErrors();
 
     $this->delete(route('categories.archival.destroy', $archived))
         ->assertSessionHasNoErrors();

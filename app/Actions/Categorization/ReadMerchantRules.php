@@ -48,7 +48,14 @@ final class ReadMerchantRules
             ])
             ->filter(function (array $rule) use ($search, $categoryId, $status, $kind, $currency): bool {
                 if ($search !== '' && ! str_contains($this->searchable(
-                    $rule['merchant'].' '.$rule['merchant_key'].' '.$rule['category_path'],
+                    implode(' ', [
+                        $rule['merchant'],
+                        $rule['merchant_key'],
+                        $rule['category_path'],
+                        $rule['transaction_kind'] ?? 'any kind',
+                        $rule['currency'] ?? 'any currency',
+                        $rule['enabled'] ? 'enabled' : 'disabled',
+                    ]),
                 ), $search)) {
                     return false;
                 }

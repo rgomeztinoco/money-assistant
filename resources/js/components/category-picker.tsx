@@ -1,6 +1,6 @@
 import { router } from '@inertiajs/react';
 import { Check, ChevronsUpDown, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { store as createInlineCategory } from '@/actions/App/Http/Controllers/InlineCategoryController';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -81,6 +81,7 @@ export function CategoryPicker({
     allowEmpty = true,
     allowCreate = true,
     createParentId = null,
+    createTopLevelOnly = false,
     ariaLabel,
     required = false,
     disabled = false,
@@ -96,11 +97,13 @@ export function CategoryPicker({
     allowEmpty?: boolean;
     allowCreate?: boolean;
     createParentId?: number | null;
+    createTopLevelOnly?: boolean;
     ariaLabel?: string;
     required?: boolean;
     disabled?: boolean;
     className?: string;
 }) {
+    const portalContainerRef = useRef<HTMLDivElement>(null);
     const [internalValue, setInternalValue] = useState(defaultValue);
     const [createdOption, setCreatedOption] = useState<CreatedCategory | null>(
         null,
@@ -156,7 +159,10 @@ export function CategoryPicker({
             createInlineCategory(),
             {
                 name: createName,
-                parent_id: parentId === '' ? null : Number(parentId),
+                parent_id:
+                    createTopLevelOnly || parentId === ''
+                        ? null
+                        : Number(parentId),
             },
             {
                 preserveScroll: true,
@@ -188,7 +194,7 @@ export function CategoryPicker({
     }
 
     return (
-        <>
+        <div ref={portalContainerRef} className="contents">
             <select
                 id={id}
                 name={name}
@@ -236,6 +242,7 @@ export function CategoryPicker({
                     <ChevronsUpDown />
                 </PopoverTrigger>
                 <PopoverContent
+                    container={portalContainerRef}
                     align="start"
                     className="w-[min(24rem,calc(100vw-2rem))] gap-0 p-0"
                 >
@@ -316,71 +323,133 @@ export function CategoryPicker({
                 </PopoverContent>
             </Popover>
 
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Create a Category</DialogTitle>
-                        <DialogDescription>
-                            Add it without leaving this workflow. The new
-                            Category will be selected here.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <FieldGroup>
-                        <Field data-invalid={createErrors.name !== undefined}>
-                            <FieldLabel htmlFor={`${id}-new-name`}>
-                                Name
-                            </FieldLabel>
-                            <Input
-                                id={`${id}-new-name`}
-                                value={createName}
-                                maxLength={255}
-                                aria-invalid={createErrors.name !== undefined}
-                                onChange={(event) =>
-                                    setCreateName(event.currentTarget.value)
+            {createTopLevelOnly ? (
+                createOpen && (
+                    <div
+                        data-test={`${id}-create-panel`}
+                        className="flex flex-col gap-4 rounded-md border p-4"
+                    >
+                        <div className="flex flex-col gap-1">
+                            <p className="font-medium">
+                                Create a top-level Category
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                                It will be selected as the parent.
+                            </p>
+                        </div>
+                        <FieldGroup>
+                            <Field
+                                data-invalid={createErrors.name !== undefined}
+                            >
+                                <FieldLabel htmlFor={`${id}-new-name`}>
+                                    Name
+                                </FieldLabel>
+                                <Input
+                                    id={`${id}-new-name`}
+                                    value={createName}
+                                    maxLength={255}
+                                    aria-invalid={
+                                        createErrors.name !== undefined
+                                    }
+                                    onChange={(event) =>
+                                        setCreateName(event.currentTarget.value)
+                                    }
+                                />
+                                <InputError message={createErrors.name} />
+                            </Field>
+                        </FieldGroup>
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setCreateOpen(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="button"
+                                disabled={creating || createName.trim() === ''}
+                                onClick={createCategory}
+                            >
+                                {creating && <Spinner />}
+                                Create Parent Category
+                            </Button>
+                        </div>
+                    </div>
+                )
+            ) : (
+                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Create a Category</DialogTitle>
+                            <DialogDescription>
+                                Add it without leaving this workflow. The new
+                                Category will be selected here.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <FieldGroup>
+                            <Field
+                                data-invalid={createErrors.name !== undefined}
+                            >
+                                <FieldLabel htmlFor={`${id}-new-name`}>
+                                    Name
+                                </FieldLabel>
+                                <Input
+                                    id={`${id}-new-name`}
+                                    value={createName}
+                                    maxLength={255}
+                                    aria-invalid={
+                                        createErrors.name !== undefined
+                                    }
+                                    onChange={(event) =>
+                                        setCreateName(event.currentTarget.value)
+                                    }
+                                />
+                                <InputError message={createErrors.name} />
+                            </Field>
+                            <Field
+                                data-invalid={
+                                    createErrors.parent_id !== undefined
                                 }
-                            />
-                            <InputError message={createErrors.name} />
-                        </Field>
-                        <Field
-                            data-invalid={createErrors.parent_id !== undefined}
-                        >
-                            <FieldLabel htmlFor={`${id}-new-parent`}>
-                                Parent
-                            </FieldLabel>
-                            <CategoryPicker
-                                id={`${id}-new-parent`}
-                                name="parent_id"
-                                options={rootOptions}
-                                value={parentId}
-                                onValueChange={setParentId}
-                                emptyLabel="Top-level Category"
-                                allowCreate={false}
-                            />
-                            <FieldDescription>
-                                Categories support at most two levels.
-                            </FieldDescription>
-                            <InputError message={createErrors.parent_id} />
-                        </Field>
-                    </FieldGroup>
-                    <DialogFooter>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setCreateOpen(false)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="button"
-                            disabled={creating || createName.trim() === ''}
-                            onClick={createCategory}
-                        >
-                            {creating && <Spinner />}
-                            Create Category
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        </>
+                            >
+                                <FieldLabel htmlFor={`${id}-new-parent`}>
+                                    Parent
+                                </FieldLabel>
+                                <CategoryPicker
+                                    id={`${id}-new-parent`}
+                                    name="parent_id"
+                                    options={rootOptions}
+                                    value={parentId}
+                                    onValueChange={setParentId}
+                                    emptyLabel="Top-level Category"
+                                    allowCreate={false}
+                                />
+                                <FieldDescription>
+                                    Categories support at most two levels.
+                                </FieldDescription>
+                                <InputError message={createErrors.parent_id} />
+                            </Field>
+                        </FieldGroup>
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setCreateOpen(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="button"
+                                disabled={creating || createName.trim() === ''}
+                                onClick={createCategory}
+                            >
+                                {creating && <Spinner />}
+                                Create Category
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
+        </div>
     );
 }

@@ -138,7 +138,7 @@ function CategoryFields({
                         ''
                     ).toString()}
                     emptyLabel="Top-level Category"
-                    allowCreate={false}
+                    createTopLevelOnly
                 />
                 <FieldDescription>
                     Categories support at most two levels.
@@ -326,7 +326,10 @@ export default function CategoriesIndex({
             {},
             {
                 preserveScroll: true,
-                onSuccess: () => setArchiving(null),
+                onSuccess: () => {
+                    setSelectedId('');
+                    setArchiving(null);
+                },
                 onFinish: () => setLifecycleProcessing(false),
             },
         );
@@ -383,12 +386,13 @@ export default function CategoriesIndex({
                         className="sm:w-52 sm:shrink-0"
                         aria-label="Archived Categories"
                         value={filters.archived}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                            setSelectedId('');
                             updateFilters({
                                 archived: event.currentTarget
                                     .value as CategoryFilters['archived'],
-                            })
-                        }
+                            });
+                        }}
                         options={[
                             { value: 'without', label: 'Active Categories' },
                             { value: 'with', label: 'All Categories' },
@@ -700,7 +704,7 @@ export default function CategoriesIndex({
                 open={archiving !== null}
                 onOpenChange={(open) => !open && setArchiving(null)}
             >
-                <AlertDialogContent>
+                <AlertDialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto">
                     <AlertDialogHeader>
                         <AlertDialogTitle>
                             Archive {archiving?.name}?
@@ -725,6 +729,37 @@ export default function CategoriesIndex({
                             .
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    {(archiving?.archive_impact.active_children.length ?? 0) >
+                        0 && (
+                        <div className="flex flex-col gap-1 text-sm">
+                            <p className="font-medium">Children to archive</p>
+                            <ul className="list-disc pl-5 text-muted-foreground">
+                                {archiving?.archive_impact.active_children.map(
+                                    (child) => (
+                                        <li key={child.id}>{child.name}</li>
+                                    ),
+                                )}
+                            </ul>
+                        </div>
+                    )}
+                    {(archiving?.archive_impact.active_merchant_rules.length ??
+                        0) > 0 && (
+                        <div className="flex flex-col gap-1 text-sm">
+                            <p className="font-medium">
+                                Merchant Rules to disable
+                            </p>
+                            <ul className="list-disc pl-5 text-muted-foreground">
+                                {archiving?.archive_impact.active_merchant_rules.map(
+                                    (rule) => (
+                                        <li key={rule.id}>
+                                            {rule.merchant} (
+                                            {rule.category_path})
+                                        </li>
+                                    ),
+                                )}
+                            </ul>
+                        </div>
+                    )}
                     <AlertDialogFooter>
                         <AlertDialogCancel disabled={lifecycleProcessing}>
                             Cancel

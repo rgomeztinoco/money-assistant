@@ -19,13 +19,20 @@ test('the owner can view and create an exact Merchant Rule', function () {
             ->where('category_options.0.id', $category->id)
             ->where('category_options.0.path', 'Groceries'));
 
-    $this->post(route('merchant_rules.store'), [
-        'merchant' => '  CAFÉ—Central!!!  ',
-        'category_id' => $category->id,
-        'transaction_kind' => 'spending',
-        'currency' => 'PEN',
-        'enabled' => true,
-    ])->assertRedirect(route('merchant_rules.index'))
+    $context = route('merchant_rules.index', [
+        'status' => 'enabled',
+        'sort' => 'merchant',
+        'direction' => 'desc',
+    ]);
+
+    $this->from($context)
+        ->post(route('merchant_rules.store'), [
+            'merchant' => '  CAFÉ—Central!!!  ',
+            'category_id' => $category->id,
+            'transaction_kind' => 'spending',
+            'currency' => 'PEN',
+            'enabled' => true,
+        ])->assertRedirect($context)
         ->assertSessionHasNoErrors();
 
     $rule = MerchantRule::query()->sole();
@@ -116,6 +123,27 @@ test('Merchant Rule search is global and filters and sorting use validated input
         ->where('rules.0.merchant', 'Central Coffee'));
 });
 
+test('Merchant Rule search covers kind currency and status', function (string $search) {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    MerchantRule::factory()->for($owner, 'owner')->for($category)->disabled()->create([
+        'merchant' => 'Airport Taxi',
+        'merchant_key' => 'airport taxi',
+        'transaction_kind' => 'refund',
+        'currency' => 'USD',
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('merchant_rules.index', ['search' => $search]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('rules', 1)
+            ->where('rules.0.merchant', 'Airport Taxi'));
+})->with([
+    'Transaction kind' => 'refund',
+    'currency' => 'USD',
+    'status' => 'disabled',
+]);
+
 test('Merchant Rule management rejects unsupported filter values', function (array $query, string $field) {
     $owner = User::factory()->create();
 
@@ -178,13 +206,20 @@ test('the owner can edit disable enable and delete a Merchant Rule', function ()
     ]);
     $this->actingAs($owner);
 
-    $this->patch(route('merchant_rules.update', $rule), [
-        'merchant' => 'New Merchant',
-        'category_id' => $secondCategory->id,
-        'transaction_kind' => 'refund',
-        'currency' => 'USD',
-        'enabled' => false,
-    ])->assertRedirect(route('merchant_rules.index'))
+    $context = route('merchant_rules.index', [
+        'category_id' => $firstCategory->id,
+        'status' => 'enabled',
+        'sort' => 'merchant',
+    ]);
+
+    $this->from($context)
+        ->patch(route('merchant_rules.update', $rule), [
+            'merchant' => 'New Merchant',
+            'category_id' => $secondCategory->id,
+            'transaction_kind' => 'refund',
+            'currency' => 'USD',
+            'enabled' => false,
+        ])->assertRedirect($context)
         ->assertSessionHasNoErrors();
 
     expect($rule->fresh())
@@ -205,8 +240,9 @@ test('the owner can edit disable enable and delete a Merchant Rule', function ()
 
     expect($rule->fresh()->enabled)->toBeTrue();
 
-    $this->delete(route('merchant_rules.destroy', $rule))
-        ->assertRedirect(route('merchant_rules.index'));
+    $this->from($context)
+        ->delete(route('merchant_rules.destroy', $rule))
+        ->assertRedirect($context);
 
     $this->assertSoftDeleted($rule);
 });

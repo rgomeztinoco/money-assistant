@@ -22,7 +22,7 @@ class CategoryArchivalController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Category archived.')]);
 
-        return to_route('categories.index');
+        return back(fallback: route('categories.index'));
     }
 
     public function destroy(ChangeCategoryArchivalRequest $request, Category $category): RedirectResponse
@@ -31,6 +31,6 @@ class CategoryArchivalController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Category unarchived.')]);
 
-        return to_route('categories.index');
+        return back(fallback: route('categories.index'));
     }
 }
