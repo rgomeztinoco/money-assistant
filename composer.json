@@ -85,9 +85,15 @@
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"
         ],
+        "boost:update": [
+            "@php -r \"require 'vendor/autoload.php'; if (getenv('COMPOSER_DEV_MODE') === '1') { print((new Symfony\\\\Component\\\\Process\\\\Process([PHP_BINARY, 'artisan', 'boost:update', '--ansi', '--no-discover']))->setTimeout(null)->mustRun()->getOutput()); }\""
+        ],
+        "post-install-cmd": [
+            "@boost:update"
+        ],
         "post-update-cmd": [
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
-            "@php artisan boost:update --ansi"
+            "@boost:update"
         ],
         "post-root-package-install": [
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
