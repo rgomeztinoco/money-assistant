@@ -6,6 +6,7 @@ use App\Http\Controllers\CategoryArchivalController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DataSourceController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\InlineCategoryController;
 use App\Http\Controllers\MerchantRuleController;
 use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReviewQueueController;
@@ -66,6 +67,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('transactions.category.update');
     Route::resource('categories', CategoryController::class)
         ->only(['index', 'store', 'update']);
+    Route::post('categories/inline', [InlineCategoryController::class, 'store'])
+        ->name('categories.inline.store');
     Route::post('categories/{category}/archival', [CategoryArchivalController::class, 'store'])
         ->name('categories.archival.store');
     Route::delete('categories/{category}/archival', [CategoryArchivalController::class, 'destroy'])

@@ -588,12 +588,13 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
     $page
         ->resize(390, 844)
         ->click('[aria-label="Category for Café Central"]')
-        ->assertPresent('[aria-label="Search categories"]')
-        ->fill('[aria-label="Search categories"]', 'weekly groceries')
-        ->assertSee('Essentials')
-        ->assertSee('Weekly groceries and household supplies')
-        ->assertDontSee('Essentials > Weekly groceries and household supplies')
-        ->press('Weekly groceries and household supplies')
+        ->assertPresent('[aria-label="Search Categories"]')
+        ->fill(
+            '[cmdk-input][aria-label="Search Categories"]',
+            'weekly groceries',
+        )
+        ->assertSee('Essentials > Weekly groceries and household supplies')
+        ->click('@category-'.$current->id.'-option-'.$groceries->id)
         ->assertSee('Apply once')
         ->assertSee('Create rule')
         ->wait(1)
@@ -617,17 +618,11 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
                 }
 
                 const rowBounds = row.getBoundingClientRect();
-                const popoverBounds = confirmation
-                    .closest('[data-slot="popover-content"]')
-                    ?.getBoundingClientRect();
 
                 return trigger.textContent.includes(
                     'Weekly groceries and household supplies',
                 )
-                    && confirmation.closest('tr') === null
-                    && popoverBounds !== undefined
-                    && popoverBounds.left >= 0
-                    && popoverBounds.right <= innerWidth
+                    && confirmation.closest('tr') === row
                     && rowBounds.left >= 0
                     && rowBounds.right <= innerWidth
                     && document.documentElement.scrollWidth

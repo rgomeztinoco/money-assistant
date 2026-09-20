@@ -1,3 +1,4 @@
+import { CategoryPicker } from '@/components/category-picker';
 import { NativeSelect } from '@/components/ui/native-select';
 import { incomeSourceLabel } from '@/lib/money-movement';
 import type { IncomeSource } from '@/types';
@@ -59,26 +60,19 @@ export function CategoryClassificationSelect({
     value: string;
     categoryOptions: BreakdownCategoryOption[];
 }) {
-    const groups = [
-        {
-            label: 'Classification',
-            options: [{ value: '', label: 'Uncategorized' }],
-        },
-        ...groupCategoryOptions(categoryOptions).map((group) => ({
-            label: group.label,
-            options: group.options.map((option) => ({
-                value: option.id.toString(),
-                label: option.name,
-            })),
-        })),
-    ];
-
     return (
-        <NativeSelect
+        <CategoryPicker
             id={id}
             name={name}
             defaultValue={value}
-            groups={groups}
+            emptyLabel="Uncategorized"
+            options={categoryOptions.map((option) => ({
+                id: option.id,
+                name: option.name,
+                path: option.path,
+                parent_id: option.parent?.id ?? null,
+                parent_name: option.parent?.name ?? null,
+            }))}
         />
     );
 }

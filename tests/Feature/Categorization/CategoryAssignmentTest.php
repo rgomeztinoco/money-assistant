@@ -84,7 +84,7 @@ test('Category assignment rejects archived Categories', function () {
 test('the Transaction workspace exposes active Category paths and not a customizable Uncategorized Category', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
-    Category::factory()->for($owner, 'owner')->for($food, 'parent')->create(['name' => 'Groceries']);
+    $groceries = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create(['name' => 'Groceries']);
     Category::factory()->for($owner, 'owner')->create(['name' => 'Old', 'archived_at' => now()]);
     $transaction = Transaction::factory()->for($owner, 'owner')->create();
 
@@ -92,8 +92,20 @@ test('the Transaction workspace exposes active Category paths and not a customiz
         ->get(route('transactions.index', ['selected' => $transaction->id]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('category_options', [
-                ['id' => $food->id, 'path' => 'Food'],
-                ['id' => $food->children()->sole()->id, 'path' => 'Food > Groceries'],
+                [
+                    'id' => $food->id,
+                    'name' => 'Food',
+                    'path' => 'Food',
+                    'parent_id' => null,
+                    'parent_name' => null,
+                ],
+                [
+                    'id' => $groceries->id,
+                    'name' => 'Groceries',
+                    'path' => 'Food > Groceries',
+                    'parent_id' => $food->id,
+                    'parent_name' => 'Food',
+                ],
             ])
             ->loadDeferredProps(fn (Assert $inspector) => $inspector
                 ->where('selected_transaction.category', null)));

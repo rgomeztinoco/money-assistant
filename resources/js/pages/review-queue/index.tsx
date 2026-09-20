@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { update as assignLineItemCategory } from '@/actions/App/Http/Controllers/ReviewQueueLineItemCategoryController';
 import { update as assignTransactionCategory } from '@/actions/App/Http/Controllers/ReviewQueueTransactionCategoryController';
 import { update as resolveTransactionField } from '@/actions/App/Http/Controllers/TransactionFieldReviewController';
+import { CategoryPicker } from '@/components/category-picker';
 import { DateText } from '@/components/date-time';
 import InputError from '@/components/input-error';
 import { TransactionInspector } from '@/components/transaction-inspector';
@@ -212,18 +213,12 @@ function TransactionCategoryDecision({
                         <Label htmlFor={`category-${item.transaction.id}`}>
                             Assign a Category
                         </Label>
-                        <NativeSelect
+                        <CategoryPicker
                             id={`category-${item.transaction.id}`}
                             name="category_id"
+                            options={categoryOptions}
                             defaultValue=""
                             required
-                            options={[
-                                { value: '', label: 'Choose a Category' },
-                                ...categoryOptions.map((category) => ({
-                                    value: category.id.toString(),
-                                    label: category.path,
-                                })),
-                            ]}
                         />
                         <InputError message={errors.category_id} />
                     </div>
@@ -734,18 +729,12 @@ function LineItemDecision({
                         <Label htmlFor={`line-item-${item.line_item.id}`}>
                             Line Item Category
                         </Label>
-                        <NativeSelect
+                        <CategoryPicker
                             id={`line-item-${item.line_item.id}`}
                             name="category_id"
+                            options={categoryOptions}
                             defaultValue=""
                             required
-                            options={[
-                                { value: '', label: 'Choose a Category' },
-                                ...categoryOptions.map((category) => ({
-                                    value: category.id.toString(),
-                                    label: category.path,
-                                })),
-                            ]}
                         />
                         <InputError message={errors.category_id} />
                         <NextReviewItemInput nextItem={nextItem} />
