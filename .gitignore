@@ -13,6 +13,13 @@
 /resources/js/routes
 /resources/js/wayfinder
 /vendor
+
+# Laravel Boost generated resources
+/AGENTS.md
+/CLAUDE.md
+/.agents/skills/
+/.claude/skills/
+
 .DS_Store
 .env
 .env.backup
