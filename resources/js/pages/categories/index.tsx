@@ -1,4 +1,4 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, usePage } from '@inertiajs/react';
 import {
     Archive,
     ArchiveRestore,
@@ -16,6 +16,10 @@ import {
     update as updateCategory,
 } from '@/actions/App/Http/Controllers/CategoryController';
 import InputError from '@/components/input-error';
+import {
+    PrototypeSwitcher,
+    readPrototypeVariant,
+} from '@/components/prototype-switcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +43,11 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { index } from '@/routes/categories';
 import type { CategoryItem, CategoryNode } from '@/types';
+import { CategoryBrowserPrototype } from './prototype-browser';
+import { CategoryHierarchyPrototype } from './prototype-hierarchy';
+import { CategoryTablePrototype } from './prototype-table';
+
+// Three throwaway category layouts, switchable via ?variant=, on the existing Categories route.
 
 function CategoryFields({
     idPrefix,
@@ -200,6 +209,33 @@ export default function CategoriesIndex({
 }: {
     categories: CategoryNode[];
 }) {
+    const prototypeVariant = readPrototypeVariant(usePage().url);
+
+    if (prototypeVariant !== null) {
+        return (
+            <>
+                <Head title="Categories prototype" />
+                {prototypeVariant === 'A' && (
+                    <CategoryHierarchyPrototype categories={categories} />
+                )}
+                {prototypeVariant === 'B' && (
+                    <CategoryTablePrototype categories={categories} />
+                )}
+                {prototypeVariant === 'C' && (
+                    <CategoryBrowserPrototype categories={categories} />
+                )}
+                <PrototypeSwitcher
+                    current={prototypeVariant}
+                    labels={{
+                        A: 'Taxonomy list',
+                        B: 'Sortable table',
+                        C: 'Group browser',
+                    }}
+                />
+            </>
+        );
+    }
+
     return (
         <>
             <Head title="Categories" />

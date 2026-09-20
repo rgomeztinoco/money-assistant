@@ -1,4 +1,4 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, usePage } from '@inertiajs/react';
 import { PencilLine, Plus, Store, Trash2 } from 'lucide-react';
 import {
     destroy as deleteRule,
@@ -6,6 +6,10 @@ import {
     update as updateRule,
 } from '@/actions/App/Http/Controllers/MerchantRuleController';
 import InputError from '@/components/input-error';
+import {
+    PrototypeSwitcher,
+    readPrototypeVariant,
+} from '@/components/prototype-switcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +33,11 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { index } from '@/routes/merchant_rules';
 import type { CategoryOption, MerchantRule } from '@/types';
+import { MerchantRulesBrowserPrototype } from './prototype-browser';
+import { MerchantRulesGroupedPrototype } from './prototype-grouped';
+import { MerchantRulesTablePrototype } from './prototype-table';
+
+// Three throwaway merchant-rule layouts, switchable via ?variant=, on the existing Merchant Rules route.
 
 function RuleFields({
     idPrefix,
@@ -170,6 +179,35 @@ export default function MerchantRulesIndex({
     rules: MerchantRule[];
     category_options: CategoryOption[];
 }) {
+    const prototypeVariant = readPrototypeVariant(usePage().url);
+
+    if (prototypeVariant !== null) {
+        const prototypeProps = { rules, categoryOptions };
+
+        return (
+            <>
+                <Head title="Merchant rules prototype" />
+                {prototypeVariant === 'A' && (
+                    <MerchantRulesGroupedPrototype {...prototypeProps} />
+                )}
+                {prototypeVariant === 'B' && (
+                    <MerchantRulesTablePrototype {...prototypeProps} />
+                )}
+                {prototypeVariant === 'C' && (
+                    <MerchantRulesBrowserPrototype {...prototypeProps} />
+                )}
+                <PrototypeSwitcher
+                    current={prototypeVariant}
+                    labels={{
+                        A: 'Grouped list',
+                        B: 'Sortable table',
+                        C: 'Category browser',
+                    }}
+                />
+            </>
+        );
+    }
+
     return (
         <>
             <Head title="Merchant Rules" />
