@@ -627,7 +627,7 @@ export default function MerchantRulesIndex({
                 </div>
 
                 <div className="grid min-h-[32rem] gap-4 lg:grid-cols-[19rem_minmax(0,1fr)]">
-                    <Card className="hidden lg:block">
+                    <Card className="hidden lg:flex">
                         <CardHeader>
                             <CardTitle>Categories</CardTitle>
                             <CardDescription>
@@ -693,7 +693,7 @@ export default function MerchantRulesIndex({
                                     ' across all Categories'}
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="p-0">
+                        <CardContent>
                             {rules.length === 0 ? (
                                 <Empty>
                                     <EmptyHeader>

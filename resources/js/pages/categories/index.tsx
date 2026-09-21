@@ -4,6 +4,7 @@ import {
     ArchiveRestore,
     ArrowDown,
     ArrowUp,
+    CornerDownRight,
     MoreHorizontal,
     PencilLine,
     Plus,
@@ -414,7 +415,7 @@ export default function CategoriesIndex({
                 </div>
 
                 <div className="grid min-h-[32rem] gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-                    <Card className="hidden lg:block">
+                    <Card className="hidden lg:flex">
                         <CardHeader>
                             <CardTitle>Category browser</CardTitle>
                             <CardDescription>
@@ -472,7 +473,7 @@ export default function CategoriesIndex({
                                 {rows.length === 1 ? 'Category' : 'Categories'}
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="p-0">
+                        <CardContent>
                             {rows.length === 0 ? (
                                 <Empty>
                                     <EmptyHeader>
@@ -557,11 +558,9 @@ export default function CategoriesIndex({
                                                         <div className="flex min-w-48 items-center gap-2">
                                                             {category.parent_id ===
                                                             null ? (
-                                                                <Tags className="text-muted-foreground" />
+                                                                <Tags className="size-4 shrink-0 text-muted-foreground" />
                                                             ) : (
-                                                                <span className="text-muted-foreground">
-                                                                    ↳
-                                                                </span>
+                                                                <CornerDownRight className="size-4 shrink-0 text-muted-foreground" />
                                                             )}
                                                             <div className="flex min-w-0 flex-col gap-1">
                                                                 <span className="font-medium">
