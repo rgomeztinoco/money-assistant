@@ -32,6 +32,19 @@ class Category extends Model
     /** @use HasFactory<CategoryFactory> */
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::updated(fn (Category $category) => $category->touchTransactions());
+    }
+
+    public function touchTransactions(): void
+    {
+        Transaction::query()->where('user_id', $this->user_id)
+            ->where(fn (Builder $query) => $query->where('category_id', $this->id)
+                ->orWhereHas('receiptBreakdown.lineItems', fn (Builder $query) => $query->where('category_id', $this->id)))
+            ->update(['updated_at' => now()]);
+    }
+
     /**
      * @return BelongsTo<User, $this>
      */

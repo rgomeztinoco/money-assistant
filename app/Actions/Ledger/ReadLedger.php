@@ -100,22 +100,7 @@ class ReadLedger
         array $filters = [],
     ): array {
         $filters = $this->normalizeFilters($filters);
-        $categoryIds = $this->categoryIdsForFilter($owner, $filters['category_id']);
-        $transactionQuery = $this->applyFilters(
-            Transaction::query()->whereBelongsTo($owner, 'owner'),
-            $filters,
-            $categoryIds,
-        )
-            ->when($filters['void_state'] === 'active', fn (Builder $query) => $query->whereNull('voided_at'))
-            ->when($filters['void_state'] === 'voided', fn (Builder $query) => $query->whereNotNull('voided_at'))
-            ->select([...self::TRANSACTION_COLUMNS, 'voided_at'])
-            ->with([
-                'originalSpending:id,description',
-                'category:id,name',
-                'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id',
-            ])
-            ->orderByDesc('occurred_on')
-            ->orderByDesc('id');
+        $transactionQuery = $this->query($owner, $filters);
         $transactions = $transactionQuery->paginate(25)->withQueryString();
         $transactionModels = collect($transactions->items());
         $ledgerRows = $transactionModels->map(
@@ -148,6 +133,32 @@ class ReadLedger
     }
 
     /**
+     * @param  LedgerFiltersInput  $filters
+     * @return Builder<Transaction>
+     */
+    public function query(User $owner, array $filters = []): Builder
+    {
+        $filters = $this->normalizeFilters($filters);
+        $categoryIds = $this->categoryIdsForFilter($owner, $filters['category_id']);
+
+        return $this->applyFilters(
+            Transaction::query()->whereBelongsTo($owner, 'owner'),
+            $filters,
+            $categoryIds,
+        )
+            ->when($filters['void_state'] === 'active', fn (Builder $query) => $query->whereNull('voided_at'))
+            ->when($filters['void_state'] === 'voided', fn (Builder $query) => $query->whereNotNull('voided_at'))
+            ->select([...self::TRANSACTION_COLUMNS, 'voided_at'])
+            ->with([
+                'originalSpending:id,description',
+                'category:id,name',
+                'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id',
+            ])
+            ->orderByDesc('occurred_on')
+            ->orderByDesc('id');
+    }
+
+    /**
      * @return array{
      *     id: int,
      *     occurred_on: string,
@@ -167,7 +178,7 @@ class ReadLedger
      *     refund_relationship_review_count: int
      * }
      */
-    private function transactionData(Transaction $transaction, User $owner): array
+    public function transactionData(Transaction $transaction, User $owner): array
     {
         $category = null;
         $receiptBreakdown = $transaction->receiptBreakdown?->lineItems->isNotEmpty() === true

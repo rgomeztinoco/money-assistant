@@ -35,6 +35,9 @@ final class LineItem extends Model
     /** @use HasFactory<LineItemFactory> */
     use HasFactory;
 
+    /** @var list<string> */
+    protected $touches = ['receiptBreakdown'];
+
     /** @return BelongsTo<ReceiptBreakdown, $this> */
     public function receiptBreakdown(): BelongsTo
     {

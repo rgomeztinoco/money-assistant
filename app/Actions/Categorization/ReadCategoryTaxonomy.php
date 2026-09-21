@@ -31,6 +31,7 @@ final class ReadCategoryTaxonomy
             ->withCount('transactions')
             ->orderByRaw('archived_at IS NOT NULL')
             ->orderByRaw('lower(name)')
+            ->orderBy('id')
             ->get();
 
         return array_values($categories
@@ -58,6 +59,7 @@ final class ReadCategoryTaxonomy
             ->select(['id', 'user_id', 'parent_id', 'name'])
             ->with('parent:id,name')
             ->orderByRaw('lower(name)')
+            ->orderBy('id')
             ->get();
 
         return array_values($categories

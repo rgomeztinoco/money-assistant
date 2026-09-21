@@ -12,6 +12,31 @@ use App\Models\Transaction;
  */
 final class ReadReceiptBreakdownState
 {
+    /** @return array<int|string, ExactInteger> */
+    public function categoryAllocations(Transaction $transaction): array
+    {
+        if (! $transaction->kind->supportsCategory()) {
+            return [];
+        }
+
+        $transaction->loadMissing('receiptBreakdown.lineItems');
+        $items = $transaction->receiptBreakdown?->lineItems;
+
+        if ($items === null || $items->isEmpty()) {
+            return [$transaction->category_id ?? 'uncategorized' => ExactInteger::from($transaction->amount_minor)];
+        }
+
+        $allocations = [];
+
+        foreach ($items as $item) {
+            $key = $item->category_id ?? 'uncategorized';
+            $allocations[$key] = ($allocations[$key] ?? ExactInteger::from(0))
+                ->add(ExactInteger::from($item->line_total_minor));
+        }
+
+        return $allocations;
+    }
+
     /** @return ReceiptBreakdownData|null */
     public function handle(Transaction $transaction): ?array
     {

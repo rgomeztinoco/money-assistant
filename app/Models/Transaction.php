@@ -72,6 +72,22 @@ class Transaction extends Model
     /** @use HasFactory<TransactionFactory> */
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::saved(function (Transaction $transaction): void {
+            $spendingIds = array_filter([
+                $transaction->original_spending_id,
+                $transaction->getOriginal('original_spending_id'),
+            ]);
+
+            static::query()->where('user_id', $transaction->user_id)
+                ->whereKeyNot($transaction->id)
+                ->where(fn (Builder $query) => $query->whereIn('id', $spendingIds)
+                    ->orWhere('original_spending_id', $transaction->id))
+                ->update(['updated_at' => now()]);
+        });
+    }
+
     /**
      * @var array<string, mixed>
      */

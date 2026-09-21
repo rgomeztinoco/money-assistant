@@ -24,6 +24,9 @@ final class ReceiptBreakdown extends Model
     /** @use HasFactory<ReceiptBreakdownFactory> */
     use HasFactory;
 
+    /** @var list<string> */
+    protected $touches = ['transaction'];
+
     /**
      * @return BelongsTo<Transaction, $this>
      */
