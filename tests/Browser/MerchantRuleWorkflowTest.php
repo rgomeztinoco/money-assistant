@@ -75,12 +75,21 @@ test('clearing search restores the selected rule group', function () {
                 const table = document.querySelector('[data-slot="table"]');
                 const firstRow = table?.querySelector('tbody tr');
                 const headers = Array.from(table?.querySelectorAll('thead th') ?? []);
+                const firstSortButton = headers[0]?.querySelector('button');
+                const tableContainer = table?.closest('[data-slot="table-container"]');
 
-                if (firstRow === null || firstRow === undefined) {
+                if (
+                    firstRow === null
+                    || firstRow === undefined
+                    || firstSortButton === null
+                    || firstSortButton === undefined
+                    || tableContainer === null
+                    || tableContainer === undefined
+                ) {
                     return false;
                 }
 
-                return headers.every((header, index) => {
+                const columnsAlign = headers.every((header, index) => {
                     const button = header.querySelector('button');
                     const cell = firstRow.children[index];
 
@@ -99,6 +108,10 @@ test('clearing search restores the selected rule group', function () {
 
                     return Math.abs(headerEdge - cellEdge) < 1;
                 });
+
+                return columnsAlign
+                    && firstSortButton.getBoundingClientRect().left
+                        - tableContainer.getBoundingClientRect().left >= 4;
             })()
             JS)
         ->fill(

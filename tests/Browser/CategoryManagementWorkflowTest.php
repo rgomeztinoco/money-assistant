@@ -67,7 +67,7 @@ test('the owner creates a child and opens its taxonomy group', function () {
 
                 return columnsAlign
                     && sortButton.getBoundingClientRect().left
-                        >= tableContainer.getBoundingClientRect().left;
+                        - tableContainer.getBoundingClientRect().left >= 4;
             })()
             JS)
         ->click('[aria-label="Actions for Food"]')

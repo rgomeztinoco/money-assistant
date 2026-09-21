@@ -339,7 +339,7 @@ function SortButton({
             type="button"
             variant="ghost"
             size="sm"
-            className="-mx-2 px-2 has-[>svg]:px-2"
+            className="-mx-1 px-1 has-[>svg]:px-1"
             onClick={() =>
                 updateFilters({
                     sort: column,
