@@ -6,6 +6,7 @@ use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Arr;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -29,16 +30,13 @@ class ListCategories extends Tool
     {
         $owner = $request->user();
         assert($owner instanceof User);
-        $categories = array_map(function (array $category): array {
-            unset($category['transaction_count']);
-            $category['children'] = array_map(function (array $child): array {
-                unset($child['transaction_count']);
-
-                return $child;
-            }, $category['children']);
-
-            return $category;
-        }, $taxonomy->handle($owner));
+        $categories = array_map(fn (array $category): array => [
+            ...Arr::only($category, ['id', 'parent_id', 'name', 'archived_at']),
+            'children' => array_map(
+                fn (array $child): array => Arr::only($child, ['id', 'parent_id', 'name', 'archived_at']),
+                $category['children'],
+            ),
+        ], $taxonomy->handle($owner));
 
         return Response::structured(['categories' => $categories]);
     }
