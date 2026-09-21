@@ -5,11 +5,11 @@ namespace App\Http\Controllers;
 use App\Actions\Categorization\CreateCategory;
 use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\Categorization\UpdateCategory;
+use App\Http\Requests\IndexCategoriesRequest;
 use App\Http\Requests\StoreCategoryRequest;
 use App\Http\Requests\UpdateCategoryRequest;
 use App\Models\Category;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -21,10 +21,19 @@ class CategoryController extends Controller
         private UpdateCategory $updateCategory,
     ) {}
 
-    public function index(Request $request): Response
+    public function index(IndexCategoriesRequest $request): Response
     {
+        $filters = [
+            'search' => $request->validated('search') ?? '',
+            'archived' => $request->validated('archived') ?? 'without',
+            'sort' => $request->validated('sort') ?? 'name',
+            'direction' => $request->validated('direction') ?? 'asc',
+        ];
+
         return Inertia::render('categories/index', [
-            'categories' => $this->readCategoryTaxonomy->handle($request->user()),
+            'categories' => $this->readCategoryTaxonomy->handle($request->user(), $filters),
+            'category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()),
+            'filters' => $filters,
         ]);
     }
 
@@ -40,7 +49,7 @@ class CategoryController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Category created.')]);
 
-        return to_route('categories.index');
+        return back(fallback: route('categories.index'));
     }
 
     public function update(UpdateCategoryRequest $request, Category $category): RedirectResponse
@@ -56,6 +65,6 @@ class CategoryController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Category updated.')]);
 
-        return to_route('categories.index');
+        return back(fallback: route('categories.index'));
     }
 }

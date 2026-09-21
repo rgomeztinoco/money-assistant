@@ -40,6 +40,13 @@ class SaveMerchantRuleRequest extends FormRequest
             ])],
             'currency' => ['nullable', Rule::enum(Currency::class)],
             'enabled' => ['required', 'boolean'],
+            'source_transaction_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('transactions', 'id')
+                    ->where('user_id', $this->user()->getKey())
+                    ->whereIn('kind', [TransactionKind::Spending->value, TransactionKind::Refund->value]),
+            ],
         ];
     }
 

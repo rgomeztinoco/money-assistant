@@ -2,17 +2,15 @@ import { Head, Link, router } from '@inertiajs/react';
 import {
     ArrowDownLeft,
     ArrowUpRight,
-    Check,
     ChevronRight,
-    ChevronsUpDown,
     CircleAlert,
     CircleCheck,
     Filter,
-    Search,
     X,
 } from 'lucide-react';
 import { useState } from 'react';
 import { update as updateClassification } from '@/actions/App/Http/Controllers/BreakdownTransactionClassificationController';
+import { CategoryPicker } from '@/components/category-picker';
 import { CurrencyFilter } from '@/components/currency-filter';
 import { DateText } from '@/components/date-time';
 import { PeriodControls } from '@/components/period-controls';
@@ -27,12 +25,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from '@/components/ui/popover';
 import {
     Table,
     TableBody,
@@ -53,7 +45,6 @@ import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { index as breakdownIndex } from '@/routes/breakdown';
 import type { Currency, ReportingPeriodSelection } from '@/types';
 import { CategoryBreakdown, DailyChart } from './charts';
-import { groupCategoryOptions } from './classification-select';
 import { selectionUrl } from './links';
 import { ManualTransactionDialog } from './manual-transaction-dialog';
 import { TransactionDetails } from './transaction-details';
@@ -448,24 +439,7 @@ function InlineCategory({
     const [processingAction, setProcessingAction] = useState<
         'once' | 'rule' | null
     >(null);
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState('');
     const hasPendingCategory = categoryId !== currentCategoryId;
-    const selectedCategory = props.category_options.find(
-        (option) => option.id.toString() === categoryId,
-    );
-    const normalizedSearch = search.trim().toLocaleLowerCase();
-    const categoryGroups = groupCategoryOptions(props.category_options)
-        .map((group) => ({
-            ...group,
-            options: group.options.filter((option) =>
-                `${option.parent?.name ?? ''} ${option.name}`
-                    .toLocaleLowerCase()
-                    .includes(normalizedSearch),
-            ),
-        }))
-        .filter((group) => group.options.length > 0);
-    const showUncategorized = 'uncategorized'.includes(normalizedSearch);
 
     function submitCategory({ applyToMatching }: { applyToMatching: boolean }) {
         if (!hasPendingCategory || (applyToMatching && categoryId === '')) {
@@ -483,7 +457,6 @@ function InlineCategory({
             {
                 preserveScroll: true,
                 preserveState: true,
-                onSuccess: () => setOpen(false),
                 onFinish: () => setProcessingAction(null),
             },
         );
@@ -503,138 +476,66 @@ function InlineCategory({
     }
 
     return (
-        <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger
-                render={
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-auto min-h-8 w-full min-w-0 justify-between border-transparent bg-transparent px-2 py-1.5 text-left font-normal whitespace-normal shadow-none hover:border-input sm:max-w-64"
-                        aria-label={`Category for ${transaction.description}`}
-                        disabled={processingAction !== null}
-                    />
-                }
-            >
-                <span className="min-w-0 break-words">
-                    {selectedCategory?.name ?? 'Uncategorized'}
-                </span>
-                <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
-            </PopoverTrigger>
-            <PopoverContent
-                align="start"
-                className="w-[min(24rem,calc(100vw-2rem))] gap-0 p-0"
-            >
-                <div className="relative border-b p-2">
-                    <Search className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                        type="search"
-                        value={search}
-                        aria-label="Search categories"
-                        placeholder="Search categories"
-                        className="pl-9"
-                        onChange={(event) =>
-                            setSearch(event.currentTarget.value)
-                        }
-                    />
-                </div>
-                <div
-                    className="max-h-64 overflow-y-auto p-1"
-                    role="listbox"
-                    aria-label="Categories"
-                >
-                    {showUncategorized && (
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            role="option"
-                            aria-selected={categoryId === ''}
-                            className="h-auto w-full justify-start px-2 py-2 text-left whitespace-normal"
-                            onClick={() => setCategoryId('')}
+        <div className="flex min-w-56 flex-col gap-2">
+            <CategoryPicker
+                id={`category-${transaction.id}`}
+                name={`category-${transaction.id}`}
+                options={props.category_options.map((option) => ({
+                    id: option.id,
+                    name: option.name,
+                    path: option.path,
+                    parent_id: option.parent?.id ?? null,
+                    parent_name: option.parent?.name ?? null,
+                }))}
+                value={categoryId}
+                onValueChange={setCategoryId}
+                emptyLabel="Uncategorized"
+                ariaLabel={`Category for ${transaction.description}`}
+                disabled={processingAction !== null}
+                className="h-auto min-h-8 border-transparent bg-transparent px-2 py-1.5 text-left whitespace-normal shadow-none hover:border-input"
+                closeOnSelect={false}
+                popoverFooter={
+                    hasPendingCategory ? (
+                        <div
+                            className="flex items-center justify-end gap-1.5 p-2"
+                            data-test={`category-confirmation-${transaction.id}`}
                         >
-                            <Check
-                                className={`size-4 shrink-0 ${categoryId === '' ? 'opacity-100' : 'opacity-0'}`}
-                            />
-                            Uncategorized
-                        </Button>
-                    )}
-                    {categoryGroups.map((group) => (
-                        <section key={group.key} aria-label={group.label}>
-                            <p className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
-                                {group.label}
-                            </p>
-                            {group.options.map((option) => {
-                                const optionValue = option.id.toString();
-
-                                return (
-                                    <Button
-                                        key={option.id}
-                                        type="button"
-                                        variant="ghost"
-                                        role="option"
-                                        aria-selected={
-                                            categoryId === optionValue
-                                        }
-                                        className="h-auto w-full justify-start px-2 py-2 text-left whitespace-normal"
-                                        onClick={() =>
-                                            setCategoryId(optionValue)
-                                        }
-                                    >
-                                        <Check
-                                            className={`size-4 shrink-0 ${categoryId === optionValue ? 'opacity-100' : 'opacity-0'}`}
-                                        />
-                                        <span className="wrap-break-word">
-                                            {option.name}
-                                        </span>
-                                    </Button>
-                                );
-                            })}
-                        </section>
-                    ))}
-                    {!showUncategorized && categoryGroups.length === 0 && (
-                        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                            No categories found.
-                        </p>
-                    )}
-                </div>
-                {hasPendingCategory && (
-                    <div
-                        className="flex items-center justify-end gap-1.5 border-t p-2"
-                        data-test={`category-confirmation-${transaction.id}`}
-                    >
-                        <Button
-                            type="button"
-                            size="sm"
-                            data-test={`apply-category-once-${transaction.id}`}
-                            disabled={processingAction !== null}
-                            onClick={() =>
-                                submitCategory({ applyToMatching: false })
-                            }
-                        >
-                            {processingAction === 'once'
-                                ? 'Applying…'
-                                : 'Apply once'}
-                        </Button>
-                        {categoryId !== '' && (
                             <Button
                                 type="button"
                                 size="sm"
-                                variant="outline"
-                                data-test={`create-merchant-rule-${transaction.id}`}
+                                data-test={`apply-category-once-${transaction.id}`}
                                 disabled={processingAction !== null}
                                 onClick={() =>
-                                    submitCategory({ applyToMatching: true })
+                                    submitCategory({ applyToMatching: false })
                                 }
                             >
-                                {processingAction === 'rule'
-                                    ? 'Creating…'
-                                    : 'Create rule'}
+                                {processingAction === 'once'
+                                    ? 'Applying…'
+                                    : 'Apply once'}
                             </Button>
-                        )}
-                    </div>
-                )}
-            </PopoverContent>
-        </Popover>
+                            {categoryId !== '' && (
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    data-test={`create-merchant-rule-${transaction.id}`}
+                                    disabled={processingAction !== null}
+                                    onClick={() =>
+                                        submitCategory({
+                                            applyToMatching: true,
+                                        })
+                                    }
+                                >
+                                    {processingAction === 'rule'
+                                        ? 'Creating…'
+                                        : 'Create rule'}
+                                </Button>
+                            )}
+                        </div>
+                    ) : undefined
+                }
+            />
+        </div>
     );
 }
 

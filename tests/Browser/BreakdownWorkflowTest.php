@@ -588,15 +588,33 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
     $page
         ->resize(390, 844)
         ->click('[aria-label="Category for Café Central"]')
-        ->assertPresent('[aria-label="Search categories"]')
-        ->fill('[aria-label="Search categories"]', 'weekly groceries')
-        ->assertSee('Essentials')
-        ->assertSee('Weekly groceries and household supplies')
-        ->assertDontSee('Essentials > Weekly groceries and household supplies')
-        ->press('Weekly groceries and household supplies')
+        ->assertPresent('[aria-label="Search Categories"]')
+        ->assertScript(<<<'JS'
+            (() => {
+                const trigger = document.querySelector(
+                    '[aria-label="Category for Café Central"]',
+                );
+                const row = trigger?.closest('tr');
+
+                if (row === null || row === undefined) {
+                    return false;
+                }
+
+                row.dataset.heightBeforeCategorySelection = String(
+                    row.getBoundingClientRect().height,
+                );
+
+                return true;
+            })()
+            JS)
+        ->fill(
+            '[cmdk-input][aria-label="Search Categories"]',
+            'weekly groceries',
+        )
+        ->assertSee('Essentials > Weekly groceries and household supplies')
+        ->click('@category-'.$current->id.'-option-'.$groceries->id)
         ->assertSee('Apply once')
         ->assertSee('Create rule')
-        ->wait(1)
         ->assertScript(<<<JS
             (() => {
                 const trigger = document.querySelector(
@@ -606,28 +624,57 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
                 const confirmation = document.querySelector(
                     '[data-test="category-confirmation-{$current->id}"]',
                 );
+                const popover = confirmation?.closest(
+                    '[data-slot="popover-content"]',
+                );
 
                 if (
                     trigger === null
                     || row === null
                     || row === undefined
                     || confirmation === null
+                    || popover === null
+                    || popover === undefined
                 ) {
                     return false;
                 }
 
+                return popover.contains(confirmation);
+            })()
+            JS)
+        ->assertScript(<<<'JS'
+            (() => {
+                const trigger = document.querySelector(
+                    '[aria-label="Category for Café Central"]',
+                );
+                const row = trigger?.closest('tr');
+
+                if (row === null || row === undefined) {
+                    return false;
+                }
+
+                return Math.abs(
+                    row.getBoundingClientRect().height
+                        - Number(row.dataset.heightBeforeCategorySelection),
+                ) < 0.5;
+            })()
+            JS)
+        ->assertScript(<<<'JS'
+            (() => {
+                const trigger = document.querySelector(
+                    '[aria-label="Category for Café Central"]',
+                );
+                const row = trigger?.closest('tr');
+
+                if (trigger === null || row === null || row === undefined) {
+                    return false;
+                }
+
                 const rowBounds = row.getBoundingClientRect();
-                const popoverBounds = confirmation
-                    .closest('[data-slot="popover-content"]')
-                    ?.getBoundingClientRect();
 
                 return trigger.textContent.includes(
                     'Weekly groceries and household supplies',
                 )
-                    && confirmation.closest('tr') === null
-                    && popoverBounds !== undefined
-                    && popoverBounds.left >= 0
-                    && popoverBounds.right <= innerWidth
                     && rowBounds.left >= 0
                     && rowBounds.right <= innerWidth
                     && document.documentElement.scrollWidth

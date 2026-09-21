@@ -1,12 +1,18 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, router } from '@inertiajs/react';
 import {
     Archive,
     ArchiveRestore,
-    ChevronRight,
+    ArrowDown,
+    ArrowUp,
+    CornerDownRight,
+    MoreHorizontal,
     PencilLine,
     Plus,
+    Search,
     Tags,
 } from 'lucide-react';
+import type { FormEvent } from 'react';
+import { useMemo, useState } from 'react';
 import {
     destroy as unarchiveCategory,
     store as archiveCategory,
@@ -15,7 +21,18 @@ import {
     store as createCategory,
     update as updateCategory,
 } from '@/actions/App/Http/Controllers/CategoryController';
+import { CategoryPicker } from '@/components/category-picker';
 import InputError from '@/components/input-error';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,30 +46,79 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
-    DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+    Empty,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle,
+} from '@/components/ui/empty';
+import {
+    Field,
+    FieldDescription,
+    FieldGroup,
+    FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 import { index } from '@/routes/categories';
-import type { CategoryItem, CategoryNode } from '@/types';
+import type { CategoryItem, CategoryNode, CategoryOption } from '@/types';
+
+type CategoryFilters = {
+    search: string;
+    archived: 'without' | 'with' | 'only';
+    sort: 'name' | 'children' | 'transactions' | 'rules';
+    direction: 'asc' | 'desc';
+};
+
+function rootsAsOptions(categories: CategoryNode[]): CategoryOption[] {
+    return categories
+        .filter((category) => category.archived_at === null)
+        .map((category) => ({
+            id: category.id,
+            name: category.name,
+            path: category.name,
+            parent_id: null,
+            parent_name: null,
+        }));
+}
 
 function CategoryFields({
     idPrefix,
     roots,
     category,
+    parentId,
 }: {
     idPrefix: string;
-    roots: CategoryNode[];
+    roots: CategoryOption[];
     category?: CategoryItem;
+    parentId?: number | null;
 }) {
     return (
-        <>
-            <div className="grid gap-2">
-                <Label htmlFor={`${idPrefix}-name`}>Name</Label>
+        <FieldGroup>
+            <Field>
+                <FieldLabel htmlFor={`${idPrefix}-name`}>Name</FieldLabel>
                 <Input
                     id={`${idPrefix}-name`}
                     name="name"
@@ -60,77 +126,98 @@ function CategoryFields({
                     maxLength={255}
                     required
                 />
-            </div>
-            <div className="grid gap-2">
-                <Label htmlFor={`${idPrefix}-parent`}>Parent</Label>
-                <NativeSelect
+            </Field>
+            <Field>
+                <FieldLabel htmlFor={`${idPrefix}-parent`}>Parent</FieldLabel>
+                <CategoryPicker
                     id={`${idPrefix}-parent`}
                     name="parent_id"
-                    defaultValue={category?.parent_id?.toString() ?? ''}
-                    options={[
-                        { value: '', label: 'Top-level Category' },
-                        ...roots
-                            .filter(
-                                (root) =>
-                                    root.archived_at === null &&
-                                    root.id !== category?.id,
-                            )
-                            .map((root) => ({
-                                value: root.id.toString(),
-                                label: root.name,
-                            })),
-                    ]}
+                    options={roots.filter((root) => root.id !== category?.id)}
+                    defaultValue={(
+                        parentId ??
+                        category?.parent_id ??
+                        ''
+                    ).toString()}
+                    emptyLabel="Top-level Category"
+                    createTopLevelOnly
                 />
-                <p className="text-xs text-muted-foreground">
+                <FieldDescription>
                     Categories support at most two levels.
-                </p>
-            </div>
-        </>
+                </FieldDescription>
+            </Field>
+        </FieldGroup>
     );
 }
 
-function EditCategoryDialog({
-    category,
+function CategoryFormDialog({
+    open,
+    onOpenChange,
     roots,
+    category,
+    parentId,
 }: {
-    category: CategoryItem;
-    roots: CategoryNode[];
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    roots: CategoryOption[];
+    category?: CategoryItem;
+    parentId?: number | null;
 }) {
+    const editing = category !== undefined;
+
     return (
-        <Dialog>
-            <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                    <PencilLine /> Edit
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto">
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>Edit {category.name}</DialogTitle>
+                    <DialogTitle>
+                        {editing
+                            ? `Edit ${category.name}`
+                            : 'Create a Category'}
+                    </DialogTitle>
                     <DialogDescription>
-                        Renaming or moving this Category keeps its identity and
-                        updates historical reporting labels.
+                        {editing
+                            ? 'Renaming or moving this Category keeps its identity and updates historical reporting labels.'
+                            : 'Add a top-level Category or place it under one active parent.'}
                     </DialogDescription>
                 </DialogHeader>
                 <Form
-                    {...updateCategory.form(category.id)}
+                    {...(editing
+                        ? updateCategory.form(category.id)
+                        : createCategory.form())}
                     options={{ preserveScroll: true }}
-                    className="grid gap-4"
+                    resetOnSuccess={!editing}
+                    onSuccess={() => onOpenChange(false)}
                 >
                     {({ errors, processing }) => (
-                        <>
+                        <div className="flex flex-col gap-4">
                             <CategoryFields
-                                idPrefix={`category-${category.id}`}
+                                idPrefix={
+                                    editing
+                                        ? `category-${category.id}`
+                                        : 'new-category'
+                                }
                                 roots={roots}
                                 category={category}
+                                parentId={parentId}
                             />
                             <InputError
                                 message={errors.name ?? errors.parent_id}
                             />
-                            <Button type="submit" disabled={processing}>
-                                {processing && <Spinner />}
-                                Save Category
-                            </Button>
-                        </>
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => onOpenChange(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button type="submit" disabled={processing}>
+                                    {processing && <Spinner />}
+                                    {editing
+                                        ? 'Save Category'
+                                        : 'Create Category'}
+                                </Button>
+                            </DialogFooter>
+                        </div>
                     )}
                 </Form>
             </DialogContent>
@@ -138,176 +225,555 @@ function EditCategoryDialog({
     );
 }
 
-function LifecycleActions({ category }: { category: CategoryItem }) {
-    const isArchived = category.archived_at !== null;
-    const lifecycleRoute = isArchived
-        ? unarchiveCategory.form(category.id)
-        : archiveCategory.form(category.id);
+function SortButton({
+    column,
+    children,
+    filters,
+    updateFilters,
+}: {
+    column: CategoryFilters['sort'];
+    children: React.ReactNode;
+    filters: CategoryFilters;
+    updateFilters: (updates: Partial<CategoryFilters>) => void;
+}) {
+    const active = filters.sort === column;
 
     return (
-        <div className="flex flex-wrap gap-2">
-            <Form {...lifecycleRoute} options={{ preserveScroll: true }}>
-                {({ errors, processing }) => (
-                    <div className="grid gap-1">
-                        <Button
-                            type="submit"
-                            variant="secondary"
-                            size="sm"
-                            disabled={processing}
-                        >
-                            {processing ? (
-                                <Spinner />
-                            ) : isArchived ? (
-                                <ArchiveRestore />
-                            ) : (
-                                <Archive />
-                            )}
-                            {isArchived ? 'Unarchive' : 'Archive'}
-                        </Button>
-                        <InputError message={errors.category} />
-                    </div>
-                )}
-            </Form>
-        </div>
-    );
-}
-
-function CategorySummary({ category }: { category: CategoryItem }) {
-    return (
-        <div className="grid min-w-0 gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-medium">{category.name}</h3>
-                <Badge
-                    variant={
-                        category.archived_at === null ? 'outline' : 'secondary'
-                    }
-                >
-                    {category.archived_at === null ? 'Active' : 'Archived'}
-                </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-                {category.transaction_count}{' '}
-                {category.transaction_count === 1
-                    ? 'Transaction assignment'
-                    : 'Transaction assignments'}
-            </p>
-        </div>
+        <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-mx-1 px-1 has-[>svg]:px-1"
+            onClick={() =>
+                updateFilters({
+                    sort: column,
+                    direction:
+                        active && filters.direction === 'asc' ? 'desc' : 'asc',
+                })
+            }
+        >
+            {children}
+            {active &&
+                (filters.direction === 'asc' ? <ArrowUp /> : <ArrowDown />)}
+        </Button>
     );
 }
 
 export default function CategoriesIndex({
     categories,
+    category_options: categoryOptions,
+    filters,
 }: {
     categories: CategoryNode[];
+    category_options: CategoryOption[];
+    filters: CategoryFilters;
 }) {
+    const [selectedId, setSelectedId] = useState('');
+    const [search, setSearch] = useState(filters.search);
+    const [createOpen, setCreateOpen] = useState(false);
+    const [createParentId, setCreateParentId] = useState<number | null>(null);
+    const [editing, setEditing] = useState<CategoryItem | null>(null);
+    const [archiving, setArchiving] = useState<CategoryItem | null>(null);
+    const [lifecycleProcessing, setLifecycleProcessing] = useState(false);
+    const rootOptions = useMemo(
+        () => categoryOptions.filter((category) => category.parent_id === null),
+        [categoryOptions],
+    );
+    const browserOptions = useMemo(
+        () => rootsAsOptions(categories),
+        [categories],
+    );
+    const selectedRoot = categories.find(
+        (category) => category.id.toString() === selectedId,
+    );
+    const rows: CategoryItem[] = selectedRoot
+        ? [selectedRoot, ...selectedRoot.children]
+        : categories.flatMap((category) => [category, ...category.children]);
+
+    function updateFilters(updates: Partial<CategoryFilters>): void {
+        router.get(
+            index.url(),
+            { ...filters, ...updates },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+            },
+        );
+    }
+
+    function submitSearch(event: FormEvent<HTMLFormElement>): void {
+        event.preventDefault();
+        setSelectedId('');
+        updateFilters({ search });
+    }
+
+    function restore(category: CategoryItem): void {
+        setLifecycleProcessing(true);
+        router.delete(unarchiveCategory(category.id), {
+            preserveScroll: true,
+            onFinish: () => setLifecycleProcessing(false),
+        });
+    }
+
+    function archive(): void {
+        if (archiving === null) {
+            return;
+        }
+
+        setLifecycleProcessing(true);
+        router.post(
+            archiveCategory(archiving.id),
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setSelectedId('');
+                    setArchiving(null);
+                },
+                onFinish: () => setLifecycleProcessing(false),
+            },
+        );
+    }
+
     return (
         <>
             <Head title="Categories" />
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
-                <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                        <Tags className="size-5 text-muted-foreground" />
-                        <h1 className="text-2xl font-semibold tracking-tight">
-                            Categories
-                        </h1>
+                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                            <Tags className="size-5 text-muted-foreground" />
+                            <h1 className="text-2xl font-semibold tracking-tight">
+                                Categories
+                            </h1>
+                        </div>
+                        <p className="max-w-3xl text-sm text-muted-foreground">
+                            Manage the two-level taxonomy used across current
+                            and historical reporting. Uncategorized remains a
+                            system state and is not listed here.
+                        </p>
                     </div>
-                    <p className="max-w-3xl text-sm text-muted-foreground">
-                        Manage the two-level taxonomy used across current and
-                        historical reporting. Uncategorized remains a system
-                        state and is not listed here.
-                    </p>
+                    <Button
+                        type="button"
+                        onClick={() => {
+                            setCreateParentId(null);
+                            setCreateOpen(true);
+                        }}
+                    >
+                        <Plus data-icon="inline-start" /> New Category
+                    </Button>
                 </div>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Create a Category</CardTitle>
-                        <CardDescription>
-                            Add a top-level Category or place it under one
-                            active parent.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <Form
-                            {...createCategory.form()}
-                            resetOnSuccess
-                            className="grid gap-4 md:grid-cols-2"
-                        >
-                            {({ errors, processing }) => (
-                                <>
-                                    <CategoryFields
-                                        idPrefix="new-category"
-                                        roots={categories}
-                                    />
-                                    <InputError
-                                        message={
-                                            errors.name ?? errors.parent_id
-                                        }
-                                    />
-                                    <div className="md:col-span-2">
-                                        <Button
-                                            type="submit"
-                                            disabled={processing}
-                                        >
-                                            {processing ? (
-                                                <Spinner />
-                                            ) : (
-                                                <Plus />
-                                            )}
-                                            Create Category
-                                        </Button>
-                                    </div>
-                                </>
-                            )}
-                        </Form>
-                    </CardContent>
-                </Card>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                    <form
+                        className="flex min-w-0 flex-1 gap-2"
+                        onSubmit={submitSearch}
+                    >
+                        <Input
+                            type="search"
+                            value={search}
+                            aria-label="Search Categories"
+                            placeholder="Search the whole taxonomy"
+                            onChange={(event) =>
+                                setSearch(event.currentTarget.value)
+                            }
+                        />
+                        <Button type="submit" variant="outline">
+                            <Search data-icon="inline-start" /> Search
+                        </Button>
+                    </form>
+                    <NativeSelect
+                        className="sm:w-52 sm:shrink-0"
+                        aria-label="Archived Categories"
+                        value={filters.archived}
+                        onChange={(event) => {
+                            setSelectedId('');
+                            updateFilters({
+                                archived: event.currentTarget
+                                    .value as CategoryFilters['archived'],
+                            });
+                        }}
+                        options={[
+                            { value: 'without', label: 'Active Categories' },
+                            { value: 'with', label: 'All Categories' },
+                            { value: 'only', label: 'Archived Categories' },
+                        ]}
+                    />
+                </div>
 
-                <div className="grid gap-4 xl:grid-cols-2">
-                    {categories.map((root) => (
-                        <Card key={root.id} className="gap-0 overflow-hidden">
-                            <CardContent className="grid gap-4 p-4 md:p-5">
-                                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                                    <CategorySummary category={root} />
-                                    <div className="flex shrink-0 flex-wrap gap-2">
-                                        <EditCategoryDialog
-                                            category={root}
-                                            roots={categories}
-                                        />
-                                        <LifecycleActions category={root} />
-                                    </div>
-                                </div>
+                <div className="lg:hidden">
+                    <CategoryPicker
+                        id="mobile-category-browser"
+                        name="category_browser"
+                        options={browserOptions}
+                        value={selectedId}
+                        onValueChange={setSelectedId}
+                        emptyLabel="All Categories"
+                        allowCreate={false}
+                    />
+                </div>
 
-                                {root.children.length > 0 && (
-                                    <div className="grid gap-2 border-l pl-3 md:pl-5">
-                                        {root.children.map((child) => (
-                                            <div
-                                                key={child.id}
-                                                className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
-                                            >
-                                                <div className="flex min-w-0 gap-2">
-                                                    <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                                                    <CategorySummary
-                                                        category={child}
-                                                    />
-                                                </div>
-                                                <div className="flex flex-wrap gap-2 sm:justify-end">
-                                                    <EditCategoryDialog
-                                                        category={child}
-                                                        roots={categories}
-                                                    />
-                                                    <LifecycleActions
-                                                        category={child}
-                                                    />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                <div className="grid min-h-[32rem] gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+                    <Card className="hidden lg:flex">
+                        <CardHeader>
+                            <CardTitle>Category browser</CardTitle>
+                            <CardDescription>
+                                Two levels, ordered by the current table sort
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-1">
+                            <Button
+                                data-test="category-browser-all"
+                                type="button"
+                                variant="ghost"
+                                className={cn(
+                                    'h-auto justify-between px-3 py-2.5',
+                                    selectedId === '' &&
+                                        'bg-accent text-accent-foreground',
                                 )}
-                            </CardContent>
-                        </Card>
-                    ))}
+                                onClick={() => setSelectedId('')}
+                            >
+                                All Categories
+                                <Badge variant="secondary">{rows.length}</Badge>
+                            </Button>
+                            {categories.map((category) => (
+                                <Button
+                                    key={category.id}
+                                    data-test={`category-browser-${category.id}`}
+                                    type="button"
+                                    variant="ghost"
+                                    className={cn(
+                                        'h-auto justify-between px-3 py-2.5',
+                                        selectedId === category.id.toString() &&
+                                            'bg-accent text-accent-foreground',
+                                    )}
+                                    onClick={() =>
+                                        setSelectedId(category.id.toString())
+                                    }
+                                >
+                                    <span className="truncate">
+                                        {category.name}
+                                    </span>
+                                    <Badge variant="secondary">
+                                        {category.child_count}
+                                    </Badge>
+                                </Button>
+                            ))}
+                        </CardContent>
+                    </Card>
+
+                    <Card className="min-w-0">
+                        <CardHeader>
+                            <CardTitle data-test="category-table-title">
+                                {selectedRoot?.name ?? 'All Categories'}
+                            </CardTitle>
+                            <CardDescription>
+                                {rows.length}{' '}
+                                {rows.length === 1 ? 'Category' : 'Categories'}
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {rows.length === 0 ? (
+                                <Empty>
+                                    <EmptyHeader>
+                                        <EmptyMedia variant="icon">
+                                            <Tags />
+                                        </EmptyMedia>
+                                        <EmptyTitle>
+                                            No Categories found
+                                        </EmptyTitle>
+                                        <EmptyDescription>
+                                            Change the search or archived
+                                            filter, or create a Category.
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                </Empty>
+                            ) : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>
+                                                <SortButton
+                                                    column="name"
+                                                    filters={filters}
+                                                    updateFilters={
+                                                        updateFilters
+                                                    }
+                                                >
+                                                    Category
+                                                </SortButton>
+                                            </TableHead>
+                                            <TableHead className="text-right">
+                                                <SortButton
+                                                    column="children"
+                                                    filters={filters}
+                                                    updateFilters={
+                                                        updateFilters
+                                                    }
+                                                >
+                                                    Children
+                                                </SortButton>
+                                            </TableHead>
+                                            <TableHead className="text-right">
+                                                <SortButton
+                                                    column="transactions"
+                                                    filters={filters}
+                                                    updateFilters={
+                                                        updateFilters
+                                                    }
+                                                >
+                                                    Transactions
+                                                </SortButton>
+                                            </TableHead>
+                                            <TableHead className="text-right">
+                                                <SortButton
+                                                    column="rules"
+                                                    filters={filters}
+                                                    updateFilters={
+                                                        updateFilters
+                                                    }
+                                                >
+                                                    Rules
+                                                </SortButton>
+                                            </TableHead>
+                                            <TableHead className="w-12">
+                                                <span className="sr-only">
+                                                    Actions
+                                                </span>
+                                            </TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {rows.map((category) => {
+                                            const parent = categories.find(
+                                                (candidate) =>
+                                                    candidate.id ===
+                                                    category.parent_id,
+                                            );
+
+                                            return (
+                                                <TableRow key={category.id}>
+                                                    <TableCell>
+                                                        <div className="flex min-w-48 items-center gap-2">
+                                                            {category.parent_id ===
+                                                            null ? (
+                                                                <Tags className="size-4 shrink-0 text-muted-foreground" />
+                                                            ) : (
+                                                                <CornerDownRight className="size-4 shrink-0 text-muted-foreground" />
+                                                            )}
+                                                            <div className="flex min-w-0 flex-col gap-1">
+                                                                <span className="font-medium">
+                                                                    {selectedRoot ||
+                                                                    category.parent_id ===
+                                                                        null
+                                                                        ? category.name
+                                                                        : `${parent?.name ?? ''} > ${category.name}`}
+                                                                </span>
+                                                                {category.archived_at !==
+                                                                    null && (
+                                                                    <Badge
+                                                                        variant="secondary"
+                                                                        className="w-fit"
+                                                                    >
+                                                                        Archived
+                                                                    </Badge>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell className="text-right tabular-nums">
+                                                        {category.child_count}
+                                                    </TableCell>
+                                                    <TableCell className="text-right tabular-nums">
+                                                        {
+                                                            category.transaction_count
+                                                        }
+                                                    </TableCell>
+                                                    <TableCell className="text-right tabular-nums">
+                                                        {
+                                                            category.active_merchant_rule_count
+                                                        }
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger
+                                                                asChild
+                                                            >
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    aria-label={`Actions for ${category.name}`}
+                                                                >
+                                                                    <MoreHorizontal />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end">
+                                                                <DropdownMenuGroup>
+                                                                    {category.parent_id ===
+                                                                        null &&
+                                                                        category.archived_at ===
+                                                                            null && (
+                                                                            <DropdownMenuItem
+                                                                                onSelect={() => {
+                                                                                    setCreateParentId(
+                                                                                        category.id,
+                                                                                    );
+                                                                                    setCreateOpen(
+                                                                                        true,
+                                                                                    );
+                                                                                }}
+                                                                            >
+                                                                                <Plus />{' '}
+                                                                                Add
+                                                                                subcategory
+                                                                            </DropdownMenuItem>
+                                                                        )}
+                                                                    <DropdownMenuItem
+                                                                        onSelect={() =>
+                                                                            setEditing(
+                                                                                category,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <PencilLine />{' '}
+                                                                        Edit
+                                                                    </DropdownMenuItem>
+                                                                    {category.archived_at ===
+                                                                    null ? (
+                                                                        <DropdownMenuItem
+                                                                            variant="destructive"
+                                                                            onSelect={() =>
+                                                                                setArchiving(
+                                                                                    category,
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            <Archive />{' '}
+                                                                            Archive
+                                                                        </DropdownMenuItem>
+                                                                    ) : (
+                                                                        <DropdownMenuItem
+                                                                            disabled={
+                                                                                lifecycleProcessing
+                                                                            }
+                                                                            onSelect={() =>
+                                                                                restore(
+                                                                                    category,
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            <ArchiveRestore />{' '}
+                                                                            Restore
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                </DropdownMenuGroup>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </CardContent>
+                    </Card>
                 </div>
             </div>
+
+            <CategoryFormDialog
+                key={`create-${createParentId ?? 'root'}`}
+                open={createOpen}
+                onOpenChange={setCreateOpen}
+                roots={rootOptions}
+                parentId={createParentId}
+            />
+            {editing !== null && (
+                <CategoryFormDialog
+                    key={`edit-${editing.id}`}
+                    open
+                    onOpenChange={(open) => !open && setEditing(null)}
+                    roots={rootOptions}
+                    category={editing}
+                />
+            )}
+            <AlertDialog
+                open={archiving !== null}
+                onOpenChange={(open) => !open && setArchiving(null)}
+            >
+                <AlertDialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            Archive {archiving?.name}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Historical assignments stay unchanged. This will
+                            archive{' '}
+                            {archiving?.archive_impact.active_child_count ?? 0}{' '}
+                            active{' '}
+                            {(archiving?.archive_impact.active_child_count ??
+                                0) === 1
+                                ? 'child'
+                                : 'children'}{' '}
+                            and disable{' '}
+                            {archiving?.archive_impact
+                                .active_merchant_rule_count ?? 0}{' '}
+                            active Merchant{' '}
+                            {(archiving?.archive_impact
+                                .active_merchant_rule_count ?? 0) === 1
+                                ? 'Rule'
+                                : 'Rules'}
+                            .
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {(archiving?.archive_impact.active_children.length ?? 0) >
+                        0 && (
+                        <div className="flex flex-col gap-1 text-sm">
+                            <p className="font-medium">Children to archive</p>
+                            <ul className="list-disc pl-5 text-muted-foreground">
+                                {archiving?.archive_impact.active_children.map(
+                                    (child) => (
+                                        <li key={child.id}>{child.name}</li>
+                                    ),
+                                )}
+                            </ul>
+                        </div>
+                    )}
+                    {(archiving?.archive_impact.active_merchant_rules.length ??
+                        0) > 0 && (
+                        <div className="flex flex-col gap-1 text-sm">
+                            <p className="font-medium">
+                                Merchant Rules to disable
+                            </p>
+                            <ul className="list-disc pl-5 text-muted-foreground">
+                                {archiving?.archive_impact.active_merchant_rules.map(
+                                    (rule) => (
+                                        <li key={rule.id}>
+                                            {rule.merchant} (
+                                            {rule.category_path})
+                                        </li>
+                                    ),
+                                )}
+                            </ul>
+                        </div>
+                    )}
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={lifecycleProcessing}>
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            variant="destructive"
+                            disabled={lifecycleProcessing}
+                            onClick={archive}
+                        >
+                            {lifecycleProcessing && <Spinner />}
+                            Archive Category
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     );
 }

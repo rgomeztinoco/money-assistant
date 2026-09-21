@@ -7,11 +7,14 @@ use App\Actions\Categorization\ReadMerchantRules;
 use App\Actions\Categorization\SaveMerchantRule;
 use App\Currency;
 use App\Http\Requests\DeleteMerchantRuleRequest;
+use App\Http\Requests\IndexMerchantRulesRequest;
 use App\Http\Requests\SaveMerchantRuleRequest;
+use App\MerchantNormalizer;
 use App\Models\MerchantRule;
+use App\Models\Transaction;
 use App\TransactionKind;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -21,13 +24,29 @@ class MerchantRuleController extends Controller
         private ReadMerchantRules $readMerchantRules,
         private ReadCategoryTaxonomy $readCategoryTaxonomy,
         private SaveMerchantRule $saveMerchantRule,
+        private MerchantNormalizer $merchantNormalizer,
     ) {}
 
-    public function index(Request $request): Response
+    public function index(IndexMerchantRulesRequest $request): Response
     {
+        $filters = [
+            'search' => $request->validated('search') ?? '',
+            'category_id' => $request->validated('category_id') === null
+                ? null
+                : (int) $request->validated('category_id'),
+            'status' => $request->validated('status') ?? 'all',
+            'kind' => $request->validated('kind') ?? 'all',
+            'currency' => $request->validated('currency') ?? 'all',
+            'sort' => $request->validated('sort') ?? 'category',
+            'direction' => $request->validated('direction') ?? 'asc',
+        ];
+
         return Inertia::render('merchant-rules/index', [
-            'rules' => $this->readMerchantRules->handle($request->user()),
+            'rules' => $this->readMerchantRules->handle($request->user(), $filters),
+            'category_groups' => $this->readMerchantRules->categoryGroups($request->user()),
             'category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()),
+            'filters' => $filters,
+            'prefill' => $this->prefill($request),
         ]);
     }
 
@@ -37,7 +56,9 @@ class MerchantRuleController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Merchant Rule created.')]);
 
-        return to_route('merchant_rules.index');
+        return $request->validated('source_transaction_id') === null
+            ? back(fallback: route('merchant_rules.index'))
+            : to_route('merchant_rules.index');
     }
 
     public function update(SaveMerchantRuleRequest $request, MerchantRule $merchantRule): RedirectResponse
@@ -46,7 +67,7 @@ class MerchantRuleController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Merchant Rule updated.')]);
 
-        return to_route('merchant_rules.index');
+        return back(fallback: route('merchant_rules.index'));
     }
 
     public function destroy(DeleteMerchantRuleRequest $request, MerchantRule $merchantRule): RedirectResponse
@@ -55,7 +76,7 @@ class MerchantRuleController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Merchant Rule deleted.')]);
 
-        return to_route('merchant_rules.index');
+        return back(fallback: route('merchant_rules.index'));
     }
 
     private function save(SaveMerchantRuleRequest $request, ?MerchantRule $merchantRule = null): MerchantRule
@@ -73,5 +94,28 @@ class MerchantRuleController extends Controller
             enabled: (bool) $validated['enabled'],
             merchantRule: $merchantRule,
         );
+    }
+
+    /** @return array{transaction_id: int, merchant: string, merchant_key: string, transaction_kind: string, currency: string}|null */
+    private function prefill(IndexMerchantRulesRequest $request): ?array
+    {
+        $transactionId = $request->validated('transaction');
+
+        if ($transactionId === null) {
+            return null;
+        }
+
+        $transaction = Transaction::query()
+            ->whereBelongsTo($request->user(), 'owner')
+            ->findOrFail((int) $transactionId);
+        $merchant = Str::squish($transaction->description);
+
+        return [
+            'transaction_id' => $transaction->id,
+            'merchant' => $merchant,
+            'merchant_key' => $this->merchantNormalizer->normalize($merchant),
+            'transaction_kind' => $transaction->kind->value,
+            'currency' => $transaction->currency->value,
+        ];
     }
 }

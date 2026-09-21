@@ -20,6 +20,8 @@ use Illuminate\Support\Carbon;
  * @property CarbonImmutable|null $archived_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property-read int $active_child_count
+ * @property-read int $active_merchant_rule_count
  */
 #[Fillable([
     'user_id',

@@ -1,4 +1,4 @@
-import { Form } from '@inertiajs/react';
+import { Form, Link } from '@inertiajs/react';
 import {
     Check,
     CircleAlert,
@@ -15,6 +15,7 @@ import {
     update as saveReceiptBreakdown,
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
 import { update as updateTransaction } from '@/actions/App/Http/Controllers/TransactionController';
+import { CategoryPicker } from '@/components/category-picker';
 import { DateText, LocalTimestamp } from '@/components/date-time';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +46,7 @@ import {
     movementSupportsCategory,
     transferPurposeOptions,
 } from '@/lib/money-movement';
+import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import type {
     CategoryOption,
     SelectedTransaction,
@@ -283,32 +285,22 @@ function ReceiptBreakdownSection({
                                         >
                                             Category
                                         </Label>
-                                        <NativeSelect
+                                        <CategoryPicker
                                             id={`receipt-line-${lineItem.clientId}-category`}
                                             name={`line_items[${index}][category_id]`}
+                                            options={categoryOptions}
                                             value={
                                                 lineItem.category?.id.toString() ??
                                                 ''
                                             }
-                                            onChange={(event) =>
+                                            onValueChange={(nextValue) =>
                                                 updateLineItem(
                                                     lineItem.clientId,
                                                     'category_id',
-                                                    event.target.value,
+                                                    nextValue,
                                                 )
                                             }
-                                            options={[
-                                                {
-                                                    value: '',
-                                                    label: 'Uncategorized',
-                                                },
-                                                ...categoryOptions.map(
-                                                    (category) => ({
-                                                        value: category.id.toString(),
-                                                        label: category.path,
-                                                    }),
-                                                ),
-                                            ]}
+                                            emptyLabel="Uncategorized"
                                         />
                                     </div>
                                     <Button
@@ -626,19 +618,14 @@ function TransactionEditForm({
                             >
                                 Edit Category
                             </Label>
-                            <NativeSelect
+                            <CategoryPicker
                                 id={`transaction-${transaction.id}-category`}
                                 name="category_id"
+                                options={categoryOptions}
                                 defaultValue={
                                     transaction.category?.id.toString() ?? ''
                                 }
-                                options={[
-                                    { value: '', label: 'Uncategorized' },
-                                    ...categoryOptions.map((category) => ({
-                                        value: category.id.toString(),
-                                        label: category.path,
-                                    })),
-                                ]}
+                                emptyLabel="Uncategorized"
                             />
                             <InputError message={errors.category_id} />
                         </div>
@@ -889,6 +876,26 @@ export function TransactionInspector({
                                 />
                                 .
                             </p>
+                            {movementSupportsCategory(transaction.kind) && (
+                                <Button
+                                    asChild
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-fit"
+                                >
+                                    <Link
+                                        href={merchantRulesIndex({
+                                            query: {
+                                                transaction: transaction.id,
+                                            },
+                                        })}
+                                    >
+                                        <Plus data-icon="inline-start" />
+                                        Create Merchant Rule
+                                    </Link>
+                                </Button>
+                            )}
                         </section>
 
                         <section className="grid gap-3">
