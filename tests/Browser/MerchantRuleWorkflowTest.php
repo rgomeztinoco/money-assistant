@@ -70,6 +70,37 @@ test('clearing search restores the selected rule group', function () {
     $page
         ->assertSeeIn('@rule-table-title', 'All Rules')
         ->assertSee('Airport Taxi')
+        ->assertScript(<<<'JS'
+            (() => {
+                const table = document.querySelector('[data-slot="table"]');
+                const firstRow = table?.querySelector('tbody tr');
+                const headers = Array.from(table?.querySelectorAll('thead th') ?? []);
+
+                if (firstRow === null || firstRow === undefined) {
+                    return false;
+                }
+
+                return headers.every((header, index) => {
+                    const button = header.querySelector('button');
+                    const cell = firstRow.children[index];
+
+                    if (button === null || !(cell instanceof HTMLElement)) {
+                        return true;
+                    }
+
+                    const buttonBounds = button.getBoundingClientRect();
+                    const cellBounds = cell.getBoundingClientRect();
+                    const buttonStyle = getComputedStyle(button);
+                    const cellStyle = getComputedStyle(cell);
+                    const headerEdge = buttonBounds.left
+                        + parseFloat(buttonStyle.paddingLeft);
+                    const cellEdge = cellBounds.left
+                        + parseFloat(cellStyle.paddingLeft);
+
+                    return Math.abs(headerEdge - cellEdge) < 1;
+                });
+            })()
+            JS)
         ->fill(
             'input[type="search"][aria-label="Search Merchant Rules"]',
             '',

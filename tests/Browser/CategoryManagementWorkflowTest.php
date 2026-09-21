@@ -34,8 +34,40 @@ test('the owner creates a child and opens its taxonomy group', function () {
                     return false;
                 }
 
-                return sortButton.getBoundingClientRect().left
-                    >= tableContainer.getBoundingClientRect().left;
+                const table = sortButton.closest('table');
+                const firstRow = table?.querySelector('tbody tr');
+                const headers = Array.from(table?.querySelectorAll('thead th') ?? []);
+
+                if (firstRow === null || firstRow === undefined) {
+                    return false;
+                }
+
+                const columnsAlign = headers.every((header, index) => {
+                    const button = header.querySelector('button');
+                    const cell = firstRow.children[index];
+
+                    if (button === null || !(cell instanceof HTMLElement)) {
+                        return true;
+                    }
+
+                    const buttonBounds = button.getBoundingClientRect();
+                    const cellBounds = cell.getBoundingClientRect();
+                    const buttonStyle = getComputedStyle(button);
+                    const cellStyle = getComputedStyle(cell);
+                    const isRightAligned = getComputedStyle(header).textAlign === 'right';
+                    const headerEdge = isRightAligned
+                        ? buttonBounds.right - parseFloat(buttonStyle.paddingRight)
+                        : buttonBounds.left + parseFloat(buttonStyle.paddingLeft);
+                    const cellEdge = isRightAligned
+                        ? cellBounds.right - parseFloat(cellStyle.paddingRight)
+                        : cellBounds.left + parseFloat(cellStyle.paddingLeft);
+
+                    return Math.abs(headerEdge - cellEdge) < 1;
+                });
+
+                return columnsAlign
+                    && sortButton.getBoundingClientRect().left
+                        >= tableContainer.getBoundingClientRect().left;
             })()
             JS)
         ->click('[aria-label="Actions for Food"]')
