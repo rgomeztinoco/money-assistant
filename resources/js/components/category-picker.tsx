@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import { Check, ChevronsUpDown, Plus } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { store as createInlineCategory } from '@/actions/App/Http/Controllers/InlineCategoryController';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 
@@ -86,6 +88,8 @@ export function CategoryPicker({
     required = false,
     disabled = false,
     className,
+    closeOnSelect = true,
+    popoverFooter,
 }: {
     id: string;
     name: string;
@@ -102,6 +106,8 @@ export function CategoryPicker({
     required?: boolean;
     disabled?: boolean;
     className?: string;
+    closeOnSelect?: boolean;
+    popoverFooter?: ReactNode;
 }) {
     const portalContainerRef = useRef<HTMLDivElement>(null);
     const [internalValue, setInternalValue] = useState(defaultValue);
@@ -141,14 +147,31 @@ export function CategoryPicker({
         (option) => option.id.toString() === selectedValue,
     );
 
+    function closePicker(): void {
+        setOpen(false);
+        setQuery('');
+    }
+
+    function handleOpenChange(nextOpen: boolean): void {
+        if (nextOpen) {
+            setOpen(true);
+
+            return;
+        }
+
+        closePicker();
+    }
+
     function select(nextValue: string): void {
         if (value === undefined) {
             setInternalValue(nextValue);
         }
 
         onValueChange?.(nextValue);
-        setOpen(false);
-        setQuery('');
+
+        if (closeOnSelect) {
+            closePicker();
+        }
     }
 
     function createCategory(): void {
@@ -216,7 +239,7 @@ export function CategoryPicker({
                 ))}
             </select>
 
-            <Popover open={open} onOpenChange={setOpen}>
+            <Popover open={open} onOpenChange={handleOpenChange}>
                 <PopoverTrigger
                     render={
                         <Button
@@ -254,6 +277,28 @@ export function CategoryPicker({
                             aria-label="Search Categories"
                         />
                         <CommandList id={`${id}-options`}>
+                            {allowCreate && (
+                                <>
+                                    <CommandGroup>
+                                        <CommandItem
+                                            data-test={`${id}-create-option`}
+                                            value="create-new-category"
+                                            onSelect={() => {
+                                                closePicker();
+                                                setCreateOpen(true);
+                                                setParentId(
+                                                    createParentId === null
+                                                        ? ''
+                                                        : createParentId.toString(),
+                                                );
+                                            }}
+                                        >
+                                            <Plus /> Create a Category
+                                        </CommandItem>
+                                    </CommandGroup>
+                                    <CommandSeparator />
+                                </>
+                            )}
                             <CommandEmpty>No Categories found.</CommandEmpty>
                             <CommandGroup heading="Categories">
                                 {allowEmpty &&
@@ -296,29 +341,13 @@ export function CategoryPicker({
                                     </CommandItem>
                                 ))}
                             </CommandGroup>
-                            {allowCreate && (
-                                <>
-                                    <CommandSeparator />
-                                    <CommandGroup>
-                                        <CommandItem
-                                            data-test={`${id}-create-option`}
-                                            value="create-new-category"
-                                            onSelect={() => {
-                                                setOpen(false);
-                                                setCreateOpen(true);
-                                                setParentId(
-                                                    createParentId === null
-                                                        ? ''
-                                                        : createParentId.toString(),
-                                                );
-                                            }}
-                                        >
-                                            <Plus /> Create a Category
-                                        </CommandItem>
-                                    </CommandGroup>
-                                </>
-                            )}
                         </CommandList>
+                        {popoverFooter && (
+                            <>
+                                <Separator />
+                                <div onClick={closePicker}>{popoverFooter}</div>
+                            </>
+                        )}
                     </Command>
                 </PopoverContent>
             </Popover>

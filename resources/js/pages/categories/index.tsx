@@ -243,7 +243,6 @@ function SortButton({
             type="button"
             variant="ghost"
             size="sm"
-            className="-ml-3"
             onClick={() =>
                 updateFilters({
                     sort: column,

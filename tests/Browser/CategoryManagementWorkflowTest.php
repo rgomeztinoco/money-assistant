@@ -21,6 +21,23 @@ test('the owner creates a child and opens its taxonomy group', function () {
     $page
         ->assertSee('Uncategorized remains a system state')
         ->assertSeeIn('@category-table-title', 'All Categories')
+        ->assertScript(<<<'JS'
+            (() => {
+                const sortButton = document.querySelector(
+                    '[data-slot="table-head"] button',
+                );
+                const tableContainer = sortButton?.closest(
+                    '[data-slot="table-container"]',
+                );
+
+                if (sortButton === null || tableContainer === null) {
+                    return false;
+                }
+
+                return sortButton.getBoundingClientRect().left
+                    >= tableContainer.getBoundingClientRect().left;
+            })()
+            JS)
         ->click('[aria-label="Actions for Food"]')
         ->click('Add subcategory')
         ->fill('#new-category-name', 'Dining out')
@@ -53,12 +70,18 @@ test('the mobile Category selector navigates the taxonomy', function () {
 
 test('the Category dialog creates and selects a missing parent', function () {
     $owner = User::factory()->create();
+    Category::factory()->for($owner, 'owner')->create(['name' => 'Utilities']);
     $this->actingAs($owner);
 
     visit('/categories')
         ->press('New Category')
         ->fill('#new-category-name', 'Dining out')
         ->click('@new-category-parent-trigger')
+        ->assertScript(<<<'JS'
+            document
+                .querySelector('[data-slot="popover-content"] [cmdk-item]')
+                ?.matches('[data-test="new-category-parent-create-option"]')
+            JS)
         ->click('@new-category-parent-create-option')
         ->fill('#new-category-parent-new-name', 'Food')
         ->press('Create Parent Category')

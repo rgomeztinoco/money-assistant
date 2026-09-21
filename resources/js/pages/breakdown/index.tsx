@@ -493,43 +493,48 @@ function InlineCategory({
                 ariaLabel={`Category for ${transaction.description}`}
                 disabled={processingAction !== null}
                 className="h-auto min-h-8 border-transparent bg-transparent px-2 py-1.5 text-left whitespace-normal shadow-none hover:border-input"
-            />
-            {hasPendingCategory && (
-                <div
-                    className="flex items-center justify-end gap-1.5"
-                    data-test={`category-confirmation-${transaction.id}`}
-                >
-                    <Button
-                        type="button"
-                        size="sm"
-                        data-test={`apply-category-once-${transaction.id}`}
-                        disabled={processingAction !== null}
-                        onClick={() =>
-                            submitCategory({ applyToMatching: false })
-                        }
-                    >
-                        {processingAction === 'once'
-                            ? 'Applying…'
-                            : 'Apply once'}
-                    </Button>
-                    {categoryId !== '' && (
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            data-test={`create-merchant-rule-${transaction.id}`}
-                            disabled={processingAction !== null}
-                            onClick={() =>
-                                submitCategory({ applyToMatching: true })
-                            }
+                closeOnSelect={false}
+                popoverFooter={
+                    hasPendingCategory ? (
+                        <div
+                            className="flex items-center justify-end gap-1.5 p-2"
+                            data-test={`category-confirmation-${transaction.id}`}
                         >
-                            {processingAction === 'rule'
-                                ? 'Creating…'
-                                : 'Create rule'}
-                        </Button>
-                    )}
-                </div>
-            )}
+                            <Button
+                                type="button"
+                                size="sm"
+                                data-test={`apply-category-once-${transaction.id}`}
+                                disabled={processingAction !== null}
+                                onClick={() =>
+                                    submitCategory({ applyToMatching: false })
+                                }
+                            >
+                                {processingAction === 'once'
+                                    ? 'Applying…'
+                                    : 'Apply once'}
+                            </Button>
+                            {categoryId !== '' && (
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    data-test={`create-merchant-rule-${transaction.id}`}
+                                    disabled={processingAction !== null}
+                                    onClick={() =>
+                                        submitCategory({
+                                            applyToMatching: true,
+                                        })
+                                    }
+                                >
+                                    {processingAction === 'rule'
+                                        ? 'Creating…'
+                                        : 'Create rule'}
+                                </Button>
+                            )}
+                        </div>
+                    ) : undefined
+                }
+            />
         </div>
     );
 }

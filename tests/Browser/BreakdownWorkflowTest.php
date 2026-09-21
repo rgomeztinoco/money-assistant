@@ -589,6 +589,24 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->resize(390, 844)
         ->click('[aria-label="Category for Café Central"]')
         ->assertPresent('[aria-label="Search Categories"]')
+        ->assertScript(<<<'JS'
+            (() => {
+                const trigger = document.querySelector(
+                    '[aria-label="Category for Café Central"]',
+                );
+                const row = trigger?.closest('tr');
+
+                if (row === null || row === undefined) {
+                    return false;
+                }
+
+                row.dataset.heightBeforeCategorySelection = String(
+                    row.getBoundingClientRect().height,
+                );
+
+                return true;
+            })()
+            JS)
         ->fill(
             '[cmdk-input][aria-label="Search Categories"]',
             'weekly groceries',
@@ -597,7 +615,6 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->click('@category-'.$current->id.'-option-'.$groceries->id)
         ->assertSee('Apply once')
         ->assertSee('Create rule')
-        ->wait(1)
         ->assertScript(<<<JS
             (() => {
                 const trigger = document.querySelector(
@@ -607,13 +624,49 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
                 const confirmation = document.querySelector(
                     '[data-test="category-confirmation-{$current->id}"]',
                 );
+                const popover = confirmation?.closest(
+                    '[data-slot="popover-content"]',
+                );
 
                 if (
                     trigger === null
                     || row === null
                     || row === undefined
                     || confirmation === null
+                    || popover === null
+                    || popover === undefined
                 ) {
+                    return false;
+                }
+
+                return popover.contains(confirmation);
+            })()
+            JS)
+        ->assertScript(<<<'JS'
+            (() => {
+                const trigger = document.querySelector(
+                    '[aria-label="Category for Café Central"]',
+                );
+                const row = trigger?.closest('tr');
+
+                if (row === null || row === undefined) {
+                    return false;
+                }
+
+                return Math.abs(
+                    row.getBoundingClientRect().height
+                        - Number(row.dataset.heightBeforeCategorySelection),
+                ) < 0.5;
+            })()
+            JS)
+        ->assertScript(<<<'JS'
+            (() => {
+                const trigger = document.querySelector(
+                    '[aria-label="Category for Café Central"]',
+                );
+                const row = trigger?.closest('tr');
+
+                if (trigger === null || row === null || row === undefined) {
                     return false;
                 }
 
@@ -622,7 +675,6 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
                 return trigger.textContent.includes(
                     'Weekly groceries and household supplies',
                 )
-                    && confirmation.closest('tr') === row
                     && rowBounds.left >= 0
                     && rowBounds.right <= innerWidth
                     && document.documentElement.scrollWidth
