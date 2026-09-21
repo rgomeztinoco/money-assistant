@@ -142,6 +142,7 @@ export default function AgentAccess({ tokens, endpoint }: Props) {
     };
     const onNetworkError = () => {
         setError('Connection lost. Check your connection and try again.');
+
         return false;
     };
     const showToken = (response: IssuedToken) => {
