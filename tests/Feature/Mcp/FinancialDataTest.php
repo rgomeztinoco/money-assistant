@@ -8,6 +8,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 function financialMcp(?string $token, string $method, array $params = [], array $headers = []): TestResponse
@@ -341,4 +342,53 @@ test('a cursor issued for another owner is rejected even with identical filters'
     $other = User::factory()->create()->createToken('reader', ['financial-data:read'])->plainTextToken;
     financialMcp($other, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['cursor' => $cursor]])
         ->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent');
+});
+
+test('a checkpoint retains a financial update committed after the scan', function () {
+    config(['database.connections.mcp_writer' => config('database.connections.'.config('database.default'))]);
+    $writer = DB::connection('mcp_writer');
+    $owner = User::factory()->connection('mcp_writer')->create();
+    $this->beforeApplicationDestroyed(function () use ($writer, $owner): void {
+        $writer->table('users')->where('id', $owner->id)->delete();
+        DB::purge('mcp_writer');
+    });
+    $transaction = Transaction::factory()->connection('mcp_writer')->for($owner, 'owner')->create([
+        'description' => 'Before pending edit', 'updated_at' => now()->subHour(),
+    ]);
+    $token = $owner->setConnection(config('database.default'))->createToken('reader', ['financial-data:read'])->plainTextToken;
+    $writer->beginTransaction();
+
+    try {
+        $this->travelTo(CarbonImmutable::parse($writer->scalar('SELECT clock_timestamp()')));
+        $writer->table('transactions')->where('id', $transaction->id)->update([
+            'description' => 'Committed after the scan', 'updated_at' => now(),
+        ]);
+        $this->travel(10)->seconds();
+        $first = financialMcp($token, 'tools/call', ['name' => 'list_transactions'])
+            ->assertOk()->assertJsonPath('result.isError', false)
+            ->assertJsonPath('result.structuredContent.transactions.0.description', 'Before pending edit')
+            ->json('result.structuredContent');
+        $writer->commit();
+
+        financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['updated_since' => $first['checkpoint']]])
+            ->assertOk()->assertJsonPath('result.isError', false)
+            ->assertJsonCount(1, 'result.structuredContent.transactions')
+            ->assertJsonPath('result.structuredContent.transactions.0.id', $transaction->id)
+            ->assertJsonPath('result.structuredContent.transactions.0.description', 'Committed after the scan');
+    } finally {
+        $writer->rollBack();
+    }
+});
+
+test('incremental filters preserve a fractional second lower bound', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-20T12:00:00Z'));
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->create(['updated_at' => '2026-09-20 11:00:00']);
+    $included = Transaction::factory()->for($owner, 'owner')->create(['updated_at' => '2026-09-20 11:00:01']);
+    $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
+
+    financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['updated_since' => '2026-09-20T11:00:00.500000Z']])
+        ->assertOk()->assertJsonPath('result.isError', false)
+        ->assertJsonCount(1, 'result.structuredContent.transactions')
+        ->assertJsonPath('result.structuredContent.transactions.0.id', $included->id);
 });
