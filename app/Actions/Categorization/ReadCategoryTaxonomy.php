@@ -43,6 +43,7 @@ final class ReadCategoryTaxonomy
             ])
             ->orderByRaw('archived_at IS NOT NULL')
             ->orderByRaw('lower(name)')
+            ->orderBy('id')
             ->get();
         $activeMerchantRules = MerchantRule::query()
             ->whereBelongsTo($owner, 'owner')
@@ -123,6 +124,7 @@ final class ReadCategoryTaxonomy
             ->select(['id', 'user_id', 'parent_id', 'name'])
             ->with('parent:id,name')
             ->orderByRaw('lower(name)')
+            ->orderBy('id')
             ->get();
 
         return array_values($categories

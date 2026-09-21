@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\AgentAccessController;
 use App\Http\Controllers\Settings\GmailAuthorizationController;
 use App\Http\Controllers\Settings\GmailConnectionCheckController;
 use App\Http\Controllers\Settings\GmailFailedMessageRetryController;
@@ -68,3 +69,10 @@ Route::get('.well-known/passkey-endpoints', function () {
         'manage' => route('security.edit'),
     ]);
 })->name('well-known.passkeys');
+
+Route::middleware(['auth', RequirePassword::class])->group(function () {
+    Route::get('settings/agent-access', [AgentAccessController::class, 'index'])->name('agent-access.index');
+    Route::post('settings/agent-access/tokens/{token}/rotate', [AgentAccessController::class, 'rotate'])->name('agent-access.rotate');
+    Route::delete('settings/agent-access/tokens/{token}', [AgentAccessController::class, 'destroy'])->name('agent-access.destroy');
+    Route::post('settings/agent-access/tokens', [AgentAccessController::class, 'store'])->name('agent-access.store');
+});

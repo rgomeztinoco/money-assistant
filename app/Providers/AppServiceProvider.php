@@ -18,6 +18,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Foundation\DevCommands;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
@@ -72,6 +73,9 @@ class AppServiceProvider extends ServiceProvider
 
         DevCommands::except('server');
         DevCommands::artisan('queue:work', 'queue');
+
+        RateLimiter::for('financial-mcp', fn (Request $request): Limit => Limit::perMinute(120)
+            ->by((string) $request->user()->currentAccessToken()->getKey()));
 
         RateLimiter::for(
             'gmail-message-processing',
