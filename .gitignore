@@ -13,6 +13,7 @@
 /resources/js/routes
 /resources/js/wayfinder
 /vendor
+/.audit/
 
 # Laravel Boost generated resources
 /AGENTS.md
