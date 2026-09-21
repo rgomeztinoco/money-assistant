@@ -41,6 +41,10 @@ class ArchiveCategory
                 ->whereIn('id', $categoryIds)
                 ->update(['archived_at' => $archivedAt]);
 
+            foreach (Category::query()->whereIn('id', $categoryIds)->get() as $archivedCategory) {
+                $archivedCategory->touchTransactions();
+            }
+
             MerchantRule::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->whereIn('category_id', $categoryIds)
