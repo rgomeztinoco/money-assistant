@@ -141,10 +141,14 @@ export default function AgentAccess({ tokens, endpoint }: Props) {
         return false;
     };
     const onNetworkError = () => {
-        setError('Connection lost. Check your connection and try again.');
+        setConfirmation(null);
+        setError(
+            'Connection lost. Reload to check whether the change completed. Rotate the token if you did not receive its secret.',
+        );
 
         return false;
     };
+    const errorOptions = { onHttpException, onNetworkError };
     const showToken = (response: IssuedToken) => {
         setIssued(response);
         create.reset();
@@ -162,7 +166,7 @@ export default function AgentAccess({ tokens, endpoint }: Props) {
             if (confirmation.action === 'rotate') {
                 await mutation.post(
                     AgentAccessController.rotate.url(confirmation.token.id),
-                    { onSuccess: showToken, onHttpException },
+                    { onSuccess: showToken, ...errorOptions },
                 );
             } else {
                 await mutation.delete(
@@ -172,8 +176,7 @@ export default function AgentAccess({ tokens, endpoint }: Props) {
                             setConfirmation(null);
                             router.reload({ only: ['tokens'] });
                         },
-                        onHttpException,
-                        onNetworkError,
+                        ...errorOptions,
                     },
                 );
             }
@@ -200,7 +203,7 @@ export default function AgentAccess({ tokens, endpoint }: Props) {
                         try {
                             await create.post(
                                 AgentAccessController.store.url(),
-                                { onSuccess: showToken, onHttpException },
+                                { onSuccess: showToken, ...errorOptions },
                             );
                         } catch {
                             // Validation errors are rendered below the input.
