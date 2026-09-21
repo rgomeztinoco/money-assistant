@@ -251,3 +251,26 @@ test('sensitive operations reject stale authentication', function () {
         ->assertSee('Confirm with passkey')
         ->assertNoConsoleLogs();
 });
+
+test('passkey confirmation opens agent access and permits several token mutations', function () {
+    $owner = User::factory()->create();
+    $page = visit('/login');
+    configurePasskeysForBrowser($page);
+    installVirtualPasskeyAuthenticator($page);
+    recoverAccessWithPassword($page, $owner);
+    $page->assertPathIs('/');
+    markBrowserSessionAsPasswordConfirmed($owner);
+    $page->script('window.location.assign("/settings/security")');
+    $page->press('Add passkey')->type('Passkey name', 'Agent access passkey')
+        ->press('Register passkey')->assertSee('Agent access passkey');
+    $this->travel(31)->minutes();
+    resetLaravelBrowserRequestState();
+    $page->script('window.location.assign("/settings/agent-access")');
+    $page->assertPathIs('/user/confirm-password');
+    $page->page()->getByText('Confirm with passkey', exact: true)->click(['noWaitAfter' => true]);
+    $page->assertPathIs('/settings/agent-access')
+        ->type('#token-name', 'Passkey client')->click('Create token')
+        ->assertSee('Copy your token now')->click('Done')
+        ->click('Revoke')->click('Revoke token')->assertSee('No agent tokens yet')
+        ->assertNoJavaScriptErrors();
+});
