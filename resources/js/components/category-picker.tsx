@@ -89,6 +89,7 @@ export function CategoryPicker({
     disabled = false,
     className,
     closeOnSelect = true,
+    portalToBody = false,
     popoverFooter,
 }: {
     id: string;
@@ -107,6 +108,7 @@ export function CategoryPicker({
     disabled?: boolean;
     className?: string;
     closeOnSelect?: boolean;
+    portalToBody?: boolean;
     popoverFooter?: ReactNode;
 }) {
     const portalContainerRef = useRef<HTMLDivElement>(null);
@@ -265,11 +267,11 @@ export function CategoryPicker({
                     <ChevronsUpDown />
                 </PopoverTrigger>
                 <PopoverContent
-                    container={portalContainerRef}
+                    container={portalToBody ? undefined : portalContainerRef}
                     align="start"
-                    className="w-[min(24rem,calc(100vw-2rem))] gap-0 p-0"
+                    className="max-h-(--available-height) w-[min(24rem,calc(100vw-2rem))] gap-0 overflow-hidden p-0"
                 >
-                    <Command shouldFilter={false}>
+                    <Command shouldFilter={false} className="min-h-0">
                         <CommandInput
                             value={query}
                             onValueChange={setQuery}
@@ -345,7 +347,9 @@ export function CategoryPicker({
                         {popoverFooter && (
                             <>
                                 <Separator />
-                                <div onClick={closePicker}>{popoverFooter}</div>
+                                <div className="shrink-0" onClick={closePicker}>
+                                    {popoverFooter}
+                                </div>
                             </>
                         )}
                     </Command>

@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useReportView } from '@/hooks/use-report-view';
 import {
     formatContextualDate,
     formatDateRange,
@@ -708,7 +709,8 @@ function CurrencySignalLane({ briefing }: { briefing: Briefing }) {
 }
 
 function SignalPanel({ briefings }: { briefings: Briefing[] }) {
-    const [selectedCurrency, setSelectedCurrency] = useState(
+    const [selectedCurrency, setSelectedCurrency] = useReportView(
+        ['PEN', 'USD'] as const,
         briefings[0]?.currency ?? 'PEN',
     );
     const activeBriefing =

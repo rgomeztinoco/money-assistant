@@ -34,6 +34,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useReportView } from '@/hooks/use-report-view';
 import { formatReportingPeriod } from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import {
@@ -494,6 +495,7 @@ function InlineCategory({
                 disabled={processingAction !== null}
                 className="h-auto min-h-8 border-transparent bg-transparent px-2 py-1.5 text-left whitespace-normal shadow-none hover:border-input"
                 closeOnSelect={false}
+                portalToBody
                 popoverFooter={
                     hasPendingCategory ? (
                         <div
@@ -595,6 +597,7 @@ function TransactionTable({ props }: { props: BreakdownProps }) {
                                         <span className="text-xs text-muted-foreground tabular-nums">
                                             <DateText
                                                 value={transaction.occurred_on}
+                                                format="weekday"
                                             />{' '}
                                             ·{' '}
                                             {movementDescription({
@@ -667,6 +670,10 @@ export default function BreakdownIndex(props: BreakdownProps) {
         : props.filters.category
           ? 'categories'
           : 'summary';
+    const [overviewTab, setOverviewTab] = useReportView(
+        ['summary', 'categories', 'merchants'] as const,
+        initialOverviewTab,
+    );
     const closeDetailsHref = selectionUrl({
         currencyFilter: props.currency_filter,
         period: props.period,
@@ -838,7 +845,8 @@ export default function BreakdownIndex(props: BreakdownProps) {
                                 filters={props.filters}
                             />
                             <Tabs
-                                defaultValue={initialOverviewTab}
+                                value={overviewTab}
+                                onValueChange={setOverviewTab}
                                 className="min-h-0 flex-1 flex-col gap-3 overflow-hidden"
                             >
                                 <TabsList className="grid h-8 w-full shrink-0 grid-cols-3">

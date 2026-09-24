@@ -122,6 +122,16 @@ export function formatFullDate(value: string): string {
     return `${day} ${shortMonthNames[month - 1]} ${year}`;
 }
 
+export function formatWeekdayDate(value: string): string {
+    const { year, month, day } = parseDateOnly(value);
+    const weekday = new Intl.DateTimeFormat('en-US', {
+        weekday: 'long',
+        timeZone: 'UTC',
+    }).format(new Date(Date.UTC(year, month - 1, day)));
+
+    return `${weekday}, ${formatFullDate(value)}`;
+}
+
 export function formatContextualDate(value: string): string {
     const { month, day } = parseDateOnly(value);
 
