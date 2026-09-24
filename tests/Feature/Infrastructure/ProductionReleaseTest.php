@@ -116,6 +116,7 @@ case "$1 $2" in
         printf '123\t%s\t%s\t%s\n' "$RELEASE_TEST_REVISION" "${RELEASE_TEST_RUN_BRANCH:-main}" "${RELEASE_TEST_RUN_EVENT:-push}"
         ;;
     'run view')
+        printf '__run__\t%s\n' "${RELEASE_TEST_RUN_STATUS:-completed}"
         cat "$RELEASE_TEST_CHECKS_FILE"
         ;;
     *) exit 64 ;;
@@ -319,13 +320,14 @@ test('the production release blocks missing inaccessible or mismatched GitHub ru
     'PR checks only' => ['RELEASE_TEST_RUN_EVENT', 'pull_request', 'does not match the release revision'],
 ]);
 
-test('the production release waits for pending CI and rechecks main before deployment', function (bool $advanceRemote): void {
+test('the production release waits for pending CI and rechecks main before deployment', function (bool $advanceRemote, string $checks): void {
     $temporaryDirectory = sys_get_temp_dir().'/money-assistant-release-'.str()->uuid();
     mkdir($temporaryDirectory, 0700, true);
     $repository = createReleaseRepository($temporaryDirectory);
     $environment = releaseTestEnvironment($temporaryDirectory, $repository['source']);
     $environment['RELEASE_TEST_ADVANCE_REMOTE'] = $advanceRemote ? '1' : '0';
-    file_put_contents($environment['RELEASE_TEST_CHECKS_FILE'], "ci\tqueued\t\nproduction-stack\tin_progress\t\n");
+    $environment['RELEASE_TEST_RUN_STATUS'] = 'in_progress';
+    file_put_contents($environment['RELEASE_TEST_CHECKS_FILE'], $checks);
     file_put_contents($environment['RELEASE_TEST_CHECKS_FILE'].'.next', "ci\tcompleted\tsuccess\nproduction-stack\tcompleted\tsuccess\n");
 
     try {
@@ -345,7 +347,11 @@ test('the production release waits for pending CI and rechecks main before deplo
     } finally {
         (new Filesystem)->deleteDirectory($temporaryDirectory);
     }
-})->with(['unchanged main' => false, 'main advanced during CI' => true]);
+})->with([
+    'unchanged main' => [false, "ci\tqueued\t\nproduction-stack\tin_progress\t\n"],
+    'main advanced during CI' => [true, "ci\tqueued\t\nproduction-stack\tin_progress\t\n"],
+    'CI awaits prerequisite jobs' => [false, "production-stack\tin_progress\t\n"],
+]);
 
 test('the production release stops before promotion when the fresh backup fails', function () {
     $temporaryDirectory = sys_get_temp_dir().'/money-assistant-release-'.str()->uuid();

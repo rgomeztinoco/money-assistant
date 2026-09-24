@@ -28,7 +28,7 @@ production/release-production
 
 The command requires a clean `main` checkout and an authenticated GitHub CLI (`gh`) with access to the repository and its Actions runs. It fetches `origin` and requires local `main` to match `origin/main` exactly. Ahead, behind, or diverged checkouts stop with instructions; the command does not update your branch.
 
-It checks the latest `tests.yml` push run on `main` for that exact revision. Both `ci` and `production-stack` must succeed. Running checks are polled every ten seconds; missing, failed, cancelled, or skipped checks block the release. GitHub authentication or API errors also stop it. After CI passes, the command fetches again and stops if main changed while waiting.
+It checks the latest `tests.yml` push run on `main` for that exact revision. Both `ci` and `production-stack` must succeed. Running checks and jobs waiting for prerequisites are polled every ten seconds. Failed, cancelled, or skipped checks block the release, as do checks missing from a completed workflow. GitHub authentication or API errors also stop it. After CI passes, the command fetches again and stops if main changed while waiting.
 
 Only then does it create a fresh encrypted backup, promote Git-tracked files into `/opt/money-assistant`, reinstall the systemd units, deploy the production containers, and verify private ingress. It prints the deployed revision when every step succeeds. No separate local test command is required.
 

@@ -66,15 +66,17 @@ EOF
     fail 'GitHub CI run does not match the release revision on main'
 
 while :; do
-    checks="$(gh run view "$run_id" --repo "$repository" --json jobs \
-        --jq '.jobs[] | [.name, .status, (.conclusion // "")] | @tsv')" ||
+    checks="$(gh run view "$run_id" --repo "$repository" --json status,jobs \
+        --jq '(["__run__", .status] | @tsv), (.jobs[] | [.name, .status, (.conclusion // "")] | @tsv)')" ||
         fail 'could not read required GitHub checks'
+    run_status=''
     ci_found=false
     production_stack_found=false
     pending=false
 
     while IFS="$(printf '\t')" read -r check_name check_status check_conclusion; do
         case "$check_name" in
+            __run__) run_status="$check_status"; continue ;;
             ci) ci_found=true ;;
             production-stack) production_stack_found=true ;;
             *) continue ;;
@@ -92,8 +94,12 @@ while :; do
 $checks
 EOF
 
-    [ "$ci_found" = true ] && [ "$production_stack_found" = true ] ||
-        fail 'required GitHub checks ci and production-stack must both exist'
+    if [ "$ci_found" != true ] || [ "$production_stack_found" != true ]; then
+        case "$run_status" in
+            queued|in_progress|waiting|pending|requested) pending=true ;;
+            *) fail 'required GitHub checks ci and production-stack must both exist' ;;
+        esac
+    fi
     [ "$pending" = true ] || break
     printf 'Waiting for required GitHub checks on main revision %s (run %s)...\n' "$revision" "$run_id"
     sleep 10
