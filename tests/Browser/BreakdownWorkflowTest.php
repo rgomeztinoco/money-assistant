@@ -940,6 +940,65 @@ test('changing Spending to an internal Transfer explains and confirms Category r
         ->and($transaction->category_id)->toBeNull();
 });
 
+test('clearing an existing Category requires confirmation', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Categorized purchase',
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->press('Edit Transaction')
+        ->click('@transaction-category-trigger')
+        ->click('@transaction-category-empty-option')
+        ->press('Save Transaction')
+        ->assertSee('Category: Groceries')
+        ->press('Continue editing');
+
+    expect($transaction->refresh()->category_id)->toBe($category->id);
+
+    $page->press('Save Transaction');
+    $page->script('document.querySelector("[data-slot=alert-dialog-action]").click()');
+    $page->assertSee('Transaction updated.')->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->category_id)->toBeNull();
+});
+
+test('a linked Refund shows its currency error without discarding the draft', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $spending = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+    ]);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Linked refund',
+        'original_spending_id' => $spending->id,
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
+        ->press('Edit Transaction')
+        ->select('#transaction-currency', 'USD')
+        ->fill('#transaction-description', 'Draft refund correction')
+        ->press('Save Transaction')
+        ->assertSee('A Refund and its original spending must use the same currency.')
+        ->assertValue('#transaction-description', 'Draft refund correction')
+        ->assertNoJavaScriptErrors();
+
+    expect($refund->refresh()->currency->value)->toBe('PEN')
+        ->and($refund->description)->toBe('Linked refund');
+});
+
 test('a Refund can be corrected to Income or an internal Transfer in one edit', function (string $kind) {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Shopping']);

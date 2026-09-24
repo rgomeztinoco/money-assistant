@@ -14,7 +14,6 @@ import {
     destroy as removeReceiptBreakdown,
     update as saveReceiptBreakdown,
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
-import { update as updateTransaction } from '@/actions/App/Http/Controllers/TransactionController';
 import { CategoryPicker } from '@/components/category-picker';
 import { DateText, LocalTimestamp } from '@/components/date-time';
 import InputError from '@/components/input-error';
@@ -22,7 +21,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
 import {
     Sheet,
     SheetContent,
@@ -39,9 +37,6 @@ import {
 import {
     incomeSourceOptions,
     movementDescription,
-    movementDirectionOptions,
-    movementKindFromValue,
-    movementKindOptions,
     movementSupportsCategory,
     transferPurposeOptions,
 } from '@/lib/money-movement';
@@ -49,7 +44,6 @@ import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import type {
     CategoryOption,
     SelectedTransaction,
-    TransactionKind,
 } from '@/types';
 
 type EditableLineItem = {
@@ -408,287 +402,18 @@ function ReceiptBreakdownSection({
     );
 }
 
-function TransactionEditForm({
-    transaction,
-    categoryOptions,
-}: {
-    transaction: SelectedTransaction;
-    categoryOptions: CategoryOption[];
-}) {
-    const [kind, setKind] = useState<TransactionKind>(transaction.kind);
-
-    return (
-        <Form
-            key={transaction.id}
-            {...updateTransaction.form(transaction.id)}
-            options={{ preserveScroll: true, preserveState: true }}
-            className="grid gap-4 rounded-lg border p-4"
-        >
-            {({ errors, processing }) => (
-                <>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`transaction-${transaction.id}-date`}
-                            >
-                                Edit occurrence date
-                            </Label>
-                            <Input
-                                id={`transaction-${transaction.id}-date`}
-                                name="occurred_on"
-                                type="date"
-                                defaultValue={transaction.occurred_on}
-                            />
-                            <InputError message={errors.occurred_on} />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`transaction-${transaction.id}-amount`}
-                            >
-                                Edit amount
-                            </Label>
-                            <Input
-                                id={`transaction-${transaction.id}-amount`}
-                                name="amount"
-                                type="number"
-                                min="0.01"
-                                step="0.01"
-                                inputMode="decimal"
-                                defaultValue={minorUnitsToCurrencyUnits(
-                                    transaction.amount_minor,
-                                )}
-                            />
-                            <InputError message={errors.amount} />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`transaction-${transaction.id}-currency`}
-                            >
-                                Edit currency
-                            </Label>
-                            <NativeSelect
-                                id={`transaction-${transaction.id}-currency`}
-                                name="currency"
-                                defaultValue={transaction.currency}
-                                options={[
-                                    { value: 'USD', label: 'USD' },
-                                    { value: 'PEN', label: 'PEN' },
-                                ]}
-                            />
-                            <InputError message={errors.currency} />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`transaction-${transaction.id}-kind`}
-                            >
-                                Edit movement kind
-                            </Label>
-                            <NativeSelect
-                                id={`transaction-${transaction.id}-kind`}
-                                name="kind"
-                                value={kind}
-                                onChange={(event) =>
-                                    setKind(
-                                        movementKindFromValue(
-                                            event.target.value,
-                                        ),
-                                    )
-                                }
-                                options={movementKindOptions}
-                            />
-                            <InputError message={errors.kind} />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`transaction-${transaction.id}-direction`}
-                            >
-                                Edit money direction
-                            </Label>
-                            <NativeSelect
-                                id={`transaction-${transaction.id}-direction`}
-                                name="direction"
-                                defaultValue={transaction.direction}
-                                options={movementDirectionOptions}
-                            />
-                            <InputError message={errors.direction} />
-                        </div>
-                        {kind === 'income' && (
-                            <div className="grid gap-2">
-                                <Label
-                                    htmlFor={`transaction-${transaction.id}-income-source`}
-                                >
-                                    Edit income source
-                                </Label>
-                                <NativeSelect
-                                    id={`transaction-${transaction.id}-income-source`}
-                                    name="income_source"
-                                    defaultValue={
-                                        transaction.income_source ?? 'other'
-                                    }
-                                    options={incomeSourceOptions}
-                                />
-                                <InputError message={errors.income_source} />
-                            </div>
-                        )}
-                        {kind === 'transfer' && (
-                            <div className="grid gap-2">
-                                <Label
-                                    htmlFor={`transaction-${transaction.id}-transfer-purpose`}
-                                >
-                                    Edit transfer purpose
-                                </Label>
-                                <NativeSelect
-                                    id={`transaction-${transaction.id}-transfer-purpose`}
-                                    name="transfer_purpose"
-                                    defaultValue={
-                                        transaction.transfer_purpose ??
-                                        'internal'
-                                    }
-                                    options={transferPurposeOptions}
-                                />
-                                <InputError message={errors.transfer_purpose} />
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="grid gap-2">
-                        <Label
-                            htmlFor={`transaction-${transaction.id}-merchant`}
-                        >
-                            Edit description
-                        </Label>
-                        <Input
-                            id={`transaction-${transaction.id}-merchant`}
-                            name="description"
-                            maxLength={255}
-                            defaultValue={transaction.description}
-                        />
-                        <InputError message={errors.description} />
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`transaction-${transaction.id}-instrument`}
-                            >
-                                Edit payment instrument
-                            </Label>
-                            <Input
-                                id={`transaction-${transaction.id}-instrument`}
-                                name="instrument_label"
-                                maxLength={100}
-                                defaultValue={
-                                    transaction.instrument_label ?? ''
-                                }
-                                placeholder="Visa, cash, checking"
-                            />
-                            <InputError message={errors.instrument_label} />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`transaction-${transaction.id}-last-four`}
-                            >
-                                Edit last four digits
-                            </Label>
-                            <Input
-                                id={`transaction-${transaction.id}-last-four`}
-                                name="instrument_last_four"
-                                inputMode="numeric"
-                                pattern="[0-9]{4}"
-                                maxLength={4}
-                                defaultValue={
-                                    transaction.instrument_last_four ?? ''
-                                }
-                            />
-                            <InputError message={errors.instrument_last_four} />
-                        </div>
-                    </div>
-
-                    {movementSupportsCategory(kind) && (
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`transaction-${transaction.id}-category`}
-                            >
-                                Edit Category
-                            </Label>
-                            <CategoryPicker
-                                id={`transaction-${transaction.id}-category`}
-                                name="category_id"
-                                options={categoryOptions}
-                                createReloadOnly={['category_options']}
-                                defaultValue={
-                                    transaction.category?.id.toString() ?? ''
-                                }
-                                emptyLabel="Uncategorized"
-                            />
-                            <InputError message={errors.category_id} />
-                        </div>
-                    )}
-
-                    {kind === 'refund' && (
-                        <input
-                            type="hidden"
-                            name="original_spending_id"
-                            value={transaction.original_spending?.id ?? ''}
-                        />
-                    )}
-
-                    {transaction.review.fields.length > 0 && (
-                        <p className="rounded-md bg-muted p-3 type-body text-muted-foreground">
-                            Changing a flagged value clears that field&apos;s
-                            current review flag.
-                        </p>
-                    )}
-
-                    {movementSupportsCategory(kind) &&
-                        transaction.receipt_breakdown !== null && (
-                            <div className="flex items-start gap-2 rounded-md border p-3">
-                                <input
-                                    id={`transaction-${transaction.id}-remove-breakdown`}
-                                    name="remove_receipt_breakdown"
-                                    type="checkbox"
-                                    value="1"
-                                    className="mt-0.5 size-4 rounded border-input"
-                                />
-                                <div className="grid gap-1">
-                                    <Label
-                                        htmlFor={`transaction-${transaction.id}-remove-breakdown`}
-                                    >
-                                        Remove Receipt Breakdown if the amount
-                                        changes
-                                    </Label>
-                                    <p className="type-meta">
-                                        This explicitly removes the current Line
-                                        Items because they would no longer
-                                        reconcile.
-                                    </p>
-                                    <InputError
-                                        message={
-                                            errors.remove_receipt_breakdown
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                    <Button type="submit" disabled={processing}>
-                        {processing && <Spinner />}
-                        Save Transaction
-                    </Button>
-                </>
-            )}
-        </Form>
-    );
-}
-
 export function TransactionInspector({
     transaction,
     categoryOptions,
     onOpenChange,
+    onEdit,
+    editorOpen = false,
 }: {
     transaction: SelectedTransaction | null;
     categoryOptions: CategoryOption[];
     onOpenChange: (open: boolean) => void;
+    onEdit: (transaction: SelectedTransaction) => void;
+    editorOpen?: boolean;
 }) {
     const unresolvedReviewCount = transaction
         ? transaction.review.fields.length +
@@ -700,7 +425,7 @@ export function TransactionInspector({
         : 0;
 
     return (
-        <Sheet open={transaction !== null} onOpenChange={onOpenChange}>
+        <Sheet open={transaction !== null && !editorOpen} onOpenChange={onOpenChange}>
             {transaction && (
                 <SheetContent className="w-full overflow-y-auto sm:max-w-xl lg:max-w-2xl">
                     <SheetHeader className="border-b">
@@ -867,16 +592,9 @@ export function TransactionInspector({
                             )}
                         </section>
 
-                        <section className="grid gap-3">
-                            <h2 className="type-section-title uppercase">
-                                Edit current Transaction
-                            </h2>
-                            <TransactionEditForm
-                                key={transaction.id}
-                                transaction={transaction}
-                                categoryOptions={categoryOptions}
-                            />
-                        </section>
+                        <Button type="button" onClick={() => onEdit(transaction)}>
+                            Edit Transaction
+                        </Button>
 
                         {movementSupportsCategory(transaction.kind) && (
                             <ReceiptBreakdownSection

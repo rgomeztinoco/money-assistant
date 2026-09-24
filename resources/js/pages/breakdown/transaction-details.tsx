@@ -21,6 +21,7 @@ import { CategorySplit } from './category-split';
 import {
     CategoryClassificationSelect,
     IncomeSourceClassificationSelect,
+    pickerCategoryOptions,
 } from './classification-select';
 import type { BreakdownProps, BreakdownTransaction } from './types';
 
@@ -178,13 +179,7 @@ export function TransactionDetails({
                 transaction={transaction}
                 currency={transaction.currency}
                 today={transaction.occurred_on}
-                categoryOptions={categoryOptions.map((option) => ({
-                    id: option.id,
-                    name: option.name,
-                    path: option.path,
-                    parent_id: option.parent?.id ?? null,
-                    parent_name: option.parent?.name ?? null,
-                }))}
+                categoryOptions={pickerCategoryOptions(categoryOptions)}
                 onCancel={() => setEditing(false)}
                 onSaved={() => setEditing(false)}
             />

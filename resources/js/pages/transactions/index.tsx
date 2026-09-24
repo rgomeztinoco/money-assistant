@@ -2,6 +2,8 @@ import { Deferred, Head, Link, router } from '@inertiajs/react';
 import { FileUp } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { TransactionCategorySelect } from '@/components/transaction-category-select';
+import { TransactionEditor } from '@/components/transaction-editor';
+import type { EditorTransaction } from '@/components/transaction-editor';
 import { TransactionInspector } from '@/components/transaction-inspector';
 import { TransactionListFilterControls } from '@/components/transaction-list-filters';
 import type { TransactionListFilters } from '@/components/transaction-list-filters';
@@ -24,6 +26,32 @@ import { index } from '@/routes/transactions';
 import type { CategoryOption, SelectedTransaction } from '@/types';
 
 type TransactionsFilters = TransactionListFilters & { search: string };
+
+function editorTransaction(
+    transaction: SelectedTransaction,
+): EditorTransaction {
+    return {
+        id: transaction.id,
+        occurred_on: transaction.occurred_on,
+        amount_minor: transaction.amount_minor,
+        currency: transaction.currency,
+        kind: transaction.kind,
+        direction: transaction.direction,
+        description: transaction.description,
+        income_source: transaction.income_source,
+        transfer_purpose: transaction.transfer_purpose,
+        category: transaction.category,
+        original_spending_id: transaction.original_spending?.id ?? null,
+        instrument_label: transaction.instrument_label,
+        instrument_last_four: transaction.instrument_last_four,
+        split:
+            transaction.receipt_breakdown?.line_items.map((lineItem) => ({
+                id: lineItem.id,
+                amount_minor: lineItem.line_total_minor,
+                category: lineItem.category,
+            })) ?? null,
+    };
+}
 
 type Pagination = {
     current_page: number;
@@ -71,6 +99,7 @@ export default function TransactionsIndex({
     selected_transaction,
 }: TransactionsIndexProps) {
     const [loading, setLoading] = useState(false);
+    const [editing, setEditing] = useState<SelectedTransaction | null>(null);
     const scrollPosition = useRef<number | null>(null);
 
     function visit(url: string): void {
@@ -124,6 +153,7 @@ export default function TransactionsIndex({
                         <ManualTransactionDialog
                             currency={filters.currency ?? 'PEN'}
                             today={today}
+                            categoryOptions={category_options}
                         />
                         <Button asChild variant="outline">
                             <Link href={createStatementImport()}>
@@ -231,6 +261,8 @@ export default function TransactionsIndex({
                         <TransactionInspector
                             transaction={selected_transaction}
                             categoryOptions={category_options}
+                            onEdit={setEditing}
+                            editorOpen={editing !== null}
                             onOpenChange={(open) => {
                                 if (!open) {
                                     closeDetails();
@@ -263,6 +295,25 @@ export default function TransactionsIndex({
                         </Dialog>
                     )}
                 </Deferred>
+            )}
+            {editing && (
+                <Dialog open onOpenChange={(open) => !open && setEditing(null)}>
+                    <DialogContent className="inset-0 h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none p-4 sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[90vh] sm:max-w-2xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-6">
+                        <DialogHeader>
+                            <DialogTitle>Edit {editing.description}</DialogTitle>
+                            <DialogDescription>Record one confirmed movement.</DialogDescription>
+                        </DialogHeader>
+                        <TransactionEditor
+                            key={editing.id}
+                            transaction={editorTransaction(editing)}
+                            currency={editing.currency}
+                            today={today}
+                            categoryOptions={category_options}
+                            onCancel={() => setEditing(null)}
+                            onSaved={() => setEditing(null)}
+                        />
+                    </DialogContent>
+                </Dialog>
             )}
         </>
     );

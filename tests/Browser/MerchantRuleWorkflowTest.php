@@ -33,11 +33,10 @@ test('the owner creates a Merchant Rule that categorizes a future Transaction', 
 
     visit('/transactions')
         ->press('Add Transaction')
-        ->fill('#manual-amount', '12.50')
-        ->fill('#manual-description', "cafe\u{0301} central")
-        ->select('#manual-currency', 'PEN')
-        ->select('#manual-kind', 'spending')
-        ->press('Record Transaction')
+        ->fill('#transaction-amount', '12.50')
+        ->fill('#transaction-description', "cafe\u{0301} central")
+        ->select('#transaction-currency', 'PEN')
+        ->press('Save Transaction')
         ->assertSee('Transaction recorded.')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();

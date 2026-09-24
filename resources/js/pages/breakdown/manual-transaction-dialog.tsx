@@ -10,8 +10,9 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import type { Currency } from '@/types';
-import type { BreakdownProps } from './types';
+import type { CategoryOption, Currency } from '@/types';
+import { pickerCategoryOptions } from './classification-select';
+import type { BreakdownCategoryOption } from './types';
 
 export function ManualTransactionDialog({
     currency,
@@ -20,7 +21,7 @@ export function ManualTransactionDialog({
 }: {
     currency: Currency;
     today: string;
-    categoryOptions: BreakdownProps['category_options'];
+    categoryOptions: CategoryOption[] | BreakdownCategoryOption[];
 }) {
     const [open, setOpen] = useState(false);
 
@@ -42,13 +43,11 @@ export function ManualTransactionDialog({
                     key={open ? 'new-open' : 'new-closed'}
                     currency={currency}
                     today={today}
-                    categoryOptions={categoryOptions.map((option) => ({
-                        id: option.id,
-                        name: option.name,
-                        path: option.path,
-                        parent_id: option.parent?.id ?? null,
-                        parent_name: option.parent?.name ?? null,
-                    }))}
+                    categoryOptions={categoryOptions.map((option) =>
+                        'parent' in option
+                            ? pickerCategoryOptions([option])[0]
+                            : option,
+                    )}
                     onCancel={() => setOpen(false)}
                     onSaved={() => setOpen(false)}
                 />

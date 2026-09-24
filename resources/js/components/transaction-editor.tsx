@@ -1,4 +1,4 @@
-import type { FormComponentRef } from '@inertiajs/core';
+import type { FormComponentRef, FormDataConvertible } from '@inertiajs/core';
 import { Form } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import {
@@ -108,6 +108,7 @@ export function TransactionEditor({
     const [categoryId, setCategoryId] = useState(
         transaction?.category?.id.toString() ?? '',
     );
+    const [categoryTouched, setCategoryTouched] = useState(false);
     const [optionalOpen, setOptionalOpen] = useState(false);
     const [confirmationOpen, setConfirmationOpen] = useState(false);
 
@@ -123,7 +124,7 @@ export function TransactionEditor({
     const removesCategory =
         transaction?.category !== null &&
         transaction?.category !== undefined &&
-        !movementSupportsCategory(kind);
+        (!movementSupportsCategory(kind) || categoryId === '');
     const removesOriginal =
         transaction?.original_spending_id !== null &&
         transaction?.original_spending_id !== undefined &&
@@ -164,12 +165,20 @@ export function TransactionEditor({
                 ref={form}
                 {...(transaction ? update.form(transaction.id) : store.form())}
                 options={{ preserveScroll: true, preserveState: true }}
-                transform={(data) => ({
-                    ...data,
-                    ...(splitRemovalConfirmed.current && removesSplit
-                        ? { remove_receipt_breakdown: '1' }
-                        : {}),
-                })}
+                transform={(data) => {
+                    const payload: Record<string, FormDataConvertible> = {
+                        ...data,
+                        ...(splitRemovalConfirmed.current && removesSplit
+                            ? { remove_receipt_breakdown: '1' }
+                            : {}),
+                    };
+
+                    if (!transaction && !categoryTouched) {
+                        delete payload.category_id;
+                    }
+
+                    return payload;
+                }}
                 onSuccess={onSaved}
                 onError={(errors) => {
                     splitRemovalConfirmed.current = false;
@@ -252,6 +261,19 @@ export function TransactionEditor({
                                     className="h-12"
                                 />
                                 <InputError message={errors.currency} />
+                                <InputError
+                                    message={errors.original_spending_id}
+                                />
+                                {errors.original_spending_id &&
+                                    transaction?.original_spending_id && (
+                                        <p className="text-xs text-muted-foreground">
+                                            This Refund links to original
+                                            Spending #
+                                            {transaction.original_spending_id}.
+                                            Keep their currencies the same to
+                                            save.
+                                        </p>
+                                    )}
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="transaction-direction">
@@ -403,7 +425,10 @@ export function TransactionEditor({
                                             id="transaction-category"
                                             name="category_id"
                                             value={categoryId}
-                                            onValueChange={setCategoryId}
+                                            onValueChange={(value) => {
+                                                setCategoryId(value);
+                                                setCategoryTouched(true);
+                                            }}
                                             emptyLabel="Uncategorized"
                                             options={
                                                 transaction?.category &&
