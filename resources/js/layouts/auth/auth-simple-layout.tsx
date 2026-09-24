@@ -25,17 +25,15 @@ export default function AuthSimpleLayout({
                                 <span className="font-semibold">
                                     {PRODUCT_NAME}
                                 </span>
-                                <span className="text-xs font-normal text-muted-foreground">
+                                <span className="type-meta">
                                     Personal spending workspace
                                 </span>
                             </div>
                         </Link>
 
                         <div className="space-y-2 text-center">
-                            <h1 className="text-2xl font-semibold tracking-tight">
-                                {title}
-                            </h1>
-                            <p className="text-center text-sm text-muted-foreground">
+                            <h1 className="type-page-title">{title}</h1>
+                            <p className="text-center type-subtitle">
                                 {description}
                             </p>
                         </div>

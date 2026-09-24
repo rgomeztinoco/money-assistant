@@ -139,16 +139,16 @@ function TransactionSummary({
     return (
         <div className="grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-                <p className="text-sm text-muted-foreground">
+                <p className="type-body text-muted-foreground">
                     Merchant or description
                 </p>
-                <p className="font-semibold break-words">
+                <p className="type-row break-words">
                     {transaction.description}
                 </p>
             </div>
             <div>
-                <p className="text-sm text-muted-foreground">Amount</p>
-                <p className="font-medium tabular-nums">
+                <p className="type-body text-muted-foreground">Amount</p>
+                <p className="type-row tabular-nums">
                     {formatMinorUnits(
                         transaction.amount_minor,
                         transaction.currency,
@@ -156,19 +156,19 @@ function TransactionSummary({
                 </p>
             </div>
             <div>
-                <p className="text-sm text-muted-foreground">Date</p>
+                <p className="type-body text-muted-foreground">Date</p>
                 <p className="font-medium">
                     <DateText value={transaction.occurred_on} />
                 </p>
             </div>
             <div>
-                <p className="text-sm text-muted-foreground">Kind</p>
+                <p className="type-body text-muted-foreground">Kind</p>
                 <p className="font-medium">
                     {movementKindLabel(transaction.kind)}
                 </p>
             </div>
             <div>
-                <p className="text-sm text-muted-foreground">Category</p>
+                <p className="type-body text-muted-foreground">Category</p>
                 <p className="font-medium">
                     {transaction.category?.name ?? 'Uncategorized'}
                 </p>
@@ -225,11 +225,11 @@ function TransactionCategoryDecision({
 
                     <div className="grid gap-4 rounded-lg bg-muted/40 p-4">
                         <div className="grid gap-1">
-                            <h3 className="flex items-center gap-2 font-semibold">
+                            <h3 className="flex items-center gap-2 type-section-title">
                                 <Sparkles className="size-4" /> Optional future
                                 behavior
                             </h3>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="type-subtitle">
                                 A Merchant Rule is separate from this owner
                                 assignment. It applies only to future
                                 Uncategorized Transactions that match the
@@ -238,7 +238,7 @@ function TransactionCategoryDecision({
                         </div>
                         {normalizedMerchant ? (
                             <>
-                                <p className="rounded-md border bg-background p-3 text-sm">
+                                <p className="rounded-md border bg-background p-3 type-body">
                                     Normalized merchant:{' '}
                                     <span className="font-medium break-words">
                                         {normalizedMerchant}
@@ -318,7 +318,7 @@ function TransactionCategoryDecision({
                                     name="create_merchant_rule"
                                     value="0"
                                 />
-                                <p className="text-sm text-muted-foreground">
+                                <p className="type-body text-muted-foreground">
                                     This description cannot form a normalized
                                     merchant key, so no Merchant Rule is
                                     offered.
@@ -329,11 +329,11 @@ function TransactionCategoryDecision({
 
                     <div className="grid gap-3 rounded-lg bg-muted/40 p-4">
                         <div className="grid gap-1">
-                            <h3 className="flex items-center gap-2 font-semibold">
+                            <h3 className="flex items-center gap-2 type-section-title">
                                 <Layers3 className="size-4" /> Optional current
                                 cleanup
                             </h3>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="type-subtitle">
                                 {matchingCount}{' '}
                                 {matchingCount === 1
                                     ? 'current Uncategorized Transaction matches'
@@ -508,12 +508,12 @@ function FieldDecision({
     return (
         <div className="grid gap-4 rounded-lg border p-4">
             <div className="grid gap-1">
-                <h3 className="font-semibold">{reason.field.label}</h3>
-                <p className="text-sm text-muted-foreground">
+                <h3 className="type-section-title">{reason.field.label}</h3>
+                <p className="type-subtitle">
                     Confirm the current value or correct it. Either decision
                     clears this field&apos;s review flag.
                 </p>
-                <p className="rounded-md bg-muted p-3 text-sm break-words">
+                <p className="rounded-md bg-muted p-3 type-body break-words">
                     Current value:{' '}
                     <span className="font-medium">{reason.field.value}</span>
                 </p>
@@ -534,7 +534,7 @@ function FieldDecision({
                             {advancesAfterResolution && (
                                 <NextReviewItemInput nextItem={nextItem} />
                             )}
-                            <p className="text-sm">
+                            <p className="type-body">
                                 Keep the current value as confirmed.
                             </p>
                             <InputError message={errors.resolution} />
@@ -600,7 +600,7 @@ function TransactionDecision({
         <div className="grid gap-5">
             <TransactionSummary transaction={item.transaction} />
             <div className="grid gap-2">
-                <h2 className="font-semibold">Why this needs attention</h2>
+                <h2 className="type-section-title">Why this needs attention</h2>
                 {item.reasons.map((reason) => (
                     <div
                         key={
@@ -610,7 +610,7 @@ function TransactionDecision({
                                   ? `${reason.type}:${reason.name}`
                                   : reason.type
                         }
-                        className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100"
+                        className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 type-body text-amber-950 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100"
                     >
                         <CircleAlert className="mt-0.5 size-4 shrink-0" />
                         <span>{reason.label}</span>
@@ -644,7 +644,7 @@ function TransactionDecision({
                                 key={reason.name}
                                 className="grid gap-3 rounded-lg border p-4"
                             >
-                                <p className="text-sm text-muted-foreground">
+                                <p className="type-body text-muted-foreground">
                                     {reason.name ===
                                     'cumulative_refunds_exceed_spending'
                                         ? 'Review the linked spending and correct the Refund relationship before continuing.'
@@ -691,17 +691,17 @@ function LineItemDecision({
                 <div className="flex items-start gap-2">
                     <ReceiptText className="mt-0.5 size-4 shrink-0" />
                     <div>
-                        <h2 className="font-semibold">
+                        <h2 className="type-section-title">
                             Uncategorized Line Item
                         </h2>
-                        <p className="text-sm">
+                        <p className="type-body">
                             Assign the Category for this exact part of the
                             Receipt Breakdown. The reconciled Transaction amount
                             does not change.
                         </p>
                     </div>
                 </div>
-                <dl className="grid gap-3 rounded-md border border-amber-300 bg-background/80 p-3 text-sm text-foreground sm:grid-cols-2 dark:border-amber-800">
+                <dl className="grid gap-3 rounded-md border border-amber-300 bg-background/80 p-3 type-body text-foreground sm:grid-cols-2 dark:border-amber-800">
                     <div>
                         <dt className="text-muted-foreground">Description</dt>
                         <dd className="font-medium break-words">
@@ -763,7 +763,7 @@ function QueueOverview({ queue }: { queue: ReviewQueue }) {
                 {queue.items.map((item, itemIndex) => (
                     <div
                         key={item.key}
-                        className={`grid gap-3 rounded-lg border p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${item.key === queue.current_item_key ? 'border-primary bg-primary/5' : ''}`}
+                        className={`grid gap-3 rounded-lg border p-4 type-row sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${item.key === queue.current_item_key ? 'border-primary bg-primary/5' : ''}`}
                     >
                         <div className="grid min-w-0 gap-1">
                             <div className="flex flex-wrap items-center gap-2">
@@ -772,16 +772,16 @@ function QueueOverview({ queue }: { queue: ReviewQueue }) {
                                         ? 'Transaction'
                                         : 'Line Item'}
                                 </Badge>
-                                <span className="text-sm text-muted-foreground">
+                                <span className="type-body text-muted-foreground">
                                     {itemIndex + 1} of {queue.item_count}
                                 </span>
                             </div>
-                            <p className="font-semibold break-words">
+                            <p className="type-row break-words">
                                 {item.type === 'transaction'
                                     ? item.transaction.description
                                     : item.line_item.description}
                             </p>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="type-meta">
                                 {item.reasons
                                     .map((reason) => reason.label)
                                     .join(' ')}
@@ -848,10 +848,8 @@ export default function ReviewQueueIndex({
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="grid gap-1">
-                        <h1 className="text-2xl font-semibold tracking-tight">
-                            Review Queue
-                        </h1>
-                        <p className="max-w-2xl text-sm text-muted-foreground">
+                        <h1 className="type-page-title">Review Queue</h1>
+                        <p className="max-w-2xl type-subtitle">
                             Resolve one current Transaction or Line Item at a
                             time. Confirmed spending remains included while it
                             needs review.
@@ -867,10 +865,10 @@ export default function ReviewQueueIndex({
                         <CardContent className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center">
                             <Tags className="size-9 text-muted-foreground" />
                             <div className="grid gap-1">
-                                <h2 className="font-semibold">
+                                <h2 className="type-section-title">
                                     Review Queue is clear
                                 </h2>
-                                <p className="text-sm text-muted-foreground">
+                                <p className="type-subtitle">
                                     No current Transaction or Line Item needs an
                                     owner decision.
                                 </p>

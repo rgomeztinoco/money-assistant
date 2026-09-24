@@ -172,11 +172,11 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
         >
             <header className="flex items-start justify-between gap-4">
                 <div>
-                    <h2 className="font-semibold">
+                    <h2 className="type-section-title">
                         {formatReportingPeriod(props.period)}
                     </h2>
                 </div>
-                <span className="text-right text-xs text-muted-foreground tabular-nums">
+                <span className="text-right type-meta tabular-nums">
                     {props.coverage.transaction_count}{' '}
                     {props.coverage.transaction_count === 1
                         ? 'transaction'
@@ -193,11 +193,11 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                         className="grid gap-4 px-1 py-4 sm:px-4"
                     >
                         <div className="grid gap-1">
-                            <span className="text-xs font-semibold tracking-wider text-muted-foreground">
+                            <span className="type-meta tracking-wider">
                                 {currency}
                             </span>
                             <dl>
-                                <dt className="text-sm text-muted-foreground">
+                                <dt className="type-body text-muted-foreground">
                                     Net spending
                                 </dt>
                                 <dd className="text-2xl font-semibold tracking-tight tabular-nums">
@@ -209,7 +209,7 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                                 </dd>
                             </dl>
                         </div>
-                        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 type-body">
                             <dt className="text-muted-foreground">Income</dt>
                             <dd className="text-right font-medium tabular-nums">
                                 {formatMinorUnits(
@@ -233,8 +233,8 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
             <section className="grid gap-3">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <h3 className="font-semibold">Categorization</h3>
-                        <p className="text-sm text-muted-foreground">
+                        <h3 className="type-section-title">Categorization</h3>
+                        <p className="type-subtitle">
                             Spending and refunds that still need a category.
                         </p>
                     </div>
@@ -259,7 +259,7 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                     const content = (
                         <>
                             <span className="grid min-w-0 gap-1">
-                                <span className="text-sm text-muted-foreground">
+                                <span className="type-body text-muted-foreground">
                                     {needsCategorization
                                         ? `${uncategorizedTransactionCount} ${uncategorizedTransactionCount === 1 ? 'transaction' : 'transactions'}`
                                         : categorizationTransactionCount > 0
@@ -283,7 +283,7 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                                     amounts={uncategorizedAmounts}
                                     currencyFilter={props.currency_filter}
                                 />
-                                <span className="text-xs text-muted-foreground tabular-nums">
+                                <span className="type-meta tabular-nums">
                                     {Number(uncategorizedPercentage.toFixed(2))}
                                     % of transactions
                                 </span>
@@ -319,7 +319,7 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
 
             <SourceCoverage
                 source={props.coverage.source}
-                className="grid shrink-0 gap-2 text-xs sm:grid-cols-2"
+                className="grid shrink-0 gap-2 type-meta sm:grid-cols-2"
                 detailed
                 gmailMissingLabel="Connect Gmail for ongoing activity"
             />
@@ -341,7 +341,7 @@ function RemovableFilter({
             asChild
             size="sm"
             variant="secondary"
-            className="h-7 rounded-full px-2.5 text-xs"
+            className="h-7 rounded-full px-2.5 type-meta"
         >
             <Link href={href} preserveScroll aria-label={removeLabel}>
                 {label}
@@ -356,14 +356,14 @@ function MerchantRanking({ props }: { props: BreakdownProps }) {
         <section className="grid content-start gap-3">
             <div className="flex items-start justify-between gap-3">
                 <div>
-                    <h2 className="font-semibold">Merchants</h2>
-                    <p className="text-sm text-muted-foreground">
+                    <h2 className="type-section-title">Merchants</h2>
+                    <p className="type-subtitle">
                         Ranked by transaction count. Select one to drill in.
                     </p>
                 </div>
             </div>
             {props.merchants.length === 0 ? (
-                <p className="border-y py-6 text-center text-sm text-muted-foreground">
+                <p className="border-y py-6 text-center type-body text-muted-foreground">
                     No merchants in this selection.
                 </p>
             ) : (
@@ -389,13 +389,13 @@ function MerchantRanking({ props }: { props: BreakdownProps }) {
                                     })}
                                     preserveScroll
                                     data-test={`breakdown-merchant-${merchant.name}`}
-                                    className={`flex items-center justify-between gap-3 px-1 py-3 hover:bg-muted/50 ${selected ? 'bg-primary/5' : ''}`}
+                                    className={`flex items-center justify-between gap-3 px-1 py-3 type-row hover:bg-muted/50 ${selected ? 'bg-primary/5' : ''}`}
                                 >
                                     <span className="min-w-0">
-                                        <span className="block truncate text-sm font-medium">
+                                        <span className="block truncate">
                                             {merchant.name}
                                         </span>
-                                        <span className="text-xs text-muted-foreground">
+                                        <span className="type-meta">
                                             {merchant.transaction_count}{' '}
                                             {merchant.transaction_count === 1
                                                 ? 'transaction'
@@ -468,7 +468,7 @@ function InlineCategory({
         transaction.split !== null
     ) {
         return (
-            <span className="text-sm text-muted-foreground">
+            <span className="type-row text-muted-foreground">
                 {transaction.split === null
                     ? transactionClassification(transaction)
                     : 'Category split'}
@@ -551,7 +551,7 @@ function TransactionTable({ props }: { props: BreakdownProps }) {
             <div className="grid min-h-80 place-items-center p-8 text-center">
                 <div className="grid gap-2">
                     <p className="font-medium">No transactions</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="type-body text-muted-foreground">
                         Change the period or clear a filter.
                     </p>
                 </div>
@@ -591,10 +591,10 @@ function TransactionTable({ props }: { props: BreakdownProps }) {
                                         <DirectionIcon className="size-4" />
                                     </span>
                                     <span className="grid min-w-0 gap-0.5">
-                                        <span className="font-medium wrap-break-word">
+                                        <span className="wrap-break-word">
                                             {transaction.description}
                                         </span>
-                                        <span className="text-xs text-muted-foreground tabular-nums">
+                                        <span className="type-meta tabular-nums">
                                             <DateText
                                                 value={transaction.occurred_on}
                                                 format="weekday"
@@ -616,7 +616,7 @@ function TransactionTable({ props }: { props: BreakdownProps }) {
                                 />
                             </TableCell>
                             <TableCell
-                                className={`order-2 p-0 text-right font-semibold tabular-nums sm:p-2 ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
+                                className={`order-2 p-0 text-right tabular-nums sm:p-2 ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
                             >
                                 {isMoneyIn ? '+' : '−'}
                                 {formatMinorUnits(
@@ -906,7 +906,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                             className="flex shrink-0 items-center justify-between border-b p-4"
                             data-test="breakdown-transactions-header"
                         >
-                            <h2 className="font-semibold">Transactions</h2>
+                            <h2 className="type-section-title">Transactions</h2>
                             <Badge
                                 variant="secondary"
                                 className="h-5 min-w-5 px-1.5"

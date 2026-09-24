@@ -60,13 +60,13 @@ export function CategoryBreakdown({
     return (
         <section className="grid min-w-0 content-start gap-3">
             <div>
-                <h2 className="font-semibold">Where the money went</h2>
-                <p className="text-sm text-muted-foreground">
+                <h2 className="type-section-title">Where the money went</h2>
+                <p className="type-subtitle">
                     Choose a category to filter the transaction list.
                 </p>
             </div>
             {groups.length === 0 ? (
-                <p className="border-y py-6 text-center text-sm text-muted-foreground">
+                <p className="border-y py-6 text-center type-body text-muted-foreground">
                     No category spending in this selection.
                 </p>
             ) : (
@@ -93,9 +93,9 @@ export function CategoryBreakdown({
                                     })}
                                     preserveScroll
                                     data-test={`breakdown-category-${key}`}
-                                    className={`col-span-2 grid grid-cols-subgrid gap-y-2 px-1 py-3 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${selected ? 'bg-primary/5' : ''}`}
+                                    className={`col-span-2 grid grid-cols-subgrid gap-y-2 px-1 py-3 type-row transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${selected ? 'bg-primary/5' : ''}`}
                                 >
-                                    <span className="col-span-2 text-sm font-medium">
+                                    <span className="col-span-2">
                                         {group.category.name}
                                     </span>
                                     <span className="col-span-2 grid grid-cols-subgrid gap-y-1.5">
@@ -122,7 +122,7 @@ export function CategoryBreakdown({
                                                             }}
                                                         />
                                                     </span>
-                                                    <span className="text-right text-sm font-semibold whitespace-nowrap tabular-nums">
+                                                    <span className="text-right whitespace-nowrap tabular-nums">
                                                         {formatMinorUnits(
                                                             group.amount_minor[
                                                                 currency
@@ -309,15 +309,15 @@ export function DailyChart({
     return (
         <section className="grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)] gap-3">
             <div>
-                <h2 className="font-semibold">Spending over time</h2>
-                <p className="text-sm text-muted-foreground">
+                <h2 className="type-section-title">Spending over time</h2>
+                <p className="type-subtitle">
                     {granularity === 'day'
                         ? 'Each bar is one day. Select one to filter transactions.'
                         : `Each bar is one ${granularity}.`}
                 </p>
             </div>
             {data.length === 0 ? (
-                <p className="border-y py-6 text-center text-sm text-muted-foreground">
+                <p className="border-y py-6 text-center type-body text-muted-foreground">
                     No daily spending in this selection.
                 </p>
             ) : (

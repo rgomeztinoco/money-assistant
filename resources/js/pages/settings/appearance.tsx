@@ -8,7 +8,7 @@ export default function Appearance() {
         <>
             <Head title="Appearance settings" />
 
-            <h1 className="sr-only">Appearance settings</h1>
+            <h1 className="sr-only type-page-title">Appearance settings</h1>
 
             <div className="space-y-6">
                 <Heading

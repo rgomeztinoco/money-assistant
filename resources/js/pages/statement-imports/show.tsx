@@ -208,7 +208,7 @@ function EditableStatementMovementRow({
             classification={movement.classification}
             dataTest={`confirmed-statement-movement-${movement.position}`}
             detail={
-                <div className="grid gap-1 text-xs text-muted-foreground">
+                <div className="grid gap-1 type-meta">
                     <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="secondary">
                             {movement.resolution === 'linked'
@@ -333,10 +333,10 @@ export default function StatementImportShow({
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="grid gap-1">
-                        <h1 className="text-2xl font-semibold tracking-tight">
+                        <h1 className="type-page-title">
                             {statement_import.instrument_label}
                         </h1>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="type-subtitle">
                             Audit how every statement movement was linked,
                             added, or explicitly excluded.
                         </p>
@@ -385,7 +385,7 @@ export default function StatementImportShow({
                             >
                                 <div className="grid grid-cols-3 divide-x rounded-lg bg-muted/50 py-4">
                                     <div className="grid gap-1 px-3">
-                                        <span className="text-xs text-muted-foreground">
+                                        <span className="type-meta">
                                             Movements
                                         </span>
                                         <span className="text-xl font-semibold tabular-nums">
@@ -393,7 +393,7 @@ export default function StatementImportShow({
                                         </span>
                                     </div>
                                     <div className="grid gap-1 px-3">
-                                        <span className="text-xs text-muted-foreground">
+                                        <span className="type-meta">
                                             Affect Net Spending
                                         </span>
                                         <span className="text-xl font-semibold tabular-nums">
@@ -401,7 +401,7 @@ export default function StatementImportShow({
                                         </span>
                                     </div>
                                     <div className="grid gap-1 px-3">
-                                        <span className="text-xs text-muted-foreground">
+                                        <span className="type-meta">
                                             Outside Net Spending
                                         </span>
                                         <span className="text-xl font-semibold tabular-nums">
@@ -410,7 +410,7 @@ export default function StatementImportShow({
                                     </div>
                                 </div>
 
-                                <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                                <div className="flex flex-wrap gap-x-5 gap-y-1 type-meta">
                                     <span className="tabular-nums">
                                         Last four{' '}
                                         {statement_import.instrument_last_four ??
@@ -437,11 +437,11 @@ export default function StatementImportShow({
                                 <div className="grid gap-1">
                                     <h2
                                         id="statement-summary-heading"
-                                        className="font-semibold"
+                                        className="type-section-title"
                                     >
                                         Statement summary
                                     </h2>
-                                    <p className="text-sm text-muted-foreground">
+                                    <p className="type-subtitle">
                                         Classification totals retained for this
                                         statement.
                                     </p>
@@ -450,12 +450,12 @@ export default function StatementImportShow({
                                     className="overflow-hidden rounded-lg border"
                                     data-test="statement-summary"
                                 >
-                                    <table className="w-full table-fixed text-sm">
+                                    <table className="w-full table-fixed type-row">
                                         <thead className="bg-muted/50">
                                             <tr>
                                                 <th
                                                     scope="col"
-                                                    className="w-2/5 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground"
+                                                    className="w-2/5 px-3 py-2.5 text-left font-medium"
                                                 >
                                                     Classification
                                                 </th>
@@ -464,7 +464,7 @@ export default function StatementImportShow({
                                                         <th
                                                             key={currency}
                                                             scope="col"
-                                                            className="px-3 py-2.5 text-right text-xs font-semibold"
+                                                            className="px-3 py-2.5 text-right font-medium"
                                                         >
                                                             {currency}
                                                         </th>
@@ -486,7 +486,7 @@ export default function StatementImportShow({
                                                     >
                                                         <th
                                                             scope="row"
-                                                            className="px-3 py-2.5 text-left text-xs font-normal text-muted-foreground sm:text-sm"
+                                                            className="px-3 py-2.5 text-left type-row"
                                                         >
                                                             {label}
                                                         </th>
@@ -496,7 +496,7 @@ export default function StatementImportShow({
                                                                     key={
                                                                         currency
                                                                     }
-                                                                    className="px-3 py-2.5 text-right text-xs font-medium tabular-nums sm:text-sm"
+                                                                    className="px-3 py-2.5 text-right tabular-nums"
                                                                 >
                                                                     {formatMinorUnits(
                                                                         statement_import
@@ -523,11 +523,11 @@ export default function StatementImportShow({
                                 <div className="grid gap-1">
                                     <h2
                                         id="source-reconciliation-heading"
-                                        className="font-semibold"
+                                        className="type-section-title"
                                     >
                                         Source reconciliation
                                     </h2>
-                                    <p className="text-sm text-muted-foreground">
+                                    <p className="type-subtitle">
                                         Printed totals retained from the
                                         confirmed statement.
                                     </p>
@@ -540,12 +540,12 @@ export default function StatementImportShow({
                                             key={key}
                                             className="flex items-center justify-between gap-3 border-b py-2.5"
                                         >
-                                            <dt className="text-xs text-muted-foreground capitalize">
+                                            <dt className="type-row capitalize">
                                                 {key
                                                     .replaceAll('_minor', '')
                                                     .replaceAll('_', ' ')}
                                             </dt>
-                                            <dd className="text-sm font-medium tabular-nums">
+                                            <dd className="type-row tabular-nums">
                                                 {formatMinorUnits(
                                                     value,
                                                     statementReconciliationCurrency(
@@ -561,10 +561,10 @@ export default function StatementImportShow({
                                     0 && (
                                     <div className="grid gap-3 border-t pt-4">
                                         <div className="grid gap-1">
-                                            <h3 className="text-sm font-medium">
+                                            <h3 className="type-section-title">
                                                 Excluded source values
                                             </h3>
-                                            <p className="text-xs text-muted-foreground">
+                                            <p className="type-subtitle">
                                                 These parser candidates were
                                                 confirmed as informational, so
                                                 they did not create
@@ -576,15 +576,15 @@ export default function StatementImportShow({
                                                 (value) => (
                                                     <div
                                                         key={`${value.position}-${value.description}`}
-                                                        className="flex items-start justify-between gap-3 rounded-lg border p-3 text-sm"
+                                                        className="flex items-start justify-between gap-3 rounded-lg border p-3 type-row"
                                                     >
                                                         <div className="grid gap-0.5">
-                                                            <span className="font-medium">
+                                                            <span>
                                                                 {
                                                                     value.description
                                                                 }
                                                             </span>
-                                                            <span className="text-xs text-muted-foreground tabular-nums">
+                                                            <span className="type-meta tabular-nums">
                                                                 <DateText
                                                                     value={
                                                                         value.occurred_on
@@ -594,7 +594,7 @@ export default function StatementImportShow({
                                                             {Object.keys(
                                                                 value.source_metadata,
                                                             ).length > 0 && (
-                                                                <span className="text-xs text-muted-foreground">
+                                                                <span className="type-meta">
                                                                     Source
                                                                     audit:{' '}
                                                                     {Object.entries(
@@ -613,7 +613,7 @@ export default function StatementImportShow({
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <span className="font-medium tabular-nums">
+                                                        <span className="tabular-nums">
                                                             {formatMinorUnits(
                                                                 value.amount_minor,
                                                                 value.currency,

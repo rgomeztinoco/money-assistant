@@ -75,7 +75,7 @@ function FindingChange({ finding }: { finding: Finding }) {
     return (
         <span
             className={cn(
-                'inline-flex items-center justify-end gap-1 font-semibold whitespace-nowrap tabular-nums',
+                'inline-flex items-center justify-end gap-1 whitespace-nowrap tabular-nums',
                 decreased ? 'text-chart-2' : 'text-chart-1',
             )}
             data-direction={decreased ? 'down' : 'up'}
@@ -175,7 +175,7 @@ export function ChangeLedger({
                 data-test="trends-ledger-header"
             >
                 <div className="flex items-center gap-2">
-                    <h2 className="font-semibold">Changes by impact</h2>
+                    <h2 className="type-section-title">Changes by impact</h2>
                     <Badge variant="outline">{currencyFilter ?? 'All'}</Badge>
                     <Badge variant="secondary">{visibleFindings.length}</Badge>
                 </div>
@@ -216,14 +216,14 @@ export function ChangeLedger({
                                 ? 'No activity'
                                 : `No ${currencyFilter} activity`}
                         </p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="type-body text-muted-foreground">
                             Nothing was recorded in this period.
                         </p>
                     </div>
                 ) : visibleFindings.length === 0 ? (
                     <div className="grid justify-items-center gap-2 p-8 text-center">
                         <p className="font-medium">No material findings</p>
-                        <p className="max-w-md text-sm text-muted-foreground">
+                        <p className="max-w-md type-body text-muted-foreground">
                             No material{' '}
                             {scope === 'all' ? 'Category or merchant' : scope}{' '}
                             change appears in this comparison.
@@ -233,7 +233,7 @@ export function ChangeLedger({
                     <>
                         <div
                             className={cn(
-                                'sticky top-0 z-10 hidden items-center gap-2 border-b bg-background px-4 py-2 text-sm font-medium text-foreground md:grid',
+                                'sticky top-0 z-10 hidden items-center gap-2 border-b bg-background px-4 py-2 type-row font-medium md:grid',
                                 ledgerColumns,
                             )}
                             data-test="trends-ledger-column-header"
@@ -256,15 +256,15 @@ export function ChangeLedger({
                                     <li
                                         key={findingIdentity(finding)}
                                         className={cn(
-                                            'grid items-center gap-x-2 gap-y-3 border-b px-4 py-3 last:border-b-0',
+                                            'grid items-center gap-x-2 gap-y-3 border-b px-4 py-3 type-row last:border-b-0',
                                             ledgerColumns,
                                         )}
                                     >
                                         <span className="col-span-4 row-start-1 min-w-0 md:col-span-1 md:row-auto">
-                                            <span className="block truncate font-medium">
+                                            <span className="block truncate">
                                                 {findingName(finding)}
                                             </span>
-                                            <span className="block text-xs text-muted-foreground">
+                                            <span className="block type-meta">
                                                 {finding.kind === 'category'
                                                     ? 'Category'
                                                     : 'Merchant'}
@@ -273,7 +273,7 @@ export function ChangeLedger({
                                             </span>
                                             {finding.unusual_transaction !==
                                                 null && (
-                                                <span className="block truncate text-xs text-muted-foreground">
+                                                <span className="block truncate type-meta">
                                                     Unusual:{' '}
                                                     {
                                                         finding
@@ -291,10 +291,10 @@ export function ChangeLedger({
                                             )}
                                         </span>
                                         <span className="col-start-1 row-start-2 min-w-0 md:col-start-2 md:row-auto md:text-right">
-                                            <span className="block text-[0.6875rem] text-muted-foreground md:hidden">
+                                            <span className="block type-meta md:hidden">
                                                 This period
                                             </span>
-                                            <span className="block truncate text-sm font-medium tabular-nums">
+                                            <span className="block truncate tabular-nums">
                                                 {formatMinorUnits(
                                                     finding.current_total_minor,
                                                     finding.currency,
@@ -302,10 +302,10 @@ export function ChangeLedger({
                                             </span>
                                         </span>
                                         <span className="col-start-2 row-start-2 min-w-0 text-right md:col-start-3 md:row-auto">
-                                            <span className="block text-[0.6875rem] text-muted-foreground md:hidden">
+                                            <span className="block type-meta md:hidden">
                                                 Typical
                                             </span>
-                                            <span className="block truncate text-sm text-muted-foreground tabular-nums">
+                                            <span className="block truncate text-muted-foreground tabular-nums">
                                                 {formatMinorUnits(
                                                     finding.typical_total_minor,
                                                     finding.currency,
@@ -313,16 +313,16 @@ export function ChangeLedger({
                                             </span>
                                         </span>
                                         <span className="col-start-3 row-start-2 min-w-0 text-right md:col-start-4 md:row-auto">
-                                            <span className="block text-[0.6875rem] text-muted-foreground md:hidden">
+                                            <span className="block type-meta md:hidden">
                                                 Change
                                             </span>
                                             <FindingChange finding={finding} />
                                         </span>
                                         <span
-                                            className="col-span-2 col-start-1 row-start-3 text-sm tabular-nums md:col-span-1 md:col-start-5 md:row-auto md:text-right"
+                                            className="col-span-2 col-start-1 row-start-3 tabular-nums md:col-span-1 md:col-start-5 md:row-auto md:text-right"
                                             data-test={`trend-frequency-${testId}`}
                                         >
-                                            <span className="text-[0.6875rem] text-muted-foreground md:sr-only">
+                                            <span className="type-meta md:sr-only">
                                                 Frequency{' '}
                                             </span>
                                             {finding.current_transaction_count}
@@ -363,7 +363,7 @@ export function ChangeLedger({
             </div>
 
             <p
-                className="shrink-0 border-t p-4 text-xs text-muted-foreground"
+                className="shrink-0 border-t p-4 type-meta"
                 data-test="trends-ledger-note"
             >
                 Category and merchant views overlap. Their changes should not be

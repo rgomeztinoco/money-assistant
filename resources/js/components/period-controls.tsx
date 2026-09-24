@@ -139,7 +139,7 @@ export function PeriodControls({
                     className="w-28 min-w-0 text-center sm:w-36 lg:w-52"
                     title={periodLabel}
                 >
-                    <p className="truncate text-sm font-semibold tabular-nums">
+                    <p className="truncate type-body font-semibold tabular-nums">
                         {periodLabel}
                     </p>
                 </div>

@@ -197,7 +197,7 @@ function RuleDialog({
                                     <FieldLabel>
                                         Normalized merchant key
                                     </FieldLabel>
-                                    <p className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-sm break-words">
+                                    <p className="rounded-md border bg-muted/40 px-3 py-2 font-mono type-body break-words">
                                         {merchantKey || 'Enter a merchant'}
                                     </p>
                                 </Field>
@@ -457,11 +457,9 @@ export default function MerchantRulesIndex({
                     <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-2">
                             <Store className="size-5 text-muted-foreground" />
-                            <h1 className="text-2xl font-semibold tracking-tight">
-                                Merchant Rules
-                            </h1>
+                            <h1 className="type-page-title">Merchant Rules</h1>
                         </div>
-                        <p className="max-w-3xl text-sm text-muted-foreground">
+                        <p className="max-w-3xl type-subtitle">
                             Categorize future Transactions by an exact
                             normalized merchant match. Existing Transactions
                             never change.
@@ -778,7 +776,7 @@ export default function MerchantRulesIndex({
                                     <TableBody>
                                         {rules.map((rule) => (
                                             <TableRow key={rule.id}>
-                                                <TableCell className="font-medium">
+                                                <TableCell>
                                                     {rule.merchant}
                                                 </TableCell>
                                                 <TableCell>

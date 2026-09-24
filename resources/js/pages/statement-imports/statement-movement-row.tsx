@@ -60,10 +60,8 @@ export default function StatementMovementRow({
             </TableCell>
             <TableCell className="max-w-80 min-w-64 whitespace-normal">
                 <div className="grid min-w-0 gap-1">
-                    <span className="font-medium break-words">
-                        {description}
-                    </span>
-                    <span className="text-xs text-muted-foreground tabular-nums">
+                    <span className="break-words">{description}</span>
+                    <span className="type-meta tabular-nums">
                         <DateText value={occurredOn} /> · Movement {position}
                     </span>
                     {detail}
@@ -71,7 +69,7 @@ export default function StatementMovementRow({
             </TableCell>
 
             <TableCell
-                className={`text-right font-semibold tabular-nums ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
+                className={`text-right tabular-nums ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
             >
                 {isMoneyIn ? '+' : '−'}
                 {formatMinorUnits(amountMinor || '0', currency)}

@@ -97,14 +97,14 @@ export function MonthlyContextChart({
             data-test="trends-monthly-context"
         >
             <div className="shrink-0">
-                <h2 className="font-semibold">Monthly context</h2>
-                <p className="text-sm text-muted-foreground">
+                <h2 className="type-section-title">Monthly context</h2>
+                <p className="type-subtitle">
                     Previous six months and the current month.
                 </p>
             </div>
 
             {contextMonths.length === 0 ? (
-                <p className="border-y py-6 text-center text-sm text-muted-foreground">
+                <p className="border-y py-6 text-center type-body text-muted-foreground">
                     No recorded activity.
                 </p>
             ) : (
@@ -203,7 +203,7 @@ export function MonthlyContextChart({
                         </BarChart>
                     </ChartContainer>
 
-                    <div className="grid shrink-0 gap-1.5 text-xs text-muted-foreground">
+                    <div className="grid shrink-0 gap-1.5 type-meta">
                         {partialMonth && contextMonth !== undefined && (
                             <p className="flex items-center gap-2">
                                 <span className="size-2.5 rounded-sm border border-dashed border-chart-2 bg-chart-2/50" />

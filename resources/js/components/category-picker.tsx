@@ -366,7 +366,7 @@ export function CategoryPicker({
                             <p className="font-medium">
                                 Create a top-level Category
                             </p>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="type-body text-muted-foreground">
                                 It will be selected as the parent.
                             </p>
                         </div>

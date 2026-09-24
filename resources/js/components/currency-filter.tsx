@@ -25,7 +25,7 @@ export function CurrencyFilter({
             className={cn('flex shrink-0 items-center gap-1', className)}
             aria-label="Currency"
         >
-            <span className="text-sm font-medium">Currency</span>
+            <span className="type-body font-medium">Currency</span>
             {options.map((option) => (
                 <Button
                     key={option.label}
