@@ -773,6 +773,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                             <ManualTransactionDialog
                                 currency={props.currency_filter ?? 'PEN'}
                                 today={props.today}
+                                categoryOptions={props.category_options}
                             />
                         </div>
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -793,7 +794,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                     }
                 }}
             >
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+                <DialogContent className="inset-0 h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none p-4 sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-6">
                     <DialogHeader>
                         <DialogTitle>
                             {selectedTransaction?.description ??

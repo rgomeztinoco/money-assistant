@@ -2,6 +2,7 @@
 
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
+use App\Models\LineItem;
 use App\Models\MerchantRule;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
@@ -803,9 +804,9 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->assertSee('Category split saved.')
         ->press('Close')
         ->press('Add Transaction')
-        ->fill('#manual-amount', '7.50')
-        ->fill('#manual-description', 'Manual bakery')
-        ->press('Record Transaction')
+        ->fill('#transaction-amount', '7.50')
+        ->fill('#transaction-description', 'Manual bakery')
+        ->press('Save Transaction')
         ->assertSee('Transaction recorded.')
         ->assertSee('Manual bakery')
         ->assertNoJavaScriptErrors()
@@ -819,4 +820,284 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->and(MerchantRule::query()->whereBelongsTo($owner, 'owner')->exists())->toBeTrue()
         ->and(ReceiptBreakdown::query()->whereBelongsTo($current)->exists())->toBeTrue()
         ->and(Transaction::query()->where('description', 'Manual bakery')->exists())->toBeTrue();
+});
+
+test('the owner edits a Transaction in the Breakdown dialog', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'amount_minor' => 2_500,
+        'description' => 'Imported purchase',
+        'instrument_label' => 'Visa',
+        'instrument_last_four' => '4242',
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->press('Edit Transaction')
+        ->assertPresent('#transaction-amount')
+        ->assertSee('Transaction Kind')
+        ->fill('#transaction-description', 'Corrected purchase')
+        ->press('Save Transaction')
+        ->assertSee('Transaction updated.')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->description)->toBe('Corrected purchase')
+        ->and($transaction->instrument_label)->toBe('Visa')
+        ->and($transaction->instrument_last_four)->toBe('4242');
+});
+
+test('the owner records a categorized Spending with the shared editor', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->press('Add Transaction')
+        ->assertValue('#transaction-date', $today)
+        ->assertValue('#transaction-kind', 'spending')
+        ->assertValue('#transaction-direction', 'debit')
+        ->fill('#transaction-amount', '12.50')
+        ->fill('#transaction-description', 'Cash groceries')
+        ->click('@transaction-category-trigger')
+        ->click('@transaction-category-option-'.$category->id)
+        ->click('Optional payment source')
+        ->fill('#transaction-instrument-label', 'Cash wallet')
+        ->fill('#transaction-last-four', '1234')
+        ->press('Save Transaction')
+        ->assertSee('Transaction recorded.')
+        ->assertNoJavaScriptErrors();
+
+    $transaction = Transaction::query()->sole();
+
+    expect($transaction->category_id)->toBe($category->id)
+        ->and($transaction->instrument_label)->toBe('Cash wallet')
+        ->and($transaction->instrument_last_four)->toBe('1234');
+});
+
+test('new Transaction Kinds set editable direction defaults and reveal their classification', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->press('Add Transaction')
+        ->select('#transaction-kind', 'income')
+        ->assertValue('#transaction-direction', 'credit')
+        ->assertPresent('#transaction-income-source')
+        ->assertNotPresent('#transaction-category-trigger')
+        ->select('#transaction-kind', 'transfer')
+        ->assertValue('#transaction-direction', 'debit')
+        ->assertPresent('#transaction-transfer-purpose')
+        ->select('#transaction-kind', 'refund')
+        ->assertValue('#transaction-direction', 'credit')
+        ->select('#transaction-direction', 'debit')
+        ->assertValue('#transaction-direction', 'debit')
+        ->press('Cancel')
+        ->assertNoJavaScriptErrors();
+
+    expect(Transaction::query()->doesntExist())->toBeTrue();
+});
+
+test('changing Spending to an internal Transfer explains and confirms Category removal', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Imported movement',
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->press('Edit Transaction')
+        ->select('#transaction-kind', 'transfer')
+        ->assertValue('#transaction-direction', 'debit')
+        ->assertSee('Other transfer includes movements between your accounts.')
+        ->press('Save Transaction')
+        ->assertSee('Category: Groceries')
+        ->press('Continue editing');
+
+    expect($transaction->refresh()->kind->value)->toBe('spending');
+
+    $page->press('Save Transaction')->assertSee('Remove and save');
+    $page->script('document.querySelector("[data-slot=alert-dialog-action]").click()');
+    $page->assertSee('Transaction updated.')
+        ->assertQueryStringHas('currency', 'PEN')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->kind->value)->toBe('transfer')
+        ->and($transaction->direction->value)->toBe('debit')
+        ->and($transaction->transfer_purpose->value)->toBe('internal')
+        ->and($transaction->category_id)->toBeNull();
+});
+
+test('a Refund can be corrected to Income or an internal Transfer in one edit', function (string $kind) {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Shopping']);
+    $today = now()->toDateString();
+    $spending = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+    ]);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Imported reimbursement',
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+        'original_spending_id' => $spending->id,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
+        ->press('Edit Transaction')
+        ->select('#transaction-kind', $kind)
+        ->assertValue('#transaction-direction', 'credit')
+        ->assertSee($kind === 'income' ? 'Income Source' : 'Transfer Purpose')
+        ->press('Save Transaction')
+        ->assertSee('Category: Shopping')
+        ->assertSee('Original Spending link: Transaction #'.$spending->id);
+
+    $page->script('document.querySelector("[data-slot=alert-dialog-action]").click()');
+    $page->assertSee('Transaction updated.')->assertNoJavaScriptErrors();
+
+    expect($refund->refresh()->kind->value)->toBe($kind)
+        ->and($refund->direction->value)->toBe('credit')
+        ->and($refund->category_id)->toBeNull()
+        ->and($refund->original_spending_id)->toBeNull();
+})->with(['income', 'transfer']);
+
+test('an amount edit keeps the split until its removal is confirmed', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'amount_minor' => 2_500,
+        'description' => 'Split purchase',
+    ]);
+    $split = ReceiptBreakdown::factory()->for($transaction)->create();
+    LineItem::factory()->for($split)->create([
+        'line_total_minor' => 2_500,
+        'category_id' => $category->id,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->press('Edit Transaction')
+        ->assertSee('Category split')
+        ->assertSee('Groceries')
+        ->assertNotPresent('#transaction-category-trigger')
+        ->fill('#transaction-amount', '30.00')
+        ->press('Save Transaction')
+        ->assertSee('Category split and its allocations')
+        ->press('Continue editing');
+
+    expect($transaction->refresh()->amount_minor)->toBe(2_500)
+        ->and($transaction->receiptBreakdown()->exists())->toBeTrue();
+
+    $page->press('Save Transaction');
+    $page->script('document.querySelector("[data-slot=alert-dialog-action]").click()');
+    $page->assertSee('Transaction updated.')->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->amount_minor)->toBe(3_000)
+        ->and($transaction->receiptBreakdown()->exists())->toBeFalse();
+});
+
+test('an unchanged split amount saves without confirmation', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'amount_minor' => 2_500,
+        'description' => 'Split purchase',
+    ]);
+    $split = ReceiptBreakdown::factory()->for($transaction)->create();
+    LineItem::factory()->for($split)->create(['line_total_minor' => 2_500]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->press('Edit Transaction')
+        ->fill('#transaction-amount', '25')
+        ->fill('#transaction-description', 'Updated split purchase')
+        ->press('Save Transaction')
+        ->assertSee('Transaction updated.')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->receiptBreakdown()->exists())->toBeTrue()
+        ->and($transaction->description)->toBe('Updated split purchase');
+});
+
+test('validation keeps the draft and opens the optional section with an error', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Imported purchase',
+        'instrument_label' => 'Visa',
+        'instrument_last_four' => '4242',
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->press('Edit Transaction')
+        ->fill('#transaction-description', 'Draft correction')
+        ->click('Optional payment source')
+        ->fill('#transaction-last-four', 'abcd')
+        ->click('Optional payment source')
+        ->press('Save Transaction')
+        ->assertSee('The instrument last four field format is invalid.')
+        ->assertValue('#transaction-description', 'Draft correction')
+        ->assertScript('document.querySelector("#transaction-last-four").closest("details").open')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->description)->toBe('Imported purchase')
+        ->and($transaction->instrument_last_four)->toBe('4242');
+});
+
+test('the phone editor fills the viewport and cancellation leaves the record unchanged', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Cash purchase',
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->resize(390, 844)
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->press('Edit Transaction')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const bounds = dialog?.getBoundingClientRect();
+
+                return bounds !== undefined
+                    && bounds.left <= 1
+                    && bounds.top <= 1
+                    && bounds.width >= innerWidth - 2
+                    && bounds.height >= innerHeight - 2;
+            })()
+            JS)
+        ->fill('#transaction-description', 'Unsaved draft')
+        ->press('Cancel')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->description)->toBe('Cash purchase');
 });

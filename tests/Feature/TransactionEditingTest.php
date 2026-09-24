@@ -84,6 +84,28 @@ test('the owner edits a Transaction amount in currency units', function () {
     expect($transaction->refresh()->amount_minor)->toBe(2_501);
 });
 
+test('a simple edit retains a previously assigned archived Category', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->archived()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+
+    $this->actingAs($owner)->put(route('transactions.update', $transaction), [
+        'occurred_on' => $transaction->occurred_on->toDateString(),
+        'amount_minor' => $transaction->amount_minor,
+        'currency' => 'PEN',
+        'kind' => 'spending',
+        'direction' => 'debit',
+        'description' => 'Updated description',
+        'category_id' => $category->id,
+    ])->assertSessionHasNoErrors();
+
+    expect($transaction->refresh()->category_id)->toBe($category->id)
+        ->and($transaction->description)->toBe('Updated description');
+});
+
 test('Transactions loads at most 50 rows and fetches the selected inspector separately', function () {
     $owner = User::factory()->create();
     $transactions = Transaction::factory()
@@ -214,6 +236,28 @@ test('an amount edit cannot silently invalidate an existing Receipt Breakdown', 
 
     expect($transaction->refresh()->amount_minor)->toBe(1_200)
         ->and($transaction->receiptBreakdown()->exists())->toBeFalse();
+});
+
+test('a compatible Spending to Refund edit preserves its Category split', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'amount_minor' => 2_500,
+    ]);
+    $split = ReceiptBreakdown::factory()->for($transaction)->create();
+    LineItem::factory()->for($split)->create(['line_total_minor' => 2_500]);
+
+    $this->actingAs($owner)->put(route('transactions.update', $transaction), [
+        'occurred_on' => $transaction->occurred_on->toDateString(),
+        'amount_minor' => 2_500,
+        'currency' => 'PEN',
+        'kind' => 'refund',
+        'direction' => 'debit',
+        'description' => $transaction->description,
+    ])->assertSessionHasNoErrors();
+
+    expect($transaction->refresh()->kind->value)->toBe('refund')
+        ->and($transaction->direction->value)->toBe('debit')
+        ->and($transaction->receiptBreakdown()->first()?->id)->toBe($split->id);
 });
 
 test('a Transaction cannot be edited without the authenticated owner', function () {

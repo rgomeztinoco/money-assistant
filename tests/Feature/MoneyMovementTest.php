@@ -109,6 +109,61 @@ test('period summaries keep movement kinds and currencies separate', function ()
             ->missing('primary.summary.net_external_cash_flow_minor'));
 });
 
+test('corrected import kinds immediately change per-currency reporting', function (string $correctedKind, string $expectedIncome) {
+    $this->travelTo('2026-08-21 12:00:00');
+    $owner = User::factory()->create();
+    $spending = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-21',
+        'amount_minor' => 10_000,
+    ]);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => '2026-08-21',
+        'amount_minor' => 2_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2026-08-21',
+        'amount_minor' => 3_000,
+    ]);
+    $this->actingAs($owner);
+
+    $this->put(route('transactions.update', $spending), [
+        'occurred_on' => '2026-08-21',
+        'amount' => '100.00',
+        'currency' => 'PEN',
+        'kind' => 'transfer',
+        'direction' => 'debit',
+        'transfer_purpose' => 'internal',
+        'description' => $spending->description,
+    ])->assertSessionHasNoErrors();
+
+    $this->put(route('transactions.update', $refund), [
+        'occurred_on' => '2026-08-21',
+        'amount' => '20.00',
+        'currency' => 'PEN',
+        'kind' => $correctedKind,
+        'direction' => 'credit',
+        'income_source' => $correctedKind === 'income' ? 'other' : null,
+        'transfer_purpose' => $correctedKind === 'transfer' ? 'internal' : null,
+        'description' => $refund->description,
+    ])->assertSessionHasNoErrors();
+
+    $this->get(route('breakdown.index', [
+        'currency' => 'PEN',
+        'preset' => 'custom',
+        'date_from' => '2026-08-01',
+        'date_to' => '2026-08-21',
+    ]))->assertInertia(fn (Assert $page) => $page
+        ->where('summary.PEN.net_spending_minor', '0')
+        ->where('summary.PEN.income_minor', $expectedIncome)
+        ->where('summary.USD.net_spending_minor', '3000'));
+
+    expect($spending->refresh()->direction->value)->toBe('debit')
+        ->and($refund->refresh()->direction->value)->toBe('credit');
+})->with([
+    ['income', '2000'],
+    ['transfer', '0'],
+]);
+
 test('the owner edits a Transaction kind and its matching details', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create([

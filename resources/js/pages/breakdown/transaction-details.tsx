@@ -1,33 +1,22 @@
 import { Form, Link } from '@inertiajs/react';
 import type { InertiaLinkProps } from '@inertiajs/react';
-import { ChevronUp, CircleDollarSign, FileText, Save, Tag } from 'lucide-react';
+import { ChevronUp, FileText, Save, Tag } from 'lucide-react';
 import { useState } from 'react';
 import { update as updateClassification } from '@/actions/App/Http/Controllers/BreakdownTransactionClassificationController';
-import { update as updateTransaction } from '@/actions/App/Http/Controllers/TransactionController';
 import { LocalTimestamp } from '@/components/date-time';
 import InputError from '@/components/input-error';
+import { TransactionEditor } from '@/components/transaction-editor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
-import {
-    formatMinorUnits,
-    minorUnitsToCurrencyUnits,
-} from '@/lib/format-minor-units';
+import { formatMinorUnits } from '@/lib/format-minor-units';
 import {
     incomeSourceLabel,
-    incomeSourceOptions,
     movementDescription,
-    movementDirectionOptions,
-    movementKindFromValue,
-    movementKindOptions,
     movementSupportsCategory,
     transferPurposeLabel,
-    transferPurposeOptions,
 } from '@/lib/money-movement';
-import type { MovementDirection, TransactionKind } from '@/types';
 import { CategorySplit } from './category-split';
 import {
     CategoryClassificationSelect,
@@ -157,248 +146,6 @@ function InlineClassification({
     );
 }
 
-function TransactionEditForm({
-    transaction,
-}: {
-    transaction: BreakdownTransaction;
-}) {
-    const [kind, setKind] = useState<TransactionKind>(transaction.kind);
-    const [direction, setDirection] = useState<MovementDirection>(
-        transaction.direction,
-    );
-
-    function changeDirection(value: string): void {
-        if (value === 'debit' || value === 'credit') {
-            setDirection(value);
-        }
-    }
-
-    return (
-        <Form
-            {...updateTransaction.form(transaction.id)}
-            options={{ preserveScroll: true, preserveState: true }}
-            className="grid gap-4 border-t p-4"
-        >
-            {({ errors, processing }) => (
-                <>
-                    <input
-                        type="hidden"
-                        name="original_spending_id"
-                        value={transaction.original_spending_id ?? ''}
-                    />
-                    <input
-                        type="hidden"
-                        name="category_id"
-                        value={transaction.category?.id ?? ''}
-                    />
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`edit-${transaction.id}-occurred-on`}
-                            >
-                                Occurrence date
-                            </Label>
-                            <Input
-                                id={`edit-${transaction.id}-occurred-on`}
-                                name="occurred_on"
-                                type="date"
-                                defaultValue={transaction.occurred_on}
-                            />
-                            <InputError message={errors.occurred_on} />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor={`edit-${transaction.id}-amount`}>
-                                Amount
-                            </Label>
-                            <Input
-                                id={`edit-${transaction.id}-amount`}
-                                name="amount"
-                                inputMode="decimal"
-                                defaultValue={minorUnitsToCurrencyUnits(
-                                    transaction.amount_minor,
-                                )}
-                            />
-                            <InputError
-                                message={errors.amount ?? errors.amount_minor}
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor={`edit-${transaction.id}-currency`}>
-                                Currency
-                            </Label>
-                            <NativeSelect
-                                id={`edit-${transaction.id}-currency`}
-                                name="currency"
-                                defaultValue={transaction.currency}
-                                options={[
-                                    { value: 'PEN', label: 'PEN' },
-                                    { value: 'USD', label: 'USD' },
-                                ]}
-                            />
-                            <InputError message={errors.currency} />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor={`edit-${transaction.id}-kind`}>
-                                Transaction Kind
-                            </Label>
-                            <NativeSelect
-                                id={`edit-${transaction.id}-kind`}
-                                name="kind"
-                                value={kind}
-                                onChange={(event) =>
-                                    setKind(
-                                        movementKindFromValue(
-                                            event.target.value,
-                                        ),
-                                    )
-                                }
-                                options={movementKindOptions}
-                            />
-                            <InputError message={errors.kind} />
-                        </div>
-                        <div className="grid gap-2 sm:col-span-2">
-                            <Label htmlFor={`edit-${transaction.id}-direction`}>
-                                Movement Direction
-                            </Label>
-                            <NativeSelect
-                                id={`edit-${transaction.id}-direction`}
-                                name="direction"
-                                value={direction}
-                                onChange={(event) =>
-                                    changeDirection(event.target.value)
-                                }
-                                options={movementDirectionOptions}
-                            />
-                            <InputError message={errors.direction} />
-                        </div>
-                    </div>
-
-                    {kind === 'income' && (
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`edit-${transaction.id}-income-source`}
-                            >
-                                Income Source
-                            </Label>
-                            <NativeSelect
-                                id={`edit-${transaction.id}-income-source`}
-                                name="income_source"
-                                defaultValue={
-                                    transaction.kind === 'income'
-                                        ? transaction.income_source
-                                        : 'other'
-                                }
-                                options={incomeSourceOptions}
-                            />
-                            <InputError message={errors.income_source} />
-                        </div>
-                    )}
-
-                    {kind === 'transfer' && (
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`edit-${transaction.id}-transfer-purpose`}
-                            >
-                                Transfer Purpose
-                            </Label>
-                            <NativeSelect
-                                id={`edit-${transaction.id}-transfer-purpose`}
-                                name="transfer_purpose"
-                                defaultValue={
-                                    transaction.kind === 'transfer'
-                                        ? transaction.transfer_purpose
-                                        : 'internal'
-                                }
-                                options={transferPurposeOptions}
-                            />
-                            <InputError message={errors.transfer_purpose} />
-                        </div>
-                    )}
-
-                    <div className="grid gap-2">
-                        <Label htmlFor={`edit-${transaction.id}-description`}>
-                            Merchant or description
-                        </Label>
-                        <Input
-                            id={`edit-${transaction.id}-description`}
-                            name="description"
-                            defaultValue={transaction.description}
-                            maxLength={255}
-                        />
-                        <InputError message={errors.description} />
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`edit-${transaction.id}-instrument`}
-                            >
-                                Account or card
-                            </Label>
-                            <Input
-                                id={`edit-${transaction.id}-instrument`}
-                                name="instrument_label"
-                                defaultValue={
-                                    transaction.instrument_label ?? ''
-                                }
-                                maxLength={100}
-                            />
-                            <InputError message={errors.instrument_label} />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor={`edit-${transaction.id}-last-four`}>
-                                Last four digits
-                            </Label>
-                            <Input
-                                id={`edit-${transaction.id}-last-four`}
-                                name="instrument_last_four"
-                                defaultValue={
-                                    transaction.instrument_last_four ?? ''
-                                }
-                                inputMode="numeric"
-                                pattern="[0-9]{4}"
-                                maxLength={4}
-                            />
-                            <InputError message={errors.instrument_last_four} />
-                        </div>
-                    </div>
-
-                    {movementSupportsCategory(kind) &&
-                        transaction.split !== null && (
-                            <div className="flex items-start gap-3 rounded-lg border p-3">
-                                <input
-                                    id={`edit-${transaction.id}-remove-split`}
-                                    name="remove_receipt_breakdown"
-                                    type="checkbox"
-                                    value="1"
-                                    className="mt-0.5 size-4 rounded border-input"
-                                />
-                                <div className="grid gap-1">
-                                    <Label
-                                        htmlFor={`edit-${transaction.id}-remove-split`}
-                                    >
-                                        Remove Category split if the amount no
-                                        longer reconciles
-                                    </Label>
-                                    <InputError
-                                        message={
-                                            errors.remove_receipt_breakdown
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                    <Button type="submit" disabled={processing}>
-                        {processing && <Spinner />}
-                        Save Transaction
-                    </Button>
-                </>
-            )}
-        </Form>
-    );
-}
-
 function movementSummary(transaction: BreakdownTransaction): string {
     if (transaction.kind === 'income') {
         return incomeSourceLabel(transaction.income_source);
@@ -422,6 +169,28 @@ export function TransactionDetails({
     incomeSourceOptions: BreakdownProps['income_source_options'];
     closeHref: NonNullable<InertiaLinkProps['href']>;
 }) {
+    const [editing, setEditing] = useState(false);
+
+    if (editing) {
+        return (
+            <TransactionEditor
+                key={transaction.id}
+                transaction={transaction}
+                currency={transaction.currency}
+                today={transaction.occurred_on}
+                categoryOptions={categoryOptions.map((option) => ({
+                    id: option.id,
+                    name: option.name,
+                    path: option.path,
+                    parent_id: option.parent?.id ?? null,
+                    parent_name: option.parent?.name ?? null,
+                }))}
+                onCancel={() => setEditing(false)}
+                onSaved={() => setEditing(false)}
+            />
+        );
+    }
+
     return (
         <div className="grid gap-5 border-t bg-muted/20 p-4 md:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -440,11 +209,20 @@ export function TransactionDetails({
                         editable even after an exact merchant rule applies.
                     </p>
                 </div>
-                <Button asChild variant="ghost" size="sm">
-                    <Link href={closeHref} preserveScroll preserveState>
-                        <ChevronUp /> Close
-                    </Link>
-                </Button>
+                <div className="flex gap-2">
+                    <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => setEditing(true)}
+                    >
+                        Edit Transaction
+                    </Button>
+                    <Button asChild variant="ghost" size="sm">
+                        <Link href={closeHref} preserveScroll preserveState>
+                            <ChevronUp /> Close
+                        </Link>
+                    </Button>
+                </div>
             </div>
 
             <dl className="grid gap-3 sm:grid-cols-3">
@@ -484,16 +262,6 @@ export function TransactionDetails({
                     incomeSourceOptions={orderedIncomeSources}
                 />
             </section>
-
-            <details className="rounded-lg border bg-background">
-                <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 font-medium">
-                    <CircleDollarSign className="size-4" /> Edit Transaction
-                </summary>
-                <TransactionEditForm
-                    key={`${transaction.id}-${transaction.kind}-${transaction.amount_minor}`}
-                    transaction={transaction}
-                />
-            </details>
 
             {movementSupportsCategory(transaction.kind) && (
                 <CategorySplit
