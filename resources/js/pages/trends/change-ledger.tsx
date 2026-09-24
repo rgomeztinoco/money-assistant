@@ -1,9 +1,9 @@
 import { Link } from '@inertiajs/react';
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from 'lucide-react';
-import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { useReportView } from '@/hooks/use-report-view';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import {
     categoryBreakdownUrl,
@@ -12,8 +12,6 @@ import {
 import { cn } from '@/lib/utils';
 import type { Currency } from '@/types';
 import type { Finding, Period, TrendReport } from './types';
-
-type FindingScope = 'all' | Finding['kind'];
 
 const ledgerColumns =
     'grid-cols-[repeat(3,minmax(0,1fr))_2rem] md:grid-cols-[minmax(7.5rem,1.2fr)_repeat(3,minmax(4.5rem,.65fr))_minmax(4.5rem,.6fr)_minmax(4.5rem,.7fr)_3.5rem]';
@@ -156,7 +154,10 @@ export function ChangeLedger({
     period: Period;
     reports: TrendReport[];
 }) {
-    const [scope, setScope] = useState<FindingScope>('all');
+    const [scope, setScope] = useReportView(
+        ['all', 'category', 'merchant'] as const,
+        'all',
+    );
     const findings = reports.flatMap((report) => report.findings);
     const hasActivity = reports.some((report) => report.summary !== null);
     const ledgerSegment = currencyFilter?.toLowerCase() ?? 'all';

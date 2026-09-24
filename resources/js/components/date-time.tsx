@@ -4,6 +4,7 @@ import {
     formatFullDate,
     formatRelativeTime,
     formatTimestamp,
+    formatWeekdayDate,
     resolvedTimeZone,
 } from '@/lib/date-presentation';
 
@@ -56,14 +57,16 @@ export function DateText({
     className,
 }: {
     value: string;
-    format?: 'full' | 'contextual';
+    format?: 'full' | 'contextual' | 'weekday';
     className?: string;
 }) {
     return (
         <time dateTime={value} className={className}>
             {format === 'contextual'
                 ? formatContextualDate(value)
-                : formatFullDate(value)}
+                : format === 'weekday'
+                  ? formatWeekdayDate(value)
+                  : formatFullDate(value)}
         </time>
     );
 }

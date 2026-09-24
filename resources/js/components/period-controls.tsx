@@ -1,4 +1,4 @@
-import { Link, router } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import {
     addMonths,
     addQuarters,
@@ -24,10 +24,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import {
-    formatDateRange,
-    formatReportingPeriod,
-} from '@/lib/date-presentation';
+import { formatReportingPeriod } from '@/lib/date-presentation';
 import type { ReportingPeriod, ReportingPeriodSelection } from '@/types';
 
 const periodUnits = [
@@ -61,12 +58,13 @@ function moveAnchor(
 export function PeriodControls({
     period,
     today,
-    href,
+    href: periodHref,
 }: {
     period: ReportingPeriod;
     today: string;
     href: (selection: ReportingPeriodSelection) => string;
 }) {
+    const { url } = usePage();
     const [calendarOpen, setCalendarOpen] = useState(false);
     const [range, setRange] = useState<DateRange | undefined>({
         from: parseISO(period.date_from),
@@ -74,7 +72,27 @@ export function PeriodControls({
     });
     const navigationUnit = period.unit === 'custom' ? 'month' : period.unit;
     const periodLabel = formatReportingPeriod(period);
-    const dateRangeLabel = formatDateRange(period.date_from, period.date_to);
+
+    function href(selection: ReportingPeriodSelection): string {
+        const currentUrl = new URL(url, 'http://localhost');
+        const destination = new URL(periodHref(selection), currentUrl);
+
+        for (const key of [
+            'view',
+            'category',
+            'merchant',
+            'focus',
+            'attention',
+        ]) {
+            const value = currentUrl.searchParams.get(key);
+
+            if (value !== null) {
+                destination.searchParams.set(key, value);
+            }
+        }
+
+        return `${destination.pathname}${destination.search}`;
+    }
 
     function applyRange() {
         if (range?.from === undefined || range.to === undefined) {
@@ -122,9 +140,6 @@ export function PeriodControls({
                     title={periodLabel}
                 >
                     <p className="truncate text-sm font-semibold tabular-nums">
-                        {dateRangeLabel}
-                    </p>
-                    <p className="hidden truncate text-xs text-muted-foreground lg:block">
                         {periodLabel}
                     </p>
                 </div>
@@ -156,7 +171,9 @@ export function PeriodControls({
                 size="sm"
                 className="hidden shrink-0 2xl:inline-flex"
             >
-                <Link href={href({ unit: 'month', anchor: today })}>Today</Link>
+                <Link href={href({ unit: navigationUnit, anchor: today })}>
+                    Today
+                </Link>
             </Button>
 
             <Select
@@ -223,7 +240,7 @@ export function PeriodControls({
                         <Button asChild variant="ghost" size="sm">
                             <Link
                                 href={href({
-                                    unit: 'month',
+                                    unit: navigationUnit,
                                     anchor: today,
                                 })}
                             >
