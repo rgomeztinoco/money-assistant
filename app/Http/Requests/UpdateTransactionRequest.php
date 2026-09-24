@@ -6,6 +6,7 @@ use App\Currency;
 use App\ExactInteger;
 use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
 use App\IncomeSource;
+use App\Models\Category;
 use App\Models\Transaction;
 use App\MovementDirection;
 use App\TransactionKind;
@@ -69,8 +70,7 @@ class UpdateTransactionRequest extends FormRequest
                 'nullable',
                 'integer',
                 Rule::exists('categories', 'id')
-                    ->where('user_id', $this->user()->getKey())
-                    ->whereNull('archived_at'),
+                    ->where('user_id', $this->user()->getKey()),
             ],
             'original_spending_id' => [
                 'nullable',
@@ -97,6 +97,19 @@ class UpdateTransactionRequest extends FormRequest
             $kind = TransactionKind::from($this->string('kind')->toString());
             $currency = Currency::from($this->string('currency')->toString());
             $originalSpendingId = $this->integer('original_spending_id') ?: null;
+            $categoryId = $this->integer('category_id') ?: null;
+
+            if ($categoryId !== null && $categoryId !== $transaction->category_id) {
+                $isAssignable = Category::query()
+                    ->whereBelongsTo($this->user(), 'owner')
+                    ->whereKey($categoryId)
+                    ->availableForAssignment()
+                    ->exists();
+
+                if (! $isAssignable) {
+                    $validator->errors()->add('category_id', 'Choose an active Category owned by you.');
+                }
+            }
 
             if ($kind !== TransactionKind::Refund && $originalSpendingId !== null) {
                 $validator->errors()->add('original_spending_id', 'Only a Refund can link to an original spending.');
@@ -125,7 +138,7 @@ class UpdateTransactionRequest extends FormRequest
                 ->exists();
 
             if (($kind !== TransactionKind::Spending && $hasActiveLinkedRefunds) || $hasLinkedRefundInAnotherCurrency) {
-                $validator->errors()->add('kind', 'Unlink active Refunds before changing this spending kind or currency.');
+                $validator->errors()->add('kind', 'This Spending has linked Refunds. Update or unlink those Refunds before changing its Kind or currency.');
             }
 
             $receiptBreakdown = $transaction->receiptBreakdown()->first();
@@ -143,7 +156,7 @@ class UpdateTransactionRequest extends FormRequest
                 ) {
                     $validator->errors()->add(
                         $this->filled('amount') ? 'amount' : 'amount_minor',
-                        'The amount must equal the current Receipt Breakdown total unless you confirm removing its Line Items.',
+                        'This amount does not match the Category split. Remove the Category split to save this amount.',
                     );
                 }
             }

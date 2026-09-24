@@ -74,6 +74,8 @@ class TransactionController extends Controller
                 : null,
             instrumentLabel: $validated['instrument_label'] ?? null,
             instrumentLastFour: $validated['instrument_last_four'] ?? null,
+            categoryId: isset($validated['category_id']) ? (int) $validated['category_id'] : null,
+            categorySpecified: array_key_exists('category_id', $validated),
         );
 
         Inertia::flash('toast', [
