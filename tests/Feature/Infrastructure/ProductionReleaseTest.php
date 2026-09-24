@@ -59,7 +59,7 @@ case "${1:-}" in
         ;;
     systemctl)
         if [ "${2:-} ${3:-}" = 'start money-assistant-backup.service' ]; then
-            touch "$RELEASE_TEST_BACKUP_DIRECTORY/money-assistant-new.dump.age"
+            touch -d '+1 second' "$RELEASE_TEST_BACKUP_DIRECTORY/money-assistant-new.dump.age"
             exit 0
         fi
 
