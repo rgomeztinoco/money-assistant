@@ -37,6 +37,7 @@ trap 'exit 143' TERM
 
 command -v flock >/dev/null 2>&1 || fail 'flock is required'
 command -v git >/dev/null 2>&1 || fail 'Git is required'
+command -v gh >/dev/null 2>&1 || fail 'GitHub CLI (gh) is required; install it and authenticate with access to this repository'
 command -v sudo >/dev/null 2>&1 || fail 'sudo is required'
 command -v tar >/dev/null 2>&1 || fail 'tar is required'
 [ -d "$source_directory/.git" ] || fail "release source is not a Git checkout: $source_directory"
@@ -49,9 +50,67 @@ current_branch="$(git -C "$source_directory" symbolic-ref --quiet --short HEAD 2
 [ -z "$(git -C "$source_directory" status --porcelain)" ] || fail 'release source must be a clean main checkout'
 
 git -C "$source_directory" fetch origin
-git -C "$source_directory" merge --ff-only origin/main
-[ -z "$(git -C "$source_directory" status --porcelain)" ] || fail 'release source must remain clean after updating main'
 revision="$(git -C "$source_directory" rev-parse HEAD)"
+[ "$revision" = "$(git -C "$source_directory" rev-parse origin/main)" ] ||
+    fail 'local main must exactly match origin/main; update or reconcile your checkout, then retry'
+
+repository="$(git -C "$source_directory" remote get-url origin)"
+run="$(gh run list --repo "$repository" --branch main --commit "$revision" --event push --workflow tests.yml --limit 1 \
+    --json databaseId,headSha,headBranch,event --jq '.[] | [.databaseId, .headSha, .headBranch, .event] | @tsv')" ||
+    fail 'could not read GitHub CI; check gh authentication and repository access'
+[ -n "$run" ] || fail "no GitHub CI push run exists for main revision $revision"
+read -r run_id run_revision run_branch run_event <<EOF
+$run
+EOF
+[ "$run_revision" = "$revision" ] && [ "$run_branch" = 'main' ] && [ "$run_event" = 'push' ] ||
+    fail 'GitHub CI run does not match the release revision on main'
+
+while :; do
+    checks="$(gh run view "$run_id" --repo "$repository" --json status,jobs \
+        --jq '(["__run__", .status] | @tsv), (.jobs[] | [.name, .status, (.conclusion // "")] | @tsv)')" ||
+        fail 'could not read required GitHub checks'
+    run_status=''
+    ci_found=false
+    production_stack_found=false
+    pending=false
+
+    while IFS="$(printf '\t')" read -r check_name check_status check_conclusion; do
+        case "$check_name" in
+            __run__) run_status="$check_status"; continue ;;
+            ci) ci_found=true ;;
+            production-stack) production_stack_found=true ;;
+            *) continue ;;
+        esac
+
+        case "$check_status" in
+            completed)
+                [ "$check_conclusion" = 'success' ] ||
+                    fail "required GitHub check $check_name did not pass: $check_conclusion"
+                ;;
+            queued|in_progress|waiting|pending|requested) pending=true ;;
+            *) fail "required GitHub check $check_name has an unknown status: $check_status" ;;
+        esac
+    done <<EOF
+$checks
+EOF
+
+    if [ "$ci_found" != true ] || [ "$production_stack_found" != true ]; then
+        case "$run_status" in
+            queued|in_progress|waiting|pending|requested) pending=true ;;
+            *) fail 'required GitHub checks ci and production-stack must both exist' ;;
+        esac
+    fi
+    [ "$pending" = true ] || break
+    printf 'Waiting for required GitHub checks on main revision %s (run %s)...\n' "$revision" "$run_id"
+    sleep 10
+done
+
+git -C "$source_directory" fetch origin
+[ "$(git -C "$source_directory" symbolic-ref --quiet --short HEAD)" = 'main' ] &&
+    [ -z "$(git -C "$source_directory" status --porcelain)" ] &&
+    [ "$(git -C "$source_directory" rev-parse HEAD)" = "$revision" ] &&
+    [ "$(git -C "$source_directory" rev-parse origin/main)" = "$revision" ] ||
+    fail 'main changed while checking CI; update or reconcile your checkout, then retry'
 
 sudo -v
 

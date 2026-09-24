@@ -8,7 +8,7 @@ Deployment support lives in `production/`:
 
 | Command | Purpose |
 | --- | --- |
-| `release-production` | Back up, promote, deploy, and verify the current `main` revision. |
+| `release-production` | Verify main and CI, back up, promote, deploy, and verify the release. |
 | `deploy-production` | Build, migrate, and replace the application containers. |
 | `install-production-services` | Install the application, private-access, and backup systemd units and backup commands. |
 | `export-production-backup` | Stream the database into an encrypted backup. |
@@ -20,21 +20,17 @@ Host security updates use Ubuntu's `unattended-upgrades`; this repository no lon
 
 ## Release
 
-After the change has merged and passed its required GitHub checks, run the test suite from the development checkout:
-
-```bash
-vendor/bin/sail composer test:deployment
-```
-
-This builds the current frontend, runs the feature suite, then runs the browser suite with two workers. The suites stay separate because they use different database reset strategies.
-
-Then release it with one command:
+After the change has merged, release it from the development checkout with one command:
 
 ```bash
 production/release-production
 ```
 
-The command requires a clean `main` checkout, fetches and fast-forwards from `origin/main`, and records the exact revision. It creates a fresh encrypted backup before copying any files, promotes only Git-tracked files into `/opt/money-assistant`, reinstalls the systemd units, deploys the production containers, and verifies private ingress. It prints the deployed revision when every step succeeds.
+The command requires a clean `main` checkout and an authenticated GitHub CLI (`gh`) with access to the repository and its Actions runs. It fetches `origin` and requires local `main` to match `origin/main` exactly. Ahead, behind, or diverged checkouts stop with instructions; the command does not update your branch.
+
+It checks the latest `tests.yml` push run on `main` for that exact revision. Both `ci` and `production-stack` must succeed. Running checks and jobs waiting for prerequisites are polled every ten seconds. Failed, cancelled, or skipped checks block the release, as do checks missing from a completed workflow. GitHub authentication or API errors also stop it. After CI passes, the command fetches again and stops if main changed while waiting.
+
+Only then does it create a fresh encrypted backup, promote Git-tracked files into `/opt/money-assistant`, reinstall the systemd units, deploy the production containers, and verify private ingress. It prints the deployed revision when every step succeeds. No separate local test command is required.
 
 `rsync --delete` remains scoped to `/opt/money-assistant/`. Production state is stored in Docker volumes. Host-managed configuration and secrets remain under `/etc/money-assistant`.
 
@@ -43,6 +39,8 @@ Do not run the development Sail deployment commands against the production Compo
 ## Manual verification and recovery
 
 The release command performs the private-ingress check. Use the lower-level commands below when investigating a failed release.
+
+For optional local diagnostics, `vendor/bin/sail composer test:deployment` builds the frontend and runs the feature and browser suites sequentially. This is not a release prerequisite.
 
 Never run `tailscale serve reset` on this host. Money Assistant must not remove unrelated Tailscale Serve routes.
 
