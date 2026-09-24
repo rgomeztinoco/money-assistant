@@ -370,7 +370,7 @@ function MovementEditor({
                         <span className="font-medium break-words">
                             {movement.description}
                         </span>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1.5 type-meta">
                             <span
                                 className="tabular-nums"
                                 data-test={`statement-movement-date-${movementIndex}`}
@@ -655,7 +655,7 @@ function MovementEditor({
                         />
                         <p
                             id={`movement-${movementIndex}-formatted-amount`}
-                            className="text-xs text-muted-foreground"
+                            className="type-meta"
                         >
                             {formatMinorUnits(
                                 movement.amount_minor || '0',
@@ -809,10 +809,8 @@ export default function CreateStatementImport() {
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="grid gap-1">
-                        <h1 className="text-2xl font-semibold tracking-tight">
-                            Import a statement
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
+                        <h1 className="type-page-title">Import a statement</h1>
+                        <p className="type-subtitle">
                             Choose a supported BCP or Interbank text PDF once,
                             then review every parsed movement. Rows that need a
                             decision are marked for your attention.
@@ -855,10 +853,10 @@ export default function CreateStatementImport() {
                             <CardContent className="grid gap-6">
                                 <section className="grid gap-3">
                                     <div className="grid gap-1">
-                                        <h2 className="font-semibold">
+                                        <h2 className="type-section-title">
                                             1. Upload
                                         </h2>
-                                        <p className="text-sm text-muted-foreground">
+                                        <p className="type-subtitle">
                                             Refreshing or leaving this page
                                             discards the preview.
                                         </p>
@@ -927,10 +925,10 @@ export default function CreateStatementImport() {
                                             data-test="statement-checks"
                                         >
                                             <div className="grid gap-1">
-                                                <h2 className="font-semibold">
+                                                <h2 className="type-section-title">
                                                     Reconciliation
                                                 </h2>
-                                                <p className="text-sm text-muted-foreground">
+                                                <p className="type-subtitle">
                                                     Printed statement totals
                                                     verified against every
                                                     parsed Statement Movement.
@@ -950,12 +948,12 @@ export default function CreateStatementImport() {
                                                             key={key}
                                                             className="flex items-center justify-between gap-3 border-b py-2.5"
                                                         >
-                                                            <dt className="text-xs text-muted-foreground capitalize">
+                                                            <dt className="type-row capitalize">
                                                                 {humanizeKey(
                                                                     key,
                                                                 )}
                                                             </dt>
-                                                            <dd className="text-sm font-medium tabular-nums">
+                                                            <dd className="type-row tabular-nums">
                                                                 {formatMinorUnits(
                                                                     value,
                                                                     currency,
@@ -972,10 +970,10 @@ export default function CreateStatementImport() {
                                             className="grid gap-5 border-t pt-6"
                                         >
                                             <div className="grid gap-1">
-                                                <h2 className="font-semibold">
+                                                <h2 className="type-section-title">
                                                     3. Confirm
                                                 </h2>
-                                                <p className="text-sm text-muted-foreground">
+                                                <p className="type-subtitle">
                                                     {formatDateRange(
                                                         preview.period_start,
                                                         preview.period_end,
@@ -988,7 +986,7 @@ export default function CreateStatementImport() {
                                                 data-test="statement-import-totals"
                                             >
                                                 <div className="grid gap-1 px-3">
-                                                    <dt className="text-xs text-muted-foreground">
+                                                    <dt className="type-meta">
                                                         Proposed movements
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
@@ -1000,7 +998,7 @@ export default function CreateStatementImport() {
                                                     </dd>
                                                 </div>
                                                 <div className="grid gap-1 px-3">
-                                                    <dt className="text-xs text-muted-foreground">
+                                                    <dt className="type-meta">
                                                         Affect Net Spending
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
@@ -1008,7 +1006,7 @@ export default function CreateStatementImport() {
                                                     </dd>
                                                 </div>
                                                 <div className="grid gap-1 px-3">
-                                                    <dt className="text-xs text-muted-foreground">
+                                                    <dt className="type-meta">
                                                         Outside Net Spending
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
@@ -1018,7 +1016,7 @@ export default function CreateStatementImport() {
                                                     </dd>
                                                 </div>
                                                 <div className="grid gap-1 px-3">
-                                                    <dt className="text-xs text-muted-foreground">
+                                                    <dt className="type-meta">
                                                         Unresolved
                                                     </dt>
                                                     <dd className="text-xl font-semibold tabular-nums">
@@ -1127,7 +1125,7 @@ export default function CreateStatementImport() {
                                                             ? 'Ready for confirmation'
                                                             : `${unresolvedCount} movement${unresolvedCount === 1 ? '' : 's'} still need a decision`}
                                                     </p>
-                                                    <p className="text-sm text-muted-foreground">
+                                                    <p className="type-body text-muted-foreground">
                                                         The PDF remains in this
                                                         tab's memory.
                                                         Confirmation reparses it

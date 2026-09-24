@@ -50,9 +50,7 @@ function PeriodSummary({
             data-test={`trends-summary-${currency.toLowerCase()}`}
         >
             <dl className="grid min-w-0 gap-1">
-                <dt className="text-xs font-semibold tracking-wider text-muted-foreground">
-                    {currency}
-                </dt>
+                <dt className="type-meta tracking-wider">{currency}</dt>
                 <dd className="truncate text-2xl font-semibold tracking-tight tabular-nums">
                     {summary === null
                         ? 'No activity'
@@ -96,7 +94,7 @@ function ComparisonPeriodIndicator({
     const unit = period.unit === 'custom' ? 'periods' : `${period.unit}s`;
 
     return (
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-sm">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 type-body">
             <CalendarRange className="size-4 shrink-0 text-muted-foreground" />
             <span className="text-muted-foreground">Compared with</span>
             <span className="text-muted-foreground">
@@ -169,10 +167,10 @@ export default function Trends(props: TrendsProps) {
                                     data-test="trends-net-spending"
                                 >
                                     <div>
-                                        <h2 className="font-semibold">
+                                        <h2 className="type-section-title">
                                             Net spending
                                         </h2>
-                                        <p className="text-sm text-muted-foreground">
+                                        <p className="type-subtitle">
                                             {formatReportingPeriod(
                                                 props.period,
                                             )}

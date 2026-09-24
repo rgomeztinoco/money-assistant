@@ -73,7 +73,7 @@ export default function Login({ status }: Props) {
             </Form>
 
             {status && (
-                <div className="mb-4 text-center text-sm font-medium text-green-600">
+                <div className="mb-4 text-center type-body font-medium text-green-600">
                     {status}
                 </div>
             )}

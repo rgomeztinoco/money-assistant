@@ -203,7 +203,7 @@ function LedgerFiltersForm({
     return (
         <Card>
             <CardHeader className="gap-1">
-                <CardTitle className="text-base">Find Transactions</CardTitle>
+                <CardTitle>Find Transactions</CardTitle>
                 <CardDescription>
                     Search by description, then narrow the current ledger state.
                 </CardDescription>
@@ -211,9 +211,7 @@ function LedgerFiltersForm({
             <CardContent className="grid gap-4">
                 {activeFilters.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/60 p-3">
-                        <span className="text-xs font-medium text-muted-foreground">
-                            Active filters
-                        </span>
+                        <span className="type-meta">Active filters</span>
                         {activeFilters.map((filter) => (
                             <Badge key={filter} variant="outline">
                                 {filter}
@@ -309,7 +307,7 @@ function LedgerFiltersForm({
                                 className="rounded-lg border md:col-span-2 xl:col-span-4"
                                 open={hasAdvancedFilters || undefined}
                             >
-                                <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+                                <summary className="cursor-pointer px-4 py-3 type-body font-medium">
                                     Advanced filters
                                 </summary>
                                 <div className="grid gap-3 border-t p-4 md:grid-cols-2 xl:grid-cols-4">
@@ -601,7 +599,7 @@ function LedgerList({
     selectedTransactionId?: number;
 }) {
     return (
-        <ul className="grid gap-3">
+        <ul className="grid gap-3 type-row">
             {transactions.map((transaction) => {
                 const isMoneyIn = transaction.direction === 'credit';
                 const DirectionIcon = isMoneyIn ? ArrowDownLeft : ArrowUpRight;
@@ -613,11 +611,11 @@ function LedgerList({
                     >
                         <div className="grid min-w-0 gap-2">
                             <div className="flex flex-wrap items-baseline justify-between gap-2">
-                                <p className="min-w-0 font-medium break-words">
+                                <p className="min-w-0 break-words">
                                     {transaction.description}
                                 </p>
                                 <p
-                                    className={`font-semibold whitespace-nowrap tabular-nums ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
+                                    className={`whitespace-nowrap tabular-nums ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
                                 >
                                     {isMoneyIn ? '+' : '−'}
                                     {formatMinorUnits(
@@ -627,7 +625,7 @@ function LedgerList({
                                 </p>
                             </div>
                             <p
-                                className="text-xs text-muted-foreground"
+                                className="type-meta"
                                 data-test={`transaction-${transaction.id}-occurred-on`}
                             >
                                 <DateText value={transaction.occurred_on} />
@@ -699,7 +697,7 @@ function PaginationControls({ pagination }: { pagination: Pagination }) {
 
     return (
         <div className="flex items-center justify-between gap-4 border-t pt-4">
-            <p className="text-sm text-muted-foreground">
+            <p className="type-body text-muted-foreground">
                 {pagination.from}–{pagination.to} of {pagination.total}
             </p>
             <div className="flex gap-2">
@@ -795,10 +793,10 @@ export default function TransactionsIndex({
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="grid gap-1">
-                        <h1 className="text-2xl font-semibold tracking-tight">
+                        <h1 className="type-page-title">
                             {isReviewQueue ? 'Review Queue' : 'Transactions'}
                         </h1>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="type-subtitle">
                             {isReviewQueue
                                 ? 'Current Uncategorized and uncertain Transaction or Line Item state.'
                                 : 'A focused ledger for finding, reviewing, and editing current Transactions.'}
@@ -862,7 +860,7 @@ export default function TransactionsIndex({
                                                 ? 'Review Queue is clear'
                                                 : 'No Transactions yet'}
                                         </p>
-                                        <p className="text-sm text-muted-foreground">
+                                        <p className="type-body text-muted-foreground">
                                             {isReviewQueue
                                                 ? 'No current Transaction or Line Item fields need review.'
                                                 : 'Adjust the filters or record a new money movement.'}

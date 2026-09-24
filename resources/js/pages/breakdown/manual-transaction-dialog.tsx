@@ -198,7 +198,7 @@ export function ManualTransactionDialog({
                             </div>
 
                             <details className="rounded-lg border">
-                                <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+                                <summary className="cursor-pointer px-4 py-3 type-body font-medium">
                                     Optional payment source
                                 </summary>
                                 <div className="grid gap-4 border-t p-4 sm:grid-cols-2">

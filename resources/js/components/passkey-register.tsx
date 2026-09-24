@@ -58,7 +58,7 @@ export default function PasskeyRegistration({ onSuccess }: Props) {
 
     if (!isSupported) {
         return (
-            <div className="text-sm text-muted-foreground">
+            <div className="type-body text-muted-foreground">
                 Passkeys are not supported in this browser.
             </div>
         );
@@ -88,7 +88,7 @@ export default function PasskeyRegistration({ onSuccess }: Props) {
                     className="mt-1 block w-full border-foreground/20"
                     autoFocus
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="type-meta">
                     A name helps you identify this passkey later.
                 </p>
             </div>

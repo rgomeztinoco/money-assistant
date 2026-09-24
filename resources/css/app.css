@@ -7,6 +7,50 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Edit a role here to update it throughout the app, at every screen width. */
+@utility type-page-title {
+    font-size: 1.5rem;
+    line-height: calc(32 / 24);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--foreground);
+}
+
+@utility type-section-title {
+    font-size: 1rem;
+    line-height: 1.5;
+    font-weight: 600;
+    color: var(--foreground);
+}
+
+@utility type-subtitle {
+    font-size: 0.875rem;
+    line-height: calc(20 / 14);
+    font-weight: 400;
+    color: var(--muted-foreground);
+}
+
+@utility type-body {
+    font-size: 0.875rem;
+    line-height: calc(20 / 14);
+    font-weight: 400;
+    color: var(--foreground);
+}
+
+@utility type-row {
+    font-size: 0.875rem;
+    line-height: calc(20 / 14);
+    font-weight: 400;
+    color: var(--foreground);
+}
+
+@utility type-meta {
+    font-size: 0.75rem;
+    line-height: calc(16 / 12);
+    font-weight: 400;
+    color: var(--muted-foreground);
+}
+
 @theme {
     --font-sans:
         'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
@@ -138,6 +182,6 @@
     }
 
     body {
-        @apply bg-background text-foreground;
+        @apply bg-background type-body;
     }
 }

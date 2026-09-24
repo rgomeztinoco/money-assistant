@@ -101,7 +101,7 @@ export function CategorySplit({
             </summary>
             <div className="grid gap-4 border-t p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm text-muted-foreground">
+                    <p className="type-body text-muted-foreground">
                         Category amounts must total{' '}
                         {formatMinorUnits(
                             transaction.amount_minor,
@@ -210,7 +210,7 @@ export function CategorySplit({
                                     <Plus /> Add Category amount
                                 </Button>
                                 <p
-                                    className={`text-sm font-medium ${isReconciled ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}`}
+                                    className={`type-body font-medium ${isReconciled ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}`}
                                     data-test="split-reconciliation"
                                 >
                                     {isReconciled

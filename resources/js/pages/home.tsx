@@ -415,7 +415,7 @@ function SpendingSnapshot({ briefings }: { briefings: Briefing[] }) {
                         key={item.label}
                         className="grid gap-1 px-4 py-4 first:pl-0 last:pr-0"
                     >
-                        <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <dt className="flex items-center gap-2 type-meta">
                             <Icon className="size-3.5" />
                             {item.label}
                         </dt>
@@ -448,9 +448,7 @@ function SpendingSnapshot({ briefings }: { briefings: Briefing[] }) {
                                 </span>
                             ))}
                         </dd>
-                        <dd className="text-xs text-muted-foreground">
-                            {item.note}
-                        </dd>
+                        <dd className="type-meta">{item.note}</dd>
                     </div>
                 );
             })}
@@ -465,7 +463,7 @@ function ReviewPrompt({ briefing }: { briefing: Briefing }) {
 
     return (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
-            <p className="text-xs text-muted-foreground">
+            <p className="type-meta">
                 {transactionCount(briefing.input_request.transaction_count)}{' '}
                 {briefing.input_request.transaction_count === 1
                     ? 'needs'
@@ -507,8 +505,8 @@ function SignalEvidence({
             data-test={`home-${testSegment}-signal-evidence`}
         >
             <div className="grid gap-1">
-                <h3 className="font-medium">{signal.category.name}</h3>
-                <p className="text-xs leading-relaxed break-words text-muted-foreground">
+                <h3 className="type-section-title">{signal.category.name}</h3>
+                <p className="type-subtitle break-words">
                     {transactionCount(signal.current_transaction_count)}{' '}
                     contributed{' '}
                     {formatMinorUnits(
@@ -535,11 +533,11 @@ function SignalEvidence({
                     {signal.evidence.map((item) => (
                         <div
                             key={item.id}
-                            className="flex min-w-0 items-start justify-between gap-3 text-xs"
+                            className="flex min-w-0 items-start justify-between gap-3 type-row"
                         >
                             <div className="min-w-0">
                                 <dt className="truncate">{item.description}</dt>
-                                <dd className="text-muted-foreground">
+                                <dd className="type-meta">
                                     <DateText
                                         value={item.occurred_on}
                                         format="contextual"
@@ -563,7 +561,7 @@ function SignalEvidence({
                     ))}
                 </dl>
             ) : (
-                <p className="text-xs text-muted-foreground">
+                <p className="type-meta">
                     No Transactions in this category during the current period.
                 </p>
             )}
@@ -622,8 +620,10 @@ function CurrencySignalLane({ briefing }: { briefing: Briefing }) {
             >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="grid gap-1">
-                        <h3 className="font-semibold">{briefing.currency}</h3>
-                        <p className="text-xs text-muted-foreground">
+                        <h3 className="type-section-title">
+                            {briefing.currency}
+                        </h3>
+                        <p className="type-subtitle">
                             Net Spending is{' '}
                             {spendingChangeDescription(briefing)}.
                         </p>
@@ -636,10 +636,10 @@ function CurrencySignalLane({ briefing }: { briefing: Briefing }) {
 
                 {signal === undefined ? (
                     <div className="grid gap-3 border-t pt-4">
-                        <p className="text-sm font-medium">
+                        <p className="type-section-title">
                             No category change yet
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="type-subtitle">
                             Net Spending has no category movement to explain for
                             this comparison.
                         </p>
@@ -677,10 +677,10 @@ function CurrencySignalLane({ briefing }: { briefing: Briefing }) {
                                         className="grid h-auto min-h-10 w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 px-2 py-2 text-left"
                                     >
                                         <ChangeIcon data-icon="inline-start" />
-                                        <span className="min-w-0 truncate">
+                                        <span className="min-w-0 truncate type-row">
                                             {item.category.name}
                                         </span>
-                                        <span className="tabular-nums">
+                                        <span className="type-row tabular-nums">
                                             {changedDown ? '−' : '+'}
                                             {formatMinorUnits(
                                                 absoluteAmount(
@@ -766,7 +766,7 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
             </CardContent>
             {briefings[0] !== undefined && (
                 <CardFooter
-                    className="grid items-start gap-2 border-t p-4 text-xs text-muted-foreground sm:p-6"
+                    className="grid items-start gap-2 border-t p-4 type-meta sm:p-6"
                     data-test="home-coverage-panel"
                 >
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -839,13 +839,13 @@ function HomeBriefing({
                 <CardContent className="flex min-w-0 flex-col gap-6 p-4 sm:p-6">
                     <section className="grid gap-3">
                         <div className="grid gap-2">
-                            <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
+                            <p className="type-meta tracking-widest uppercase">
                                 Your money, in a minute
                             </p>
-                            <h2 className="max-w-2xl text-2xl leading-tight font-semibold tracking-tight sm:text-3xl">
+                            <h2 className="max-w-2xl type-page-title">
                                 {headline}
                             </h2>
-                            <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm leading-relaxed text-muted-foreground">
+                            <div className="flex flex-wrap gap-x-5 gap-y-1 type-subtitle">
                                 {briefings.map((briefing) => (
                                     <p key={briefing.currency}>
                                         <span className="font-medium text-foreground">
@@ -864,10 +864,10 @@ function HomeBriefing({
                     <section className="flex min-w-0 flex-col gap-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                                <h3 className="font-semibold">
+                                <h3 className="type-section-title">
                                     Cumulative Net Spending
                                 </h3>
-                                <p className="text-sm text-muted-foreground">
+                                <p className="type-subtitle">
                                     {formatReportingPeriod(primary.period)}{' '}
                                     compared with{' '}
                                     {formatDateRange(

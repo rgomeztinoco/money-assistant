@@ -46,7 +46,7 @@ function InlineClassification({
 }) {
     if (transaction.kind === 'transfer') {
         return (
-            <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+            <p className="rounded-lg border bg-muted/30 p-3 type-body text-muted-foreground">
                 Transfers use a Transfer Purpose instead of a Category.
             </p>
         );
@@ -135,7 +135,7 @@ function InlineClassification({
                             >
                                 Confirm exact merchant match
                             </Label>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="type-meta">
                                 Update {otherHistoricalMatches}{' '}
                                 {otherHistoricalMatches === 1
                                     ? 'other matching historical Transaction'
@@ -427,13 +427,15 @@ export function TransactionDetails({
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="grid gap-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-semibold">Transaction details</h4>
+                        <h4 className="type-section-title">
+                            Transaction details
+                        </h4>
                         <Badge variant="outline">Confirmed</Badge>
                         {transaction.split !== null && (
                             <Badge variant="secondary">Category split</Badge>
                         )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="type-body text-muted-foreground">
                         Transaction #{transaction.id}. Classification stays
                         editable even after an exact merchant rule applies.
                     </p>
@@ -447,7 +449,7 @@ export function TransactionDetails({
 
             <dl className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg border bg-background p-3">
-                    <dt className="text-xs text-muted-foreground">Amount</dt>
+                    <dt className="type-meta">Amount</dt>
                     <dd className="font-semibold tabular-nums">
                         {formatMinorUnits(
                             transaction.amount_minor,
@@ -456,7 +458,7 @@ export function TransactionDetails({
                     </dd>
                 </div>
                 <div className="rounded-lg border bg-background p-3">
-                    <dt className="text-xs text-muted-foreground">Meaning</dt>
+                    <dt className="type-meta">Meaning</dt>
                     <dd className="font-medium">
                         {movementDescription({
                             kind: transaction.kind,
@@ -465,9 +467,7 @@ export function TransactionDetails({
                     </dd>
                 </div>
                 <div className="rounded-lg border bg-background p-3">
-                    <dt className="text-xs text-muted-foreground">
-                        Classification
-                    </dt>
+                    <dt className="type-meta">Classification</dt>
                     <dd className="font-medium">
                         {movementSummary(transaction)}
                     </dd>
@@ -475,7 +475,7 @@ export function TransactionDetails({
             </dl>
 
             <section className="grid gap-2">
-                <h4 className="flex items-center gap-2 text-sm font-semibold">
+                <h4 className="flex items-center gap-2 type-section-title">
                     <Tag className="size-4" /> Inline classification
                 </h4>
                 <InlineClassification
@@ -507,7 +507,7 @@ export function TransactionDetails({
                 <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 font-medium">
                     <FileText className="size-4" /> Optional source details
                 </summary>
-                <dl className="grid gap-3 border-t p-4 text-sm sm:grid-cols-2">
+                <dl className="grid gap-3 border-t p-4 type-body sm:grid-cols-2">
                     <div>
                         <dt className="text-muted-foreground">Confirmed</dt>
                         <dd className="font-medium">

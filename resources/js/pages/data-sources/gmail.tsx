@@ -209,10 +209,8 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                 <div className="mx-auto grid w-full max-w-5xl gap-5">
                     <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                         <div className="grid gap-1">
-                            <h1 className="text-2xl font-semibold tracking-tight">
-                                Gmail
-                            </h1>
-                            <p className="text-sm text-muted-foreground">
+                            <h1 className="type-page-title">Gmail</h1>
+                            <p className="type-subtitle">
                                 Import supported bank notifications into Money
                                 Assistant.
                             </p>
@@ -241,7 +239,7 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                                     <Mail className="size-5" />
                                 </div>
                                 <div className="grid min-w-0 gap-1">
-                                    <CardTitle className="truncate text-base sm:text-lg">
+                                    <CardTitle className="truncate">
                                         {gmail.account_identity ??
                                             'Gmail is not connected'}
                                     </CardTitle>
@@ -255,7 +253,7 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
 
                         <CardContent className="grid gap-0 border-t p-0 lg:grid-cols-3">
                             <div className="grid gap-1 border-b p-5 lg:border-r lg:border-b-0 lg:p-6">
-                                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <span className="flex items-center gap-2 type-body text-muted-foreground">
                                     <CalendarClock className="size-4" /> Next
                                     automatic import
                                 </span>
@@ -269,13 +267,13 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                                     }
                                     className="text-lg font-semibold tracking-tight tabular-nums"
                                 />
-                                <span className="text-xs text-muted-foreground">
+                                <span className="type-meta">
                                     Runs every five minutes
                                 </span>
                             </div>
 
                             <div className="grid gap-1 border-b p-5 lg:border-r lg:border-b-0 lg:p-6">
-                                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <span className="flex items-center gap-2 type-body text-muted-foreground">
                                     <Download className="size-4" /> Last
                                     successful import
                                 </span>
@@ -289,7 +287,7 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                             </div>
 
                             <div className="grid gap-1 p-5 lg:p-6">
-                                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <span className="flex items-center gap-2 type-body text-muted-foreground">
                                     <Clock3 className="size-4" /> Connection
                                     checked
                                 </span>
@@ -306,10 +304,10 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                                 <div className="flex items-start gap-3">
                                     <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                                     <div className="grid gap-0.5">
-                                        <p className="text-sm font-medium">
+                                        <p className="type-body font-medium">
                                             Read-only Gmail access
                                         </p>
-                                        <p className="text-sm leading-relaxed text-muted-foreground">
+                                        <p className="type-body leading-relaxed text-muted-foreground">
                                             Money Assistant cannot send, edit,
                                             or delete mail.
                                         </p>
@@ -323,7 +321,7 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                                     <ConnectAndImport
                                         configured={gmail.configured}
                                     />
-                                    <p className="text-xs text-muted-foreground">
+                                    <p className="type-meta">
                                         Google will ask you to confirm read-only
                                         access.
                                     </p>
@@ -336,7 +334,7 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                         <Card className="gap-0 border-destructive/30 py-0">
                             <CardHeader className="gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                                 <div className="grid gap-1">
-                                    <CardTitle className="text-base">
+                                    <CardTitle>
                                         {gmail.latest_failure.type === 'message'
                                             ? 'A Gmail message could not be processed'
                                             : 'The latest Gmail import failed'}
@@ -393,7 +391,7 @@ export default function GmailDataSource({ gmail }: { gmail: GmailStatus }) {
                         <Card className="gap-0 py-0">
                             <CardHeader className="gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                                 <div className="grid gap-1">
-                                    <CardTitle className="text-base">
+                                    <CardTitle>
                                         Retry unsupported notifications
                                     </CardTitle>
                                     <CardDescription>

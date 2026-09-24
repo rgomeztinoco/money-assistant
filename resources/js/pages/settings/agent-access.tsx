@@ -87,7 +87,7 @@ function SetupInstructions({ endpoint }: { endpoint: string }) {
                     MONEY_ASSISTANT_TOKEN in the environment that starts Codex
                     to the token above.
                 </p>
-                <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
+                <pre className="overflow-x-auto rounded-md bg-muted p-3 type-meta">
                     {codex}
                 </pre>
                 <CopyButton text={codex} label="Copy Codex config" />
@@ -97,7 +97,7 @@ function SetupInstructions({ endpoint }: { endpoint: string }) {
                     Add this remote server to your OpenClaw configuration.
                     Replace &lt;token&gt; with the token above.
                 </p>
-                <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
+                <pre className="overflow-x-auto rounded-md bg-muted p-3 type-meta">
                     {openclaw}
                 </pre>
                 <p className="text-muted-foreground">
@@ -112,7 +112,7 @@ function SetupInstructions({ endpoint }: { endpoint: string }) {
                     Use Streamable HTTP. Send your bearer token with every
                     request.
                 </p>
-                <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
+                <pre className="overflow-x-auto rounded-md bg-muted p-3 type-meta">
                     {generic}
                 </pre>
                 <CopyButton text={generic} label="Copy connection details" />
@@ -230,7 +230,7 @@ export default function AgentAccess({ tokens, endpoint }: Props) {
                 {error && <InputError message={error} />}
                 <div className="divide-y rounded-lg border">
                     {tokens.length === 0 ? (
-                        <p className="p-6 text-center text-sm text-muted-foreground">
+                        <p className="p-6 text-center type-body text-muted-foreground">
                             No agent tokens yet
                         </p>
                     ) : (
@@ -240,10 +240,10 @@ export default function AgentAccess({ tokens, endpoint }: Props) {
                                 className="flex flex-wrap items-center justify-between gap-3 p-4"
                             >
                                 <div className="min-w-0">
-                                    <p className="font-medium break-words">
+                                    <p className="type-row break-words">
                                         {token.name}
                                     </p>
-                                    <p className="text-xs text-muted-foreground">
+                                    <p className="type-meta">
                                         Created{' '}
                                         <RelativeTimestamp
                                             value={token.created_at}

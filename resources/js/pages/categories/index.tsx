@@ -344,11 +344,9 @@ export default function CategoriesIndex({
                     <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-2">
                             <Tags className="size-5 text-muted-foreground" />
-                            <h1 className="text-2xl font-semibold tracking-tight">
-                                Categories
-                            </h1>
+                            <h1 className="type-page-title">Categories</h1>
                         </div>
-                        <p className="max-w-3xl text-sm text-muted-foreground">
+                        <p className="max-w-3xl type-subtitle">
                             Manage the two-level taxonomy used across current
                             and historical reporting. Uncategorized remains a
                             system state and is not listed here.
@@ -563,7 +561,7 @@ export default function CategoriesIndex({
                                                                 <CornerDownRight className="size-4 shrink-0 text-muted-foreground" />
                                                             )}
                                                             <div className="flex min-w-0 flex-col gap-1">
-                                                                <span className="font-medium">
+                                                                <span>
                                                                     {selectedRoot ||
                                                                     category.parent_id ===
                                                                         null
@@ -730,7 +728,7 @@ export default function CategoriesIndex({
                     </AlertDialogHeader>
                     {(archiving?.archive_impact.active_children.length ?? 0) >
                         0 && (
-                        <div className="flex flex-col gap-1 text-sm">
+                        <div className="flex flex-col gap-1 type-body">
                             <p className="font-medium">Children to archive</p>
                             <ul className="list-disc pl-5 text-muted-foreground">
                                 {archiving?.archive_impact.active_children.map(
@@ -743,7 +741,7 @@ export default function CategoriesIndex({
                     )}
                     {(archiving?.archive_impact.active_merchant_rules.length ??
                         0) > 0 && (
-                        <div className="flex flex-col gap-1 text-sm">
+                        <div className="flex flex-col gap-1 type-body">
                             <p className="font-medium">
                                 Merchant Rules to disable
                             </p>

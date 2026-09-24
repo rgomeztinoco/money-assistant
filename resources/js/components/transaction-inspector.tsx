@@ -157,14 +157,14 @@ function ReceiptBreakdownSection({
     return (
         <section className="grid gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="flex items-center gap-2 font-semibold">
+                <h2 className="flex items-center gap-2 type-section-title">
                     <ReceiptText className="size-4" /> Receipt Breakdown
                 </h2>
                 {breakdown && <Badge variant="outline">Active</Badge>}
             </div>
 
             <div className="grid gap-3 rounded-lg border p-4">
-                <div className="grid gap-1 text-sm">
+                <div className="grid gap-1 type-body">
                     <p className="font-medium">
                         {breakdown
                             ? 'Current itemization'
@@ -346,7 +346,7 @@ function ReceiptBreakdownSection({
                                 <Plus /> Add Line Item
                             </Button>
                             <div
-                                className={`rounded-md border p-3 text-sm ${reconciliationDelta === 0n ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-200' : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200'}`}
+                                className={`rounded-md border p-3 type-body ${reconciliationDelta === 0n ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-200' : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200'}`}
                             >
                                 {reconciliationDelta === null
                                     ? 'Enter valid currency-unit totals to check reconciliation.'
@@ -393,7 +393,7 @@ function ReceiptBreakdownSection({
                                 <InputError
                                     message={errors.receipt_breakdown}
                                 />
-                                <p className="text-xs text-muted-foreground">
+                                <p className="type-meta">
                                     Reporting will return to the Transaction
                                     Category.
                                 </p>
@@ -663,7 +663,7 @@ function TransactionEditForm({
                     )}
 
                     {transaction.review.fields.length > 0 && (
-                        <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                        <p className="rounded-md bg-muted p-3 type-body text-muted-foreground">
                             Changing a flagged value clears that field&apos;s
                             current review flag.
                         </p>
@@ -686,7 +686,7 @@ function TransactionEditForm({
                                         Remove Receipt Breakdown if the amount
                                         changes
                                     </Label>
-                                    <p className="text-xs text-muted-foreground">
+                                    <p className="type-meta">
                                         This explicitly removes the current Line
                                         Items because they would no longer
                                         reconcile.
@@ -766,10 +766,10 @@ export function TransactionInspector({
 
                     <div className="grid gap-6 px-4 pb-6">
                         <section className="grid gap-3">
-                            <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                            <h2 className="type-section-title uppercase">
                                 Transaction summary
                             </h2>
-                            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border p-4 text-sm">
+                            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border p-4 type-body">
                                 <div>
                                     <dt className="text-muted-foreground">
                                         Occurrence date
@@ -857,7 +857,7 @@ export function TransactionInspector({
                                 )}
                             </dl>
                             <p
-                                className="text-xs text-muted-foreground"
+                                className="type-meta"
                                 data-test="transaction-confirmed-at"
                             >
                                 {transaction.voided_at
@@ -899,7 +899,7 @@ export function TransactionInspector({
                         </section>
 
                         <section className="grid gap-3">
-                            <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                            <h2 className="type-section-title uppercase">
                                 Edit current Transaction
                             </h2>
                             <TransactionEditForm
@@ -919,8 +919,8 @@ export function TransactionInspector({
                         )}
 
                         {transaction.review.category && (
-                            <section className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/20">
-                                <h2 className="font-semibold">
+                            <section className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 type-body dark:border-amber-800 dark:bg-amber-950/20">
+                                <h2 className="type-section-title">
                                     Category needs review
                                 </h2>
                                 <p>
@@ -935,9 +935,9 @@ export function TransactionInspector({
                             (reason) => (
                                 <section
                                     key={reason.name}
-                                    className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/20"
+                                    className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-4 type-body dark:border-amber-800 dark:bg-amber-950/20"
                                 >
-                                    <h2 className="font-semibold">
+                                    <h2 className="type-section-title">
                                         {reason.label}
                                     </h2>
                                     <p>
@@ -956,12 +956,12 @@ export function TransactionInspector({
                             </summary>
                             <div className="grid gap-6 border-t p-4">
                                 <section className="grid gap-3">
-                                    <h2 className="flex items-center gap-2 font-semibold">
+                                    <h2 className="flex items-center gap-2 type-section-title">
                                         <ShieldCheck className="size-4" />
                                         Category Assignment Provenance and
                                         source references
                                     </h2>
-                                    <div className="grid gap-2 rounded-lg border p-4 text-sm">
+                                    <div className="grid gap-2 rounded-lg border p-4 type-body">
                                         <p>
                                             Category source:{' '}
                                             <span className="font-medium">
@@ -1025,11 +1025,11 @@ export function TransactionInspector({
                                 </section>
 
                                 <section className="grid gap-3">
-                                    <h2 className="flex items-center gap-2 font-semibold">
+                                    <h2 className="flex items-center gap-2 type-section-title">
                                         <Link2 className="size-4" /> Refund
                                         links
                                     </h2>
-                                    <div className="grid gap-2 rounded-lg border p-4 text-sm">
+                                    <div className="grid gap-2 rounded-lg border p-4 type-body">
                                         {!transaction.original_spending &&
                                             transaction.linked_refunds
                                                 .length === 0 && (

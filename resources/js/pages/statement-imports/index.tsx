@@ -75,10 +75,8 @@ export default function StatementImportsIndex({
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="grid gap-1">
-                        <h1 className="text-2xl font-semibold tracking-tight">
-                            Statement Imports
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
+                        <h1 className="type-page-title">Statement Imports</h1>
+                        <p className="type-subtitle">
                             Revisit every confirmed BCP and Interbank statement
                             without retaining its source PDF.
                         </p>
@@ -117,7 +115,7 @@ export default function StatementImportsIndex({
                                     <p className="font-medium">
                                         No Statement Imports yet
                                     </p>
-                                    <p className="text-sm text-muted-foreground">
+                                    <p className="type-body text-muted-foreground">
                                         Import a supported text PDF to backfill
                                         its complete financial activity.
                                     </p>
@@ -131,7 +129,7 @@ export default function StatementImportsIndex({
                         ) : (
                             <>
                                 <div
-                                    className="grid gap-3 md:hidden"
+                                    className="grid gap-3 type-row md:hidden"
                                     data-test="statement-import-mobile-list"
                                 >
                                     {statement_imports.data.map(
@@ -150,13 +148,13 @@ export default function StatementImportsIndex({
                                                                 statementImport.id,
                                                             )}
                                                             prefetch
-                                                            className="font-medium break-words hover:underline"
+                                                            className="break-words hover:underline"
                                                         >
                                                             {
                                                                 statementImport.instrument_label
                                                             }
                                                         </Link>
-                                                        <p className="text-sm text-muted-foreground tabular-nums">
+                                                        <p className="type-meta tabular-nums">
                                                             {formatDateRange(
                                                                 statementImport.period_start,
                                                                 statementImport.period_end,
@@ -171,7 +169,7 @@ export default function StatementImportsIndex({
                                                     </Badge>
                                                 </div>
 
-                                                <p className="text-xs text-muted-foreground">
+                                                <p className="type-meta">
                                                     {
                                                         statementImport.linked_movement_count
                                                     }{' '}
@@ -188,20 +186,20 @@ export default function StatementImportsIndex({
 
                                                 <div className="grid grid-cols-2 gap-3">
                                                     <div className="grid gap-1 rounded-lg border p-3">
-                                                        <span className="text-xs text-muted-foreground">
+                                                        <span className="type-meta">
                                                             Movements
                                                         </span>
-                                                        <span className="font-medium tabular-nums">
+                                                        <span className="tabular-nums">
                                                             {
                                                                 statementImport.movement_count
                                                             }
                                                         </span>
                                                     </div>
                                                     <div className="grid gap-1 rounded-lg border p-3">
-                                                        <span className="text-xs text-muted-foreground">
+                                                        <span className="type-meta">
                                                             Last four digits
                                                         </span>
-                                                        <span className="font-medium tabular-nums">
+                                                        <span className="tabular-nums">
                                                             {statementImport.instrument_last_four ??
                                                                 'Not provided'}
                                                         </span>
@@ -209,7 +207,7 @@ export default function StatementImportsIndex({
                                                 </div>
 
                                                 <div className="grid gap-1">
-                                                    <span className="text-xs text-muted-foreground">
+                                                    <span className="type-meta">
                                                         Statement totals
                                                     </span>
                                                     {identifyingTotals(
@@ -217,7 +215,7 @@ export default function StatementImportsIndex({
                                                     ).map(([key, value]) => (
                                                         <span
                                                             key={key}
-                                                            className="text-sm capitalize tabular-nums"
+                                                            className="capitalize tabular-nums"
                                                         >
                                                             {totalLabel(key)}:{' '}
                                                             {formatMinorUnits(
@@ -231,7 +229,7 @@ export default function StatementImportsIndex({
                                                 </div>
 
                                                 <div className="flex items-end justify-between gap-3 border-t pt-3">
-                                                    <p className="text-xs text-muted-foreground tabular-nums">
+                                                    <p className="type-meta tabular-nums">
                                                         Confirmed{' '}
                                                         <LocalTimestamp
                                                             value={
@@ -302,7 +300,7 @@ export default function StatementImportsIndex({
                                                                             statementImport.id,
                                                                         )}
                                                                         prefetch
-                                                                        className="font-medium break-words hover:underline"
+                                                                        className="break-words hover:underline"
                                                                     >
                                                                         {
                                                                             statementImport.instrument_label
@@ -316,7 +314,7 @@ export default function StatementImportsIndex({
                                                                             Verified
                                                                         </Badge>
                                                                         {statementImport.instrument_last_four && (
-                                                                            <span className="text-xs text-muted-foreground tabular-nums">
+                                                                            <span className="type-meta tabular-nums">
                                                                                 Ending{' '}
                                                                                 {
                                                                                     statementImport.instrument_last_four
@@ -324,7 +322,7 @@ export default function StatementImportsIndex({
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                    <span className="text-xs text-muted-foreground">
+                                                                    <span className="type-meta">
                                                                         {
                                                                             statementImport.linked_movement_count
                                                                         }{' '}
@@ -347,7 +345,7 @@ export default function StatementImportsIndex({
                                                                 statementImport.period_end,
                                                             )}
                                                         </TableCell>
-                                                        <TableCell className="text-center font-medium tabular-nums">
+                                                        <TableCell className="text-center tabular-nums">
                                                             {
                                                                 statementImport.movement_count
                                                             }
@@ -365,7 +363,7 @@ export default function StatementImportsIndex({
                                                                             key={
                                                                                 key
                                                                             }
-                                                                            className="text-sm capitalize tabular-nums"
+                                                                            className="capitalize tabular-nums"
                                                                         >
                                                                             {totalLabel(
                                                                                 key,
@@ -382,7 +380,7 @@ export default function StatementImportsIndex({
                                                                 )}
                                                             </div>
                                                         </TableCell>
-                                                        <TableCell className="min-w-44 text-sm text-muted-foreground tabular-nums">
+                                                        <TableCell className="min-w-44 text-muted-foreground tabular-nums">
                                                             <LocalTimestamp
                                                                 value={
                                                                     statementImport.confirmed_at
@@ -417,7 +415,7 @@ export default function StatementImportsIndex({
 
                         {statement_imports.last_page > 1 && (
                             <div className="flex items-center justify-between gap-3">
-                                <p className="text-sm text-muted-foreground">
+                                <p className="type-body text-muted-foreground">
                                     Page {statement_imports.current_page} of{' '}
                                     {statement_imports.last_page}
                                 </p>
