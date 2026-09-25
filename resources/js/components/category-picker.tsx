@@ -91,6 +91,7 @@ export function CategoryPicker({
     closeOnSelect = true,
     portalToBody = false,
     popoverFooter,
+    createReloadOnly,
 }: {
     id: string;
     name: string;
@@ -110,6 +111,7 @@ export function CategoryPicker({
     closeOnSelect?: boolean;
     portalToBody?: boolean;
     popoverFooter?: ReactNode;
+    createReloadOnly?: string[];
 }) {
     const portalContainerRef = useRef<HTMLDivElement>(null);
     const [internalValue, setInternalValue] = useState(defaultValue);
@@ -192,6 +194,7 @@ export function CategoryPicker({
             {
                 preserveScroll: true,
                 preserveState: true,
+                only: createReloadOnly,
                 onError: (errors) => setCreateErrors(errors),
                 onSuccess: (page) => {
                     const created = page.flash.created_category;

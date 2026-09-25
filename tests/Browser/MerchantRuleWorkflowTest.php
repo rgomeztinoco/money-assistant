@@ -32,10 +32,11 @@ test('the owner creates a Merchant Rule that categorizes a future Transaction', 
         ->assertNoConsoleLogs();
 
     visit('/transactions')
-        ->fill('Amount', '12.50')
-        ->fill('Merchant or short description', "cafe\u{0301} central")
-        ->select('Currency', 'PEN')
-        ->select('Movement kind', 'spending')
+        ->press('Add Transaction')
+        ->fill('#manual-amount', '12.50')
+        ->fill('#manual-description', "cafe\u{0301} central")
+        ->select('#manual-currency', 'PEN')
+        ->select('#manual-kind', 'spending')
         ->press('Record Transaction')
         ->assertSee('Transaction recorded.')
         ->assertNoJavaScriptErrors()
@@ -218,7 +219,7 @@ test('a Transaction opens a Merchant Rule dialog with known values prefilled', f
     $this->actingAs($owner);
 
     visit('/transactions')
-        ->press('Inspect')
+        ->click('[data-test="transaction-'.$transaction->id.'"]')
         ->press('Create Merchant Rule')
         ->assertPathIs('/merchant-rules')
         ->assertSee('Known values are prefilled from the Transaction.')

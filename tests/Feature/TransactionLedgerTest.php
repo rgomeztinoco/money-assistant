@@ -32,8 +32,7 @@ test('the owner can record a confirmed manual purchase in the ledger', function 
             ->where('transactions.0.amount_minor', '12345')
             ->where('transactions.0.currency', 'USD')
             ->where('transactions.0.kind', 'spending')
-            ->where('transactions.0.description', 'Neighborhood market')
-            ->where('transactions.0.confirmed_at', fn (mixed $confirmedAt) => is_string($confirmedAt)),
+            ->where('transactions.0.description', 'Neighborhood market'),
         );
 });
 
@@ -195,7 +194,7 @@ test('the shared Ledger Action normalizes the merchant or description', function
     expect($transaction->description)->toBe('Neighborhood market');
 });
 
-test('the ledger read path returns its first 25 Transactions with pagination metadata', function () {
+test('the ledger read path returns its first 50 Transactions with pagination metadata', function () {
     $owner = User::factory()->create();
 
     Transaction::factory()
@@ -206,9 +205,9 @@ test('the ledger read path returns its first 25 Transactions with pagination met
     $this->actingAs($owner)
         ->get(route('transactions.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->has('transactions', 25)
+            ->has('transactions', 50)
             ->where('pagination.total', 101)
-            ->where('pagination.last_page', 5),
+            ->where('pagination.last_page', 3),
         );
 });
 

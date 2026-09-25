@@ -288,6 +288,9 @@ function ReceiptBreakdownSection({
                                             id={`receipt-line-${lineItem.clientId}-category`}
                                             name={`line_items[${index}][category_id]`}
                                             options={categoryOptions}
+                                            createReloadOnly={[
+                                                'category_options',
+                                            ]}
                                             value={
                                                 lineItem.category?.id.toString() ??
                                                 ''
@@ -612,6 +615,7 @@ function TransactionEditForm({
                                 id={`transaction-${transaction.id}-category`}
                                 name="category_id"
                                 options={categoryOptions}
+                                createReloadOnly={['category_options']}
                                 defaultValue={
                                     transaction.category?.id.toString() ?? ''
                                 }

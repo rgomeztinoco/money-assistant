@@ -44,7 +44,7 @@ test('the owner saves replaces and removes a Receipt Breakdown in the Transactio
         ->and(ReceiptBreakdown::query()->sole()->lineItems()->count())->toBe(2);
 
     $page
-        ->fill('Description', 'Fresh coffee beans')
+        ->fill('[name="line_items[0][description]"]', 'Fresh coffee beans')
         ->press('Replace Receipt Breakdown')
         ->wait(1)
         ->assertSee('Category split saved.')
