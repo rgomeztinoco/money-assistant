@@ -11,6 +11,59 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
+test('Transactions searches history and finds a Voided ID without losing list state', function () {
+    $owner = User::factory()->create();
+    Transaction::factory()->count(51)->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-09-01',
+        'description' => 'Other purchase',
+    ]);
+    Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => '2025-01-01',
+        'description' => 'Starbucks refund',
+        'amount_minor' => 1250,
+    ]);
+    $voided = Transaction::factory()->for($owner, 'owner')->usd()->create([
+        'occurred_on' => '2020-01-01',
+        'description' => 'Old voided purchase',
+        'voided_at' => now(),
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit('/transactions');
+
+    $page
+        ->assertPresent('a[href="/transactions"]')
+        ->assertNotPresent('[data-test="period-controls"]')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '52 matching Transactions')
+        ->fill('#transaction-search', 'STAR')
+        ->click('[data-test="transaction-search-submit"]')
+        ->assertQueryStringHas('search', 'STAR')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertSee('Starbucks refund')
+        ->press('Filters')
+        ->fill('#filter-amount-min', '12.50')
+        ->fill('#filter-amount-max', '12.50')
+        ->press('Apply')
+        ->assertSee('Select a currency to filter by amount.')
+        ->select('#filter-currency', 'PEN')
+        ->click('#filter-kind-spending')
+        ->click('#filter-kind-income')
+        ->click('#filter-kind-transfer')
+        ->press('Apply')
+        ->assertSee('Starbucks refund')
+        ->assertQueryStringHas('amount_min', '12.50')
+        ->fill('#transaction-id', (string) $voided->id)
+        ->click('[data-test="transaction-id-submit"]')
+        ->assertSee('Old voided purchase')
+        ->assertSee('Voided')
+        ->press('Close')
+        ->assertSee('Starbucks refund')
+        ->assertQueryStringHas('search', 'STAR')
+        ->assertQueryStringHas('amount_min', '12.50')
+        ->assertNoJavaScriptErrors();
+
+});
+
 test('date-only values stay fixed while instants follow the browser timezone', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create([
@@ -64,30 +117,35 @@ test('date-only values stay fixed while instants follow the browser timezone', f
 test('filters, selection, and scroll context persist while directly editing a Transaction in the inspector', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
-    Transaction::factory()
+    $matching = Transaction::factory()
         ->for($owner, 'owner')
+        ->pen()
         ->provisional([ReviewableTransactionField::Description])
         ->create([
             'category_id' => $category->id,
             'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
             'description' => 'Neighborhood market',
             'occurred_on' => '2026-07-20',
+            'amount_minor' => 1250,
         ]);
-    Transaction::factory()->for($owner, 'owner')->create([
+    Transaction::factory()->for($owner, 'owner')->pen()->create([
         'description' => 'Unrelated pharmacy',
         'occurred_on' => '2026-07-21',
+        'amount_minor' => 2500,
     ]);
     $this->actingAs($owner);
 
     $page = visit('/transactions');
 
     $page
-        ->fill('Merchant or description', 'Neighborhood')
-        ->press('Advanced filters')
-        ->select('Filter review state', 'outstanding')
-        ->press('Apply filters')
+        ->fill('#transaction-search', 'Neighborhood')
+        ->click('[data-test="transaction-search-submit"]')
+        ->press('Filters')
+        ->select('#filter-currency', 'PEN')
+        ->fill('#filter-amount-max', '12.50')
+        ->press('Apply')
         ->assertQueryStringHas('search', 'Neighborhood')
-        ->assertQueryStringHas('review_state', 'outstanding')
+        ->assertQueryStringHas('amount_max', '12.50')
         ->assertSee('Neighborhood market')
         ->assertDontSee('Unrelated pharmacy');
 
@@ -97,10 +155,11 @@ test('filters, selection, and scroll context persist while directly editing a Tr
 
     $page->assertScript('window.scrollY > 0');
 
+    $page->script("document.querySelector('[data-test=\"transaction-{$matching->id}\"]').click()");
+
     $page
-        ->press('Inspect')
         ->assertQueryStringHas('search', 'Neighborhood')
-        ->assertQueryStringHas('review_state', 'outstanding')
+        ->assertQueryStringHas('amount_max', '12.50')
         ->assertQueryStringHas('selected')
         ->assertSee('Edit current Transaction')
         ->assertSee('Included in Net Spending')
@@ -110,7 +169,7 @@ test('filters, selection, and scroll context persist while directly editing a Tr
         ->press('Save Transaction')
         ->assertSee('Transaction updated.')
         ->assertQueryStringHas('search', 'Neighborhood')
-        ->assertQueryStringHas('review_state', 'outstanding')
+        ->assertQueryStringHas('amount_max', '12.50')
         ->assertSee('Neighborhood market Lima')
         ->assertSee('Review clear')
         ->press('Close')
@@ -121,12 +180,12 @@ test('filters, selection, and scroll context persist while directly editing a Tr
 
 test('the Transaction workspace stays actionable without horizontal scrolling on mobile', function () {
     $owner = User::factory()->create();
-    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+    $current = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
         'description' => 'Mobile market',
         'amount_minor' => 1_250,
         'occurred_on' => '2026-08-21',
     ]);
-    Transaction::factory()->count(25)->for($owner, 'owner')->spending()->usd()->create([
+    Transaction::factory()->count(51)->for($owner, 'owner')->spending()->usd()->create([
         'description' => 'Earlier mobile market',
         'occurred_on' => '2026-08-20',
     ]);
@@ -137,12 +196,10 @@ test('the Transaction workspace stays actionable without horizontal scrolling on
     $page
         ->assertSee('Mobile market')
         ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
-        ->press('Inspect')
+        ->click('[data-test="transaction-'.$current->id.'"]')
         ->assertSee('Transaction summary')
         ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
         ->press('Close')
-        ->press('Void')
-        ->assertSee('Transaction voided.')
         ->press('Next')
         ->assertQueryStringHas('page', '2')
         ->assertSee('Earlier mobile market')
@@ -153,22 +210,24 @@ test('the Transaction workspace stays actionable without horizontal scrolling on
         ->assertNoConsoleLogs();
 });
 
-test('the Review Queue inspector can be dismissed without immediately reopening', function () {
+test('invalid and missing IDs give feedback without changing the list', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()
-        ->for($owner, 'owner')
-        ->provisional([ReviewableTransactionField::Description])
-        ->create(['description' => 'Review me']);
+    Transaction::factory()->for($owner, 'owner')->create(['description' => 'Visible purchase']);
     $this->actingAs($owner);
 
-    $page = visit("/review-queue?item=transaction:{$transaction->id}&selected={$transaction->id}");
+    $page = visit('/transactions');
 
     $page
-        ->assertSee('Edit current Transaction')
+        ->fill('#transaction-id', 'oops')
+        ->click('[data-test="transaction-id-submit"]')
+        ->assertSee('Enter a valid Transaction ID.')
+        ->assertQueryStringMissing('selected')
+        ->fill('#transaction-id', '999999999')
+        ->click('[data-test="transaction-id-submit"]')
+        ->assertSee('Transaction not found')
         ->press('Close')
         ->assertQueryStringMissing('selected')
-        ->assertSee('Review me')
-        ->assertDontSee('Edit current Transaction')
+        ->assertSee('Visible purchase')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

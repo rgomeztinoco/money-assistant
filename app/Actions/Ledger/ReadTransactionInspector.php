@@ -9,7 +9,6 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
-use App\TransactionKind;
 
 /**
  * @phpstan-import-type CategoryAssignmentProvenanceData from ReadCategoryAssignmentProvenance
@@ -58,7 +57,6 @@ class ReadTransactionInspector
      *     source_reference_count: int,
      *     source_references: list<array{id: int, processing_outcome: string, created_at: string|null}>,
      *     receipt_breakdown: ReceiptBreakdownData|null,
-     *     spending_options: list<array{id: int, occurred_on: string, description: string, currency: string}>
      * }|null
      */
     public function handle(User $owner, ?int $transactionId): ?array
@@ -152,21 +150,6 @@ class ReadTransactionInspector
                 ])
                 ->all()),
             'receipt_breakdown' => $receiptBreakdown,
-            'spending_options' => array_values(Transaction::query()
-                ->whereBelongsTo($owner, 'owner')
-                ->whereNull('voided_at')
-                ->where('kind', TransactionKind::Spending)
-                ->whereKeyNot($transaction->getKey())
-                ->orderByDesc('occurred_on')
-                ->orderByDesc('id')
-                ->get(['id', 'occurred_on', 'description', 'currency'])
-                ->map(fn (Transaction $spending): array => [
-                    'id' => $spending->id,
-                    'occurred_on' => $spending->occurred_on->toDateString(),
-                    'description' => $spending->description,
-                    'currency' => $spending->currency->value,
-                ])
-                ->all()),
         ];
     }
 

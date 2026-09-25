@@ -84,10 +84,10 @@ test('the owner edits a Transaction amount in currency units', function () {
     expect($transaction->refresh()->amount_minor)->toBe(2_501);
 });
 
-test('the ledger is paginated and loads the selected inspector separately', function () {
+test('Transactions loads at most 50 rows and fetches the selected inspector separately', function () {
     $owner = User::factory()->create();
     $transactions = Transaction::factory()
-        ->count(26)
+        ->count(51)
         ->for($owner, 'owner')
         ->create();
 
@@ -96,16 +96,14 @@ test('the ledger is paginated and loads the selected inspector separately', func
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('transactions/index')
-            ->has('transactions', 25)
-            ->has('voided_transactions', 0)
+            ->has('transactions', 50)
             ->where('pagination.current_page', 1)
-            ->where('pagination.per_page', 25)
-            ->where('pagination.total', 26)
-            ->missing('spending_options')
+            ->where('pagination.per_page', 50)
+            ->where('pagination.total', 51)
             ->missing('selected_transaction')
             ->loadDeferredProps(fn (Assert $deferred) => $deferred
                 ->where('selected_transaction.id', $transactions->last()->id)
-                ->has('selected_transaction.spending_options')),
+                ->missing('selected_transaction.spending_options')),
         );
 
     $this->get(route('transactions.index', ['page' => 2]))

@@ -1,95 +1,52 @@
 <?php
 
-use App\Currency;
 use App\Models\Transaction;
 use App\Models\User;
-use App\TransactionKind;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('the owner can void a Transaction', function () {
+test('Voided Transactions stay in the database and can be found by exact ID', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()
-        ->for($owner, 'owner')
-        ->spending()
-        ->usd()
-        ->create(['amount_minor' => 12345]);
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => now()->toDateString(),
+        'amount_minor' => 12345,
+        'voided_at' => now(),
+    ]);
+    $this->actingAs($owner);
 
-    $this->actingAs($owner)
-        ->post(route('transactions.void.store', $transaction))
-        ->assertSessionHasNoErrors()
-        ->assertRedirect(route('transactions.index'));
+    $this->get(route('transactions.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('pagination.total', 0)
+            ->has('transactions', 0));
+
+    $this->get(route('transactions.index', ['selected' => $transaction->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->loadDeferredProps(fn (Assert $inspector) => $inspector
+                ->where('selected_transaction.id', $transaction->id)
+                ->whereNot('selected_transaction.voided_at', null)));
+
+    $this->get(route('breakdown.index', [
+        'currency' => 'USD',
+        'period' => 'custom',
+        'date_from' => now()->toDateString(),
+        'date_to' => now()->toDateString(),
+    ]))->assertInertia(fn (Assert $page) => $page
+        ->where('summary.USD.net_spending_minor', '0'));
 
     $this->assertModelExists($transaction);
-
-    $this->get(route('transactions.index'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->has('transactions', 0)
-            ->has('voided_transactions', 1)
-            ->where('voided_transactions.0.id', $transaction->id)
-            ->where('voided_transactions.0.voided_at', fn (mixed $voidedAt) => is_string($voidedAt)),
-        );
-
-    expect($transaction->refresh()->voided_at)->not->toBeNull();
 });
 
-test('restoring the same Transaction returns exactly one contribution to the ledger', function (
-    TransactionKind $kind,
-    Currency $currency,
-) {
+test('retired void and restore endpoints leave retained Voided state intact', function () {
     $owner = User::factory()->create();
-    $transaction = Transaction::factory()
-        ->for($owner, 'owner')
-        ->create([
-            'amount_minor' => 12345,
-            'kind' => $kind,
-            'currency' => $currency,
-        ]);
+    $active = Transaction::factory()->for($owner, 'owner')->create();
+    $voided = Transaction::factory()->for($owner, 'owner')->create(['voided_at' => now()]);
+    $this->actingAs($owner);
 
-    $this->actingAs($owner)
-        ->post(route('transactions.void.store', $transaction))
-        ->assertSessionHasNoErrors();
+    $this->post('/transactions/'.$active->id.'/void')->assertNotFound();
+    $this->delete('/transactions/'.$voided->id.'/void')->assertNotFound();
 
-    $this->delete(route('transactions.void.destroy', $transaction))
-        ->assertSessionHasNoErrors()
-        ->assertRedirect(route('transactions.index'));
-
-    $this->get(route('transactions.index'))
-        ->assertInertia(fn (Assert $page) => $page
-            ->has('transactions', 1)
-            ->where('transactions.0.id', $transaction->id)
-            ->has('voided_transactions', 0),
-        );
-
-    expect($transaction->refresh()->voided_at)->toBeNull();
-})->with([
-    'USD purchase' => [TransactionKind::Spending, Currency::Usd],
-    'PEN purchase' => [TransactionKind::Spending, Currency::Pen],
-    'USD Refund' => [TransactionKind::Refund, Currency::Usd],
-    'PEN Refund' => [TransactionKind::Refund, Currency::Pen],
-]);
-
-test('void and restore reject operations that do not change current state', function () {
-    $owner = User::factory()->create();
-    $transaction = Transaction::factory()->for($owner, 'owner')->create();
-
-    $this->actingAs($owner)
-        ->post(route('transactions.void.store', $transaction))
-        ->assertSessionHasNoErrors();
-
-    $this->from(route('transactions.index'))
-        ->post(route('transactions.void.store', $transaction))
-        ->assertRedirect(route('transactions.index'))
-        ->assertSessionHasErrors('void_state');
-
-    $this->delete(route('transactions.void.destroy', $transaction))
-        ->assertSessionHasNoErrors();
-
-    $this->from(route('transactions.index'))
-        ->delete(route('transactions.void.destroy', $transaction))
-        ->assertRedirect(route('transactions.index'))
-        ->assertSessionHasErrors('void_state');
+    expect($active->refresh()->voided_at)->toBeNull()
+        ->and($voided->refresh()->voided_at)->not->toBeNull();
 });
 
 test('the Transaction table exposes portable ledger indexes', function () {

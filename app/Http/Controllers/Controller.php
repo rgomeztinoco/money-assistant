@@ -13,7 +13,6 @@ abstract class Controller
         $workspaceUrls = [
             route('breakdown.index'),
             route('transactions.index'),
-            route('review_queue.index'),
             route('categories.index'),
         ];
 

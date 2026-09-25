@@ -11,9 +11,6 @@ declare module '@inertiajs/core' {
     export interface InertiaConfig {
         sharedPageProps: {
             auth: Auth;
-            navigation: {
-                review_queue_count: number;
-            };
             sidebarOpen: boolean;
             [key: string]: unknown;
         };

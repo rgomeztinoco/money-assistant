@@ -81,7 +81,6 @@ class UpdateTransactionRequest extends FormRequest
                     ->whereNull('voided_at'),
             ],
             'remove_receipt_breakdown' => ['sometimes', 'boolean'],
-            'next_review_item' => ['nullable', 'string', 'regex:/^(transaction|line-item):[1-9][0-9]*$/'],
         ];
     }
 

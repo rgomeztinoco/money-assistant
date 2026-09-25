@@ -31,6 +31,7 @@ import { index as categoriesIndex } from '@/routes/categories';
 import { gmail as gmailDataSource } from '@/routes/data_sources';
 import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import { index as statementImportsIndex } from '@/routes/statement_imports';
+import { index as transactionsIndex } from '@/routes/transactions';
 import { index as trendsIndex } from '@/routes/trends';
 import type { Currency, NavItem, ReportingPeriod } from '@/types';
 
@@ -75,6 +76,11 @@ export function AppSidebar() {
         },
     ];
     const manageNavItems: NavItem[] = [
+        {
+            title: 'Transactions',
+            href: transactionsIndex(),
+            icon: ReceiptText,
+        },
         {
             title: 'Categories',
             href: categoriesIndex(),

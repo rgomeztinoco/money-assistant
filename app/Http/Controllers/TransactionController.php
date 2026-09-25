@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Categorization\ReadCategoryTaxonomy;
-use App\Actions\Ledger\ReadLedger;
 use App\Actions\Ledger\ReadTransactionInspector;
+use App\Actions\Ledger\ReadTransactions;
 use App\Actions\Ledger\RecordManualTransaction;
 use App\Actions\Ledger\UpdateTransaction;
 use App\Currency;
@@ -25,7 +25,7 @@ class TransactionController extends Controller
 {
     public function __construct(
         private RecordManualTransaction $recordManualTransaction,
-        private ReadLedger $readLedger,
+        private ReadTransactions $readTransactions,
         private ReadCategoryTaxonomy $readCategoryTaxonomy,
         private ReadTransactionInspector $readTransactionInspector,
         private UpdateTransaction $updateTransaction,
@@ -38,9 +38,9 @@ class TransactionController extends Controller
         return Inertia::render(
             'transactions/index',
             [
-                ...$this->readLedger->handle($request->user(), $validated),
+                ...$this->readTransactions->handle($request->user(), $validated),
+                'today' => now(config('app.timezone'))->toDateString(),
                 'category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()),
-                'workspace' => ['mode' => 'transactions'],
                 'selected_transaction_id' => isset($validated['selected'])
                     ? (int) $validated['selected']
                     : null,
@@ -114,10 +114,6 @@ class TransactionController extends Controller
             'type' => 'success',
             'message' => __('Transaction updated.'),
         ]);
-
-        if (isset($validated['next_review_item'])) {
-            return to_route('review_queue.index', ['item' => $validated['next_review_item']]);
-        }
 
         return $this->redirectToWorkspace('transactions.index');
     }

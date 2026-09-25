@@ -1,20 +1,14 @@
 import { Head, Link, router } from '@inertiajs/react';
-import {
-    ArrowDownLeft,
-    ArrowUpRight,
-    ChevronRight,
-    CircleAlert,
-    CircleCheck,
-    Filter,
-    X,
-} from 'lucide-react';
+import { CircleAlert, CircleCheck, Filter, X } from 'lucide-react';
 import { useState } from 'react';
 import { update as updateClassification } from '@/actions/App/Http/Controllers/BreakdownTransactionClassificationController';
 import { CategoryPicker } from '@/components/category-picker';
 import { CurrencyFilter } from '@/components/currency-filter';
-import { DateText } from '@/components/date-time';
 import { PeriodControls } from '@/components/period-controls';
 import { SourceCoverage } from '@/components/source-coverage';
+import { TransactionListFilterControls } from '@/components/transaction-list-filters';
+import type { TransactionListFilters } from '@/components/transaction-list-filters';
+import { TransactionTable } from '@/components/transaction-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -25,23 +19,14 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useReportView } from '@/hooks/use-report-view';
 import { formatReportingPeriod } from '@/lib/date-presentation';
-import { formatMinorUnits } from '@/lib/format-minor-units';
 import {
-    incomeSourceLabel,
-    movementDescription,
-    transferPurposeLabel,
-} from '@/lib/money-movement';
+    currencyUnitsToMinorUnits,
+    formatMinorUnits,
+} from '@/lib/format-minor-units';
+import { incomeSourceLabel, transferPurposeLabel } from '@/lib/money-movement';
 import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { index as breakdownIndex } from '@/routes/breakdown';
 import type { Currency, ReportingPeriodSelection } from '@/types';
@@ -541,116 +526,102 @@ function InlineCategory({
     );
 }
 
-function TransactionTable({ props }: { props: BreakdownProps }) {
+function BreakdownTransactions({ props }: { props: BreakdownProps }) {
+    const [search, setSearch] = useState('');
+    const [appliedFilters, setAppliedFilters] =
+        useState<TransactionListFilters>({
+            amount_min: null,
+            amount_max: null,
+            kinds: [],
+        });
+    const scopeKey = [
+        props.currency_filter,
+        props.period.date_from,
+        props.period.date_to,
+        props.filters.category,
+        props.filters.day,
+        props.filters.focus,
+        props.filters.merchant,
+        props.filters.attention,
+    ].join(':');
+
+    const [pageState, setPageState] = useState({ scopeKey, page: 1 });
+    const page = pageState.scopeKey === scopeKey ? pageState.page : 1;
+
     const transactions = props.transaction_days.flatMap(
         (day) => day.transactions,
     );
+    const searchText = search.trim().toLocaleLowerCase();
+    const minimum = appliedFilters.amount_min
+        ? currencyUnitsToMinorUnits(appliedFilters.amount_min)
+        : null;
+    const maximum = appliedFilters.amount_max
+        ? currencyUnitsToMinorUnits(appliedFilters.amount_max)
+        : null;
+    const filteredTransactions = transactions.filter((transaction) => {
+        const amount = BigInt(transaction.amount_minor);
+        const magnitude = amount < 0n ? -amount : amount;
 
-    if (transactions.length === 0) {
         return (
-            <div className="grid min-h-80 place-items-center p-8 text-center">
-                <div className="grid gap-2">
-                    <p className="font-medium">No transactions</p>
-                    <p className="type-body text-muted-foreground">
-                        Change the period or clear a filter.
-                    </p>
-                </div>
-            </div>
+            (searchText === '' ||
+                transaction.description
+                    .toLocaleLowerCase()
+                    .includes(searchText)) &&
+            (minimum === null || magnitude >= minimum) &&
+            (maximum === null || magnitude <= maximum) &&
+            (appliedFilters.kinds.length === 0 ||
+                appliedFilters.kinds.includes(transaction.kind))
         );
-    }
+    });
 
     return (
-        <Table className="block sm:table">
-            <TableHeader className="sticky top-0 z-10 hidden bg-background sm:table-header-group">
-                <TableRow className="hover:bg-background">
-                    <TableHead className="pl-4">Description</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="w-10 pr-4">
-                        <span className="sr-only">Open</span>
-                    </TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody className="block divide-y sm:table-row-group sm:divide-y-0">
-                {transactions.map((transaction) => {
-                    const isMoneyIn = transaction.direction === 'credit';
-                    const DirectionIcon = isMoneyIn
-                        ? ArrowDownLeft
-                        : ArrowUpRight;
-
-                    return (
-                        <TableRow
-                            key={transaction.id}
-                            className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-2 border-0 p-3 sm:table-row sm:border-b sm:p-0"
-                        >
-                            <TableCell className="order-1 min-w-0 p-0 whitespace-normal sm:table-cell sm:min-w-52 sm:py-3 sm:pl-4">
-                                <div className="flex items-start gap-3">
-                                    <span
-                                        className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${isMoneyIn ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}
-                                    >
-                                        <DirectionIcon className="size-4" />
-                                    </span>
-                                    <span className="grid min-w-0 gap-0.5">
-                                        <span className="wrap-break-word">
-                                            {transaction.description}
-                                        </span>
-                                        <span className="type-meta tabular-nums">
-                                            <DateText
-                                                value={transaction.occurred_on}
-                                                format="weekday"
-                                            />{' '}
-                                            ·{' '}
-                                            {movementDescription({
-                                                kind: transaction.kind,
-                                                transferPurpose:
-                                                    transaction.transfer_purpose,
-                                            })}
-                                        </span>
-                                    </span>
-                                </div>
-                            </TableCell>
-                            <TableCell className="order-4 col-span-3 min-w-0 p-0 whitespace-normal sm:table-cell sm:min-w-44 sm:p-2">
-                                <InlineCategory
-                                    transaction={transaction}
-                                    props={props}
-                                />
-                            </TableCell>
-                            <TableCell
-                                className={`order-2 p-0 text-right tabular-nums sm:p-2 ${isMoneyIn ? 'text-emerald-700 dark:text-emerald-400' : ''}`}
-                            >
-                                {isMoneyIn ? '+' : '−'}
-                                {formatMinorUnits(
-                                    transaction.amount_minor,
-                                    transaction.currency,
-                                )}
-                            </TableCell>
-                            <TableCell className="order-3 p-0 text-right sm:p-2 sm:pr-4">
-                                <Button asChild size="icon" variant="ghost">
-                                    <Link
-                                        href={selectionUrl({
-                                            currencyFilter:
-                                                props.currency_filter,
-                                            period: props.period,
-                                            category: props.filters.category,
-                                            day: props.filters.day,
-                                            focus: props.filters.focus,
-                                            merchant: props.filters.merchant,
-                                            attention: props.filters.attention,
-                                            selected: transaction.id,
-                                        })}
-                                        preserveScroll
-                                        data-test={`breakdown-transaction-${transaction.id}`}
-                                        aria-label={`Open ${transaction.description}`}
-                                    >
-                                        <ChevronRight />
-                                    </Link>
-                                </Button>
-                            </TableCell>
-                        </TableRow>
-                    );
-                })}
-            </TableBody>
-        </Table>
+        <div className="grid gap-4 py-4">
+            <div className="px-4">
+                <TransactionListFilterControls
+                    search={search}
+                    filters={appliedFilters}
+                    instantSearch
+                    onSearch={(value) => {
+                        setSearch(value);
+                        setPageState({ scopeKey, page: 1 });
+                    }}
+                    onApply={(filters, value) => {
+                        setAppliedFilters(filters);
+                        setSearch(value);
+                        setPageState({ scopeKey, page: 1 });
+                    }}
+                />
+            </div>
+            <TransactionTable
+                transactions={filteredTransactions.slice(
+                    (page - 1) * 50,
+                    page * 50,
+                )}
+                total={filteredTransactions.length}
+                page={page}
+                onPageChange={(nextPage) =>
+                    setPageState({ scopeKey, page: nextPage })
+                }
+                rowHref={(transaction) =>
+                    selectionUrl({
+                        currencyFilter: props.currency_filter,
+                        period: props.period,
+                        category: props.filters.category,
+                        day: props.filters.day,
+                        focus: props.filters.focus,
+                        merchant: props.filters.merchant,
+                        attention: props.filters.attention,
+                        selected: transaction.id,
+                    }).url
+                }
+                renderCategory={(transaction) => (
+                    <InlineCategory transaction={transaction} props={props} />
+                )}
+                rowTestId={(transaction) =>
+                    `breakdown-transaction-${transaction.id}`
+                }
+            />
+        </div>
     );
 }
 
@@ -907,22 +878,12 @@ export default function BreakdownIndex(props: BreakdownProps) {
                             data-test="breakdown-transactions-header"
                         >
                             <h2 className="type-section-title">Transactions</h2>
-                            <Badge
-                                variant="secondary"
-                                className="h-5 min-w-5 px-1.5"
-                            >
-                                {props.transaction_days.reduce(
-                                    (count, day) =>
-                                        count + day.transactions.length,
-                                    0,
-                                )}
-                            </Badge>
                         </div>
                         <div
                             className="h-full min-h-0 min-w-0 flex-1 overflow-y-auto"
                             data-test="breakdown-transactions-scroll"
                         >
-                            <TransactionTable props={props} />
+                            <BreakdownTransactions props={props} />
                         </div>
                     </Card>
                 </div>
