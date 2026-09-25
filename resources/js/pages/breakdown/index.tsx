@@ -1,11 +1,10 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { CircleAlert, CircleCheck, Filter, X } from 'lucide-react';
 import { useState } from 'react';
-import { update as updateClassification } from '@/actions/App/Http/Controllers/BreakdownTransactionClassificationController';
-import { CategoryPicker } from '@/components/category-picker';
 import { CurrencyFilter } from '@/components/currency-filter';
 import { PeriodControls } from '@/components/period-controls';
 import { SourceCoverage } from '@/components/source-coverage';
+import { TransactionCategorySelect } from '@/components/transaction-category-select';
 import { TransactionListFilterControls } from '@/components/transaction-list-filters';
 import type { TransactionListFilters } from '@/components/transaction-list-filters';
 import { TransactionTable } from '@/components/transaction-table';
@@ -26,7 +25,6 @@ import {
     currencyUnitsToMinorUnits,
     formatMinorUnits,
 } from '@/lib/format-minor-units';
-import { incomeSourceLabel, transferPurposeLabel } from '@/lib/money-movement';
 import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { index as breakdownIndex } from '@/routes/breakdown';
 import type { Currency, ReportingPeriodSelection } from '@/types';
@@ -34,11 +32,7 @@ import { CategoryBreakdown, DailyChart } from './charts';
 import { selectionUrl } from './links';
 import { ManualTransactionDialog } from './manual-transaction-dialog';
 import { TransactionDetails } from './transaction-details';
-import type {
-    BreakdownProps,
-    BreakdownTransaction,
-    CurrencyAmounts,
-} from './types';
+import type { BreakdownProps, CurrencyAmounts } from './types';
 
 const currencies = ['PEN', 'USD'] satisfies Currency[];
 const focusLabels = {
@@ -401,132 +395,7 @@ function MerchantRanking({ props }: { props: BreakdownProps }) {
     );
 }
 
-function transactionClassification(transaction: BreakdownTransaction): string {
-    if (transaction.kind === 'income') {
-        return incomeSourceLabel(transaction.income_source);
-    }
-
-    if (transaction.kind === 'transfer') {
-        return transferPurposeLabel(transaction.transfer_purpose);
-    }
-
-    return transaction.category?.name ?? 'Uncategorized';
-}
-
-function InlineCategory({
-    transaction,
-    props,
-}: {
-    transaction: BreakdownTransaction;
-    props: BreakdownProps;
-}) {
-    const currentCategoryId = transaction.category?.id.toString() ?? '';
-    const [categoryId, setCategoryId] = useState(currentCategoryId);
-    const [processingAction, setProcessingAction] = useState<
-        'once' | 'rule' | null
-    >(null);
-    const hasPendingCategory = categoryId !== currentCategoryId;
-
-    function submitCategory({ applyToMatching }: { applyToMatching: boolean }) {
-        if (!hasPendingCategory || (applyToMatching && categoryId === '')) {
-            return;
-        }
-
-        setProcessingAction(applyToMatching ? 'rule' : 'once');
-
-        router.put(
-            updateClassification(transaction.id),
-            {
-                category_id: categoryId === '' ? null : Number(categoryId),
-                apply_to_matching: applyToMatching,
-            },
-            {
-                preserveScroll: true,
-                preserveState: true,
-                onFinish: () => setProcessingAction(null),
-            },
-        );
-    }
-
-    if (
-        (transaction.kind !== 'spending' && transaction.kind !== 'refund') ||
-        transaction.split !== null
-    ) {
-        return (
-            <span className="type-row text-muted-foreground">
-                {transaction.split === null
-                    ? transactionClassification(transaction)
-                    : 'Category split'}
-            </span>
-        );
-    }
-
-    return (
-        <div className="flex min-w-56 flex-col gap-2">
-            <CategoryPicker
-                id={`category-${transaction.id}`}
-                name={`category-${transaction.id}`}
-                options={props.category_options.map((option) => ({
-                    id: option.id,
-                    name: option.name,
-                    path: option.path,
-                    parent_id: option.parent?.id ?? null,
-                    parent_name: option.parent?.name ?? null,
-                }))}
-                value={categoryId}
-                onValueChange={setCategoryId}
-                emptyLabel="Uncategorized"
-                ariaLabel={`Category for ${transaction.description}`}
-                disabled={processingAction !== null}
-                className="h-auto min-h-8 border-transparent bg-transparent px-2 py-1.5 text-left whitespace-normal shadow-none hover:border-input"
-                closeOnSelect={false}
-                portalToBody
-                popoverFooter={
-                    hasPendingCategory ? (
-                        <div
-                            className="flex items-center justify-end gap-1.5 p-2"
-                            data-test={`category-confirmation-${transaction.id}`}
-                        >
-                            <Button
-                                type="button"
-                                size="sm"
-                                data-test={`apply-category-once-${transaction.id}`}
-                                disabled={processingAction !== null}
-                                onClick={() =>
-                                    submitCategory({ applyToMatching: false })
-                                }
-                            >
-                                {processingAction === 'once'
-                                    ? 'Applying…'
-                                    : 'Apply once'}
-                            </Button>
-                            {categoryId !== '' && (
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    data-test={`create-merchant-rule-${transaction.id}`}
-                                    disabled={processingAction !== null}
-                                    onClick={() =>
-                                        submitCategory({
-                                            applyToMatching: true,
-                                        })
-                                    }
-                                >
-                                    {processingAction === 'rule'
-                                        ? 'Creating…'
-                                        : 'Create rule'}
-                                </Button>
-                            )}
-                        </div>
-                    ) : undefined
-                }
-            />
-        </div>
-    );
-}
-
-function BreakdownTransactions({ props }: { props: BreakdownProps }) {
+function useBreakdownTransactions(props: BreakdownProps) {
     const [search, setSearch] = useState('');
     const [appliedFilters, setAppliedFilters] =
         useState<TransactionListFilters>({
@@ -573,24 +442,32 @@ function BreakdownTransactions({ props }: { props: BreakdownProps }) {
                 appliedFilters.kinds.includes(transaction.kind))
         );
     });
+    const categoryOptions = props.category_options.map((option) => ({
+        id: option.id,
+        name: option.name,
+        path: option.path,
+        parent_id: option.parent?.id ?? null,
+        parent_name: option.parent?.name ?? null,
+    }));
 
-    return (
-        <div className="grid gap-4 py-4">
-            <div className="px-4">
-                <TransactionListFilterControls
-                    search={search}
-                    filters={appliedFilters}
-                    instantSearch
-                    onSearch={(value) => {
-                        setSearch(value);
-                        setPageState({ scopeKey, page: 1 });
-                    }}
-                    onApply={(filters) => {
-                        setAppliedFilters(filters);
-                        setPageState({ scopeKey, page: 1 });
-                    }}
-                />
-            </div>
+    return {
+        count: filteredTransactions.length,
+        controls: (
+            <TransactionListFilterControls
+                search={search}
+                filters={appliedFilters}
+                instantSearch
+                onSearch={(value) => {
+                    setSearch(value);
+                    setPageState({ scopeKey, page: 1 });
+                }}
+                onApply={(filters) => {
+                    setAppliedFilters(filters);
+                    setPageState({ scopeKey, page: 1 });
+                }}
+            />
+        ),
+        table: (
             <TransactionTable
                 transactions={filteredTransactions.slice(
                     (page - 1) * 50,
@@ -614,17 +491,24 @@ function BreakdownTransactions({ props }: { props: BreakdownProps }) {
                     }).url
                 }
                 renderCategory={(transaction) => (
-                    <InlineCategory transaction={transaction} props={props} />
+                    <TransactionCategorySelect
+                        transaction={{
+                            ...transaction,
+                            has_split: transaction.split !== null,
+                        }}
+                        categoryOptions={categoryOptions}
+                    />
                 )}
                 rowTestId={(transaction) =>
                     `breakdown-transaction-${transaction.id}`
                 }
             />
-        </div>
-    );
+        ),
+    };
 }
 
 export default function BreakdownIndex(props: BreakdownProps) {
+    const transactionList = useBreakdownTransactions(props);
     const selectedCategory = selectedCategoryLabel(props);
     const selectedTransaction = props.transaction_days
         .flatMap((day) => day.transactions)
@@ -793,12 +677,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                             </Link>
                         </Button>
                     )}
-                    <div className="ml-auto">
-                        <ManualTransactionDialog
-                            currency={props.currency_filter ?? 'PEN'}
-                            today={props.today}
-                        />
-                    </div>
+                    <div className="ml-auto">{transactionList.controls}</div>
                 </div>
 
                 <div className="grid min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(20rem,0.8fr)_minmax(36rem,1.2fr)] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:overflow-hidden">
@@ -873,16 +752,30 @@ export default function BreakdownIndex(props: BreakdownProps) {
                         data-test="breakdown-transactions-card"
                     >
                         <div
-                            className="flex shrink-0 items-center justify-between border-b p-4"
+                            className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b p-4"
                             data-test="breakdown-transactions-header"
                         >
-                            <h2 className="type-section-title">Transactions</h2>
+                            <div className="flex items-center gap-2">
+                                <h2 className="type-section-title">
+                                    Transactions
+                                </h2>
+                                <Badge
+                                    variant="secondary"
+                                    data-test="transaction-matching-count"
+                                >
+                                    {transactionList.count} matching{' '}
+                                    {transactionList.count === 1
+                                        ? 'Transaction'
+                                        : 'Transactions'}
+                                </Badge>
+                            </div>
+                            <ManualTransactionDialog
+                                currency={props.currency_filter ?? 'PEN'}
+                                today={props.today}
+                            />
                         </div>
-                        <div
-                            className="h-full min-h-0 min-w-0 flex-1 overflow-y-auto"
-                            data-test="breakdown-transactions-scroll"
-                        >
-                            <BreakdownTransactions props={props} />
+                        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                            {transactionList.table}
                         </div>
                     </Card>
                 </div>

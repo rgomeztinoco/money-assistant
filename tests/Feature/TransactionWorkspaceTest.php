@@ -2,6 +2,7 @@
 
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
+use App\Models\ReceiptBreakdown;
 use App\Models\SpendingNotificationReference;
 use App\Models\Transaction;
 use App\Models\User;
@@ -28,6 +29,26 @@ test('amount bounds compare monetary magnitude in the selected currency', functi
         ->assertInertia(fn (Assert $page) => $page
             ->where('pagination.total', 1)
             ->where('transactions.0.id', $match->id));
+});
+
+test('the Transactions list identifies receipt splits for inline classification', function () {
+    $owner = User::factory()->create();
+    $ordinary = Transaction::factory()->for($owner, 'owner')->spending()->create([
+        'occurred_on' => '2026-09-01',
+    ]);
+    $split = Transaction::factory()->for($owner, 'owner')->spending()->create([
+        'occurred_on' => '2026-09-01',
+    ]);
+    ReceiptBreakdown::factory()->for($split)->create();
+
+    $this->actingAs($owner)
+        ->get(route('transactions.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('pagination.total', 2)
+            ->where('transactions.0.id', $split->id)
+            ->where('transactions.0.has_split', true)
+            ->where('transactions.1.id', $ordinary->id)
+            ->where('transactions.1.has_split', false));
 });
 
 test('the selected Transaction inspector exposes current state and relationships', function () {

@@ -17,7 +17,7 @@ test('Transactions searches history and finds a Voided ID without losing list st
         'occurred_on' => '2026-09-01',
         'description' => 'Other purchase',
     ]);
-    Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
         'occurred_on' => '2025-01-01',
         'description' => 'Starbucks refund',
         'amount_minor' => 1250,
@@ -32,9 +32,31 @@ test('Transactions searches history and finds a Voided ID without losing list st
     $page = visit('/transactions');
 
     $page
+        ->resize(1280, 720)
         ->assertPresent('a[href="/transactions"]')
         ->assertNotPresent('[data-test="period-controls"]')
+        ->assertNotPresent('label[for="transaction-search"]')
         ->assertSeeIn('[data-test="transaction-matching-count"]', '52 matching Transactions')
+        ->assertSee('Currency')
+        ->assertScript(<<<'JS'
+            (() => {
+                const scroller = document.querySelector('[data-test="breakdown-transactions-scroll"]');
+                const header = scroller?.querySelector('thead');
+                const footer = scroller?.parentElement?.lastElementChild;
+
+                if (scroller === null || header === null || header === undefined || footer === null || footer === undefined) {
+                    return false;
+                }
+
+                const headerTop = header.getBoundingClientRect().top;
+                const footerTop = footer.getBoundingClientRect().top;
+                scroller.scrollTop = 800;
+
+                return scroller.scrollTop > 0
+                    && Math.abs(header.getBoundingClientRect().top - headerTop) < 1
+                    && Math.abs(footer.getBoundingClientRect().top - footerTop) < 1;
+            })()
+            JS)
         ->fill('#transaction-search', 'not submitted')
         ->press('Filters')
         ->press('Apply')
@@ -44,6 +66,7 @@ test('Transactions searches history and finds a Voided ID without losing list st
         ->click('[data-test="transaction-search-submit"]')
         ->assertQueryStringHas('search', 'STAR')
         ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertSeeIn('[data-test="transaction-row-id-'.$refund->id.'"]', '#'.$refund->id)
         ->assertSee('Starbucks refund')
         ->press('Filters')
         ->fill('#filter-amount-min', '12.50')
@@ -67,6 +90,25 @@ test('Transactions searches history and finds a Voided ID without losing list st
         ->assertQueryStringHas('amount_min', '12.50')
         ->assertNoJavaScriptErrors();
 
+});
+
+test('Transactions can classify a row from the Category dropdown', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->create([
+        'description' => 'Corner store',
+    ]);
+    $this->actingAs($owner);
+
+    visit('/transactions')
+        ->assertSeeIn('[data-test="transaction-row-id-'.$transaction->id.'"]', '#'.$transaction->id)
+        ->click('[aria-label="Category for Corner store"]')
+        ->click('@category-'.$transaction->id.'-option-'.$category->id)
+        ->click('[data-test="apply-category-once-'.$transaction->id.'"]')
+        ->assertSee('Groceries')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->fresh()->category_id)->toBe($category->id);
 });
 
 test('date-only values stay fixed while instants follow the browser timezone', function () {

@@ -61,6 +61,8 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
         ->fill('#transaction-search', 'STAR')
         ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
         ->assertSee('Starbucks refund')
+        ->assertSeeIn('[data-test="transaction-row-id-'.$refund->id.'"]', '#'.$refund->id)
+        ->assertNotPresent('label[for="transaction-search"]')
         ->press('Filters')
         ->fill('#filter-amount-min', '20.00')
         ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')

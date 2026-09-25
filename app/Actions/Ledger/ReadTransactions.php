@@ -13,7 +13,7 @@ class ReadTransactions
     /**
      * @param  array{search?: string|null, date_from?: string|null, date_to?: string|null, currency?: string|null, amount_min?: string|null, amount_max?: string|null, kinds?: list<string>, selected?: int|string|null, page?: int|string|null}  $input
      * @return array{
-     *     transactions: list<array{id: int, occurred_on: string, amount_minor: string, currency: string, kind: string, direction: string, income_source: string|null, transfer_purpose: string|null, description: string, category: array{id: int, name: string}|null}>,
+     *     transactions: list<array{id: int, occurred_on: string, amount_minor: string, currency: string, kind: string, direction: string, income_source: string|null, transfer_purpose: string|null, description: string, has_split: bool, category: array{id: int, name: string}|null}>,
      *     pagination: array{current_page: int, last_page: int, per_page: int, total: int, from: int|null, to: int|null, previous_page_url: string|null, next_page_url: string|null},
      *     filters: array{search: string, date_from: string|null, date_to: string|null, currency: string|null, amount_min: string|null, amount_max: string|null, kinds: list<string>}
      * }
@@ -37,7 +37,7 @@ class ReadTransactions
                 'kind', 'direction', 'income_source', 'transfer_purpose',
                 'description', 'category_id',
             ])
-            ->with('category:id,name');
+            ->with(['category:id,name', 'receiptBreakdown:id,transaction_id']);
 
         if ($filters['search'] !== '') {
             $literalSearch = addcslashes($filters['search'], '\\%_');
@@ -76,6 +76,7 @@ class ReadTransactions
                 'income_source' => $transaction->income_source?->value,
                 'transfer_purpose' => $transaction->transfer_purpose?->value,
                 'description' => $transaction->description,
+                'has_split' => $transaction->receiptBreakdown !== null,
                 'category' => $transaction->category === null
                     ? null
                     : ['id' => $transaction->category->id, 'name' => $transaction->category->name],

@@ -124,13 +124,12 @@ export function TransactionListFilterControls({
     }
 
     return (
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-wrap items-center gap-2">
             <form
                 onSubmit={submitSearch}
-                className="flex min-w-48 flex-1 gap-2"
+                className="flex max-w-sm min-w-48 flex-1 gap-2"
             >
-                <div className="grid min-w-0 flex-1 gap-1.5">
-                    <Label htmlFor="transaction-search">Search</Label>
+                <div className="min-w-0 flex-1">
                     <Input
                         id="transaction-search"
                         aria-label="Merchant or description"
@@ -147,11 +146,7 @@ export function TransactionListFilterControls({
                     />
                 </div>
                 {!instantSearch && (
-                    <Button
-                        type="submit"
-                        className="self-end"
-                        data-test="transaction-search-submit"
-                    >
+                    <Button type="submit" data-test="transaction-search-submit">
                         <Search /> Search
                     </Button>
                 )}
