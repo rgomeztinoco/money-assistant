@@ -175,12 +175,11 @@ export default function TransactionsIndex({
                                             }),
                                         )
                                     }
-                                    onApply={(applied, search) =>
+                                    onApply={(applied) =>
                                         visit(
                                             transactionUrl({
                                                 ...filters,
                                                 ...applied,
-                                                search,
                                             }),
                                         )
                                     }

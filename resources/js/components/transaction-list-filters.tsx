@@ -50,7 +50,7 @@ export function TransactionListFilterControls({
     includeDates?: boolean;
     includeCurrency?: boolean;
     onSearch: (search: string) => void;
-    onApply: (filters: TransactionListFilters, search: string) => void;
+    onApply: (filters: TransactionListFilters) => void;
 }) {
     const [searchValue, setSearchValue] = useState(search);
     const [draft, setDraft] = useState(filters);
@@ -113,16 +113,12 @@ export function TransactionListFilterControls({
             return;
         }
 
-        onApply(
-            {
-                ...draft,
-                amount_min: draft.amount_min || null,
-                amount_max: draft.amount_max || null,
-                kinds:
-                    draft.kinds.length === allKinds.length ? [] : draft.kinds,
-            },
-            searchValue,
-        );
+        onApply({
+            ...draft,
+            amount_min: draft.amount_min || null,
+            amount_max: draft.amount_max || null,
+            kinds: draft.kinds.length === allKinds.length ? [] : draft.kinds,
+        });
         setError(null);
         setOpen(false);
     }

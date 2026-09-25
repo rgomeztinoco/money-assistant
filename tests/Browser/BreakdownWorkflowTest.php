@@ -26,7 +26,7 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
             'amount_minor' => 500,
         ])
         ->create();
-    Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
         'occurred_on' => $date,
         'description' => 'Starbucks refund',
         'amount_minor' => 1250,
@@ -43,7 +43,21 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
     $page
         ->assertSeeIn('[data-test="transaction-matching-count"]', '1000 matching Transactions')
         ->press('Next')
-        ->assertSee('Page 2 of 20')
+        ->assertSee('Page 2 of 20');
+
+    $page->script('document.querySelector(\'[data-test^="breakdown-transaction-"]\').click()');
+
+    $page
+        ->assertSee('Transaction details')
+        ->click('[data-slot="dialog-content"] > button')
+        ->assertQueryStringMissing('selected')
+        ->assertSee('Page 2 of 20');
+
+    $page->script(<<<'JS'
+        window.__breakdownRequests = performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/breakdown')).length;
+        JS);
+
+    $page
         ->fill('#transaction-search', 'STAR')
         ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
         ->assertSee('Starbucks refund')
@@ -63,6 +77,12 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
         ->assertSee('Starbucks refund')
         ->assertScript('performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length === window.__breakdownRequests')
         ->assertScript('document.querySelector(\'[data-test="breakdown-summary"]\')?.textContent === window.__breakdownSummary')
+        ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
+        ->assertSee('Transaction details')
+        ->press('Close')
+        ->assertQueryStringMissing('selected')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertScript('document.querySelector("#transaction-search")?.value === "STAR"')
         ->assertNoJavaScriptErrors();
 });
 

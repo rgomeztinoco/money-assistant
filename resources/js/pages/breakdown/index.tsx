@@ -585,9 +585,8 @@ function BreakdownTransactions({ props }: { props: BreakdownProps }) {
                         setSearch(value);
                         setPageState({ scopeKey, page: 1 });
                     }}
-                    onApply={(filters, value) => {
+                    onApply={(filters) => {
                         setAppliedFilters(filters);
-                        setSearch(value);
                         setPageState({ scopeKey, page: 1 });
                     }}
                 />
@@ -895,6 +894,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                     if (!open) {
                         router.visit(closeDetailsHref, {
                             preserveScroll: true,
+                            preserveState: true,
                         });
                     }
                 }}
