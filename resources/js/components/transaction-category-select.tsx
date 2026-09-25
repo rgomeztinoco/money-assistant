@@ -78,7 +78,7 @@ export function TransactionCategorySelect({
                 emptyLabel="Uncategorized"
                 ariaLabel={`Category for ${transaction.description}`}
                 disabled={processingAction !== null}
-                className="h-auto min-h-8 border-transparent bg-transparent px-2 py-1.5 text-left whitespace-normal shadow-none hover:border-input"
+                className="h-auto min-h-8 px-2 py-1.5 text-left whitespace-normal"
                 closeOnSelect={false}
                 portalToBody
                 popoverFooter={
