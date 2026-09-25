@@ -6,6 +6,7 @@ import {
     update,
 } from '@/actions/App/Http/Controllers/TransactionController';
 import { CategoryPicker } from '@/components/category-picker';
+import type { CategoryPickerOption } from '@/components/category-picker';
 import InputError from '@/components/input-error';
 import {
     AlertDialog,
@@ -63,14 +64,6 @@ export type EditorTransaction = {
     }> | null;
 };
 
-export type EditorCategoryOption = {
-    id: number;
-    name: string;
-    path: string;
-    parent_id: number | null;
-    parent_name: string | null;
-};
-
 function normalizedAmount(value: string): string | null {
     const parts = /^0*(\d+)(?:\.(\d{1,2}))?$/.exec(value);
 
@@ -90,7 +83,7 @@ export function TransactionEditor({
     transaction?: EditorTransaction;
     currency: Currency;
     today: string;
-    categoryOptions: EditorCategoryOption[];
+    categoryOptions: CategoryPickerOption[];
     onCancel: () => void;
     onSaved: () => void;
 }) {

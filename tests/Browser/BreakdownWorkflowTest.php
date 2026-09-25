@@ -1129,7 +1129,7 @@ test('validation keeps the draft and opens the optional section with an error', 
         ->and($transaction->instrument_last_four)->toBe('4242');
 });
 
-test('the phone editor fills the viewport and cancellation leaves the record unchanged', function () {
+test('the editor is centered on desktop and fills the phone viewport without saving a canceled draft', function () {
     $owner = User::factory()->create();
     $today = now()->toDateString();
     $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
@@ -1139,9 +1139,22 @@ test('the phone editor fills the viewport and cancellation leaves the record unc
     $this->actingAs($owner);
 
     visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
-        ->resize(390, 844)
+        ->resize(1280, 800)
         ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
         ->press('Edit Transaction')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const bounds = dialog?.getBoundingClientRect();
+
+                return bounds !== undefined
+                    && Math.abs((bounds.left + bounds.right) / 2 - innerWidth / 2) <= 2
+                    && Math.abs((bounds.top + bounds.bottom) / 2 - innerHeight / 2) <= 2
+                    && bounds.width < innerWidth
+                    && bounds.height < innerHeight;
+            })()
+            JS)
+        ->resize(390, 844)
         ->assertScript(<<<'JS'
             (() => {
                 const dialog = document.querySelector('[data-slot="dialog-content"]');
