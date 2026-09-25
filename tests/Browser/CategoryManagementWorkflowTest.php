@@ -159,18 +159,22 @@ test('an inline Category stays selected while editing a Transaction', function (
     ]);
     $this->actingAs($owner);
 
-    visit('/transactions?selected='.$transaction->id)
-        ->click('@transaction-'.$transaction->id.'-category-trigger')
-        ->click('@transaction-'.$transaction->id.'-category-create-option')
+    visit('/transactions')
+        ->click('@category-'.$transaction->id.'-trigger')
+        ->click('@category-'.$transaction->id.'-create-option')
         ->fill(
-            '#transaction-'.$transaction->id.'-category-new-name',
+            '#category-'.$transaction->id.'-new-name',
             'Market errands',
         )
         ->press('Create Category')
         ->assertSeeIn(
-            '@transaction-'.$transaction->id.'-category-trigger',
+            '@category-'.$transaction->id.'-trigger',
             'Market errands',
         )
+        ->click('@category-'.$transaction->id.'-trigger')
+        ->click('[data-test="apply-category-once-'.$transaction->id.'"]')
+        ->click('[data-test="transaction-'.$transaction->id.'"]')
+        ->press('Edit Transaction')
         ->press('Save Transaction')
         ->assertSee('Transaction updated.')
         ->assertNoJavaScriptErrors()
