@@ -152,27 +152,27 @@ test('archive confirmation names affected children and Merchant Rules', function
         ->assertNoConsoleLogs();
 });
 
-test('an inline Category stays selected in the Review Queue', function () {
+test('an inline Category stays selected while editing a Transaction', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'description' => 'City market',
     ]);
     $this->actingAs($owner);
 
-    visit('/review-queue')
-        ->click('@category-'.$transaction->id.'-trigger')
-        ->click('@category-'.$transaction->id.'-create-option')
+    visit('/transactions?selected='.$transaction->id)
+        ->click('@transaction-'.$transaction->id.'-category-trigger')
+        ->click('@transaction-'.$transaction->id.'-category-create-option')
         ->fill(
-            '#category-'.$transaction->id.'-new-name',
+            '#transaction-'.$transaction->id.'-category-new-name',
             'Market errands',
         )
         ->press('Create Category')
         ->assertSeeIn(
-            '@category-'.$transaction->id.'-trigger',
+            '@transaction-'.$transaction->id.'-category-trigger',
             'Market errands',
         )
-        ->press('Assign Category and continue')
-        ->assertSee('Review Queue is clear')
+        ->press('Save Transaction')
+        ->assertSee('Transaction updated.')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 

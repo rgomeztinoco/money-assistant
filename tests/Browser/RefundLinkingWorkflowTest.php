@@ -2,12 +2,13 @@
 
 use App\Models\Transaction;
 use App\Models\User;
+use App\RefundRelationshipReviewReason;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the owner links a Refund and sees an excessive relationship in the Review Queue', function () {
+test('the owner sees retained Refund links and review reasons in Transaction details', function () {
     $owner = User::factory()->create();
     $spending = Transaction::factory()
         ->for($owner, 'owner')
@@ -18,7 +19,7 @@ test('the owner links a Refund and sees an excessive relationship in the Review 
             'amount_minor' => 10_000,
             'description' => 'Original spending',
         ]);
-    Transaction::factory()
+    $refund = Transaction::factory()
         ->for($owner, 'owner')
         ->refund()
         ->usd()
@@ -26,22 +27,23 @@ test('the owner links a Refund and sees an excessive relationship in the Review 
             'occurred_on' => '2026-07-21',
             'amount_minor' => 12_000,
             'description' => 'Store Refund',
+            'original_spending_id' => $spending->id,
+            'refund_relationship_review_reasons' => [
+                RefundRelationshipReviewReason::CumulativeRefundsExceedSpending->value,
+            ],
         ]);
     $this->actingAs($owner);
 
-    $page = visit('/transactions');
-
-    $page
-        ->press('Inspect')
-        ->select('Edit original Spending Transaction', (string) $spending->id)
-        ->press('Save Transaction')
-        ->assertSee('Transaction updated.');
-
-    visit('/review-queue')
+    visit('/transactions?selected='.$refund->id)
         ->assertSee('Linked Refunds exceed the spending')
-        ->assertSee('Review the linked spending and correct the Refund relationship before continuing.')
-        ->click('Correct this relationship')
-        ->assertSee('Edit current Transaction')
+        ->press('Advanced details')
+        ->assertSee('Original spending: Original spending')
+        ->assertNoJavaScriptErrors()
+        ->assertNoConsoleLogs();
+
+    visit('/transactions?selected='.$spending->id)
+        ->press('Advanced details')
+        ->assertSee('Linked Refund: Store Refund')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

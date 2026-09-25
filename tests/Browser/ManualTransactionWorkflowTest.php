@@ -14,39 +14,50 @@ test('the owner records every money movement kind in plain language', function (
     $page = visit('/transactions');
 
     $page
-        ->assertSee('No Transactions yet')
+        ->assertSee('No matching Transactions')
+        ->press('Add Transaction')
         ->press('Record Transaction')
         ->assertSee('The amount field is required.')
         ->assertSee('The description field is required.')
-        ->fill('Amount', '123.45')
-        ->fill('Merchant or short description', 'Mortgage payment')
-        ->select('Currency', 'PEN')
-        ->select('Movement kind', 'spending')
-        ->select('Money direction', 'debit')
+        ->fill('#manual-amount', '123.45')
+        ->fill('#manual-description', 'Mortgage payment')
+        ->select('#manual-currency', 'PEN')
+        ->select('#manual-kind', 'spending')
+        ->select('#manual-direction', 'debit')
         ->press('Record Transaction')
+        ->assertNotPresent('#manual-amount')
         ->assertSee('S/ 123.45')
         ->assertSee('Mortgage payment')
         ->assertSee('Spending')
-        ->fill('Amount', '23.45')
-        ->fill('Merchant or short description', 'Travel reimbursement')
-        ->select('Movement kind', 'refund')
-        ->select('Money direction', 'credit')
+        ->navigate('/transactions')
+        ->press('Add Transaction')
+        ->fill('#manual-amount', '23.45')
+        ->fill('#manual-description', 'Travel reimbursement')
+        ->select('#manual-kind', 'refund')
+        ->select('#manual-direction', 'credit')
         ->press('Record Transaction')
+        ->assertNotPresent('#manual-amount')
         ->assertSee('Travel reimbursement')
         ->assertSee('Refund or reimbursement')
-        ->fill('Amount', '98.76')
-        ->fill('Merchant or short description', 'Monthly salary')
-        ->select('Movement kind', 'income')
-        ->select('Income source', 'salary')
+        ->navigate('/transactions')
+        ->press('Add Transaction')
+        ->fill('#manual-amount', '98.76')
+        ->fill('#manual-description', 'Monthly salary')
+        ->select('#manual-kind', 'income')
+        ->select('#manual-income-source', 'salary')
         ->press('Record Transaction')
+        ->assertNotPresent('#manual-amount')
         ->assertSee('Monthly salary')
         ->assertSee('Income')
-        ->fill('Amount', '8.76')
-        ->fill('Merchant or short description', 'Moved to savings')
-        ->select('Movement kind', 'transfer')
-        ->select('Money direction', 'debit')
-        ->select('Transfer purpose', 'savings')
+        ->navigate('/transactions')
+        ->press('Add Transaction')
+        ->fill('#manual-amount', '8.76')
+        ->fill('#manual-description', 'Moved to savings')
+        ->select('#manual-kind', 'transfer')
+        ->select('#manual-direction', 'debit')
+        ->select('#manual-transfer-purpose', 'savings')
         ->press('Record Transaction')
+        ->assertNotPresent('#manual-amount')
         ->assertSee('S/ 8.76')
         ->assertSee('Moved to savings')
         ->assertSee('Transfer · Moved to savings')
@@ -54,31 +65,30 @@ test('the owner records every money movement kind in plain language', function (
         ->assertNoConsoleLogs();
 });
 
-test('the owner can void and restore a Transaction explicitly from the ledger', function () {
+test('the owner can identify a retained Voided Transaction by ID', function () {
     $owner = User::factory()->create();
-    Transaction::factory()
+    $transaction = Transaction::factory()
         ->for($owner, 'owner')
         ->spending()
         ->usd()
         ->create([
             'amount_minor' => 12345,
             'description' => 'Mistaken market entry',
+            'voided_at' => now(),
         ]);
     $this->actingAs($owner);
 
     $page = visit('/transactions');
 
     $page
+        ->fill('#transaction-search', (string) $transaction->id)
+        ->click('[data-test="transaction-search-submit"]')
+        ->click('[data-test="transaction-'.$transaction->id.'"]')
+        ->assertQueryStringHas('selected', (string) $transaction->id)
         ->assertSee('Mistaken market entry')
-        ->assertSee('$ 123.45')
-        ->press('Void')
-        ->assertSee('Transaction voided.')
         ->assertSee('Voided')
-        ->assertSee('Mistaken market entry')
         ->assertSee('$ 123.45')
-        ->press('Restore')
-        ->assertSee('Transaction restored.')
-        ->assertSee('$ 123.45')
+        ->assertSee('Excluded from all period summaries while Voided.')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

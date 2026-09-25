@@ -2,16 +2,11 @@
 
 namespace App\Http\Middleware;
 
-use App\Actions\Ledger\CountOutstandingReviews;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
-    public function __construct(
-        private CountOutstandingReviews $countOutstandingReviews,
-    ) {}
-
     /**
      * The root template that's loaded on the first page visit.
      *
@@ -44,11 +39,6 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
-            ],
-            'navigation' => [
-                'review_queue_count' => fn (): int => $request->user() === null
-                    ? 0
-                    : $this->countOutstandingReviews->handle($request->user()),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

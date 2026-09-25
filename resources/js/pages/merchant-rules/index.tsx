@@ -472,7 +472,7 @@ export default function MerchantRulesIndex({
 
                 <div className="flex gap-2">
                     <form
-                        className="flex min-w-0 flex-1 gap-2"
+                        className="flex max-w-md min-w-0 flex-1 gap-2"
                         onSubmit={submitSearch}
                     >
                         <Input
@@ -495,6 +495,7 @@ export default function MerchantRulesIndex({
                                     data-test="rule-filters-trigger"
                                     type="button"
                                     variant="outline"
+                                    className="ml-auto"
                                 />
                             }
                         >

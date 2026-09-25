@@ -76,7 +76,8 @@
             "@php artisan config:clear --ansi",
             "@lint:check",
             "@types:check",
-            "@php artisan test"
+            "@php artisan test --compact tests/Feature",
+            "@php artisan test --compact --parallel --processes=2 tests/Browser"
         ],
         "test:deployment": [
             "pnpm run build",

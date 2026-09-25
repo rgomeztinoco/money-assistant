@@ -629,7 +629,7 @@ test('Interbank confirmation isolates non-spending movements from reports rules 
             ->merchant_rule_id->toBeNull());
 });
 
-test('linked Transaction edits and voiding preserve the immutable confirmed Interbank movement', function () {
+test('linked Transaction edits and retained void state preserve the immutable confirmed Interbank movement', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     $pdf = SyntheticPdf::fromText(interbankStatementText());
@@ -660,8 +660,7 @@ test('linked Transaction edits and voiding preserve the immutable confirmed Inte
         ])
         ->assertSessionHasNoErrors();
 
-    $this->post(route('transactions.void.store', $transaction))
-        ->assertSessionHasNoErrors();
+    $transaction->forceFill(['voided_at' => now()])->save();
 
     $movement->refresh();
     $transaction->refresh();

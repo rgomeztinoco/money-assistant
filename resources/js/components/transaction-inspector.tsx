@@ -31,7 +31,6 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
-import { formatFullDate } from '@/lib/date-presentation';
 import {
     currencyUnitsToMinorUnits,
     formatMinorUnits,
@@ -289,6 +288,9 @@ function ReceiptBreakdownSection({
                                             id={`receipt-line-${lineItem.clientId}-category`}
                                             name={`line_items[${index}][category_id]`}
                                             options={categoryOptions}
+                                            createReloadOnly={[
+                                                'category_options',
+                                            ]}
                                             value={
                                                 lineItem.category?.id.toString() ??
                                                 ''
@@ -409,11 +411,9 @@ function ReceiptBreakdownSection({
 function TransactionEditForm({
     transaction,
     categoryOptions,
-    nextReviewItem,
 }: {
     transaction: SelectedTransaction;
     categoryOptions: CategoryOption[];
-    nextReviewItem?: string;
 }) {
     const [kind, setKind] = useState<TransactionKind>(transaction.kind);
 
@@ -426,13 +426,6 @@ function TransactionEditForm({
         >
             {({ errors, processing }) => (
                 <>
-                    {nextReviewItem && (
-                        <input
-                            type="hidden"
-                            name="next_review_item"
-                            value={nextReviewItem}
-                        />
-                    )}
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="grid gap-2">
                             <Label
@@ -622,6 +615,7 @@ function TransactionEditForm({
                                 id={`transaction-${transaction.id}-category`}
                                 name="category_id"
                                 options={categoryOptions}
+                                createReloadOnly={['category_options']}
                                 defaultValue={
                                     transaction.category?.id.toString() ?? ''
                                 }
@@ -632,34 +626,11 @@ function TransactionEditForm({
                     )}
 
                     {kind === 'refund' && (
-                        <div className="grid gap-2">
-                            <Label
-                                htmlFor={`transaction-${transaction.id}-spending`}
-                            >
-                                Edit original Spending Transaction
-                            </Label>
-                            <NativeSelect
-                                id={`transaction-${transaction.id}-spending`}
-                                name="original_spending_id"
-                                defaultValue={
-                                    transaction.original_spending?.id.toString() ??
-                                    ''
-                                }
-                                options={[
-                                    {
-                                        value: '',
-                                        label: 'No reimbursement link',
-                                    },
-                                    ...transaction.spending_options.map(
-                                        (spending) => ({
-                                            value: spending.id.toString(),
-                                            label: `${formatFullDate(spending.occurred_on)} · ${spending.description} · ${spending.currency}`,
-                                        }),
-                                    ),
-                                ]}
-                            />
-                            <InputError message={errors.original_spending_id} />
-                        </div>
+                        <input
+                            type="hidden"
+                            name="original_spending_id"
+                            value={transaction.original_spending?.id ?? ''}
+                        />
                     )}
 
                     {transaction.review.fields.length > 0 && (
@@ -714,12 +685,10 @@ export function TransactionInspector({
     transaction,
     categoryOptions,
     onOpenChange,
-    nextReviewItem,
 }: {
     transaction: SelectedTransaction | null;
     categoryOptions: CategoryOption[];
     onOpenChange: (open: boolean) => void;
-    nextReviewItem?: string;
 }) {
     const unresolvedReviewCount = transaction
         ? transaction.review.fields.length +
@@ -906,7 +875,6 @@ export function TransactionInspector({
                                 key={transaction.id}
                                 transaction={transaction}
                                 categoryOptions={categoryOptions}
-                                nextReviewItem={nextReviewItem}
                             />
                         </section>
 

@@ -6,9 +6,101 @@ use App\Models\MerchantRule;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Factories\Sequence;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
+});
+
+test('Breakdown searches, filters, and pages loaded Transactions without data requests', function () {
+    $owner = User::factory()->create();
+    $date = now()->toDateString();
+    Transaction::factory()
+        ->count(999)
+        ->for($owner, 'owner')
+        ->spending()
+        ->pen()
+        ->sequence(fn (Sequence $sequence) => [
+            'occurred_on' => now()->startOfYear()->addDays($sequence->index % 250)->toDateString(),
+            'description' => 'Other merchant',
+            'amount_minor' => 500,
+        ])
+        ->create();
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => $date,
+        'description' => 'Starbucks refund',
+        'amount_minor' => 1250,
+    ]);
+    $outsidePeriod = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => now()->subYear()->toDateString(),
+        'description' => 'Outside this year',
+        'amount_minor' => 1250,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?period=year&anchor={$date}&currency=PEN");
+
+    $page->script(<<<'JS'
+        window.__breakdownRequests = performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/breakdown')).length;
+        window.__breakdownSummary = document.querySelector('[data-test="breakdown-summary"]')?.textContent;
+        JS);
+
+    $page
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1000 matching Transactions')
+        ->press('Next')
+        ->assertSee('Page 2 of 20');
+
+    $page->script('document.querySelector(\'[data-test^="breakdown-transaction-"]\').click()');
+
+    $page
+        ->assertSee('Transaction details')
+        ->click('[data-slot="dialog-content"] > button')
+        ->assertQueryStringMissing('selected')
+        ->assertSee('Page 2 of 20');
+
+    $page->script(<<<'JS'
+        window.__breakdownRequests = performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/breakdown')).length;
+        JS);
+
+    $page
+        ->fill('#transaction-search', 'STAR')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertSee('Starbucks refund')
+        ->assertSeeIn('[data-test="transaction-row-id-'.$refund->id.'"]', '#'.$refund->id)
+        ->assertNotPresent('label[for="transaction-search"]')
+        ->press('Filters')
+        ->fill('#filter-amount-min', '20.00')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->press('Apply')
+        ->assertSee('No matching Transactions')
+        ->press('Filters')
+        ->fill('#filter-amount-min', '12.50')
+        ->fill('#filter-amount-max', '12.50')
+        ->click('#filter-kind-spending')
+        ->click('#filter-kind-income')
+        ->click('#filter-kind-transfer')
+        ->press('Apply')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertSee('Starbucks refund')
+        ->assertScript('performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length === window.__breakdownRequests')
+        ->assertScript('document.querySelector(\'[data-test="breakdown-summary"]\')?.textContent === window.__breakdownSummary')
+        ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
+        ->assertSee('Transaction details')
+        ->press('Close')
+        ->assertQueryStringMissing('selected')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertScript('document.querySelector("#transaction-search")?.value === "STAR"');
+
+    $page->script('window.__breakdownRequests = performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length');
+
+    $page
+        ->fill('#transaction-search', (string) $refund->id)
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertSee('Starbucks refund')
+        ->fill('#transaction-search', (string) $outsidePeriod->id)
+        ->assertSee('No matching Transactions')
+        ->assertScript('performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length === window.__breakdownRequests')
+        ->assertNoJavaScriptErrors();
 });
 
 test('Category and day charts drill into the same supporting detail', function () {

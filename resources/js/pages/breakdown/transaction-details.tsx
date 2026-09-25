@@ -441,7 +441,7 @@ export function TransactionDetails({
                     </p>
                 </div>
                 <Button asChild variant="ghost" size="sm">
-                    <Link href={closeHref} preserveScroll>
+                    <Link href={closeHref} preserveScroll preserveState>
                         <ChevronUp /> Close
                     </Link>
                 </Button>

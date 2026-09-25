@@ -14,7 +14,7 @@ test('login screen can be rendered', function () {
         ->assertSee('Money Assistant')
         ->assertInertia(fn (Assert $page) => $page
             ->component('auth/login')
-            ->where('navigation.review_queue_count', 0));
+            ->missing('navigation'));
 });
 
 test('users can authenticate using the login screen', function () {

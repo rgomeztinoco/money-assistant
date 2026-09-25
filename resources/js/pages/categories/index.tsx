@@ -365,7 +365,7 @@ export default function CategoriesIndex({
 
                 <div className="flex flex-col gap-3 sm:flex-row">
                     <form
-                        className="flex min-w-0 flex-1 gap-2"
+                        className="flex max-w-md min-w-0 flex-1 gap-2"
                         onSubmit={submitSearch}
                     >
                         <Input
@@ -382,7 +382,7 @@ export default function CategoriesIndex({
                         </Button>
                     </form>
                     <NativeSelect
-                        className="sm:w-52 sm:shrink-0"
+                        className="sm:ml-auto sm:w-52 sm:shrink-0"
                         aria-label="Archived Categories"
                         value={filters.archived}
                         onChange={(event) => {

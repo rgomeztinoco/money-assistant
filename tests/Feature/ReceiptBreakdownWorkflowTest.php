@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Breakdown\ReadBreakdown;
+use App\Actions\Ledger\ReadReviewQueue;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\Models\Category;
@@ -285,7 +286,7 @@ test('the owner saves an independently reviewed Refund Receipt Breakdown', funct
         ->and(receiptCategoryTotalFor($owner, Currency::Pen, $refundCategory->id))->toBe('-800');
 });
 
-test('Uncategorized Line Items remain visible in the Review Queue', function () {
+test('Uncategorized Line Items remain in the review workload', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->recycle($owner)->spending()->pen()->create([
         'amount_minor' => 2_500,
@@ -306,11 +307,9 @@ test('Uncategorized Line Items remain visible in the Review Queue', function () 
         'category_id' => null,
     ]])->assertSessionHasNoErrors();
 
-    $this->get(route('review_queue.index'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('unresolved_category_count', 1)
-            ->where('transactions.0.id', $transaction->id));
+    $workload = app(ReadReviewQueue::class)->handle($owner);
+
+    expect($workload['unresolved_category_count'])->toBe(1);
 });
 
 /**

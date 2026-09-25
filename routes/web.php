@@ -10,16 +10,11 @@ use App\Http\Controllers\InlineCategoryController;
 use App\Http\Controllers\MerchantRuleController;
 use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReviewQueueController;
-use App\Http\Controllers\ReviewQueueLineItemCategoryController;
-use App\Http\Controllers\ReviewQueueTransactionCategoryController;
 use App\Http\Controllers\StatementImportController;
 use App\Http\Controllers\StatementImportPreviewController;
 use App\Http\Controllers\StatementMovementClassificationController;
 use App\Http\Controllers\TransactionCategoryController;
 use App\Http\Controllers\TransactionController;
-use App\Http\Controllers\TransactionFieldReviewController;
-use App\Http\Controllers\TransactionRefundLinkController;
-use App\Http\Controllers\TransactionVoidController;
 use App\Http\Controllers\TrendsController;
 use Illuminate\Support\Facades\Route;
 
@@ -73,26 +68,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('categories.archival.store');
     Route::delete('categories/{category}/archival', [CategoryArchivalController::class, 'destroy'])
         ->name('categories.archival.destroy');
-    Route::post('transactions/{refund}/refund-link', [TransactionRefundLinkController::class, 'store'])
-        ->name('transactions.refund_link.store');
-    Route::post('transactions/{transaction}/void', [TransactionVoidController::class, 'store'])
-        ->name('transactions.void.store');
-    Route::delete('transactions/{transaction}/void', [TransactionVoidController::class, 'destroy'])
-        ->name('transactions.void.destroy');
     Route::get('review-queue', ReviewQueueController::class)
         ->name('review_queue.index');
-    Route::put(
-        'review-queue/transactions/{transaction}/category',
-        [ReviewQueueTransactionCategoryController::class, 'update'],
-    )->name('review_queue.transactions.category.update');
-    Route::put(
-        'review-queue/line-items/{line_item}/category',
-        [ReviewQueueLineItemCategoryController::class, 'update'],
-    )->name('review_queue.line_items.category.update');
-    Route::resource('review-queue.fields', TransactionFieldReviewController::class)
-        ->only(['update'])
-        ->parameters(['review-queue' => 'transaction'])
-        ->names(['update' => 'review_queue.fields.update']);
 });
 
 require __DIR__.'/settings.php';

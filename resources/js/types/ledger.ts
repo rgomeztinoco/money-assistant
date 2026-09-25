@@ -109,45 +109,7 @@ type SelectedTransactionBase = {
         created_at: string | null;
     }>;
     receipt_breakdown: ReceiptBreakdown | null;
-    spending_options: Array<{
-        id: number;
-        occurred_on: string;
-        description: string;
-        currency: Currency;
-    }>;
 };
 
 export type SelectedTransaction = SelectedTransactionBase &
     MoneyMovementDetails;
-
-type LedgerTransactionBase = {
-    id: number;
-    occurred_on: string;
-    amount_minor: string;
-    currency: Currency;
-    description: string;
-    original_spending: {
-        id: number;
-        description: string;
-    } | null;
-    category: LedgerCategory | null;
-    review_state: 'outstanding' | 'clear';
-    review_field_count: number;
-    refund_relationship_review_count: number;
-    voided_at: string | null;
-};
-
-export type LedgerTransaction = LedgerTransactionBase & MoneyMovementDetails;
-
-export type LedgerFilters = {
-    search: string;
-    date_from: string | null;
-    date_to: string | null;
-    currency: Currency | 'all';
-    kind: TransactionKind | 'all';
-    category_id: number | null;
-    category_state: 'all' | 'categorized' | 'uncategorized';
-    review_state: 'all' | 'outstanding' | 'clear';
-    refund_relationship: 'all' | 'linked' | 'unlinked' | 'not_applicable';
-    void_state: 'all' | 'active' | 'voided';
-};
