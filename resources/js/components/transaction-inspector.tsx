@@ -654,14 +654,17 @@ export function TransactionInspector({
                                         <p>
                                             Category source:{' '}
                                             <span className="font-medium">
-                                                {transaction.category?.provenance.source.replace(
-                                                    '_',
-                                                    ' ',
-                                                ) ?? 'No Category assignment'}
+                                                {transaction.category
+                                                    ? (transaction.category.provenance?.source.replace(
+                                                          '_',
+                                                          ' ',
+                                                      ) ??
+                                                      'No Category source recorded')
+                                                    : 'No Category assignment'}
                                             </span>
                                         </p>
                                         {transaction.category?.provenance
-                                            .owner && (
+                                            ?.owner && (
                                             <p className="text-muted-foreground">
                                                 Assigned by{' '}
                                                 {
@@ -671,7 +674,7 @@ export function TransactionInspector({
                                             </p>
                                         )}
                                         {transaction.category?.provenance
-                                            .merchant_rule && (
+                                            ?.merchant_rule && (
                                             <p className="text-muted-foreground">
                                                 Merchant Rule #{' '}
                                                 {

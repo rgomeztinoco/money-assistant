@@ -54,7 +54,7 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
     $page->script('document.querySelector(\'[data-test^="breakdown-transaction-"]\').click()');
 
     $page
-        ->assertSee('Transaction details')
+        ->assertPresent('#transaction-amount')
         ->click('[data-slot="dialog-content"] > button')
         ->assertQueryStringMissing('selected')
         ->assertSee('Page 2 of 20');
@@ -86,8 +86,8 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
         ->assertScript('performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length === window.__breakdownRequests')
         ->assertScript('document.querySelector(\'[data-test="breakdown-summary"]\')?.textContent === window.__breakdownSummary')
         ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
-        ->assertSee('Transaction details')
-        ->press('Close')
+        ->assertPresent('#transaction-amount')
+        ->press('Cancel')
         ->assertQueryStringMissing('selected')
         ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
         ->assertScript('document.querySelector("#transaction-search")?.value === "STAR"');
@@ -784,10 +784,10 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->assertSee('future exact matches will follow this Category')
         ->resize(1280, 720)
         ->click('[data-test="breakdown-transaction-'.$current->id.'"]')
-        ->press('Edit Transaction')
         ->fill('Merchant or description', 'Café Central Lima')
         ->press('Save Transaction')
         ->assertSee('Transaction updated.')
+        ->click('[data-test="breakdown-transaction-'.$current->id.'"]')
         ->press('Split by Category')
         ->fill('[name="line_items[0][line_total]"]', '20.00')
         ->fill('[name="line_items[1][line_total]"]', '5.00')
@@ -802,7 +802,7 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->assertSee('Amounts reconcile exactly')
         ->press('Save Category split')
         ->assertSee('Category split saved.')
-        ->press('Close')
+        ->press('Cancel')
         ->press('Add Transaction')
         ->fill('#transaction-amount', '7.50')
         ->fill('#transaction-description', 'Manual bakery')
@@ -836,7 +836,6 @@ test('the owner edits a Transaction in the Breakdown dialog', function () {
 
     visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
         ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
-        ->press('Edit Transaction')
         ->assertPresent('#transaction-amount')
         ->assertSee('Transaction Kind')
         ->fill('#transaction-description', 'Corrected purchase')
@@ -918,7 +917,6 @@ test('changing Spending to an internal Transfer explains and confirms Category r
 
     $page
         ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
-        ->press('Edit Transaction')
         ->select('#transaction-kind', 'transfer')
         ->assertValue('#transaction-direction', 'debit')
         ->assertSee('Other transfer includes movements between your accounts.')
@@ -956,7 +954,6 @@ test('clearing an existing Category requires confirmation', function () {
 
     $page
         ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
-        ->press('Edit Transaction')
         ->click('@transaction-category-trigger')
         ->click('@transaction-category-empty-option')
         ->press('Save Transaction')
@@ -987,7 +984,6 @@ test('a linked Refund shows its currency error without discarding the draft', fu
 
     visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
         ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
-        ->press('Edit Transaction')
         ->select('#transaction-currency', 'USD')
         ->fill('#transaction-description', 'Draft refund correction')
         ->press('Save Transaction')
@@ -1019,7 +1015,6 @@ test('a Refund can be corrected to Income or an internal Transfer in one edit', 
 
     $page
         ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
-        ->press('Edit Transaction')
         ->select('#transaction-kind', $kind)
         ->assertValue('#transaction-direction', 'credit')
         ->assertSee($kind === 'income' ? 'Income Source' : 'Transfer Purpose')
@@ -1056,7 +1051,6 @@ test('an amount edit keeps the split until its removal is confirmed', function (
 
     $page
         ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
-        ->press('Edit Transaction')
         ->assertSee('Category split')
         ->assertSee('Groceries')
         ->assertNotPresent('#transaction-category-trigger')
@@ -1090,7 +1084,6 @@ test('an unchanged split amount saves without confirmation', function () {
 
     visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
         ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
-        ->press('Edit Transaction')
         ->fill('#transaction-amount', '25')
         ->fill('#transaction-description', 'Updated split purchase')
         ->press('Save Transaction')
@@ -1114,7 +1107,6 @@ test('validation keeps the draft and opens the optional section with an error', 
 
     visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
         ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
-        ->press('Edit Transaction')
         ->fill('#transaction-description', 'Draft correction')
         ->click('Optional payment source')
         ->fill('#transaction-last-four', 'abcd')
@@ -1141,7 +1133,6 @@ test('the editor is centered on desktop and fills the phone viewport without sav
     visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
         ->resize(1280, 800)
         ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
-        ->press('Edit Transaction')
         ->assertScript(<<<'JS'
             (() => {
                 const dialog = document.querySelector('[data-slot="dialog-content"]');

@@ -46,7 +46,7 @@ class ReadTransactionInspector
      *     instrument_last_four: string|null,
      *     confirmed_at: string,
      *     voided_at: string|null,
-     *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
+     *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData|null}|null,
      *     review: array{
      *         category: bool,
      *         fields: list<array{name: string, label: string, value: string}>,

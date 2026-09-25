@@ -115,6 +115,31 @@ test('Transactions can classify a row from the Category dropdown', function () {
     expect($transaction->fresh()->category_id)->toBe($category->id);
 });
 
+test('a Transaction with an unknown Category source can still be edited', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->create([
+        'category_id' => $category->id,
+        'category_assignment_provenance' => null,
+        'description' => 'Market purchase',
+    ]);
+    $this->actingAs($owner);
+
+    visit('/transactions?selected='.$transaction->id)
+        ->wait(1)
+        ->assertNoJavaScriptErrors()
+        ->assertSee('Market purchase')
+        ->press('Advanced details')
+        ->assertSee('No Category source recorded')
+        ->press('Edit Transaction')
+        ->fill('#transaction-description', 'Corrected market purchase')
+        ->press('Save Transaction')
+        ->assertSee('Transaction updated.')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->description)->toBe('Corrected market purchase');
+});
+
 test('date-only values stay fixed while instants follow the browser timezone', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create([

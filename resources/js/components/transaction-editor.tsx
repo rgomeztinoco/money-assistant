@@ -405,8 +405,8 @@ export function TransactionEditor({
                                             ))}
                                         </div>
                                         <p className="text-xs text-muted-foreground">
-                                            Manage this split from Transaction
-                                            details.
+                                            Use Split by Category below to
+                                            manage these amounts.
                                         </p>
                                     </div>
                                 ) : (

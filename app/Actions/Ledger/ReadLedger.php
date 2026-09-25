@@ -54,7 +54,7 @@ use Illuminate\Support\Str;
  *     description: string,
  *     confirmed_at: string,
  *     original_spending: array{id: int, description: string}|null,
- *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
+ *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData|null}|null,
  *     review_state: string,
  *     review_field_count: int,
  *     fields: list<array{name: string, label: string, value: string}>,
@@ -171,7 +171,7 @@ class ReadLedger
      *     description: string,
      *     confirmed_at: string,
      *     original_spending: array{id: int, description: string}|null,
-     *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData}|null,
+     *     category: array{id: int, name: string, provenance: CategoryAssignmentProvenanceData|null}|null,
      *     review_state: string,
      *     review_field_count: int,
      *     fields: list<array{name: string, label: string, value: string}>,
@@ -202,7 +202,6 @@ class ReadLedger
 
         if ($transaction->category !== null) {
             $provenance = $this->readCategoryAssignmentProvenance->handle($transaction, $owner);
-            assert($provenance !== null);
             $category = [
                 'id' => $transaction->category->id,
                 'name' => $transaction->category->name,

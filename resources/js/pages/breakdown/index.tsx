@@ -5,6 +5,7 @@ import { CurrencyFilter } from '@/components/currency-filter';
 import { PeriodControls } from '@/components/period-controls';
 import { SourceCoverage } from '@/components/source-coverage';
 import { TransactionCategorySelect } from '@/components/transaction-category-select';
+import { TransactionEditor } from '@/components/transaction-editor';
 import { TransactionListFilterControls } from '@/components/transaction-list-filters';
 import type { TransactionListFilters } from '@/components/transaction-list-filters';
 import { TransactionTable } from '@/components/transaction-table';
@@ -25,13 +26,15 @@ import {
     currencyUnitsToMinorUnits,
     formatMinorUnits,
 } from '@/lib/format-minor-units';
+import { movementSupportsCategory } from '@/lib/money-movement';
 import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { index as breakdownIndex } from '@/routes/breakdown';
 import type { Currency, ReportingPeriodSelection } from '@/types';
+import { CategorySplit } from './category-split';
 import { CategoryBreakdown, DailyChart } from './charts';
+import { pickerCategoryOptions } from './classification-select';
 import { selectionUrl } from './links';
 import { ManualTransactionDialog } from './manual-transaction-dialog';
-import { TransactionDetails } from './transaction-details';
 import type { BreakdownProps, CurrencyAmounts } from './types';
 
 const currencies = ['PEN', 'USD'] satisfies Currency[];
@@ -540,6 +543,13 @@ export default function BreakdownIndex(props: BreakdownProps) {
         selected: null,
     });
 
+    function closeEditor(): void {
+        router.visit(closeDetailsHref, {
+            preserveScroll: true,
+            preserveState: true,
+        });
+    }
+
     return (
         <>
             <Head title="Breakdown" />
@@ -787,32 +797,44 @@ export default function BreakdownIndex(props: BreakdownProps) {
                 open={selectedTransaction !== undefined}
                 onOpenChange={(open) => {
                     if (!open) {
-                        router.visit(closeDetailsHref, {
-                            preserveScroll: true,
-                            preserveState: true,
-                        });
+                        closeEditor();
                     }
                 }}
             >
                 <DialogContent className="inset-0 h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none p-4 sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-6">
                     <DialogHeader>
                         <DialogTitle>
-                            {selectedTransaction?.description ??
-                                'Transaction details'}
+                            Edit{' '}
+                            {selectedTransaction?.description ?? 'Transaction'}
                         </DialogTitle>
                         <DialogDescription>
-                            Edit the record, manage a split, or inspect its
-                            source.
+                            Update this Transaction or manage its Category
+                            split.
                         </DialogDescription>
                     </DialogHeader>
                     {selectedTransaction !== undefined && (
-                        <TransactionDetails
-                            key={`${selectedTransaction.id}-${selectedTransaction.category?.id ?? 'none'}-${selectedTransaction.split?.length ?? 0}`}
-                            transaction={selectedTransaction}
-                            categoryOptions={props.category_options}
-                            incomeSourceOptions={props.income_source_options}
-                            closeHref={closeDetailsHref}
-                        />
+                        <>
+                            <TransactionEditor
+                                key={`${selectedTransaction.id}-${selectedTransaction.description}-${selectedTransaction.amount_minor}-${selectedTransaction.category?.id ?? 'none'}`}
+                                transaction={selectedTransaction}
+                                currency={selectedTransaction.currency}
+                                today={props.today}
+                                categoryOptions={pickerCategoryOptions(
+                                    props.category_options,
+                                )}
+                                onCancel={closeEditor}
+                                onSaved={closeEditor}
+                            />
+                            {movementSupportsCategory(
+                                selectedTransaction.kind,
+                            ) && (
+                                <CategorySplit
+                                    key={`${selectedTransaction.id}-${selectedTransaction.split?.map((row) => row.id).join('-') ?? 'none'}`}
+                                    transaction={selectedTransaction}
+                                    categoryOptions={props.category_options}
+                                />
+                            )}
+                        </>
                     )}
                 </DialogContent>
             </Dialog>
