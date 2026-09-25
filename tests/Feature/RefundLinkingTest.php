@@ -125,6 +125,49 @@ test('linking a Refund cannot cross currencies', function () {
     expect($refund->refresh()->original_spending_id)->toBeNull();
 });
 
+test('linking a Refund does not copy an archived spending Category', function () {
+    $owner = User::factory()->create();
+    $archivedCategory = Category::factory()->for($owner, 'owner')->create([
+        'archived_at' => now(),
+    ]);
+    $spending = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'category_id' => $archivedCategory->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->usd()->create([
+        'category_id' => null,
+        'category_assignment_provenance' => null,
+    ]);
+
+    $this->actingAs($owner)
+        ->put(route('transactions.update', $refund), refundEditData($refund, $spending))
+        ->assertSessionHasNoErrors();
+
+    expect($refund->refresh()->original_spending_id)->toBe($spending->id)
+        ->and($refund->category_id)->toBeNull()
+        ->and($refund->category_assignment_provenance)->toBeNull();
+});
+
+test('an unlinked Refund retains its independent owner Category', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'amount_minor' => 2_500,
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('transactions.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('transactions.0.id', $refund->id)
+            ->where('transactions.0.category.id', $category->id));
+
+    expect($refund->refresh()->original_spending_id)->toBeNull()
+        ->and($refund->category_assignment_provenance)->toBe(CategoryAssignmentProvenance::Owner)
+        ->and(categoryTotalFor($owner, Currency::Pen, $category->id))->toBe('-2500');
+});
+
 test('cumulative linked Refund review stays exact beyond the PHP integer range', function () {
     $owner = User::factory()->create();
     $spending = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
