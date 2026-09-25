@@ -31,33 +31,44 @@ class ReadTransactions
         ];
         $query = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
-            ->whereNull('voided_at')
             ->select([
                 'id', 'user_id', 'occurred_on', 'amount_minor', 'currency',
                 'kind', 'direction', 'income_source', 'transfer_purpose',
                 'description', 'category_id',
             ])
             ->with(['category:id,name', 'receiptBreakdown:id,transaction_id']);
-
-        if ($filters['search'] !== '') {
-            $literalSearch = addcslashes($filters['search'], '\\%_');
-            $query->where('description', 'ilike', '%'.$literalSearch.'%');
-        }
-
-        $query
-            ->when($filters['date_from'] !== null, fn (Builder $query) => $query->where('occurred_on', '>=', $filters['date_from']))
-            ->when($filters['date_to'] !== null, fn (Builder $query) => $query->where('occurred_on', '<=', $filters['date_to']))
-            ->when($filters['currency'] !== null, fn (Builder $query) => $query->where('currency', $filters['currency']))
-            ->when($filters['kinds'] !== [], fn (Builder $query) => $query->whereIn('kind', $filters['kinds']));
-
+        $searchId = preg_match('/^#?([1-9][0-9]*)$/D', $filters['search'], $matches) === 1
+            ? filter_var($matches[1], FILTER_VALIDATE_INT)
+            : false;
         $currency = Currency::tryFrom((string) $filters['currency']) ?? Currency::Pen;
 
-        foreach (['amount_min' => '>=', 'amount_max' => '<='] as $field => $operator) {
-            if ($filters[$field] !== null) {
-                $minorUnits = CurrencyAmount::minorUnits((string) $filters[$field], $currency);
-                $query->whereRaw("abs(amount_minor) {$operator} ?", [$minorUnits]);
+        $query->where(function (Builder $query) use ($filters, $currency, $searchId): void {
+            $query->where(function (Builder $query) use ($filters, $currency): void {
+                $query->whereNull('voided_at');
+
+                if ($filters['search'] !== '') {
+                    $literalSearch = addcslashes($filters['search'], '\\%_');
+                    $query->where('description', 'ilike', '%'.$literalSearch.'%');
+                }
+
+                $query
+                    ->when($filters['date_from'] !== null, fn (Builder $query) => $query->where('occurred_on', '>=', $filters['date_from']))
+                    ->when($filters['date_to'] !== null, fn (Builder $query) => $query->where('occurred_on', '<=', $filters['date_to']))
+                    ->when($filters['currency'] !== null, fn (Builder $query) => $query->where('currency', $filters['currency']))
+                    ->when($filters['kinds'] !== [], fn (Builder $query) => $query->whereIn('kind', $filters['kinds']));
+
+                foreach (['amount_min' => '>=', 'amount_max' => '<='] as $field => $operator) {
+                    if ($filters[$field] !== null) {
+                        $minorUnits = CurrencyAmount::minorUnits((string) $filters[$field], $currency);
+                        $query->whereRaw("abs(amount_minor) {$operator} ?", [$minorUnits]);
+                    }
+                }
+            });
+
+            if ($searchId !== false) {
+                $query->orWhere('id', $searchId);
             }
-        }
+        });
 
         $page = $query
             ->orderByDesc('occurred_on')

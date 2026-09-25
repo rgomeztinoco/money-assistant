@@ -1,6 +1,5 @@
 import { Deferred, Head, Link, router } from '@inertiajs/react';
-import { FileUp, Hash } from 'lucide-react';
-import type { FormEvent } from 'react';
+import { FileUp } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { TransactionCategorySelect } from '@/components/transaction-category-select';
 import { TransactionInspector } from '@/components/transaction-inspector';
@@ -18,7 +17,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { ManualTransactionDialog } from '@/pages/breakdown/manual-transaction-dialog';
 import { create as createStatementImport } from '@/routes/statement_imports';
@@ -72,41 +70,19 @@ export default function TransactionsIndex({
     selected_transaction_id,
     selected_transaction,
 }: TransactionsIndexProps) {
-    const [lookupId, setLookupId] = useState('');
-    const [lookupError, setLookupError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const scrollPosition = useRef<number | null>(null);
 
-    function visit(url: string, preserveState = false): void {
+    function visit(url: string): void {
         setLoading(true);
         router.get(
             url,
             {},
             {
                 preserveScroll: true,
-                preserveState,
+                preserveState: false,
                 onFinish: () => setLoading(false),
             },
-        );
-    }
-
-    function findById(event: FormEvent<HTMLFormElement>): void {
-        event.preventDefault();
-
-        if (
-            !/^[1-9]\d*$/.test(lookupId) ||
-            !Number.isSafeInteger(Number(lookupId))
-        ) {
-            setLookupError('Enter a valid Transaction ID.');
-
-            return;
-        }
-
-        setLookupError(null);
-        scrollPosition.current = window.scrollY;
-        visit(
-            transactionUrl(filters, pagination.current_page, Number(lookupId)),
-            true,
         );
     }
 
@@ -165,32 +141,6 @@ export default function TransactionsIndex({
                         instantSearch={false}
                         includeDates
                         includeCurrency
-                        secondarySearch={
-                            <form
-                                onSubmit={findById}
-                                className="flex max-w-sm min-w-48 flex-1 gap-2"
-                            >
-                                <Input
-                                    id="transaction-id"
-                                    aria-label="Transaction ID"
-                                    inputMode="numeric"
-                                    placeholder="Transaction ID"
-                                    className="min-w-0 flex-1"
-                                    value={lookupId}
-                                    onChange={(event) => {
-                                        setLookupId(event.target.value);
-                                        setLookupError(null);
-                                    }}
-                                />
-                                <Button
-                                    type="submit"
-                                    variant="outline"
-                                    data-test="transaction-id-submit"
-                                >
-                                    <Hash /> Find by ID
-                                </Button>
-                            </form>
-                        }
                         onSearch={(search) =>
                             visit(
                                 transactionUrl({
@@ -209,11 +159,6 @@ export default function TransactionsIndex({
                         }
                     />
                 </div>
-                {lookupError && (
-                    <p role="alert" className="text-sm text-destructive">
-                        {lookupError}
-                    </p>
-                )}
                 <Card className="min-h-0 min-w-0 flex-1 gap-0 overflow-hidden py-0">
                     <div className="flex shrink-0 flex-wrap items-center gap-3 border-b p-4">
                         <div className="flex items-center gap-2">

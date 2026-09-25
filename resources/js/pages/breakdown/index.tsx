@@ -435,7 +435,8 @@ function useBreakdownTransactions(props: BreakdownProps) {
             (searchText === '' ||
                 transaction.description
                     .toLocaleLowerCase()
-                    .includes(searchText)) &&
+                    .includes(searchText) ||
+                transaction.id.toString() === searchText.replace(/^#/, '')) &&
             (minimum === null || magnitude >= minimum) &&
             (maximum === null || magnitude <= maximum) &&
             (appliedFilters.kinds.length === 0 ||

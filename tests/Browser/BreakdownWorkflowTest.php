@@ -31,6 +31,11 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
         'description' => 'Starbucks refund',
         'amount_minor' => 1250,
     ]);
+    $outsidePeriod = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => now()->subYear()->toDateString(),
+        'description' => 'Outside this year',
+        'amount_minor' => 1250,
+    ]);
     $this->actingAs($owner);
 
     $page = visit("/breakdown?period=year&anchor={$date}&currency=PEN");
@@ -84,7 +89,17 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
         ->press('Close')
         ->assertQueryStringMissing('selected')
         ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
-        ->assertScript('document.querySelector("#transaction-search")?.value === "STAR"')
+        ->assertScript('document.querySelector("#transaction-search")?.value === "STAR"');
+
+    $page->script('window.__breakdownRequests = performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length');
+
+    $page
+        ->fill('#transaction-search', (string) $refund->id)
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertSee('Starbucks refund')
+        ->fill('#transaction-search', (string) $outsidePeriod->id)
+        ->assertSee('No matching Transactions')
+        ->assertScript('performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length === window.__breakdownRequests')
         ->assertNoJavaScriptErrors();
 });
 

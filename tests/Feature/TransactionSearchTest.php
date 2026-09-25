@@ -78,6 +78,33 @@ test('search treats percent and underscore as literal description characters', f
             ->where('transactions.0.id', $literal->id));
 });
 
+test('search finds IDs across history without exposing another owner’s Transactions', function () {
+    $owner = User::factory()->create();
+    $otherOwner = User::factory()->create();
+    $historical = Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => '2020-01-01',
+        'description' => 'Old voided purchase',
+        'voided_at' => now(),
+    ]);
+    $hidden = Transaction::factory()->for($otherOwner, 'owner')->create();
+
+    $this->actingAs($owner)
+        ->get(route('transactions.index', [
+            'search' => '#'.$historical->id,
+            'date_from' => '2026-01-01',
+            'kinds' => ['income'],
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('pagination.total', 1)
+            ->where('transactions.0.id', $historical->id));
+
+    $this->get(route('transactions.index', ['search' => (string) $hidden->id]))
+        ->assertInertia(fn (Assert $page) => $page->where('pagination.total', 0));
+
+    $this->get(route('transactions.index', ['search' => '999999999999999999999999999']))
+        ->assertInertia(fn (Assert $page) => $page->where('pagination.total', 0));
+});
+
 test('exact lookup ignores list filters and includes a voided record in another currency', function () {
     $owner = User::factory()->create();
     $voided = Transaction::factory()->for($owner, 'owner')->usd()->create([

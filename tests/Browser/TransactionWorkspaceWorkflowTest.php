@@ -11,7 +11,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('Transactions searches history and finds a Voided ID without losing list state', function () {
+test('Transactions searches history and finds a Voided ID in the main search', function () {
     $owner = User::factory()->create();
     Transaction::factory()->count(51)->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => '2026-09-01',
@@ -80,11 +80,15 @@ test('Transactions searches history and finds a Voided ID without losing list st
         ->press('Apply')
         ->assertSee('Starbucks refund')
         ->assertQueryStringHas('amount_min', '12.50')
-        ->fill('#transaction-id', (string) $voided->id)
-        ->click('[data-test="transaction-id-submit"]')
+        ->fill('#transaction-search', (string) $voided->id)
+        ->click('[data-test="transaction-search-submit"]')
         ->assertSee('Old voided purchase')
+        ->click('[data-test="transaction-'.$voided->id.'"]')
         ->assertSee('Voided')
         ->press('Close')
+        ->assertQueryStringHas('search', (string) $voided->id)
+        ->fill('#transaction-search', 'STAR')
+        ->click('[data-test="transaction-search-submit"]')
         ->assertSee('Starbucks refund')
         ->assertQueryStringHas('search', 'STAR')
         ->assertQueryStringHas('amount_min', '12.50')
@@ -257,7 +261,7 @@ test('the Transaction workspace stays actionable without horizontal scrolling on
         ->assertNoConsoleLogs();
 });
 
-test('invalid and missing IDs give feedback without changing the list', function () {
+test('unmatched search terms and IDs leave the Transactions list empty', function () {
     $owner = User::factory()->create();
     Transaction::factory()->for($owner, 'owner')->create(['description' => 'Visible purchase']);
     $this->actingAs($owner);
@@ -265,15 +269,16 @@ test('invalid and missing IDs give feedback without changing the list', function
     $page = visit('/transactions');
 
     $page
-        ->fill('#transaction-id', 'oops')
-        ->click('[data-test="transaction-id-submit"]')
-        ->assertSee('Enter a valid Transaction ID.')
+        ->fill('#transaction-search', 'oops')
+        ->click('[data-test="transaction-search-submit"]')
+        ->assertSee('No matching Transactions')
         ->assertQueryStringMissing('selected')
-        ->fill('#transaction-id', '999999999')
-        ->click('[data-test="transaction-id-submit"]')
-        ->assertSee('Transaction not found')
-        ->press('Close')
+        ->fill('#transaction-search', '999999999')
+        ->click('[data-test="transaction-search-submit"]')
+        ->assertSee('No matching Transactions')
         ->assertQueryStringMissing('selected')
+        ->fill('#transaction-search', '')
+        ->click('[data-test="transaction-search-submit"]')
         ->assertSee('Visible purchase')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();

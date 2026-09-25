@@ -81,8 +81,9 @@ test('the owner can identify a retained Voided Transaction by ID', function () {
     $page = visit('/transactions');
 
     $page
-        ->fill('#transaction-id', (string) $transaction->id)
-        ->click('[data-test="transaction-id-submit"]')
+        ->fill('#transaction-search', (string) $transaction->id)
+        ->click('[data-test="transaction-search-submit"]')
+        ->click('[data-test="transaction-'.$transaction->id.'"]')
         ->assertQueryStringHas('selected', (string) $transaction->id)
         ->assertSee('Mistaken market entry')
         ->assertSee('Voided')
