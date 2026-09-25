@@ -144,6 +144,17 @@ export default function TransactionsIndex({
                             Search and manage Transactions across your history.
                         </p>
                     </div>
+                    <div className="flex flex-wrap gap-2">
+                        <ManualTransactionDialog
+                            currency={filters.currency ?? 'PEN'}
+                            today={today}
+                        />
+                        <Button asChild variant="outline">
+                            <Link href={createStatementImport()}>
+                                <FileUp /> Import statement
+                            </Link>
+                        </Button>
+                    </div>
                 </header>
 
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -154,6 +165,32 @@ export default function TransactionsIndex({
                         instantSearch={false}
                         includeDates
                         includeCurrency
+                        secondarySearch={
+                            <form
+                                onSubmit={findById}
+                                className="flex max-w-sm min-w-48 flex-1 gap-2"
+                            >
+                                <Input
+                                    id="transaction-id"
+                                    aria-label="Transaction ID"
+                                    inputMode="numeric"
+                                    placeholder="Transaction ID"
+                                    className="min-w-0 flex-1"
+                                    value={lookupId}
+                                    onChange={(event) => {
+                                        setLookupId(event.target.value);
+                                        setLookupError(null);
+                                    }}
+                                />
+                                <Button
+                                    type="submit"
+                                    variant="outline"
+                                    data-test="transaction-id-submit"
+                                >
+                                    <Hash /> Find by ID
+                                </Button>
+                            </form>
+                        }
                         onSearch={(search) =>
                             visit(
                                 transactionUrl({
@@ -171,33 +208,6 @@ export default function TransactionsIndex({
                             )
                         }
                     />
-                    <form onSubmit={findById} className="flex gap-2">
-                        <div>
-                            <Input
-                                id="transaction-id"
-                                aria-label="Transaction ID"
-                                inputMode="numeric"
-                                placeholder="Transaction ID"
-                                value={lookupId}
-                                onChange={(event) => {
-                                    setLookupId(event.target.value);
-                                    setLookupError(null);
-                                }}
-                            />
-                        </div>
-                        <Button
-                            type="submit"
-                            variant="outline"
-                            data-test="transaction-id-submit"
-                        >
-                            <Hash /> Find by ID
-                        </Button>
-                    </form>
-                    <Button asChild variant="outline">
-                        <Link href={createStatementImport()}>
-                            <FileUp /> Import statement
-                        </Link>
-                    </Button>
                 </div>
                 {lookupError && (
                     <p role="alert" className="text-sm text-destructive">
@@ -205,7 +215,7 @@ export default function TransactionsIndex({
                     </p>
                 )}
                 <Card className="min-h-0 min-w-0 flex-1 gap-0 overflow-hidden py-0">
-                    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b p-4">
+                    <div className="flex shrink-0 flex-wrap items-center gap-3 border-b p-4">
                         <div className="flex items-center gap-2">
                             <h2 className="type-section-title">Transactions</h2>
                             <Badge
@@ -218,10 +228,6 @@ export default function TransactionsIndex({
                                     : 'Transactions'}
                             </Badge>
                         </div>
-                        <ManualTransactionDialog
-                            currency={filters.currency ?? 'PEN'}
-                            today={today}
-                        />
                     </div>
                     <CardContent
                         aria-busy={loading}

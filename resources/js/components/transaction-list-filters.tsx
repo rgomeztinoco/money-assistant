@@ -1,5 +1,5 @@
 import { Filter, Search } from 'lucide-react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -41,6 +41,7 @@ export function TransactionListFilterControls({
     instantSearch,
     includeDates = false,
     includeCurrency = false,
+    secondarySearch,
     onSearch,
     onApply,
 }: {
@@ -49,6 +50,7 @@ export function TransactionListFilterControls({
     instantSearch: boolean;
     includeDates?: boolean;
     includeCurrency?: boolean;
+    secondarySearch?: ReactNode;
     onSearch: (search: string) => void;
     onApply: (filters: TransactionListFilters) => void;
 }) {
@@ -151,6 +153,7 @@ export function TransactionListFilterControls({
                     </Button>
                 )}
             </form>
+            {secondarySearch}
             <Popover
                 open={open}
                 onOpenChange={(nextOpen) => {
