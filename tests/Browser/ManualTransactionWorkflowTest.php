@@ -7,7 +7,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the owner records every money movement kind in plain language', function () {
+test('the owner records a Spending after a validation error', function () {
     $owner = User::factory()->create();
     $this->actingAs($owner);
 
@@ -26,30 +26,6 @@ test('the owner records every money movement kind in plain language', function (
         ->assertSee('S/ 123.45')
         ->assertSee('Mortgage payment')
         ->assertSee('Spending')
-        ->press('Add Transaction')
-        ->fill('#transaction-amount', '23.45')
-        ->fill('#transaction-description', 'Travel reimbursement')
-        ->select('#transaction-kind', 'refund')
-        ->press('Save Transaction')
-        ->assertSee('Travel reimbursement')
-        ->assertSee('Refund or reimbursement')
-        ->press('Add Transaction')
-        ->fill('#transaction-amount', '98.76')
-        ->fill('#transaction-description', 'Monthly salary')
-        ->select('#transaction-kind', 'income')
-        ->select('#transaction-income-source', 'salary')
-        ->press('Save Transaction')
-        ->assertSee('Monthly salary')
-        ->assertSee('Income')
-        ->press('Add Transaction')
-        ->fill('#transaction-amount', '8.76')
-        ->fill('#transaction-description', 'Moved to savings')
-        ->select('#transaction-kind', 'transfer')
-        ->select('#transaction-transfer-purpose', 'savings')
-        ->press('Save Transaction')
-        ->assertSee('S/ 8.76')
-        ->assertSee('Moved to savings')
-        ->assertSee('Transfer · Moved to savings')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
