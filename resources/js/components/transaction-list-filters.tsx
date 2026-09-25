@@ -124,10 +124,10 @@ export function TransactionListFilterControls({
     }
 
     return (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2">
             <form
                 onSubmit={submitSearch}
-                className="flex max-w-sm min-w-48 flex-1 gap-2"
+                className="flex max-w-md min-w-48 flex-1 gap-2"
             >
                 <div className="min-w-0 flex-1">
                     <Input
@@ -146,7 +146,11 @@ export function TransactionListFilterControls({
                     />
                 </div>
                 {!instantSearch && (
-                    <Button type="submit" data-test="transaction-search-submit">
+                    <Button
+                        type="submit"
+                        variant="outline"
+                        data-test="transaction-search-submit"
+                    >
                         <Search /> Search
                     </Button>
                 )}
@@ -166,7 +170,13 @@ export function TransactionListFilterControls({
                 }}
             >
                 <PopoverTrigger
-                    render={<Button type="button" variant="outline" />}
+                    render={
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="ml-auto"
+                        />
+                    }
                 >
                     <Filter /> Filters
                 </PopoverTrigger>
