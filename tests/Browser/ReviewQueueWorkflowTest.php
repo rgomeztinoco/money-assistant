@@ -20,7 +20,7 @@ test('a saved Review Queue bookmark opens the current Transaction inspector', fu
 
     visit('/review-queue?item=transaction:'.$transaction->id)
         ->assertQueryStringHas('selected', (string) $transaction->id)
-        ->assertSee('Edit current Transaction')
+        ->assertSee('Edit Transaction')
         ->assertSee('Review me')
         ->press('Close')
         ->assertQueryStringMissing('selected')
