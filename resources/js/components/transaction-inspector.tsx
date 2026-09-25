@@ -41,10 +41,7 @@ import {
     transferPurposeOptions,
 } from '@/lib/money-movement';
 import { index as merchantRulesIndex } from '@/routes/merchant_rules';
-import type {
-    CategoryOption,
-    SelectedTransaction,
-} from '@/types';
+import type { CategoryOption, SelectedTransaction } from '@/types';
 
 type EditableLineItem = {
     clientId: string;
@@ -425,7 +422,10 @@ export function TransactionInspector({
         : 0;
 
     return (
-        <Sheet open={transaction !== null && !editorOpen} onOpenChange={onOpenChange}>
+        <Sheet
+            open={transaction !== null && !editorOpen}
+            onOpenChange={onOpenChange}
+        >
             {transaction && (
                 <SheetContent className="w-full overflow-y-auto sm:max-w-xl lg:max-w-2xl">
                     <SheetHeader className="border-b">
@@ -592,7 +592,10 @@ export function TransactionInspector({
                             )}
                         </section>
 
-                        <Button type="button" onClick={() => onEdit(transaction)}>
+                        <Button
+                            type="button"
+                            onClick={() => onEdit(transaction)}
+                        >
                             Edit Transaction
                         </Button>
 

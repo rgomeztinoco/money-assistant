@@ -300,8 +300,12 @@ export default function TransactionsIndex({
                 <Dialog open onOpenChange={(open) => !open && setEditing(null)}>
                     <DialogContent className="inset-0 h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none p-4 sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[90vh] sm:max-w-2xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-6">
                         <DialogHeader>
-                            <DialogTitle>Edit {editing.description}</DialogTitle>
-                            <DialogDescription>Record one confirmed movement.</DialogDescription>
+                            <DialogTitle>
+                                Edit {editing.description}
+                            </DialogTitle>
+                            <DialogDescription>
+                                Record one confirmed movement.
+                            </DialogDescription>
                         </DialogHeader>
                         <TransactionEditor
                             key={editing.id}
