@@ -1,18 +1,20 @@
 <?php
 
-use App\Integrations\Gmail\GmailRequestFailed;
-use App\Integrations\Gmail\GmailMessageSummary;
 use App\Contracts\Gmail;
+use App\Integrations\Gmail\GmailMessageSummary;
+use App\Integrations\Gmail\GmailRequestFailed;
 use App\Jobs\ProcessGmailMessage;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\SpendingNotificationReference;
 use App\Models\User;
+use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\Str;
 use Tests\Fakes\FakeGmail;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
+    Vite::useHotFile(storage_path('framework/testing-vite-hot'));
 });
 
 test('the owner chooses the inbox import window before authorizing Gmail', function () {

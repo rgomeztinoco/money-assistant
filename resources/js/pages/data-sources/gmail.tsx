@@ -71,7 +71,7 @@ type ReviewItem = {
     explanation: string;
     dismissed_at: string | null;
     retryable: boolean;
-    gmail_url: string;
+    gmail_url: string | null;
 };
 
 type ReviewView = 'all' | 'unrecognized' | 'failed' | 'dismissed';
@@ -122,7 +122,8 @@ const statusDetails = {
 
 const summaryFallback = {
     missing: 'This email is no longer available in Gmail.',
-    unavailable: 'Email details are temporarily unavailable.',
+    unavailable:
+        'Email details are temporarily unavailable. Refresh to try opening the original.',
     reauthorization_required: 'Reconnect Gmail to load email details.',
 };
 
@@ -193,15 +194,17 @@ function ConnectionCheckButton() {
 function ReviewActions({ item }: { item: ReviewItem }) {
     return (
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <Button asChild variant="outline" size="sm">
-                <a
-                    href={item.gmail_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                >
-                    <ExternalLink /> Open in Gmail
-                </a>
-            </Button>
+            {item.gmail_url !== null && (
+                <Button asChild variant="outline" size="sm">
+                    <a
+                        href={item.gmail_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        <ExternalLink /> Open in Gmail
+                    </a>
+                </Button>
+            )}
             {item.dismissed_at === null ? (
                 <>
                     {item.retryable && (
