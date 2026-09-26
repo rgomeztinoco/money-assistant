@@ -48,7 +48,7 @@ export type CategoryAssignmentProvenance = {
 export type LedgerCategory = {
     id: number;
     name: string;
-    provenance: CategoryAssignmentProvenance;
+    provenance: CategoryAssignmentProvenance | null;
 };
 
 export type RelatedTransaction = {

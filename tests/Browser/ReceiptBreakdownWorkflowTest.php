@@ -10,7 +10,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the owner saves replaces and removes a Receipt Breakdown in the Transaction inspector', function () {
+test('the owner saves replaces and removes a Category split from Transactions', function () {
     $owner = User::factory()->create();
     $shopping = Category::factory()->recycle($owner)->create(['name' => 'Shopping']);
     $groceries = Category::factory()->recycle($owner)->create(['name' => 'Groceries']);
@@ -22,35 +22,34 @@ test('the owner saves replaces and removes a Receipt Breakdown in the Transactio
     ]);
     $this->actingAs($owner);
 
-    $page = visit("/transactions?search=Neighborhood&selected={$transaction->id}");
+    $page = visit('/transactions?search=Neighborhood');
 
     $page
-        ->assertSee('Manual itemization')
-        ->assertSee('Quantity and unit price are optional context only.')
+        ->click('[data-test="transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Split by Category")')
+        ->assertSee('Split Neighborhood market by Category')
+        ->assertDontSee('Manual itemization')
         ->fill('[name="line_items[0][line_total]"]', '20.00')
         ->assertSee('S/ 5.00 remaining')
-        ->press('Add Line Item')
-        ->fill('[name="line_items[1][description]"]', 'Bread')
         ->fill('[name="line_items[1][line_total]"]', '5.00')
-        ->assertSee('Reconciled exactly')
+        ->assertSee('Amounts reconcile exactly')
         ->select('[name="line_items[0][category_id]"]', (string) $groceries->id)
-        ->press('Save Receipt Breakdown')
+        ->press('Save Category split')
         ->assertSee('Category split saved.')
-        ->assertSee('Current itemization')
-        ->assertSee('Replace Receipt Breakdown')
+        ->assertSee('Replace Category split')
         ->assertQueryStringHas('search', 'Neighborhood');
 
     expect(ReceiptBreakdown::query()->count())->toBe(1)
         ->and(ReceiptBreakdown::query()->sole()->lineItems()->count())->toBe(2);
 
     $page
-        ->fill('[name="line_items[0][description]"]', 'Fresh coffee beans')
-        ->press('Replace Receipt Breakdown')
-        ->wait(1)
+        ->fill('[name="line_items[0][line_total]"]', '15.00')
+        ->fill('[name="line_items[1][line_total]"]', '10.00')
+        ->press('Replace Category split')
         ->assertSee('Category split saved.')
-        ->press('Remove Receipt Breakdown')
+        ->press('Remove Category split')
         ->assertSee('Category split removed.')
-        ->assertSee('Manual itemization')
+        ->assertDontSee('Manual itemization')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 

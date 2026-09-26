@@ -34,7 +34,7 @@ class ReadTransactions
             ->select([
                 'id', 'user_id', 'occurred_on', 'amount_minor', 'currency',
                 'kind', 'direction', 'income_source', 'transfer_purpose',
-                'description', 'category_id',
+                'description', 'category_id', 'voided_at',
             ])
             ->with(['category:id,name', 'receiptBreakdown:id,transaction_id']);
         $searchId = preg_match('/^#?([1-9][0-9]*)$/D', $filters['search'], $matches) === 1
@@ -87,6 +87,7 @@ class ReadTransactions
                 'income_source' => $transaction->income_source?->value,
                 'transfer_purpose' => $transaction->transfer_purpose?->value,
                 'description' => $transaction->description,
+                'voided_at' => $transaction->voided_at?->toIso8601String(),
                 'has_split' => $transaction->receiptBreakdown !== null,
                 'category' => $transaction->category === null
                     ? null

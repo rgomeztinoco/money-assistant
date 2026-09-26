@@ -15,6 +15,7 @@ use App\Http\Controllers\StatementImportPreviewController;
 use App\Http\Controllers\StatementMovementClassificationController;
 use App\Http\Controllers\TransactionCategoryController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\TransactionVoidController;
 use App\Http\Controllers\TrendsController;
 use Illuminate\Support\Facades\Route;
 
@@ -54,6 +55,16 @@ Route::middleware(['auth'])->group(function () {
             'update' => 'merchant_rules.update',
             'destroy' => 'merchant_rules.destroy',
         ]);
+    Route::get('merchant-rules/matches', [MerchantRuleController::class, 'matches'])
+        ->name('merchant_rules.matches');
+    Route::get('merchant-rules/{merchant_rule}/matches', [MerchantRuleController::class, 'ruleMatches'])
+        ->name('merchant_rules.rule_matches');
+    Route::post('merchant-rules/{merchant_rule}/apply-existing', [MerchantRuleController::class, 'applyExisting'])
+        ->name('merchant_rules.apply_existing');
+    Route::post('transactions/{transaction}/void', [TransactionVoidController::class, 'store'])
+        ->name('transactions.void.store');
+    Route::delete('transactions/{transaction}/void', [TransactionVoidController::class, 'destroy'])
+        ->name('transactions.void.destroy');
     Route::put('transactions/{transaction}/receipt-breakdown', [ReceiptBreakdownController::class, 'update'])
         ->name('transactions.receipt_breakdowns.update');
     Route::delete('transactions/{transaction}/receipt-breakdown', [ReceiptBreakdownController::class, 'destroy'])

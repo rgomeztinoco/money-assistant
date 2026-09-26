@@ -1,12 +1,14 @@
 import { Deferred, Head, Link, router } from '@inertiajs/react';
 import { FileUp } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { TransactionActionDialog } from '@/components/transaction-action-dialog';
 import { TransactionCategorySelect } from '@/components/transaction-category-select';
-import { TransactionInspector } from '@/components/transaction-inspector';
+import type { EditorTransaction } from '@/components/transaction-editor';
 import { TransactionListFilterControls } from '@/components/transaction-list-filters';
 import type { TransactionListFilters } from '@/components/transaction-list-filters';
 import { TransactionTable } from '@/components/transaction-table';
 import type { TransactionTableRow } from '@/components/transaction-table';
+import type { TransactionAction } from '@/components/transaction-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,6 +26,33 @@ import { index } from '@/routes/transactions';
 import type { CategoryOption, SelectedTransaction } from '@/types';
 
 type TransactionsFilters = TransactionListFilters & { search: string };
+
+function editorTransaction(
+    transaction: SelectedTransaction,
+): EditorTransaction {
+    return {
+        id: transaction.id,
+        voided_at: transaction.voided_at,
+        occurred_on: transaction.occurred_on,
+        amount_minor: transaction.amount_minor,
+        currency: transaction.currency,
+        kind: transaction.kind,
+        direction: transaction.direction,
+        description: transaction.description,
+        income_source: transaction.income_source,
+        transfer_purpose: transaction.transfer_purpose,
+        category: transaction.category,
+        original_spending_id: transaction.original_spending?.id ?? null,
+        instrument_label: transaction.instrument_label,
+        instrument_last_four: transaction.instrument_last_four,
+        split:
+            transaction.receipt_breakdown?.line_items.map((lineItem) => ({
+                id: lineItem.id,
+                amount_minor: lineItem.line_total_minor,
+                category: lineItem.category,
+            })) ?? null,
+    };
+}
 
 type Pagination = {
     current_page: number;
@@ -71,7 +100,11 @@ export default function TransactionsIndex({
     selected_transaction,
 }: TransactionsIndexProps) {
     const [loading, setLoading] = useState(false);
-    const scrollPosition = useRef<number | null>(null);
+    const [activeAction, setActiveAction] = useState<TransactionAction>('edit');
+    const [closingAction, setClosingAction] = useState(false);
+    const scrollPosition = useRef<{ window: number; table: number } | null>(
+        null,
+    );
 
     function visit(url: string): void {
         setLoading(true);
@@ -87,6 +120,7 @@ export default function TransactionsIndex({
     }
 
     function closeDetails(): void {
+        setClosingAction(true);
         const position = scrollPosition.current;
 
         router.get(
@@ -95,13 +129,23 @@ export default function TransactionsIndex({
             {
                 preserveScroll: true,
                 preserveState: true,
+                onSuccess: () => setClosingAction(false),
+                onError: () => setClosingAction(false),
+                onCancel: () => setClosingAction(false),
                 onFinish: () => {
                     setLoading(false);
 
                     if (position !== null) {
-                        requestAnimationFrame(() =>
-                            window.scrollTo(0, position),
-                        );
+                        requestAnimationFrame(() => {
+                            window.scrollTo(0, position.window);
+                            const table = document.querySelector<HTMLElement>(
+                                '[data-test="breakdown-transactions-scroll"]',
+                            );
+
+                            if (table) {
+                                table.scrollTop = position.table;
+                            }
+                        });
                         scrollPosition.current = null;
                     }
                 },
@@ -124,6 +168,7 @@ export default function TransactionsIndex({
                         <ManualTransactionDialog
                             currency={filters.currency ?? 'PEN'}
                             today={today}
+                            categoryOptions={category_options}
                         />
                         <Button asChild variant="outline">
                             <Link href={createStatementImport()}>
@@ -193,21 +238,37 @@ export default function TransactionsIndex({
                             onPageChange={(page) =>
                                 visit(transactionUrl(filters, page))
                             }
-                            rowHref={(transaction) =>
-                                transactionUrl(
-                                    filters,
-                                    pagination.current_page,
-                                    transaction.id,
-                                )
-                            }
+                            onAction={(transaction, action) => {
+                                setClosingAction(false);
+                                setActiveAction(action);
+                                router.get(
+                                    transactionUrl(
+                                        filters,
+                                        pagination.current_page,
+                                        transaction.id,
+                                    ),
+                                    {},
+                                    {
+                                        preserveScroll: true,
+                                        preserveState: true,
+                                    },
+                                );
+                            }}
                             onBeforeOpen={() => {
-                                scrollPosition.current = window.scrollY;
+                                scrollPosition.current = {
+                                    window: window.scrollY,
+                                    table:
+                                        document.querySelector<HTMLElement>(
+                                            '[data-test="breakdown-transactions-scroll"]',
+                                        )?.scrollTop ?? 0,
+                                };
                             }}
                             rowTestId={(transaction) =>
                                 'transaction-' + transaction.id
                             }
                             renderCategory={(transaction) => (
                                 <TransactionCategorySelect
+                                    key={`${transaction.id}-${transaction.category?.id ?? 'none'}`}
                                     transaction={transaction}
                                     categoryOptions={category_options}
                                 />
@@ -218,24 +279,39 @@ export default function TransactionsIndex({
                 </Card>
             </div>
 
-            {selected_transaction_id !== null && (
+            {selected_transaction_id !== null && !closingAction && (
                 <Deferred
                     data="selected_transaction"
                     fallback={
-                        <div className="fixed inset-y-0 right-0 z-50 grid w-full max-w-2xl place-items-center border-l bg-background/95">
+                        <div className="fixed inset-0 z-50 grid place-items-center bg-background/75">
                             <Spinner className="size-6" />
                         </div>
                     }
                 >
                     {selected_transaction ? (
-                        <TransactionInspector
-                            transaction={selected_transaction}
+                        <TransactionActionDialog
+                            transaction={editorTransaction(
+                                selected_transaction,
+                            )}
+                            action={activeAction}
+                            today={today}
                             categoryOptions={category_options}
-                            onOpenChange={(open) => {
-                                if (!open) {
-                                    closeDetails();
-                                }
-                            }}
+                            splitCategoryOptions={category_options.map(
+                                (option) => ({
+                                    id: option.id,
+                                    name: option.name,
+                                    path: option.path,
+                                    parent:
+                                        option.parent_id === null
+                                            ? null
+                                            : {
+                                                  id: option.parent_id,
+                                                  name:
+                                                      option.parent_name ?? '',
+                                              },
+                                }),
+                            )}
+                            onClose={closeDetails}
                         />
                     ) : (
                         <Dialog

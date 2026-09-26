@@ -1,23 +1,18 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { CircleAlert, CircleCheck, Filter, X } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { CurrencyFilter } from '@/components/currency-filter';
 import { PeriodControls } from '@/components/period-controls';
 import { SourceCoverage } from '@/components/source-coverage';
+import { TransactionActionDialog } from '@/components/transaction-action-dialog';
 import { TransactionCategorySelect } from '@/components/transaction-category-select';
 import { TransactionListFilterControls } from '@/components/transaction-list-filters';
 import type { TransactionListFilters } from '@/components/transaction-list-filters';
 import { TransactionTable } from '@/components/transaction-table';
+import type { TransactionAction } from '@/components/transaction-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useReportView } from '@/hooks/use-report-view';
 import { formatReportingPeriod } from '@/lib/date-presentation';
@@ -29,9 +24,9 @@ import { reportingQuery, reportingSelection } from '@/lib/reporting-query';
 import { index as breakdownIndex } from '@/routes/breakdown';
 import type { Currency, ReportingPeriodSelection } from '@/types';
 import { CategoryBreakdown, DailyChart } from './charts';
+import { pickerCategoryOptions } from './classification-select';
 import { selectionUrl } from './links';
 import { ManualTransactionDialog } from './manual-transaction-dialog';
-import { TransactionDetails } from './transaction-details';
 import type { BreakdownProps, CurrencyAmounts } from './types';
 
 const currencies = ['PEN', 'USD'] satisfies Currency[];
@@ -395,7 +390,10 @@ function MerchantRanking({ props }: { props: BreakdownProps }) {
     );
 }
 
-function useBreakdownTransactions(props: BreakdownProps) {
+function useBreakdownTransactions(
+    props: BreakdownProps,
+    onAction: (transactionId: number, action: TransactionAction) => void,
+) {
     const [search, setSearch] = useState('');
     const [appliedFilters, setAppliedFilters] =
         useState<TransactionListFilters>({
@@ -479,20 +477,12 @@ function useBreakdownTransactions(props: BreakdownProps) {
                 onPageChange={(nextPage) =>
                     setPageState({ scopeKey, page: nextPage })
                 }
-                rowHref={(transaction) =>
-                    selectionUrl({
-                        currencyFilter: props.currency_filter,
-                        period: props.period,
-                        category: props.filters.category,
-                        day: props.filters.day,
-                        focus: props.filters.focus,
-                        merchant: props.filters.merchant,
-                        attention: props.filters.attention,
-                        selected: transaction.id,
-                    }).url
+                onAction={(transaction, action) =>
+                    onAction(transaction.id, action)
                 }
                 renderCategory={(transaction) => (
                     <TransactionCategorySelect
+                        key={`${transaction.id}-${transaction.category?.id ?? 'none'}`}
                         transaction={{
                             ...transaction,
                             has_split: transaction.split !== null,
@@ -509,7 +499,33 @@ function useBreakdownTransactions(props: BreakdownProps) {
 }
 
 export default function BreakdownIndex(props: BreakdownProps) {
-    const transactionList = useBreakdownTransactions(props);
+    const [activeAction, setActiveAction] = useState<TransactionAction>('edit');
+    const [closingAction, setClosingAction] = useState(false);
+    const tableScroll = useRef<number | null>(null);
+    const transactionList = useBreakdownTransactions(
+        props,
+        (transactionId, action) => {
+            setClosingAction(false);
+            setActiveAction(action);
+            tableScroll.current =
+                document.querySelector<HTMLElement>(
+                    '[data-test="breakdown-transactions-scroll"]',
+                )?.scrollTop ?? null;
+            router.visit(
+                selectionUrl({
+                    currencyFilter: props.currency_filter,
+                    period: props.period,
+                    category: props.filters.category,
+                    day: props.filters.day,
+                    focus: props.filters.focus,
+                    merchant: props.filters.merchant,
+                    attention: props.filters.attention,
+                    selected: transactionId,
+                }).url,
+                { preserveScroll: true, preserveState: true },
+            );
+        },
+    );
     const selectedCategory = selectedCategoryLabel(props);
     const selectedTransaction = props.transaction_days
         .flatMap((day) => day.transactions)
@@ -539,6 +555,32 @@ export default function BreakdownIndex(props: BreakdownProps) {
         attention: props.filters.attention,
         selected: null,
     });
+
+    function closeEditor(): void {
+        setClosingAction(true);
+        router.visit(closeDetailsHref, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => setClosingAction(false),
+            onError: () => setClosingAction(false),
+            onCancel: () => setClosingAction(false),
+            onFinish: () => {
+                if (tableScroll.current !== null) {
+                    const position = tableScroll.current;
+                    requestAnimationFrame(() => {
+                        const table = document.querySelector<HTMLElement>(
+                            '[data-test="breakdown-transactions-scroll"]',
+                        );
+
+                        if (table) {
+                            table.scrollTop = position;
+                        }
+                    });
+                    tableScroll.current = null;
+                }
+            },
+        });
+    }
 
     return (
         <>
@@ -773,6 +815,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                             <ManualTransactionDialog
                                 currency={props.currency_filter ?? 'PEN'}
                                 today={props.today}
+                                categoryOptions={props.category_options}
                             />
                         </div>
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -782,39 +825,18 @@ export default function BreakdownIndex(props: BreakdownProps) {
                 </div>
             </main>
 
-            <Dialog
-                open={selectedTransaction !== undefined}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        router.visit(closeDetailsHref, {
-                            preserveScroll: true,
-                            preserveState: true,
-                        });
-                    }
-                }}
-            >
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-                    <DialogHeader>
-                        <DialogTitle>
-                            {selectedTransaction?.description ??
-                                'Transaction details'}
-                        </DialogTitle>
-                        <DialogDescription>
-                            Edit the record, manage a split, or inspect its
-                            source.
-                        </DialogDescription>
-                    </DialogHeader>
-                    {selectedTransaction !== undefined && (
-                        <TransactionDetails
-                            key={`${selectedTransaction.id}-${selectedTransaction.category?.id ?? 'none'}-${selectedTransaction.split?.length ?? 0}`}
-                            transaction={selectedTransaction}
-                            categoryOptions={props.category_options}
-                            incomeSourceOptions={props.income_source_options}
-                            closeHref={closeDetailsHref}
-                        />
+            {selectedTransaction && !closingAction && (
+                <TransactionActionDialog
+                    transaction={selectedTransaction}
+                    action={activeAction}
+                    today={props.today}
+                    categoryOptions={pickerCategoryOptions(
+                        props.category_options,
                     )}
-                </DialogContent>
-            </Dialog>
+                    splitCategoryOptions={props.category_options}
+                    onClose={closeEditor}
+                />
+            )}
         </>
     );
 }

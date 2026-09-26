@@ -2,6 +2,7 @@
 
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
+use App\Models\LineItem;
 use App\Models\MerchantRule;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
@@ -50,13 +51,18 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
         ->press('Next')
         ->assertSee('Page 2 of 20');
 
-    $page->script('document.querySelector(\'[data-test^="breakdown-transaction-"]\').click()');
+    $page->script('document.querySelector(\'[data-test="breakdown-transactions-scroll"]\').scrollTop = 300');
+
+    $page->click('[data-test^="breakdown-transaction-"] >> nth=5');
+    $page->script('window.__tableScrollBeforeEdit = document.querySelector(\'[data-test="breakdown-transactions-scroll"]\').scrollTop');
 
     $page
-        ->assertSee('Transaction details')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->assertPresent('#transaction-amount')
         ->click('[data-slot="dialog-content"] > button')
         ->assertQueryStringMissing('selected')
-        ->assertSee('Page 2 of 20');
+        ->assertSee('Page 2 of 20')
+        ->assertScript('document.querySelector(\'[data-test="breakdown-transactions-scroll"]\').scrollTop === window.__tableScrollBeforeEdit');
 
     $page->script(<<<'JS'
         window.__breakdownRequests = performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/breakdown')).length;
@@ -85,8 +91,9 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
         ->assertScript('performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length === window.__breakdownRequests')
         ->assertScript('document.querySelector(\'[data-test="breakdown-summary"]\')?.textContent === window.__breakdownSummary')
         ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
-        ->assertSee('Transaction details')
-        ->press('Close')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->assertPresent('#transaction-amount')
+        ->press('Cancel')
         ->assertQueryStringMissing('selected')
         ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
         ->assertScript('document.querySelector("#transaction-search")?.value === "STAR"');
@@ -706,7 +713,6 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->assertSee('Essentials > Weekly groceries and household supplies')
         ->click('@category-'.$current->id.'-option-'.$groceries->id)
         ->assertSee('Apply once')
-        ->assertSee('Create rule')
         ->assertScript(<<<JS
             (() => {
                 const trigger = document.querySelector(
@@ -779,21 +785,56 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->merchant_rule_id->toBeNull();
 
     $page
-        ->click('[data-test="create-merchant-rule-'.$current->id.'"]')
-        ->assertSee('future exact matches will follow this Category')
+        ->click('[data-test="apply-category-once-'.$current->id.'"]')
         ->resize(1280, 720)
         ->click('[data-test="breakdown-transaction-'.$current->id.'"]')
-        ->press('Edit Transaction')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Create Merchant Rule")')
+        ->assertPathIs('/breakdown')
+        ->assertSeeIn('[data-test="merchant-rule-source-context"]', 'Money out')
+        ->click('[data-test="rule-apply-existing"]')
+        ->waitForText('match this rule right now')
+        ->assertSeeIn('[data-test="merchant-rule-preview"]', 'match this rule right now')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
+                const matches = dialog?.querySelector('[data-test="merchant-rule-preview"] ul');
+
+                return dialog !== null
+                    && scroller !== null
+                    && matches !== null
+                    && getComputedStyle(scroller).overflowY === 'auto'
+                    && getComputedStyle(matches).overflowY !== 'auto';
+            })()
+            JS)
+        ->press('Create Merchant Rule')
+        ->assertSee('Merchant Rule created')
+        ->click('[data-test="breakdown-transaction-'.$current->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
         ->fill('Merchant or description', 'Café Central Lima')
         ->press('Save Transaction')
         ->assertSee('Transaction updated.')
-        ->press('Split by Category')
+        ->click('[data-test="breakdown-transaction-'.$current->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Split by Category")')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const headers = Array.from(dialog?.querySelectorAll('table thead th') ?? [])
+                    .map((header) => header.textContent?.trim());
+                const height = dialog?.getBoundingClientRect().height ?? 0;
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
+
+                return headers[0] === 'Category'
+                    && headers[1] === 'Amount'
+                    && dialog?.querySelectorAll('table tbody tr').length === 2
+                    && height < 550
+                    && (scroller?.scrollHeight ?? 0) <= (scroller?.clientHeight ?? 0) + 1;
+            })()
+            JS)
         ->fill('[name="line_items[0][line_total]"]', '20.00')
         ->fill('[name="line_items[1][line_total]"]', '5.00')
-        ->select(
-            '[name="line_items[0][category_id]"]',
-            (string) $groceries->id,
-        )
+        ->click('[data-slot="dialog-content"] table tbody tr:first-child [data-slot="popover-trigger"]')
+        ->click('[data-test="split-'.$current->id.'-'.$current->id.'-initial-0-category-option-'.$groceries->id.'"]')
         ->select(
             '[name="line_items[1][category_id]"]',
             (string) $household->id,
@@ -801,11 +842,26 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->assertSee('Amounts reconcile exactly')
         ->press('Save Category split')
         ->assertSee('Category split saved.')
-        ->press('Close')
+        ->assertScript(<<<'JS'
+            (() => {
+                window.dialogTitlesAfterClose = [];
+                new MutationObserver(() => {
+                    const title = document.querySelector('[data-slot="dialog-title"]')?.textContent;
+
+                    if (title) {
+                        window.dialogTitlesAfterClose.push(title);
+                    }
+                }).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+                return true;
+            })()
+            JS)
+        ->click('[data-slot="dialog-content"] > button')
+        ->assertScript('!window.dialogTitlesAfterClose.includes("Edit Café Central Lima")')
         ->press('Add Transaction')
-        ->fill('#manual-amount', '7.50')
-        ->fill('#manual-description', 'Manual bakery')
-        ->press('Record Transaction')
+        ->fill('#transaction-amount', '7.50')
+        ->fill('#transaction-description', 'Manual bakery')
+        ->press('Save Transaction')
         ->assertSee('Transaction recorded.')
         ->assertSee('Manual bakery')
         ->assertNoJavaScriptErrors()
@@ -814,9 +870,484 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
     expect($current->refresh())
         ->description->toBe('Café Central Lima')
         ->category_id->toBe($groceries->id)
-        ->merchant_rule_id->toBeNull()
         ->and($historicalMatch->refresh()->category_id)->toBe($groceries->id)
         ->and(MerchantRule::query()->whereBelongsTo($owner, 'owner')->exists())->toBeTrue()
         ->and(ReceiptBreakdown::query()->whereBelongsTo($current)->exists())->toBeTrue()
         ->and(Transaction::query()->where('description', 'Manual bakery')->exists())->toBeTrue();
+});
+
+test('the Breakdown Category dropdown creates a future-only rule and offers a reviewed history action', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $source = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Café Central',
+    ]);
+    $previous = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => ' café central ',
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[aria-label="Category for Café Central"]')
+        ->click('@category-'.$source->id.'-option-'.$category->id)
+        ->click('[data-test="create-merchant-rule-'.$source->id.'"]')
+        ->assertPathIs('/breakdown')
+        ->assertSee('Merchant Rule created for future Transactions.')
+        ->assertSee('Apply to previous')
+        ->assertPresent('[aria-label="Close toast"]')
+        ->wait(13)
+        ->assertSee('Apply to previous')
+        ->assertNoJavaScriptErrors();
+
+    expect($source->refresh()->category_id)->toBeNull()
+        ->and($previous->refresh()->category_id)->toBeNull();
+
+    $page
+        ->click('Apply to previous')
+        ->assertSee('Apply Merchant Rule to previous Transactions?')
+        ->waitForText('2 previous Transactions match')
+        ->assertSee('#'.$source->id)
+        ->assertSee('#'.$previous->id)
+        ->press('Apply to previous Transactions')
+        ->assertPathIs('/breakdown')
+        ->assertSee('2 previous Transactions updated.')
+        ->click('[aria-label="Category for Café Central"]')
+        ->assertPresent('[data-test="create-merchant-rule-'.$source->id.'"]')
+        ->assertNoJavaScriptErrors();
+
+    expect($source->refresh()->category_id)->toBe($category->id)
+        ->and($previous->refresh()->category_id)->toBe($category->id);
+});
+
+test('the owner edits a Transaction in the Breakdown dialog', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'amount_minor' => 2_500,
+        'description' => 'Imported purchase',
+        'instrument_label' => 'Visa',
+        'instrument_last_four' => '4242',
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->assertPresent('#transaction-amount')
+        ->assertSee('Transaction Kind')
+        ->fill('#transaction-description', 'Corrected purchase')
+        ->press('Save Transaction')
+        ->assertSee('Transaction updated.')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->description)->toBe('Corrected purchase')
+        ->and($transaction->instrument_label)->toBe('Visa')
+        ->and($transaction->instrument_last_four)->toBe('4242');
+});
+
+test('a long Merchant Rule preview uses the capped dialog scroll', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $source = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Café Central',
+    ]);
+    Transaction::factory()->count(20)->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Café Central',
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->resize(1280, 720)
+        ->click('[data-test="breakdown-transaction-'.$source->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Create Merchant Rule")')
+        ->click('[data-test="rule-apply-existing"]')
+        ->waitForText('21 existing Transactions match this rule right now')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const header = dialog?.querySelector('[data-slot="dialog-header"]');
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
+                const matches = dialog?.querySelector('[data-test="merchant-rule-preview"] ul');
+
+                if (!dialog || !header || !scroller || !matches) {
+                    return false;
+                }
+
+                const headerTop = header.getBoundingClientRect().top;
+                matches.scrollTop = 100;
+                scroller.scrollTop = scroller.scrollHeight;
+
+                return Math.abs(dialog.getBoundingClientRect().height - 648) <= 2
+                    && scroller.scrollTop > 0
+                    && matches.scrollTop === 0
+                    && Math.abs(header.getBoundingClientRect().top - headerTop) < 1;
+            })()
+            JS)
+        ->assertNoJavaScriptErrors();
+});
+
+test('the owner records a categorized Spending with the shared editor', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->resize(1280, 800)
+        ->press('Add Transaction')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const scroller = dialog?.querySelector('[data-slot="dialog-header"]')?.nextElementSibling;
+
+                return dialog !== null
+                    && dialog.getBoundingClientRect().height < 720
+                    && scroller !== null
+                    && scroller.scrollHeight <= scroller.clientHeight + 1;
+            })()
+            JS)
+        ->assertValue('#transaction-date', $today)
+        ->assertValue('#transaction-kind', 'spending')
+        ->assertValue('#transaction-direction', 'debit')
+        ->fill('#transaction-amount', '12.50')
+        ->fill('#transaction-description', 'Cash groceries')
+        ->click('@transaction-category-trigger')
+        ->click('@transaction-category-option-'.$category->id)
+        ->click('Optional payment source')
+        ->fill('#transaction-instrument-label', 'Cash wallet')
+        ->fill('#transaction-last-four', '1234')
+        ->press('Save Transaction')
+        ->assertSee('Transaction recorded.')
+        ->assertNoJavaScriptErrors();
+
+    $transaction = Transaction::query()->sole();
+
+    expect($transaction->category_id)->toBe($category->id)
+        ->and($transaction->instrument_label)->toBe('Cash wallet')
+        ->and($transaction->instrument_last_four)->toBe('1234');
+});
+
+test('new Transaction Kinds set editable direction defaults and reveal their classification', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->press('Add Transaction')
+        ->select('#transaction-kind', 'income')
+        ->assertValue('#transaction-direction', 'credit')
+        ->assertPresent('#transaction-income-source')
+        ->assertNotPresent('#transaction-category-trigger')
+        ->select('#transaction-kind', 'transfer')
+        ->assertValue('#transaction-direction', 'debit')
+        ->assertPresent('#transaction-transfer-purpose')
+        ->select('#transaction-kind', 'refund')
+        ->assertValue('#transaction-direction', 'credit')
+        ->select('#transaction-direction', 'debit')
+        ->assertValue('#transaction-direction', 'debit')
+        ->press('Cancel')
+        ->assertNoJavaScriptErrors();
+
+    expect(Transaction::query()->doesntExist())->toBeTrue();
+});
+
+test('changing Spending to an internal Transfer explains and confirms Category removal', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Imported movement',
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->select('#transaction-kind', 'transfer')
+        ->assertValue('#transaction-direction', 'debit')
+        ->assertSee('Other transfer includes movements between your accounts.')
+        ->press('Save Transaction')
+        ->assertSee('Category: Groceries')
+        ->press('Continue editing');
+
+    expect($transaction->refresh()->kind->value)->toBe('spending');
+
+    $page->press('Save Transaction')->assertSee('Remove and save');
+    $page->script('document.querySelector("[data-slot=alert-dialog-action]").click()');
+    $page->assertSee('Transaction updated.')
+        ->assertQueryStringHas('currency', 'PEN')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->kind->value)->toBe('transfer')
+        ->and($transaction->direction->value)->toBe('debit')
+        ->and($transaction->transfer_purpose->value)->toBe('internal')
+        ->and($transaction->category_id)->toBeNull();
+});
+
+test('clearing an existing Category requires confirmation', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Categorized purchase',
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->click('@transaction-category-trigger')
+        ->click('@transaction-category-empty-option')
+        ->press('Save Transaction')
+        ->assertSee('Category: Groceries')
+        ->press('Continue editing');
+
+    expect($transaction->refresh()->category_id)->toBe($category->id);
+
+    $page->press('Save Transaction');
+    $page->script('document.querySelector("[data-slot=alert-dialog-action]").click()');
+    $page->assertSee('Transaction updated.')->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->category_id)->toBeNull();
+});
+
+test('a linked Refund shows its currency error without discarding the draft', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $spending = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+    ]);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Linked refund',
+        'original_spending_id' => $spending->id,
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->select('#transaction-currency', 'USD')
+        ->fill('#transaction-description', 'Draft refund correction')
+        ->press('Save Transaction')
+        ->assertSee('A Refund and its original spending must use the same currency.')
+        ->assertValue('#transaction-description', 'Draft refund correction')
+        ->assertNoJavaScriptErrors();
+
+    expect($refund->refresh()->currency->value)->toBe('PEN')
+        ->and($refund->description)->toBe('Linked refund');
+});
+
+test('a Refund can be corrected to Income or an internal Transfer in one edit', function (string $kind) {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Shopping']);
+    $today = now()->toDateString();
+    $spending = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+    ]);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Imported reimbursement',
+        'category_id' => $category->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+        'original_spending_id' => $spending->id,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[data-test="breakdown-transaction-'.$refund->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->select('#transaction-kind', $kind)
+        ->assertValue('#transaction-direction', 'credit')
+        ->assertSee($kind === 'income' ? 'Income Source' : 'Transfer Purpose')
+        ->press('Save Transaction')
+        ->assertSee('Category: Shopping')
+        ->assertSee('Original Spending link: Transaction #'.$spending->id);
+
+    $page->script('document.querySelector("[data-slot=alert-dialog-action]").click()');
+    $page->assertSee('Transaction updated.')->assertNoJavaScriptErrors();
+
+    expect($refund->refresh()->kind->value)->toBe($kind)
+        ->and($refund->direction->value)->toBe('credit')
+        ->and($refund->category_id)->toBeNull()
+        ->and($refund->original_spending_id)->toBeNull();
+})->with(['income', 'transfer']);
+
+test('an amount edit keeps the split until its removal is confirmed', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'amount_minor' => 2_500,
+        'description' => 'Split purchase',
+    ]);
+    $split = ReceiptBreakdown::factory()->for($transaction)->create();
+    LineItem::factory()->for($split)->create([
+        'line_total_minor' => 2_500,
+        'category_id' => $category->id,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->assertSee('Category split')
+        ->assertSee('Groceries')
+        ->assertNotPresent('#transaction-category-trigger')
+        ->fill('#transaction-amount', '30.00')
+        ->press('Save Transaction')
+        ->assertSee('Category split and its allocations')
+        ->press('Continue editing');
+
+    expect($transaction->refresh()->amount_minor)->toBe(2_500)
+        ->and($transaction->receiptBreakdown()->exists())->toBeTrue();
+
+    $page->press('Save Transaction');
+    $page->script('document.querySelector("[data-slot=alert-dialog-action]").click()');
+    $page->assertSee('Transaction updated.')->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->amount_minor)->toBe(3_000)
+        ->and($transaction->receiptBreakdown()->exists())->toBeFalse();
+});
+
+test('an unchanged split amount saves without confirmation', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'amount_minor' => 2_500,
+        'description' => 'Split purchase',
+    ]);
+    $split = ReceiptBreakdown::factory()->for($transaction)->create();
+    LineItem::factory()->for($split)->create(['line_total_minor' => 2_500]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->fill('#transaction-amount', '25')
+        ->fill('#transaction-description', 'Updated split purchase')
+        ->press('Save Transaction')
+        ->assertSee('Transaction updated.')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->receiptBreakdown()->exists())->toBeTrue()
+        ->and($transaction->description)->toBe('Updated split purchase');
+});
+
+test('validation keeps the draft and opens the optional section with an error', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Imported purchase',
+        'instrument_label' => 'Visa',
+        'instrument_last_four' => '4242',
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->fill('#transaction-description', 'Draft correction')
+        ->click('Optional payment source')
+        ->fill('#transaction-last-four', 'abcd')
+        ->click('Optional payment source')
+        ->press('Save Transaction')
+        ->assertSee('The instrument last four field format is invalid.')
+        ->assertValue('#transaction-description', 'Draft correction')
+        ->assertScript('document.querySelector("#transaction-last-four").closest("details").open')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->description)->toBe('Imported purchase')
+        ->and($transaction->instrument_last_four)->toBe('4242');
+});
+
+test('the editor is centered on desktop and fills the phone viewport without saving a canceled draft', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Cash purchase',
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->resize(1280, 800)
+        ->click('[data-test="breakdown-transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const bounds = dialog?.getBoundingClientRect();
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
+
+                return bounds !== undefined
+                    && Math.abs((bounds.left + bounds.right) / 2 - innerWidth / 2) <= 2
+                    && Math.abs((bounds.top + bounds.bottom) / 2 - innerHeight / 2) <= 2
+                    && bounds.width < innerWidth
+                    && bounds.height > 400
+                    && bounds.height < 720
+                    && (scroller?.scrollHeight ?? 0) <= (scroller?.clientHeight ?? 0) + 1;
+            })()
+            JS)
+        ->resize(1280, 600)
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const header = dialog?.querySelector('[data-slot="dialog-header"]');
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
+
+                if (!header || !scroller) {
+                    return false;
+                }
+
+                const headerTop = header.getBoundingClientRect().top;
+                scroller.scrollTop = scroller.scrollHeight;
+
+                return scroller.scrollTop > 0
+                    && Math.abs(header.getBoundingClientRect().top - headerTop) < 1;
+            })()
+            JS)
+        ->resize(390, 844)
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const bounds = dialog?.getBoundingClientRect();
+
+                return bounds !== undefined
+                    && bounds.left <= 1
+                    && bounds.top <= 1
+                    && bounds.width >= innerWidth - 2
+                    && bounds.height >= innerHeight - 2;
+            })()
+            JS)
+        ->fill('#transaction-description', 'Unsaved draft')
+        ->press('Cancel')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->description)->toBe('Cash purchase');
 });

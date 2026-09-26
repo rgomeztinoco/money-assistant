@@ -33,11 +33,10 @@ test('the owner creates a Merchant Rule that categorizes a future Transaction', 
 
     visit('/transactions')
         ->press('Add Transaction')
-        ->fill('#manual-amount', '12.50')
-        ->fill('#manual-description', "cafe\u{0301} central")
-        ->select('#manual-currency', 'PEN')
-        ->select('#manual-kind', 'spending')
-        ->press('Record Transaction')
+        ->fill('#transaction-amount', '12.50')
+        ->fill('#transaction-description', "cafe\u{0301} central")
+        ->select('#transaction-currency', 'PEN')
+        ->press('Save Transaction')
         ->assertSee('Transaction recorded.')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
@@ -220,20 +219,28 @@ test('a Transaction opens a Merchant Rule dialog with known values prefilled', f
 
     visit('/transactions')
         ->click('[data-test="transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Create Merchant Rule")')
+        ->assertPathIs('/transactions')
+        ->assertSee('Known values are filled from this Transaction.')
+        ->assertSeeIn('[data-test="merchant-rule-source-context"]', 'Money out')
+        ->assertValue('#action-rule-merchant', 'CAFÉ—Central')
+        ->assertSelected('#action-rule-kind', 'spending')
+        ->assertSelected('#action-rule-currency', 'PEN')
+        ->click('@action-rule-category-trigger')
+        ->click('@action-rule-category-option-'.$category->id)
+        ->click('[data-test="rule-apply-existing"]')
+        ->waitForText('matches this rule right now')
+        ->assertSeeIn('[data-test="merchant-rule-preview"]', '1 existing Transaction matches this rule right now')
+        ->assertSeeIn('[data-test="merchant-rule-preview"]', '#'.$transaction->id)
         ->press('Create Merchant Rule')
-        ->assertPathIs('/merchant-rules')
-        ->assertSee('Known values are prefilled from the Transaction.')
-        ->assertValue('#rule-merchant', 'CAFÉ—Central')
-        ->assertSelected('#rule-kind', 'spending')
-        ->assertSelected('#rule-currency', 'PEN')
-        ->select('#rule-category', $category->id)
-        ->press('Create Merchant Rule')
-        ->assertPathIs('/merchant-rules')
-        ->assertSee('Merchant Rule created.')
+        ->assertPathIs('/transactions')
+        ->assertSee('Merchant Rule created and 1 Transaction updated.')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
     expect(MerchantRule::query()->sole())
         ->merchant_key->toBe('café central')
         ->category_id->toBe($category->id);
+
+    expect($transaction->refresh()->category_id)->toBe($category->id);
 });

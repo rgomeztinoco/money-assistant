@@ -6,6 +6,7 @@ import {
     update as saveCategorySplit,
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
 import InputError from '@/components/input-error';
+import type { EditorTransaction } from '@/components/transaction-editor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +18,7 @@ import {
     minorUnitsToCurrencyUnits,
 } from '@/lib/format-minor-units';
 import { CategoryClassificationSelect } from './classification-select';
-import type { BreakdownProps, BreakdownTransaction } from './types';
+import type { BreakdownProps } from './types';
 
 type EditableSplitRow = {
     clientId: string;
@@ -29,7 +30,7 @@ export function CategorySplit({
     transaction,
     categoryOptions,
 }: {
-    transaction: BreakdownTransaction;
+    transaction: EditorTransaction;
     categoryOptions: BreakdownProps['category_options'];
 }) {
     const nextRowId = useRef(2);
@@ -95,132 +96,162 @@ export function CategorySplit({
     const isReconciled = hasValidAmounts && remaining === 0n;
 
     return (
-        <details className="rounded-lg border">
-            <summary className="cursor-pointer px-4 py-3 font-medium">
-                Split by Category
-            </summary>
-            <div className="grid gap-4 border-t p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="type-body text-muted-foreground">
-                        Category amounts must total{' '}
-                        {formatMinorUnits(
-                            transaction.amount_minor,
-                            transaction.currency,
-                        )}
-                        .
-                    </p>
-                    {transaction.split !== null && (
-                        <Badge variant="secondary">Split active</Badge>
+        <div className="grid gap-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="type-body text-muted-foreground">
+                    Category amounts must total{' '}
+                    {formatMinorUnits(
+                        transaction.amount_minor,
+                        transaction.currency,
                     )}
-                </div>
+                    .
+                </p>
+                {transaction.split !== null && (
+                    <Badge variant="secondary">Split active</Badge>
+                )}
+            </div>
 
-                <Form
-                    {...saveCategorySplit.form(transaction.id)}
-                    options={{ preserveScroll: true, preserveState: true }}
-                    className="grid gap-3"
-                >
-                    {({ errors, processing }) => (
-                        <>
-                            {rows.map((row, index) => (
-                                <div
-                                    key={row.clientId}
-                                    className="grid gap-3 rounded-lg border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,0.45fr)_auto] sm:items-end"
-                                >
-                                    <input
-                                        type="hidden"
-                                        name={`line_items[${index}][description]`}
-                                        value={`Category split ${index + 1}`}
-                                    />
-                                    <div className="grid gap-2">
-                                        <Label
-                                            htmlFor={`split-${transaction.id}-${row.clientId}-category`}
+            <Form
+                {...saveCategorySplit.form(transaction.id)}
+                options={{ preserveScroll: true, preserveState: true }}
+                className="grid gap-4"
+            >
+                {({ errors, processing }) => (
+                    <>
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[26rem] border-collapse type-body">
+                                <thead className="border-b bg-muted/40 text-left type-meta">
+                                    <tr>
+                                        <th
+                                            scope="col"
+                                            className="w-3/5 px-3 py-2 font-medium"
                                         >
                                             Category
-                                        </Label>
-                                        <CategoryClassificationSelect
-                                            id={`split-${transaction.id}-${row.clientId}-category`}
-                                            name={`line_items[${index}][category_id]`}
-                                            value={row.categoryId}
-                                            categoryOptions={categoryOptions}
-                                        />
-                                        <InputError
-                                            message={
-                                                errors[
-                                                    `line_items.${index}.category_id`
-                                                ]
-                                            }
-                                        />
-                                    </div>
-                                    <div className="grid gap-2">
-                                        <Label
-                                            htmlFor={`split-${transaction.id}-${row.clientId}-amount`}
+                                        </th>
+                                        <th
+                                            scope="col"
+                                            className="w-36 px-3 py-2 font-medium"
                                         >
                                             Amount
-                                        </Label>
-                                        <Input
-                                            id={`split-${transaction.id}-${row.clientId}-amount`}
-                                            name={`line_items[${index}][line_total]`}
-                                            inputMode="decimal"
-                                            value={row.amount}
-                                            onChange={(event) =>
-                                                updateRow(
-                                                    row.clientId,
-                                                    'amount',
-                                                    event.target.value,
-                                                )
-                                            }
-                                            placeholder="0.00"
-                                        />
-                                        <InputError
-                                            message={
-                                                errors[
-                                                    `line_items.${index}.line_total`
-                                                ]
-                                            }
-                                        />
-                                    </div>
-                                    <Button
-                                        type="button"
-                                        size="icon"
-                                        variant="ghost"
-                                        disabled={rows.length <= 1}
-                                        onClick={() =>
-                                            setRows((currentRows) =>
-                                                currentRows.filter(
-                                                    (candidate) =>
-                                                        candidate.clientId !==
-                                                        row.clientId,
-                                                ),
-                                            )
-                                        }
-                                        aria-label={`Remove split row ${index + 1}`}
-                                    >
-                                        <Trash2 />
-                                    </Button>
-                                </div>
-                            ))}
+                                        </th>
+                                        <th
+                                            scope="col"
+                                            className="w-12 px-2 py-2"
+                                        >
+                                            <span className="sr-only">
+                                                Remove
+                                            </span>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {rows.map((row, index) => (
+                                        <tr key={row.clientId}>
+                                            <td className="px-3 py-2 align-top">
+                                                <input
+                                                    type="hidden"
+                                                    name={`line_items[${index}][description]`}
+                                                    value={`Category split ${index + 1}`}
+                                                />
+                                                <Label
+                                                    className="sr-only"
+                                                    htmlFor={`split-${transaction.id}-${row.clientId}-category`}
+                                                >
+                                                    Category for row {index + 1}
+                                                </Label>
+                                                <CategoryClassificationSelect
+                                                    id={`split-${transaction.id}-${row.clientId}-category`}
+                                                    name={`line_items[${index}][category_id]`}
+                                                    value={row.categoryId}
+                                                    categoryOptions={
+                                                        categoryOptions
+                                                    }
+                                                />
+                                                <InputError
+                                                    message={
+                                                        errors[
+                                                            `line_items.${index}.category_id`
+                                                        ]
+                                                    }
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2 align-top">
+                                                <Label
+                                                    className="sr-only"
+                                                    htmlFor={`split-${transaction.id}-${row.clientId}-amount`}
+                                                >
+                                                    Amount for row {index + 1}
+                                                </Label>
+                                                <Input
+                                                    id={`split-${transaction.id}-${row.clientId}-amount`}
+                                                    name={`line_items[${index}][line_total]`}
+                                                    inputMode="decimal"
+                                                    value={row.amount}
+                                                    onChange={(event) =>
+                                                        updateRow(
+                                                            row.clientId,
+                                                            'amount',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                    placeholder="0.00"
+                                                />
+                                                <InputError
+                                                    message={
+                                                        errors[
+                                                            `line_items.${index}.line_total`
+                                                        ]
+                                                    }
+                                                />
+                                            </td>
+                                            <td className="px-2 py-2 align-top">
+                                                <Button
+                                                    type="button"
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    disabled={rows.length <= 1}
+                                                    onClick={() =>
+                                                        setRows((currentRows) =>
+                                                            currentRows.filter(
+                                                                (candidate) =>
+                                                                    candidate.clientId !==
+                                                                    row.clientId,
+                                                            ),
+                                                        )
+                                                    }
+                                                    aria-label={`Remove split row ${index + 1}`}
+                                                >
+                                                    <Trash2 />
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
 
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={addRow}
-                                >
-                                    <Plus /> Add Category amount
-                                </Button>
-                                <p
-                                    className={`type-body font-medium ${isReconciled ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}`}
-                                    data-test="split-reconciliation"
-                                >
-                                    {isReconciled
-                                        ? 'Amounts reconcile exactly'
-                                        : remaining >= 0n
-                                          ? `${formatMinorUnits(remaining.toString(), transaction.currency)} remaining`
-                                          : `${formatMinorUnits((-remaining).toString(), transaction.currency)} over`}
-                                </p>
-                            </div>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={addRow}
+                            >
+                                <Plus /> Add Category amount
+                            </Button>
+                            <p
+                                className={`type-body font-medium ${isReconciled ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}`}
+                                data-test="split-reconciliation"
+                            >
+                                {isReconciled
+                                    ? 'Amounts reconcile exactly'
+                                    : remaining >= 0n
+                                      ? `${formatMinorUnits(remaining.toString(), transaction.currency)} remaining`
+                                      : `${formatMinorUnits((-remaining).toString(), transaction.currency)} over`}
+                            </p>
+                        </div>
 
+                        <div className="flex justify-end">
                             <Button
                                 type="submit"
                                 disabled={processing || !isReconciled}
@@ -230,29 +261,28 @@ export function CategorySplit({
                                     ? 'Save Category split'
                                     : 'Replace Category split'}
                             </Button>
-                        </>
+                        </div>
+                    </>
+                )}
+            </Form>
+
+            {transaction.split !== null && (
+                <Form
+                    {...removeCategorySplit.form(transaction.id)}
+                    options={{ preserveScroll: true, preserveState: true }}
+                >
+                    {({ processing }) => (
+                        <Button
+                            type="submit"
+                            variant="ghost"
+                            disabled={processing}
+                        >
+                            {processing && <Spinner />}
+                            Remove Category split
+                        </Button>
                     )}
                 </Form>
-
-                {transaction.split !== null && (
-                    <Form
-                        {...removeCategorySplit.form(transaction.id)}
-                        options={{ preserveScroll: true, preserveState: true }}
-                    >
-                        {({ processing }) => (
-                            <Button
-                                type="submit"
-                                variant="ghost"
-                                disabled={processing}
-                                className="w-full"
-                            >
-                                {processing && <Spinner />}
-                                Remove Category split
-                            </Button>
-                        )}
-                    </Form>
-                )}
-            </div>
-        </details>
+            )}
+        </div>
     );
 }
