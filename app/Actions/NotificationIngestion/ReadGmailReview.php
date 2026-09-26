@@ -125,7 +125,7 @@ final class ReadGmailReview
                 'gmail_url' => 'https://mail.google.com/mail/u/'
                     .rawurlencode($connection->gmail_account_identity)
                     .'/#all/'
-                    .rawurlencode($discovery->message_id),
+                    .rawurlencode($summaryState === 'available' ? $summary->threadId : $discovery->message_id),
             ];
         });
 

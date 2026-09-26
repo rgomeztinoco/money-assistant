@@ -43,6 +43,7 @@ test('the owner sees separate unresolved outcomes and only current page Gmail su
     $gmail = new FakeGmail;
     $gmail->messageSummaries[$unrecognized->message_id] = new GmailMessageSummary(
         $unrecognized->message_id,
+        'bank-thread',
         now()->toImmutable(),
         'bank@example.test',
         'A spending notification',
@@ -62,7 +63,7 @@ test('the owner sees separate unresolved outcomes and only current page Gmail su
             ->where('review.items.data.2.sender', 'bank@example.test')
             ->where('review.items.data.2.subject', 'A spending notification')
             ->where('review.items.data.2.explanation', 'No supported format matched. The precise reason is unknown.')
-            ->where('review.items.data.2.gmail_url', 'https://mail.google.com/mail/u/'.rawurlencode($connection->gmail_account_identity).'/#all/'.rawurlencode($unrecognized->message_id)));
+            ->where('review.items.data.2.gmail_url', 'https://mail.google.com/mail/u/'.rawurlencode($connection->gmail_account_identity).'/#all/bank-thread'));
 
     expect($gmail->messageSummaryCalls)->toHaveCount(3);
 });
@@ -179,12 +180,23 @@ test('the owner can queue one unsupported email but cannot retry dismissed or fo
 
     $this->post(route('gmail.messages.dismiss', $discovery))->assertRedirect();
     $this->post(route('gmail.messages.retry', $discovery))->assertRedirect();
+    $this->post(route('gmail.unsupported_messages.retry'))->assertRedirect();
     $this->post(route('gmail.messages.retry', $foreign))->assertNotFound();
     $this->post(route('gmail.messages.dismiss', $foreign))->assertNotFound();
     $this->delete(route('gmail.messages.restore', $foreign))->assertNotFound();
 
     Queue::assertPushed(ProcessGmailMessage::class, 1);
     expect($foreign->fresh()->dismissed_at)->toBeNull();
+});
+
+test('Gmail review actions require authentication', function () {
+    $discovery = GmailMessageDiscovery::factory()->create();
+
+    $this->post(route('gmail.messages.retry', $discovery))->assertRedirect(route('login'));
+    $this->post(route('gmail.messages.dismiss', $discovery))->assertRedirect(route('login'));
+    $this->delete(route('gmail.messages.restore', $discovery))->assertRedirect(route('login'));
+
+    expect($discovery->fresh()->dismissed_at)->toBeNull();
 });
 
 test('reauthorization keeps local review available without fetching Gmail metadata', function () {
