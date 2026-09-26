@@ -36,6 +36,7 @@ return [
     ],
 
     'gmail' => [
+        'preview_enabled' => env('GMAIL_PREVIEW_ENABLED', false),
         'client_id' => env('GOOGLE_GMAIL_CLIENT_ID'),
         'client_secret' => env('GOOGLE_GMAIL_CLIENT_SECRET'),
         'redirect_uri' => env('GOOGLE_GMAIL_REDIRECT_URI', rtrim((string) env('APP_URL'), '/').'/settings/connections/gmail/callback'),

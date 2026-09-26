@@ -6,6 +6,7 @@ use App\Actions\Ledger\CountOutstandingReviews;
 use App\Contracts\Gmail;
 use App\Contracts\StatementPdfExtractor;
 use App\Integrations\Gmail\GoogleGmail;
+use App\Integrations\Gmail\PreviewGmail;
 use App\NotificationIngestion\Formats\BcpSpendingNotificationAdapter;
 use App\NotificationIngestion\Formats\InterbankSpendingNotificationAdapter;
 use App\NotificationIngestion\Formats\YapeSpendingNotificationAdapter;
@@ -33,14 +34,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(
-            Gmail::class,
-            fn (): GoogleGmail => new GoogleGmail(
-                clientId: (string) config('services.gmail.client_id'),
-                clientSecret: (string) config('services.gmail.client_secret'),
-                redirectUri: (string) config('services.gmail.redirect_uri'),
-            ),
-        );
+        if ($this->app->environment('local') && config('services.gmail.preview_enabled')) {
+            $this->app->singleton(Gmail::class, PreviewGmail::class);
+        } else {
+            $this->app->singleton(
+                Gmail::class,
+                fn (): GoogleGmail => new GoogleGmail(
+                    clientId: (string) config('services.gmail.client_id'),
+                    clientSecret: (string) config('services.gmail.client_secret'),
+                    redirectUri: (string) config('services.gmail.redirect_uri'),
+                ),
+            );
+        }
 
         $this->app->scoped(CountOutstandingReviews::class);
 

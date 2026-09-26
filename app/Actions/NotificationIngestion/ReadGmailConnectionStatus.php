@@ -4,6 +4,7 @@ namespace App\Actions\NotificationIngestion;
 
 use App\Contracts\Gmail;
 use App\GmailSynchronizationType;
+use App\Integrations\Gmail\PreviewGmail;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\SpendingNotificationReference;
@@ -18,6 +19,7 @@ final class ReadGmailConnectionStatus
     /**
      * @return array{
      *     configured: bool,
+     *     preview: bool,
      *     state: 'disconnected'|'connected'|'stale'|'check_failed'|'reauthorization_required',
      *     account_identity: string|null,
      *     scope: string,
@@ -33,6 +35,7 @@ final class ReadGmailConnectionStatus
      */
     public function handle(User $owner): array
     {
+        $preview = app()->environment('local') && (bool) config('services.gmail.preview_enabled');
         $connection = GmailConnection::query()->whereBelongsTo($owner, 'owner')->first();
         $latestSynchronizationAt = $connection === null
             ? null
@@ -47,10 +50,11 @@ final class ReadGmailConnectionStatus
         $latestFailure = $this->latestFailure($connection, $failedMessage);
 
         return [
-            'configured' => filled(config('services.gmail.client_id'))
+            'configured' => $preview || (filled(config('services.gmail.client_id'))
                 && filled(config('services.gmail.client_secret'))
                 && filled(config('services.gmail.redirect_uri'))
-                && config('services.gmail.oauth_publishing_status') === 'production',
+                && config('services.gmail.oauth_publishing_status') === 'production'),
+            'preview' => $preview && $connection?->gmail_account_identity === PreviewGmail::ACCOUNT_IDENTITY,
             'state' => match (true) {
                 $connection === null => 'disconnected',
                 $connection->ingestionIsPaused() => 'reauthorization_required',

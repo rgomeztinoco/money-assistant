@@ -42,6 +42,7 @@ import { gmail as gmailDataSource } from '@/routes/data_sources';
 
 type GmailStatus = {
     configured: boolean;
+    preview: boolean;
     state:
         | 'disconnected'
         | 'connected'
@@ -358,8 +359,8 @@ export default function GmailDataSource({
     return (
         <>
             <Head title="Gmail" />
-            <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
-                <header className="grid gap-1">
+            <main className="grid flex-1 content-start gap-6 p-4 md:p-6 xl:grid-cols-[minmax(18rem,0.75fr)_minmax(36rem,1.25fr)]">
+                <header className="grid gap-1 xl:col-span-2">
                     <h1 className="type-page-title">Gmail</h1>
                     <p className="type-subtitle">
                         Review emails that did not create a Transaction.
@@ -367,7 +368,7 @@ export default function GmailDataSource({
                 </header>
 
                 <Card
-                    className="min-w-0 gap-0 overflow-hidden py-0"
+                    className="min-w-0 gap-0 overflow-hidden py-0 xl:col-start-2 xl:row-start-2"
                     data-test="gmail-review"
                 >
                     <CardHeader className="gap-3 p-4 sm:flex-row sm:items-start sm:justify-between md:p-5">
@@ -552,92 +553,111 @@ export default function GmailDataSource({
                     )}
                 </Card>
 
-                {!gmail.configured && (
-                    <Alert variant="destructive">
-                        <TriangleAlert />
-                        <AlertTitle>Google OAuth setup required</AlertTitle>
-                        <AlertDescription>
-                            Add the Gmail client credentials and production
-                            callback settings before connecting an account.
-                        </AlertDescription>
-                    </Alert>
-                )}
+                <div className="grid min-w-0 content-start gap-4 xl:col-start-1 xl:row-start-2">
+                    {!gmail.configured && (
+                        <Alert variant="destructive">
+                            <TriangleAlert />
+                            <AlertTitle>Google OAuth setup required</AlertTitle>
+                            <AlertDescription>
+                                Add the Gmail client credentials and production
+                                callback settings before connecting an account.
+                            </AlertDescription>
+                        </Alert>
+                    )}
 
-                {gmail.latest_failure?.type === 'synchronization' && (
-                    <Alert variant="destructive">
-                        <TriangleAlert />
-                        <AlertTitle>The latest Gmail import failed</AlertTitle>
-                        <AlertDescription>
-                            <LocalTimestamp
-                                value={gmail.latest_failure.occurred_at}
-                            />{' '}
-                            · {gmail.latest_failure.error_code}
-                        </AlertDescription>
-                    </Alert>
-                )}
+                    {gmail.latest_failure?.type === 'synchronization' && (
+                        <Alert variant="destructive">
+                            <TriangleAlert />
+                            <AlertTitle>
+                                The latest Gmail import failed
+                            </AlertTitle>
+                            <AlertDescription>
+                                <LocalTimestamp
+                                    value={gmail.latest_failure.occurred_at}
+                                />{' '}
+                                · {gmail.latest_failure.error_code}
+                            </AlertDescription>
+                        </Alert>
+                    )}
 
-                <Card id="gmail" className="min-w-0 gap-0 py-0">
-                    <CardHeader className="gap-3 p-4 sm:flex-row sm:items-start sm:justify-between md:p-5">
-                        <div className="grid gap-1">
-                            <CardTitle>
-                                {gmail.account_identity ??
-                                    'Gmail is not connected'}
-                            </CardTitle>
-                            <CardDescription>{details.summary}</CardDescription>
-                        </div>
-                        <Badge variant={details.variant}>
-                            {gmail.state === 'connected' && <CircleCheck />}
-                            {details.label}
-                        </Badge>
-                    </CardHeader>
-                    <CardContent className="flex flex-col gap-4 border-t p-4 md:p-5">
-                        {gmail.account_identity !== null && (
-                            <div className="flex flex-wrap gap-x-8 gap-y-2 type-meta">
-                                <span>
-                                    Last successful import:{' '}
-                                    <span data-test="gmail-last-successful-sync">
+                    <Card id="gmail" className="min-w-0 gap-0 py-0">
+                        <CardHeader className="gap-3 p-4 sm:flex-row sm:items-start sm:justify-between md:p-5">
+                            <div className="grid gap-1">
+                                <CardTitle>
+                                    {gmail.account_identity ??
+                                        'Gmail is not connected'}
+                                </CardTitle>
+                                <CardDescription>
+                                    {gmail.preview
+                                        ? 'Sample emails for trying the review workflow. No Gmail account is connected.'
+                                        : details.summary}
+                                </CardDescription>
+                            </div>
+                            <Badge variant={details.variant}>
+                                {gmail.preview ? (
+                                    'Sample data'
+                                ) : (
+                                    <>
+                                        {gmail.state === 'connected' && (
+                                            <CircleCheck />
+                                        )}
+                                        {details.label}
+                                    </>
+                                )}
+                            </Badge>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-4 border-t p-4 md:p-5">
+                            {gmail.account_identity !== null && (
+                                <div className="flex flex-wrap gap-x-8 gap-y-2 type-meta">
+                                    <span>
+                                        Last successful import:{' '}
+                                        <span data-test="gmail-last-successful-sync">
+                                            <LocalTimestamp
+                                                value={
+                                                    gmail.last_successful_sync_at
+                                                }
+                                                missingLabel="No imports yet"
+                                            />
+                                        </span>
+                                    </span>
+                                    <span>
+                                        Next import:{' '}
                                         <LocalTimestamp
-                                            value={
-                                                gmail.last_successful_sync_at
-                                            }
-                                            missingLabel="No imports yet"
+                                            value={gmail.next_scheduled_sync_at}
+                                            missingLabel="Paused"
                                         />
                                     </span>
-                                </span>
-                                <span>
-                                    Next import:{' '}
-                                    <LocalTimestamp
-                                        value={gmail.next_scheduled_sync_at}
-                                        missingLabel="Paused"
-                                    />
-                                </span>
-                                <span>
-                                    Connection checked:{' '}
-                                    <LocalTimestamp
-                                        value={gmail.last_successful_check_at}
-                                        missingLabel="Not checked yet"
-                                    />
-                                </span>
-                            </div>
-                        )}
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <p className="type-meta">
-                                Read-only Gmail access. Money Assistant cannot
-                                send, edit, or delete mail.
-                            </p>
-                            {canImport ? (
-                                <div className="flex flex-wrap gap-2">
-                                    <ConnectionCheckButton />
-                                    <ManualImportButton />
+                                    <span>
+                                        Connection checked:{' '}
+                                        <LocalTimestamp
+                                            value={
+                                                gmail.last_successful_check_at
+                                            }
+                                            missingLabel="Not checked yet"
+                                        />
+                                    </span>
                                 </div>
-                            ) : (
-                                <ConnectAndImport
-                                    configured={gmail.configured}
-                                />
                             )}
-                        </div>
-                    </CardContent>
-                </Card>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <p className="type-meta">
+                                    {gmail.preview
+                                        ? 'Sample messages are local. They cannot open in Gmail.'
+                                        : 'Read-only Gmail access. Money Assistant cannot send, edit, or delete mail.'}
+                                </p>
+                                {canImport ? (
+                                    <div className="flex flex-wrap gap-2">
+                                        <ConnectionCheckButton />
+                                        <ManualImportButton />
+                                    </div>
+                                ) : (
+                                    <ConnectAndImport
+                                        configured={gmail.configured}
+                                    />
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
             </main>
         </>
     );
