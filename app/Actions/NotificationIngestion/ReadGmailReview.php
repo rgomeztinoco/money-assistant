@@ -138,6 +138,8 @@ final class ReadGmailReview
             ];
         });
 
+        /** @var LengthAwarePaginator<int, array<string, mixed>> $page */
+
         return [
             'view' => $view,
             'attention_count' => $unrecognizedCount + $failedCount,
