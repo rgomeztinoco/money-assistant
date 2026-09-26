@@ -1,14 +1,14 @@
 import { Deferred, Head, Link, router } from '@inertiajs/react';
 import { FileUp } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { TransactionActionDialog } from '@/components/transaction-action-dialog';
 import { TransactionCategorySelect } from '@/components/transaction-category-select';
-import { TransactionEditor } from '@/components/transaction-editor';
 import type { EditorTransaction } from '@/components/transaction-editor';
-import { TransactionInspector } from '@/components/transaction-inspector';
 import { TransactionListFilterControls } from '@/components/transaction-list-filters';
 import type { TransactionListFilters } from '@/components/transaction-list-filters';
 import { TransactionTable } from '@/components/transaction-table';
 import type { TransactionTableRow } from '@/components/transaction-table';
+import type { TransactionAction } from '@/components/transaction-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,6 +32,7 @@ function editorTransaction(
 ): EditorTransaction {
     return {
         id: transaction.id,
+        voided_at: transaction.voided_at,
         occurred_on: transaction.occurred_on,
         amount_minor: transaction.amount_minor,
         currency: transaction.currency,
@@ -99,8 +100,10 @@ export default function TransactionsIndex({
     selected_transaction,
 }: TransactionsIndexProps) {
     const [loading, setLoading] = useState(false);
-    const [editing, setEditing] = useState<SelectedTransaction | null>(null);
-    const scrollPosition = useRef<number | null>(null);
+    const [activeAction, setActiveAction] = useState<TransactionAction>('edit');
+    const scrollPosition = useRef<{ window: number; table: number } | null>(
+        null,
+    );
 
     function visit(url: string): void {
         setLoading(true);
@@ -116,6 +119,7 @@ export default function TransactionsIndex({
     }
 
     function closeDetails(): void {
+        setActiveAction('edit');
         const position = scrollPosition.current;
 
         router.get(
@@ -128,9 +132,16 @@ export default function TransactionsIndex({
                     setLoading(false);
 
                     if (position !== null) {
-                        requestAnimationFrame(() =>
-                            window.scrollTo(0, position),
-                        );
+                        requestAnimationFrame(() => {
+                            window.scrollTo(0, position.window);
+                            const table = document.querySelector<HTMLElement>(
+                                '[data-test="breakdown-transactions-scroll"]',
+                            );
+
+                            if (table) {
+                                table.scrollTop = position.table;
+                            }
+                        });
                         scrollPosition.current = null;
                     }
                 },
@@ -223,15 +234,29 @@ export default function TransactionsIndex({
                             onPageChange={(page) =>
                                 visit(transactionUrl(filters, page))
                             }
-                            rowHref={(transaction) =>
-                                transactionUrl(
-                                    filters,
-                                    pagination.current_page,
-                                    transaction.id,
-                                )
-                            }
+                            onAction={(transaction, action) => {
+                                setActiveAction(action);
+                                router.get(
+                                    transactionUrl(
+                                        filters,
+                                        pagination.current_page,
+                                        transaction.id,
+                                    ),
+                                    {},
+                                    {
+                                        preserveScroll: true,
+                                        preserveState: true,
+                                    },
+                                );
+                            }}
                             onBeforeOpen={() => {
-                                scrollPosition.current = window.scrollY;
+                                scrollPosition.current = {
+                                    window: window.scrollY,
+                                    table:
+                                        document.querySelector<HTMLElement>(
+                                            '[data-test="breakdown-transactions-scroll"]',
+                                        )?.scrollTop ?? 0,
+                                };
                             }}
                             rowTestId={(transaction) =>
                                 'transaction-' + transaction.id
@@ -252,22 +277,35 @@ export default function TransactionsIndex({
                 <Deferred
                     data="selected_transaction"
                     fallback={
-                        <div className="fixed inset-y-0 right-0 z-50 grid w-full max-w-2xl place-items-center border-l bg-background/95">
+                        <div className="fixed inset-0 z-50 grid place-items-center bg-background/75">
                             <Spinner className="size-6" />
                         </div>
                     }
                 >
                     {selected_transaction ? (
-                        <TransactionInspector
-                            transaction={selected_transaction}
+                        <TransactionActionDialog
+                            transaction={editorTransaction(
+                                selected_transaction,
+                            )}
+                            action={activeAction}
+                            today={today}
                             categoryOptions={category_options}
-                            onEdit={setEditing}
-                            editorOpen={editing !== null}
-                            onOpenChange={(open) => {
-                                if (!open) {
-                                    closeDetails();
-                                }
-                            }}
+                            splitCategoryOptions={category_options.map(
+                                (option) => ({
+                                    id: option.id,
+                                    name: option.name,
+                                    path: option.path,
+                                    parent:
+                                        option.parent_id === null
+                                            ? null
+                                            : {
+                                                  id: option.parent_id,
+                                                  name:
+                                                      option.parent_name ?? '',
+                                              },
+                                }),
+                            )}
+                            onClose={closeDetails}
                         />
                     ) : (
                         <Dialog
@@ -295,29 +333,6 @@ export default function TransactionsIndex({
                         </Dialog>
                     )}
                 </Deferred>
-            )}
-            {editing && (
-                <Dialog open onOpenChange={(open) => !open && setEditing(null)}>
-                    <DialogContent className="inset-0 h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none p-4 sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[90vh] sm:max-w-2xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-6">
-                        <DialogHeader>
-                            <DialogTitle>
-                                Edit {editing.description}
-                            </DialogTitle>
-                            <DialogDescription>
-                                Record one confirmed movement.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <TransactionEditor
-                            key={editing.id}
-                            transaction={editorTransaction(editing)}
-                            currency={editing.currency}
-                            today={today}
-                            categoryOptions={category_options}
-                            onCancel={() => setEditing(null)}
-                            onSaved={() => setEditing(null)}
-                        />
-                    </DialogContent>
-                </Dialog>
             )}
         </>
     );

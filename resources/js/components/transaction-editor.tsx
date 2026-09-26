@@ -45,6 +45,7 @@ import type {
 
 export type EditorTransaction = {
     id: number;
+    voided_at?: string | null;
     occurred_on: string;
     amount_minor: string;
     currency: Currency;

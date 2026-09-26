@@ -40,6 +40,7 @@ class SaveMerchantRuleRequest extends FormRequest
             ])],
             'currency' => ['nullable', Rule::enum(Currency::class)],
             'enabled' => ['required', 'boolean'],
+            'apply_existing' => ['sometimes', 'boolean'],
             'source_transaction_id' => [
                 'nullable',
                 'integer',

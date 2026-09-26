@@ -49,11 +49,12 @@ test('the owner can identify a retained Voided Transaction by ID', function () {
         ->fill('#transaction-search', (string) $transaction->id)
         ->click('[data-test="transaction-search-submit"]')
         ->click('[data-test="transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
         ->assertQueryStringHas('selected', (string) $transaction->id)
         ->assertSee('Mistaken market entry')
         ->assertSee('Voided')
-        ->assertSee('$ 123.45')
-        ->assertSee('Excluded from all period summaries while Voided.')
+        ->assertValue('#transaction-amount', '123.45')
+        ->assertSelected('#transaction-currency', 'USD')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

@@ -6,6 +6,7 @@ import {
     update as saveCategorySplit,
 } from '@/actions/App/Http/Controllers/ReceiptBreakdownController';
 import InputError from '@/components/input-error';
+import type { EditorTransaction } from '@/components/transaction-editor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +18,7 @@ import {
     minorUnitsToCurrencyUnits,
 } from '@/lib/format-minor-units';
 import { CategoryClassificationSelect } from './classification-select';
-import type { BreakdownProps, BreakdownTransaction } from './types';
+import type { BreakdownProps } from './types';
 
 type EditableSplitRow = {
     clientId: string;
@@ -29,7 +30,7 @@ export function CategorySplit({
     transaction,
     categoryOptions,
 }: {
-    transaction: BreakdownTransaction;
+    transaction: EditorTransaction;
     categoryOptions: BreakdownProps['category_options'];
 }) {
     const nextRowId = useRef(2);
@@ -95,11 +96,8 @@ export function CategorySplit({
     const isReconciled = hasValidAmounts && remaining === 0n;
 
     return (
-        <details className="rounded-lg border">
-            <summary className="cursor-pointer px-4 py-3 font-medium">
-                Split by Category
-            </summary>
-            <div className="grid gap-4 border-t p-4">
+        <div className="rounded-lg border">
+            <div className="grid gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="type-body text-muted-foreground">
                         Category amounts must total{' '}
@@ -253,6 +251,6 @@ export function CategorySplit({
                     </Form>
                 )}
             </div>
-        </details>
+        </div>
     );
 }

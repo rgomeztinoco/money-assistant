@@ -36,17 +36,39 @@ test('Voided Transactions stay in the database and can be found by exact ID', fu
     $this->assertModelExists($transaction);
 });
 
-test('retired void and restore endpoints leave retained Voided state intact', function () {
+test('the owner can void and restore a Transaction without deleting it', function () {
     $owner = User::factory()->create();
     $active = Transaction::factory()->for($owner, 'owner')->create();
     $voided = Transaction::factory()->for($owner, 'owner')->create(['voided_at' => now()]);
     $this->actingAs($owner);
 
-    $this->post('/transactions/'.$active->id.'/void')->assertNotFound();
-    $this->delete('/transactions/'.$voided->id.'/void')->assertNotFound();
+    $this->withHeader('X-Inertia', 'true')
+        ->from(route('transactions.index', ['search' => (string) $active->id]))
+        ->post(route('transactions.void.store', $active))
+        ->assertRedirect(route('transactions.index', ['search' => (string) $active->id]));
+    $this->withoutHeader('X-Inertia');
+    $this->delete(route('transactions.void.destroy', $voided))
+        ->assertRedirect(route('transactions.index'));
 
-    expect($active->refresh()->voided_at)->toBeNull()
-        ->and($voided->refresh()->voided_at)->not->toBeNull();
+    expect($active->refresh()->voided_at)->not->toBeNull()
+        ->and($voided->refresh()->voided_at)->toBeNull();
+    $this->assertModelExists($active);
+});
+
+test('a Transaction cannot be voided by another owner or voided twice', function () {
+    $owner = User::factory()->create();
+    $otherOwner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->create();
+
+    $this->actingAs($otherOwner)
+        ->post(route('transactions.void.store', $transaction))
+        ->assertForbidden();
+
+    $this->actingAs($owner)
+        ->post(route('transactions.void.store', $transaction))
+        ->assertRedirect();
+    $this->post(route('transactions.void.store', $transaction))
+        ->assertSessionHasErrors('void_state');
 });
 
 test('the Transaction table exposes portable ledger indexes', function () {

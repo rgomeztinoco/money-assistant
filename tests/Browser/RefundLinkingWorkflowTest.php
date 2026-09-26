@@ -8,7 +8,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('the owner sees retained Refund links and review reasons in Transaction details', function () {
+test('editing a linked Refund warns before removing its original Spending link', function () {
     $owner = User::factory()->create();
     $spending = Transaction::factory()
         ->for($owner, 'owner')
@@ -35,15 +35,16 @@ test('the owner sees retained Refund links and review reasons in Transaction det
     $this->actingAs($owner);
 
     visit('/transactions?selected='.$refund->id)
-        ->assertSee('Linked Refunds exceed the spending')
-        ->press('Advanced details')
-        ->assertSee('Original spending: Original spending')
+        ->assertPresent('#transaction-kind')
+        ->select('#transaction-kind', 'transfer')
+        ->press('Save Transaction')
+        ->assertSee('Original Spending link: Transaction #'.$spending->id)
+        ->press('Continue editing')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
     visit('/transactions?selected='.$spending->id)
-        ->press('Advanced details')
-        ->assertSee('Linked Refund: Store Refund')
+        ->assertPresent('#transaction-amount')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

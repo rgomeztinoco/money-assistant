@@ -1,8 +1,13 @@
-import { Link } from '@inertiajs/react';
-import { ArrowDownLeft, ArrowUpRight, ChevronRight } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, MoreHorizontal } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { DateText } from '@/components/date-time';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
     TableBody,
     TableCell,
@@ -21,14 +26,17 @@ export type TransactionTableRow = MoneyMovementDetails & {
     currency: Currency;
     description: string;
     category: { id: number; name: string } | null;
+    voided_at?: string | null;
 };
+
+export type TransactionAction = 'edit' | 'void' | 'restore' | 'rule' | 'split';
 
 export function TransactionTable<T extends TransactionTableRow>({
     transactions,
     total,
     page,
     onPageChange,
-    rowHref,
+    onAction,
     onBeforeOpen,
     renderCategory,
     rowTestId,
@@ -38,7 +46,7 @@ export function TransactionTable<T extends TransactionTableRow>({
     total: number;
     page: number;
     onPageChange: (page: number) => void;
-    rowHref: (transaction: T) => string;
+    onAction: (transaction: T, action: TransactionAction) => void;
     onBeforeOpen?: () => void;
     renderCategory?: (transaction: T) => ReactNode;
     rowTestId?: (transaction: T) => string;
@@ -77,7 +85,7 @@ export function TransactionTable<T extends TransactionTableRow>({
                                     Amount
                                 </TableHead>
                                 <TableHead className="w-10 pr-4">
-                                    <span className="sr-only">Open</span>
+                                    <span className="sr-only">Actions</span>
                                 </TableHead>
                             </TableRow>
                         </TableHeader>
@@ -170,24 +178,86 @@ export function TransactionTable<T extends TransactionTableRow>({
                                             )}
                                         </TableCell>
                                         <TableCell className="order-3 p-0 text-right sm:p-2 sm:pr-4">
-                                            <Button
-                                                asChild
-                                                size="icon"
-                                                variant="ghost"
-                                            >
-                                                <Link
-                                                    href={rowHref(transaction)}
-                                                    onClick={onBeforeOpen}
-                                                    preserveScroll
-                                                    preserveState
-                                                    data-test={rowTestId?.(
-                                                        transaction,
-                                                    )}
-                                                    aria-label={`Open ${transaction.description}`}
-                                                >
-                                                    <ChevronRight />
-                                                </Link>
-                                            </Button>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        data-test={rowTestId?.(
+                                                            transaction,
+                                                        )}
+                                                        aria-label={`Actions for ${transaction.description}`}
+                                                    >
+                                                        <MoreHorizontal />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem
+                                                        onSelect={() => {
+                                                            onBeforeOpen?.();
+                                                            onAction(
+                                                                transaction,
+                                                                'edit',
+                                                            );
+                                                        }}
+                                                    >
+                                                        Edit
+                                                    </DropdownMenuItem>
+                                                    {!transaction.voided_at &&
+                                                        (transaction.kind ===
+                                                            'spending' ||
+                                                            transaction.kind ===
+                                                                'refund') && (
+                                                            <>
+                                                                <DropdownMenuItem
+                                                                    onSelect={() => {
+                                                                        onBeforeOpen?.();
+                                                                        onAction(
+                                                                            transaction,
+                                                                            'split',
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    Split by
+                                                                    Category
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
+                                                                    onSelect={() => {
+                                                                        onBeforeOpen?.();
+                                                                        onAction(
+                                                                            transaction,
+                                                                            'rule',
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    Create
+                                                                    Merchant
+                                                                    Rule
+                                                                </DropdownMenuItem>
+                                                            </>
+                                                        )}
+                                                    <DropdownMenuItem
+                                                        variant={
+                                                            transaction.voided_at
+                                                                ? 'default'
+                                                                : 'destructive'
+                                                        }
+                                                        onSelect={() => {
+                                                            onBeforeOpen?.();
+                                                            onAction(
+                                                                transaction,
+                                                                transaction.voided_at
+                                                                    ? 'restore'
+                                                                    : 'void',
+                                                            );
+                                                        }}
+                                                    >
+                                                        {transaction.voided_at
+                                                            ? 'Restore Transaction'
+                                                            : 'Void Transaction'}
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
                                         </TableCell>
                                     </TableRow>
                                 );

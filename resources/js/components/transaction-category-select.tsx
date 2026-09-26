@@ -22,27 +22,25 @@ export function TransactionCategorySelect({
 }) {
     const currentCategoryId = transaction.category?.id.toString() ?? '';
     const [categoryId, setCategoryId] = useState(currentCategoryId);
-    const [processingAction, setProcessingAction] = useState<
-        'once' | 'rule' | null
-    >(null);
+    const [processingAction, setProcessingAction] = useState(false);
     const hasPendingCategory = categoryId !== currentCategoryId;
 
-    function submitCategory(applyToMatching: boolean): void {
-        if (!hasPendingCategory || (applyToMatching && categoryId === '')) {
+    function submitCategory(): void {
+        if (!hasPendingCategory) {
             return;
         }
 
-        setProcessingAction(applyToMatching ? 'rule' : 'once');
+        setProcessingAction(true);
         router.put(
             updateClassification(transaction.id),
             {
                 category_id: categoryId === '' ? null : Number(categoryId),
-                apply_to_matching: applyToMatching,
+                apply_to_matching: false,
             },
             {
                 preserveScroll: true,
                 preserveState: true,
-                onFinish: () => setProcessingAction(null),
+                onFinish: () => setProcessingAction(false),
             },
         );
     }
@@ -77,7 +75,7 @@ export function TransactionCategorySelect({
                 onValueChange={setCategoryId}
                 emptyLabel="Uncategorized"
                 ariaLabel={`Category for ${transaction.description}`}
-                disabled={processingAction !== null}
+                disabled={processingAction}
                 className="h-auto min-h-8 px-2 py-1.5 text-left whitespace-normal"
                 closeOnSelect={false}
                 portalToBody
@@ -91,27 +89,11 @@ export function TransactionCategorySelect({
                                 type="button"
                                 size="sm"
                                 data-test={`apply-category-once-${transaction.id}`}
-                                disabled={processingAction !== null}
-                                onClick={() => submitCategory(false)}
+                                disabled={processingAction}
+                                onClick={submitCategory}
                             >
-                                {processingAction === 'once'
-                                    ? 'Applying…'
-                                    : 'Apply once'}
+                                {processingAction ? 'Applying…' : 'Apply once'}
                             </Button>
-                            {categoryId !== '' && (
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    data-test={`create-merchant-rule-${transaction.id}`}
-                                    disabled={processingAction !== null}
-                                    onClick={() => submitCategory(true)}
-                                >
-                                    {processingAction === 'rule'
-                                        ? 'Creating…'
-                                        : 'Create rule'}
-                                </Button>
-                            )}
                         </div>
                     ) : undefined
                 }

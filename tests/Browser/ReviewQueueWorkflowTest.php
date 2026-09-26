@@ -10,7 +10,7 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
 });
 
-test('a saved Review Queue bookmark opens the current Transaction inspector', function () {
+test('a saved Review Queue bookmark opens the Transaction editor', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()
         ->for($owner, 'owner')
@@ -20,9 +20,9 @@ test('a saved Review Queue bookmark opens the current Transaction inspector', fu
 
     visit('/review-queue?item=transaction:'.$transaction->id)
         ->assertQueryStringHas('selected', (string) $transaction->id)
-        ->assertSee('Edit Transaction')
+        ->assertPresent('#transaction-description')
         ->assertSee('Review me')
-        ->press('Close')
+        ->click('[data-slot="dialog-content"] > button')
         ->assertQueryStringMissing('selected')
         ->assertSee('Review me')
         ->assertNoJavaScriptErrors();
@@ -37,6 +37,6 @@ test('a saved Line Item bookmark opens its owning Transaction', function () {
 
     visit('/review-queue?item=line-item:'.$lineItem->id)
         ->assertQueryStringHas('selected', (string) $transaction->id)
-        ->assertSee('Receipt Breakdown')
+        ->assertSee('Category split')
         ->assertNoJavaScriptErrors();
 });

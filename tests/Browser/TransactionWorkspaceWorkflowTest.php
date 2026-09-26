@@ -5,7 +5,6 @@ use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
 use App\ReviewableTransactionField;
-use Carbon\CarbonImmutable;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
@@ -84,8 +83,9 @@ test('Transactions searches history and finds a Voided ID in the main search', f
         ->click('[data-test="transaction-search-submit"]')
         ->assertSee('Old voided purchase')
         ->click('[data-test="transaction-'.$voided->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
         ->assertSee('Voided')
-        ->press('Close')
+        ->click('[data-slot="dialog-content"] > button')
         ->assertQueryStringHas('search', (string) $voided->id)
         ->fill('#transaction-search', 'STAR')
         ->click('[data-test="transaction-search-submit"]')
@@ -115,6 +115,32 @@ test('Transactions can classify a row from the Category dropdown', function () {
     expect($transaction->fresh()->category_id)->toBe($category->id);
 });
 
+test('row actions void and restore a Transaction without leaving Transactions', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => 'Duplicate card movement',
+    ]);
+    $this->actingAs($owner);
+
+    visit('/transactions')
+        ->click('[data-test="transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Void Transaction")')
+        ->assertSee('The Transaction stays in your records')
+        ->press('Void Transaction')
+        ->assertPathIs('/transactions')
+        ->assertSee('Transaction voided.')
+        ->assertSee('No matching Transactions')
+        ->fill('#transaction-search', (string) $transaction->id)
+        ->click('[data-test="transaction-search-submit"]')
+        ->click('[data-test="transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Restore Transaction")')
+        ->press('Restore Transaction')
+        ->assertSee('Transaction restored.')
+        ->assertNoJavaScriptErrors();
+
+    expect($transaction->refresh()->voided_at)->toBeNull();
+});
+
 test('a Transaction with an unknown Category source can still be edited', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
@@ -126,12 +152,9 @@ test('a Transaction with an unknown Category source can still be edited', functi
     $this->actingAs($owner);
 
     visit('/transactions?selected='.$transaction->id)
-        ->wait(1)
         ->assertNoJavaScriptErrors()
         ->assertSee('Market purchase')
-        ->press('Advanced details')
-        ->assertSee('No Category source recorded')
-        ->press('Edit Transaction')
+        ->assertPresent('#transaction-description')
         ->fill('#transaction-description', 'Corrected market purchase')
         ->press('Save Transaction')
         ->assertSee('Transaction updated.')
@@ -140,37 +163,20 @@ test('a Transaction with an unknown Category source can still be edited', functi
     expect($transaction->refresh()->description)->toBe('Corrected market purchase');
 });
 
-test('date-only values stay fixed while instants follow the browser timezone', function () {
+test('the Transaction date stays fixed across browser timezones', function () {
     $owner = User::factory()->create();
     $transaction = Transaction::factory()->for($owner, 'owner')->create([
         'occurred_on' => '2026-07-20',
-        'confirmed_at' => CarbonImmutable::parse('2026-07-20 02:30:00 UTC'),
         'description' => 'Timezone boundary purchase',
     ]);
     $this->actingAs($owner);
-    $dateSelector = '[data-slot="sheet-content"] [data-test="transaction-'.$transaction->id.'-occurred-on"]';
-
     $limaPage = visit(route('transactions.index', [
         'selected' => $transaction->id,
     ]))
         ->withLocale('en-US')
         ->withTimezone('America/Lima');
 
-    $limaPage
-        ->assertSeeIn(
-            $dateSelector,
-            '20 Jul 2026',
-        )
-        ->assertSeeIn(
-            '[data-test="transaction-confirmed-at"]',
-            '19 Jul 2026, 9:30 PM',
-        )
-        ->assertScript(
-            'document.querySelector(\''.$dateSelector.' time\')?.dateTime === \'2026-07-20\'',
-        )
-        ->assertScript(
-            'document.querySelector(\'[data-test="transaction-confirmed-at"] time\')?.dateTime.startsWith(\'2026-07-20T02:30:00\')',
-        );
+    $limaPage->assertValue('#transaction-date', '2026-07-20');
 
     $tokyoPage = visit(route('transactions.index', [
         'selected' => $transaction->id,
@@ -179,19 +185,12 @@ test('date-only values stay fixed while instants follow the browser timezone', f
         ->withTimezone('Asia/Tokyo');
 
     $tokyoPage
-        ->assertSeeIn(
-            $dateSelector,
-            '20 Jul 2026',
-        )
-        ->assertSeeIn(
-            '[data-test="transaction-confirmed-at"]',
-            '20 Jul 2026, 11:30 AM',
-        )
+        ->assertValue('#transaction-date', '2026-07-20')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
 
-test('filters, selection, and scroll context persist while directly editing a Transaction in the inspector', function () {
+test('filters and selection persist while editing from row actions', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     $matching = Transaction::factory()
@@ -226,32 +225,21 @@ test('filters, selection, and scroll context persist while directly editing a Tr
         ->assertSee('Neighborhood market')
         ->assertDontSee('Unrelated pharmacy');
 
-    $page->script(
-        "document.body.style.minHeight = '2500px'; window.scrollTo(0, document.body.scrollHeight)",
-    );
-
-    $page->assertScript('window.scrollY > 0');
-
-    $page->script("document.querySelector('[data-test=\"transaction-{$matching->id}\"]').click()");
+    $page->click('[data-test="transaction-'.$matching->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")');
 
     $page
         ->assertQueryStringHas('search', 'Neighborhood')
         ->assertQueryStringHas('amount_max', '12.50')
         ->assertQueryStringHas('selected')
-        ->assertSee('Edit Transaction')
-        ->assertSee('Included in Net Spending')
-        ->press('Advanced details')
-        ->assertSee('Provenance')
-        ->press('Edit Transaction')
+        ->assertSee('Edit Neighborhood market')
         ->fill('#transaction-description', 'Neighborhood market Lima')
         ->press('Save Transaction')
         ->assertSee('Transaction updated.')
         ->assertQueryStringHas('search', 'Neighborhood')
         ->assertQueryStringHas('amount_max', '12.50')
         ->assertSee('Neighborhood market Lima')
-        ->assertSee('Review clear')
-        ->press('Close')
-        ->assertScript('window.scrollY > 0')
+        ->assertQueryStringMissing('selected')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });
@@ -275,9 +263,10 @@ test('the Transaction workspace stays actionable without horizontal scrolling on
         ->assertSee('Mobile market')
         ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
         ->click('[data-test="transaction-'.$current->id.'"]')
-        ->assertSee('Transaction summary')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->assertSee('Edit Mobile market')
         ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
-        ->press('Close')
+        ->click('[data-slot="dialog-content"] > button')
         ->press('Next')
         ->assertQueryStringHas('page', '2')
         ->assertSee('Earlier mobile market')

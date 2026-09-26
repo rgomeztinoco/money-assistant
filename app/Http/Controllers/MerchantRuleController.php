@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Categorization\MatchingMerchantTransactions;
 use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\Categorization\ReadMerchantRules;
 use App\Actions\Categorization\SaveMerchantRule;
@@ -13,10 +14,15 @@ use App\MerchantNormalizer;
 use App\Models\MerchantRule;
 use App\Models\Transaction;
 use App\TransactionKind;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use InvalidArgumentException;
 
 class MerchantRuleController extends Controller
 {
@@ -25,6 +31,7 @@ class MerchantRuleController extends Controller
         private ReadCategoryTaxonomy $readCategoryTaxonomy,
         private SaveMerchantRule $saveMerchantRule,
         private MerchantNormalizer $merchantNormalizer,
+        private MatchingMerchantTransactions $matchingMerchantTransactions,
     ) {}
 
     public function index(IndexMerchantRulesRequest $request): Response
@@ -52,13 +59,39 @@ class MerchantRuleController extends Controller
 
     public function store(SaveMerchantRuleRequest $request): RedirectResponse
     {
-        $this->save($request);
+        $appliedCount = DB::transaction(function () use ($request): int {
+            $rule = $this->save($request);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Merchant Rule created.')]);
+            return $request->boolean('apply_existing') && $rule->enabled
+                ? $this->matchingMerchantTransactions->apply($request->user(), $rule)
+                : 0;
+        });
 
-        return $request->validated('source_transaction_id') === null
-            ? back(fallback: route('merchant_rules.index'))
-            : to_route('merchant_rules.index');
+        Inertia::flash('toast', ['type' => 'success', 'message' => $appliedCount > 0
+            ? __('Merchant Rule created and :count Transactions updated.', ['count' => $appliedCount])
+            : __('Merchant Rule created.')]);
+
+        return back(fallback: route('merchant_rules.index'));
+    }
+
+    public function matches(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'merchant' => ['required', 'string', 'max:255'],
+            'transaction_kind' => ['nullable', 'in:spending,refund'],
+            'currency' => ['nullable', 'in:PEN,USD'],
+        ]);
+
+        try {
+            return response()->json($this->matchingMerchantTransactions->preview(
+                $request->user(),
+                $validated['merchant'],
+                isset($validated['transaction_kind']) ? TransactionKind::from($validated['transaction_kind']) : null,
+                isset($validated['currency']) ? Currency::from($validated['currency']) : null,
+            ));
+        } catch (InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['merchant' => $exception->getMessage()]);
+        }
     }
 
     public function update(SaveMerchantRuleRequest $request, MerchantRule $merchantRule): RedirectResponse
