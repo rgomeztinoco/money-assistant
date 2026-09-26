@@ -1,15 +1,20 @@
 <?php
 
+use App\Contracts\Gmail;
+use App\Integrations\Gmail\GmailMessageSummary;
 use App\Integrations\Gmail\GmailRequestFailed;
 use App\Jobs\ProcessGmailMessage;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\SpendingNotificationReference;
 use App\Models\User;
+use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\Str;
+use Tests\Fakes\FakeGmail;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
+    Vite::useHotFile(storage_path('framework/testing-vite-hot'));
 });
 
 test('the owner chooses the inbox import window before authorizing Gmail', function () {
@@ -27,7 +32,7 @@ test('the owner chooses the inbox import window before authorizing Gmail', funct
         ->assertNoConsoleLogs();
 });
 
-test('the owner sees the latest failed Gmail message and its retry action', function () {
+test('the owner sees a failed Gmail message and its retry action', function () {
     $connection = GmailConnection::factory()->create([
         'last_successful_sync_at' => now()->subMinute(),
     ]);
@@ -58,12 +63,12 @@ test('the owner sees the latest failed Gmail message and its retry action', func
 
     $page
         ->assertSee('Last successful import')
-        ->assertSee('A Gmail message could not be processed')
-        ->assertSee('gmail_message_processing_failed')
-        ->assertSee('Retry message')
-        ->press('Retry message')
-        ->assertSee('The failed Gmail message was queued for retry.')
-        ->assertDontSee('Retry message')
+        ->assertSee('Processing failed')
+        ->assertSee('Message processing stopped after repeated attempts.')
+        ->assertSee('Retry email')
+        ->press('Retry email')
+        ->assertSee('Email queued for retry. Processing has not finished yet.')
+        ->assertDontSee('Retry email')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
@@ -91,12 +96,114 @@ test('the owner sees and retries unsupported Gmail notifications', function () {
     $this->actingAs($connection->owner);
 
     visit(route('data_sources.gmail'))
-        ->assertSee('Retry unsupported notifications')
-        ->assertSee('1 notification can be retried from Gmail.')
-        ->press('Retry unsupported')
+        ->assertSee('No supported format matched. The precise reason is unknown.')
+        ->assertSee('Retry all unrecognized')
+        ->press('Retry all unrecognized')
         ->assertSee('One unsupported Gmail notification was queued for retry.')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
+});
+
+test('the owner can inspect, dismiss, and restore an unrecognized Gmail email', function () {
+    $connection = GmailConnection::factory()->create([
+        'last_successful_sync_at' => now()->subMinute(),
+    ]);
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
+        'processed_at' => now(),
+    ]);
+    SpendingNotificationReference::factory()->create([
+        'user_id' => $connection->user_id,
+        'transaction_id' => null,
+        'gmail_message_discovery_id' => $discovery->id,
+        'gmail_account_identity' => $connection->gmail_account_identity,
+        'message_id' => $discovery->message_id,
+        'processing_outcome' => 'unsupported',
+    ]);
+    $gmail = new FakeGmail;
+    $gmail->messageSummaries[$discovery->message_id] = new GmailMessageSummary(
+        $discovery->message_id,
+        'payment-alert-thread',
+        now()->toImmutable(),
+        'bank@example.test',
+        'Payment alert',
+    );
+    app()->instance(Gmail::class, $gmail);
+    $this->actingAs($connection->owner);
+
+    visit(route('data_sources.gmail'))
+        ->assertSee('Payment alert')
+        ->assertSee('bank@example.test')
+        ->assertSee('Open in Gmail')
+        ->assertAttribute('a[href*="mail.google.com"]', 'target', '_blank')
+        ->assertScript('document.querySelector(\'a[href*="mail.google.com"]\')?.href.includes("/#all/payment-alert-thread")')
+        ->resize(390, 844)
+        ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
+        ->press('Dismiss')
+        ->assertSee('No emails need attention')
+        ->click('Dismissed 1')
+        ->assertSee('Payment alert')
+        ->press('Restore')
+        ->assertSee('No dismissed emails')
+        ->assertNoJavaScriptErrors();
+
+    expect($discovery->fresh()->dismissed_at)->toBeNull();
+});
+
+test('the email list scrolls inside the viewport-height review card', function () {
+    $connection = GmailConnection::factory()->create([
+        'last_successful_sync_at' => now()->subMinute(),
+    ]);
+
+    foreach (range(1, 21) as $number) {
+        $discovery = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
+        SpendingNotificationReference::factory()->create([
+            'user_id' => $connection->user_id,
+            'transaction_id' => null,
+            'gmail_message_discovery_id' => $discovery->id,
+            'gmail_account_identity' => $connection->gmail_account_identity,
+            'message_id' => $discovery->message_id,
+            'processing_outcome' => 'unsupported',
+        ]);
+    }
+
+    $this->actingAs($connection->owner);
+
+    visit(route('data_sources.gmail'))
+        ->resize(1440, 900)
+        ->assertScript(<<<'JS'
+            (() => {
+                const card = document.querySelector('[data-test="gmail-review"]');
+                const items = document.querySelector('[data-test="gmail-review-items"]');
+                const heading = card?.querySelector('[data-slot="card-header"]');
+
+                if (!card || !items || !heading) return false;
+
+                const headingTop = heading.getBoundingClientRect().top;
+                items.scrollTop = items.scrollHeight;
+
+                return card.getBoundingClientRect().bottom <= window.innerHeight
+                    && items.scrollHeight > items.clientHeight
+                    && items.scrollTop > 0
+                    && heading.getBoundingClientRect().top === headingTop;
+            })()
+            JS)
+        ->assertNoJavaScriptErrors();
+});
+
+test('the owner can disconnect Gmail from the connection card', function () {
+    $connection = GmailConnection::factory()->create();
+    $this->actingAs($connection->owner)
+        ->withSession(['auth.password_confirmed_at' => time()]);
+
+    visit(route('data_sources.gmail'))
+        ->press('Disconnect')
+        ->assertSee('Disconnect Gmail?')
+        ->press('Disconnect Gmail')
+        ->assertSee('Gmail is not connected')
+        ->assertSee('Connect and import')
+        ->assertNoJavaScriptErrors();
+
+    expect($connection->fresh())->toBeNull();
 });
 
 test('the owner sees Gmail connection health without credentials reaching the page', function () {

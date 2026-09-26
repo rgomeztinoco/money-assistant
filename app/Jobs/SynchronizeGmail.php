@@ -7,6 +7,7 @@ use App\GmailSynchronizationType;
 use App\Models\GmailConnection;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Log;
@@ -51,7 +52,13 @@ class SynchronizeGmail implements ShouldBeUnique, ShouldQueue
 
     public function handle(SynchronizeGmailConnection $synchronize): void
     {
-        $synchronize->handle($this->connectionId, $this->type);
+        try {
+            $synchronize->handle($this->connectionId, $this->type);
+        } catch (ModelNotFoundException $exception) {
+            if (GmailConnection::query()->whereKey($this->connectionId)->exists()) {
+                throw $exception;
+            }
+        }
     }
 
     public function failed(?Throwable $exception): void

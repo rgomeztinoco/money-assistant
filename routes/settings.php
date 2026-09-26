@@ -3,6 +3,7 @@
 use App\Http\Controllers\Settings\AgentAccessController;
 use App\Http\Controllers\Settings\GmailAuthorizationController;
 use App\Http\Controllers\Settings\GmailConnectionCheckController;
+use App\Http\Controllers\Settings\GmailConnectionDisconnectController;
 use App\Http\Controllers\Settings\GmailFailedMessageRetryController;
 use App\Http\Controllers\Settings\GmailImportController;
 use App\Http\Controllers\Settings\GmailReviewMessageController;
@@ -43,6 +44,10 @@ Route::middleware(['auth'])->group(function () {
 
     Route::post('data-sources/gmail/check', GmailConnectionCheckController::class)
         ->name('gmail.connection.check');
+
+    Route::delete('data-sources/gmail/connection', GmailConnectionDisconnectController::class)
+        ->middleware(RequirePassword::class)
+        ->name('gmail.connection.destroy');
 
     Route::post('data-sources/gmail/import', GmailImportController::class)
         ->name('gmail.import');
