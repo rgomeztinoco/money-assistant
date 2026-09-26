@@ -6,6 +6,7 @@ use App\Actions\NotificationIngestion\ProcessDiscoveredGmailMessage;
 use App\Models\GmailMessageDiscovery;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Log;
@@ -47,10 +48,16 @@ class ProcessGmailMessage implements ShouldBeUnique, ShouldQueue
 
     public function handle(ProcessDiscoveredGmailMessage $processDiscoveredGmailMessage): void
     {
-        $processDiscoveredGmailMessage->handle(
-            $this->discoveryId,
-            $this->retryUnsupported,
-        );
+        try {
+            $processDiscoveredGmailMessage->handle(
+                $this->discoveryId,
+                $this->retryUnsupported,
+            );
+        } catch (ModelNotFoundException $exception) {
+            if (GmailMessageDiscovery::query()->whereKey($this->discoveryId)->exists()) {
+                throw $exception;
+            }
+        }
     }
 
     public function failed(?Throwable $exception): void

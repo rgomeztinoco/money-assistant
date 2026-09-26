@@ -3,7 +3,6 @@
 use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailMessageSummary;
 use App\Integrations\Gmail\GmailRequestFailed;
-use App\Integrations\Gmail\PreviewGmail;
 use App\Jobs\ProcessGmailMessage;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
@@ -97,52 +96,6 @@ test('review pagination bounds Gmail metadata requests and keeps counts across p
             ->has('review.items.data', 1));
 
     expect($gmail->messageSummaryCalls)->toHaveCount(21);
-});
-
-test('an email summary without a Gmail thread does not offer a broken link', function () {
-    $connection = GmailConnection::factory()->create();
-    $discovery = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
-    referenceForReview($connection, $discovery);
-    $gmail = new FakeGmail;
-    $gmail->messageSummaries[$discovery->message_id] = new GmailMessageSummary(
-        $discovery->message_id,
-        '',
-        now()->toImmutable(),
-        'sample@example.test',
-        'A sample email',
-    );
-    app()->instance(Gmail::class, $gmail);
-
-    $this->actingAs($connection->owner)
-        ->get(route('data_sources.gmail'))
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('review.items.data.0.subject', 'A sample email')
-            ->where('review.items.data.0.gmail_url', null));
-});
-
-test('local preview messages show sample summaries and unavailable states without Gmail links', function () {
-    $connection = GmailConnection::factory()->create([
-        'gmail_account_identity' => PreviewGmail::ACCOUNT_IDENTITY,
-        'access_token' => PreviewGmail::ACCESS_TOKEN,
-    ]);
-
-    foreach (['preview-001', 'preview-005', 'preview-011'] as $messageId) {
-        $discovery = GmailMessageDiscovery::factory()->for($connection)->create([
-            'message_id' => $messageId,
-            'processed_at' => now(),
-        ]);
-        referenceForReview($connection, $discovery);
-    }
-
-    app()->instance(Gmail::class, new PreviewGmail);
-
-    $this->actingAs($connection->owner)
-        ->get(route('data_sources.gmail'))
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('review.items.data.0.summary_state', 'unavailable')
-            ->where('review.items.data.1.summary_state', 'missing')
-            ->where('review.items.data.2.subject', 'Sample transfer confirmation #1')
-            ->where('review.items.data.2.gmail_url', null));
 });
 
 test('dismissal and restoration affect only one message and preserve the mailbox', function () {

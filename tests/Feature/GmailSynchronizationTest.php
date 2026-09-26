@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\NotificationIngestion\DispatchGmailSynchronizations;
+use App\Actions\NotificationIngestion\ProcessDiscoveredGmailMessage;
+use App\Actions\NotificationIngestion\ReadGmailReview;
 use App\Actions\NotificationIngestion\SynchronizeGmailConnection;
 use App\Contracts\Gmail;
 use App\GmailSynchronizationType;
@@ -720,6 +722,65 @@ test('Gmail jobs use bounded Laravel queue retries and backoff', function () {
 
     expect(fn () => app()->call([$job, 'handle']))
         ->toThrow(GmailRequestFailed::class);
+});
+
+test('reconnecting the same Gmail account reattaches prior outcomes without importing a duplicate Transaction', function () {
+    $connection = GmailConnection::factory()->create();
+    $owner = $connection->owner;
+    $transaction = Transaction::factory()->create(['user_id' => $owner->id]);
+    $imported = GmailMessageDiscovery::factory()->for($connection)->create(['message_id' => 'already-imported']);
+    $unrecognized = GmailMessageDiscovery::factory()->for($connection)->create(['message_id' => 'still-unrecognized']);
+    $importedReference = SpendingNotificationReference::factory()->create([
+        'user_id' => $owner->id,
+        'transaction_id' => $transaction->id,
+        'gmail_account_identity' => $connection->gmail_account_identity,
+        'gmail_message_discovery_id' => $imported->id,
+        'message_id' => $imported->message_id,
+    ]);
+    $unrecognizedReference = SpendingNotificationReference::factory()->create([
+        'user_id' => $owner->id,
+        'transaction_id' => null,
+        'gmail_account_identity' => $connection->gmail_account_identity,
+        'gmail_message_discovery_id' => $unrecognized->id,
+        'message_id' => $unrecognized->message_id,
+        'processing_outcome' => 'unsupported',
+    ]);
+    $accountIdentity = $connection->gmail_account_identity;
+    $connection->delete();
+    $newConnection = GmailConnection::factory()->for($owner, 'owner')->create([
+        'gmail_account_identity' => $accountIdentity,
+    ]);
+    $newImported = GmailMessageDiscovery::factory()->for($newConnection)->create(['message_id' => 'already-imported']);
+    $newUnrecognized = GmailMessageDiscovery::factory()->for($newConnection)->create(['message_id' => 'still-unrecognized']);
+    $gmail = new FakeGmail;
+    app()->instance(Gmail::class, $gmail);
+
+    $importedResult = app(ProcessDiscoveredGmailMessage::class)->handle($newImported->id);
+    $unrecognizedResult = app(ProcessDiscoveredGmailMessage::class)->handle($newUnrecognized->id);
+    $review = app(ReadGmailReview::class)->handle($owner, 'all');
+
+    expect($importedResult->id)->toBe($importedReference->id)
+        ->and($unrecognizedResult->id)->toBe($unrecognizedReference->id)
+        ->and($importedReference->fresh()->gmail_message_discovery_id)->toBe($newImported->id)
+        ->and($unrecognizedReference->fresh()->gmail_message_discovery_id)->toBe($newUnrecognized->id)
+        ->and($newImported->fresh()->processed_at)->not->toBeNull()
+        ->and($newUnrecognized->fresh()->processed_at)->not->toBeNull()
+        ->and($review['attention_count'])->toBe(1)
+        ->and(Transaction::query()->count())->toBe(1)
+        ->and($gmail->messageCalls)->toBeEmpty();
+});
+
+test('queued Gmail work exits cleanly after its connection is removed', function () {
+    $connection = GmailConnection::factory()->create();
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create();
+    $connection->delete();
+    $gmail = new FakeGmail;
+    app()->instance(Gmail::class, $gmail);
+
+    app()->call([new SynchronizeGmail($connection->id, GmailSynchronizationType::Incremental), 'handle']);
+    app()->call([new ProcessGmailMessage($discovery->id), 'handle']);
+
+    expect($gmail->operations)->toBeEmpty();
 });
 
 test('failed Gmail jobs retain focused failure state', function () {

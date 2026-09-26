@@ -149,6 +149,63 @@ test('the owner can inspect, dismiss, and restore an unrecognized Gmail email', 
     expect($discovery->fresh()->dismissed_at)->toBeNull();
 });
 
+test('the email list scrolls inside the viewport-height review card', function () {
+    $connection = GmailConnection::factory()->create([
+        'last_successful_sync_at' => now()->subMinute(),
+    ]);
+
+    foreach (range(1, 21) as $number) {
+        $discovery = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
+        SpendingNotificationReference::factory()->create([
+            'user_id' => $connection->user_id,
+            'transaction_id' => null,
+            'gmail_message_discovery_id' => $discovery->id,
+            'gmail_account_identity' => $connection->gmail_account_identity,
+            'message_id' => $discovery->message_id,
+            'processing_outcome' => 'unsupported',
+        ]);
+    }
+
+    $this->actingAs($connection->owner);
+
+    visit(route('data_sources.gmail'))
+        ->resize(1440, 900)
+        ->assertScript(<<<'JS'
+            (() => {
+                const card = document.querySelector('[data-test="gmail-review"]');
+                const items = document.querySelector('[data-test="gmail-review-items"]');
+                const heading = card?.querySelector('[data-slot="card-header"]');
+
+                if (!card || !items || !heading) return false;
+
+                const headingTop = heading.getBoundingClientRect().top;
+                items.scrollTop = items.scrollHeight;
+
+                return card.getBoundingClientRect().bottom <= window.innerHeight
+                    && items.scrollHeight > items.clientHeight
+                    && items.scrollTop > 0
+                    && heading.getBoundingClientRect().top === headingTop;
+            })()
+            JS)
+        ->assertNoJavaScriptErrors();
+});
+
+test('the owner can disconnect Gmail from the connection card', function () {
+    $connection = GmailConnection::factory()->create();
+    $this->actingAs($connection->owner)
+        ->withSession(['auth.password_confirmed_at' => time()]);
+
+    visit(route('data_sources.gmail'))
+        ->press('Disconnect')
+        ->assertSee('Disconnect Gmail?')
+        ->press('Disconnect Gmail')
+        ->assertSee('Gmail is not connected')
+        ->assertSee('Connect and import')
+        ->assertNoJavaScriptErrors();
+
+    expect($connection->fresh())->toBeNull();
+});
+
 test('the owner sees Gmail connection health without credentials reaching the page', function () {
     $connection = GmailConnection::factory()->create([
         'gmail_account_identity' => 'receipts@example.test',

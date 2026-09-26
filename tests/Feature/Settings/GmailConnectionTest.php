@@ -13,6 +13,7 @@ use App\Jobs\SynchronizeGmail;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\SpendingNotificationReference;
+use App\Models\Transaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +65,42 @@ test('starting Gmail authorization requires fresh owner authentication', functio
         );
 
     expect($gmail->authorizationUrlCalls)->toBeEmpty();
+});
+
+test('disconnecting Gmail requires fresh owner authentication', function () {
+    $connection = GmailConnection::factory()->create();
+
+    $this->actingAs($connection->owner)
+        ->delete(route('gmail.connection.destroy'))
+        ->assertRedirect(route('password.confirm'));
+
+    $this->assertModelExists($connection);
+});
+
+test('disconnecting Gmail removes only the owners connection and keeps imported Transactions and source identities', function () {
+    $connection = GmailConnection::factory()->create();
+    $otherConnection = GmailConnection::factory()->create();
+    $transaction = Transaction::factory()->create(['user_id' => $connection->user_id]);
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
+    $reference = SpendingNotificationReference::factory()->create([
+        'user_id' => $connection->user_id,
+        'transaction_id' => $transaction->id,
+        'gmail_account_identity' => $connection->gmail_account_identity,
+        'gmail_message_discovery_id' => $discovery->id,
+        'message_id' => $discovery->message_id,
+    ]);
+
+    $this->actingAs($connection->owner)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->delete(route('gmail.connection.destroy'))
+        ->assertRedirect(route('data_sources.gmail'));
+
+    $this->assertModelMissing($connection);
+    $this->assertModelMissing($discovery);
+    $this->assertModelExists($otherConnection);
+    $this->assertModelExists($transaction);
+    expect($reference->fresh()->transaction_id)->toBe($transaction->id)
+        ->and($reference->fresh()->gmail_message_discovery_id)->toBeNull();
 });
 
 test('starting Gmail authorization requires a bounded import window', function (mixed $importDays) {

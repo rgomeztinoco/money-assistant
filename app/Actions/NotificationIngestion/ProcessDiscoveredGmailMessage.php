@@ -23,17 +23,19 @@ final class ProcessDiscoveredGmailMessage
         $connection = $discovery->gmailConnection;
         $owner = $connection->owner;
 
-        if ($discovery->processed_at !== null) {
-            $existingReference = SpendingNotificationReference::query()
-                ->whereBelongsTo($owner, 'owner')
-                ->where('gmail_account_identity', $connection->gmail_account_identity)
-                ->where('message_id', $discovery->message_id)
-                ->first();
+        $existingReference = SpendingNotificationReference::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->where('gmail_account_identity', $connection->gmail_account_identity)
+            ->where('message_id', $discovery->message_id)
+            ->first();
 
-            if ($existingReference !== null
-                && (! $retryUnsupported || ! $existingReference->isRetryable())) {
-                return $existingReference;
+        if ($existingReference !== null
+            && (! $retryUnsupported || ! $existingReference->isRetryable())) {
+            if ($existingReference->gmail_message_discovery_id !== $discovery->id) {
+                $existingReference->forceFill(['gmail_message_discovery_id' => $discovery->id])->save();
             }
+
+            return $this->completeProcessing($discovery, $existingReference);
         }
 
         try {
@@ -68,6 +70,7 @@ final class ProcessDiscoveredGmailMessage
         SpendingNotificationReference $reference,
     ): SpendingNotificationReference {
         $discovery->forceFill([
+            'processed_at' => $discovery->processed_at ?? now(),
             'processing_failed_at' => null,
             'last_error_code' => null,
             'failed_job_uuid' => null,

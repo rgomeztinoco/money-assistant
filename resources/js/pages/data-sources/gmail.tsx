@@ -1,16 +1,20 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import {
+    CalendarClock,
     CircleCheck,
+    Clock3,
     Download,
     ExternalLink,
     Inbox,
     Mail,
     RefreshCw,
+    ShieldCheck,
     TriangleAlert,
 } from 'lucide-react';
 import { useState } from 'react';
 import { create as createGmailAuthorization } from '@/actions/App/Http/Controllers/Settings/GmailAuthorizationController';
 import GmailConnectionCheckController from '@/actions/App/Http/Controllers/Settings/GmailConnectionCheckController';
+import GmailConnectionDisconnectController from '@/actions/App/Http/Controllers/Settings/GmailConnectionDisconnectController';
 import GmailImportController from '@/actions/App/Http/Controllers/Settings/GmailImportController';
 import {
     dismiss,
@@ -30,6 +34,15 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
+import {
     Empty,
     EmptyDescription,
     EmptyHeader,
@@ -42,7 +55,6 @@ import { gmail as gmailDataSource } from '@/routes/data_sources';
 
 type GmailStatus = {
     configured: boolean;
-    preview: boolean;
     state:
         | 'disconnected'
         | 'connected'
@@ -189,6 +201,56 @@ function ConnectionCheckButton() {
                 </Button>
             )}
         </Form>
+    );
+}
+
+function DisconnectButton() {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button type="button" variant="ghost" size="sm">
+                    Disconnect
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Disconnect Gmail?</DialogTitle>
+                    <DialogDescription>
+                        Money Assistant will stop importing from this account
+                        and remove its stored connection. Existing Transactions
+                        will stay in your ledger.
+                    </DialogDescription>
+                </DialogHeader>
+                <Form
+                    {...GmailConnectionDisconnectController.form()}
+                    onSuccess={() => setOpen(false)}
+                >
+                    {({ processing }) => (
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setOpen(false)}
+                                disabled={processing}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                variant="destructive"
+                                disabled={processing}
+                            >
+                                {processing
+                                    ? 'Disconnecting...'
+                                    : 'Disconnect Gmail'}
+                            </Button>
+                        </DialogFooter>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -359,259 +421,293 @@ export default function GmailDataSource({
     return (
         <>
             <Head title="Gmail" />
-            <main className="grid flex-1 content-start gap-6 p-4 md:p-6 xl:grid-cols-[minmax(18rem,0.75fr)_minmax(36rem,1.25fr)]">
-                <header className="grid gap-1 xl:col-span-2">
-                    <h1 className="type-page-title">Gmail</h1>
-                    <p className="type-subtitle">
-                        Review emails that did not create a Transaction.
-                    </p>
+            <main className="flex min-h-0 flex-1 flex-col gap-4 p-4 md:p-6 xl:overflow-hidden">
+                <header className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+                    <div className="grid gap-1">
+                        <h1 className="type-page-title">Gmail</h1>
+                        <p className="type-subtitle">
+                            Review emails that did not create a Transaction.
+                        </p>
+                    </div>
+                    {canImport && <ManualImportButton />}
                 </header>
 
-                <Card
-                    className="min-w-0 gap-0 overflow-hidden py-0 xl:col-start-2 xl:row-start-2"
-                    data-test="gmail-review"
-                >
-                    <CardHeader className="gap-3 p-4 sm:flex-row sm:items-start sm:justify-between md:p-5">
-                        <div className="grid gap-1">
-                            <CardTitle>Emails needing attention</CardTitle>
-                            <CardDescription>
-                                Unrecognized emails have no matching supported
-                                format. Processing failures could not be
-                                completed.
-                            </CardDescription>
-                        </div>
-                        <Badge variant="secondary">
-                            {review.attention_count} to review
-                        </Badge>
-                    </CardHeader>
-
-                    <CardContent className="flex flex-col gap-4 border-t p-4 md:p-5">
-                        <nav
-                            aria-label="Email review views"
-                            className="flex flex-wrap gap-2"
-                        >
-                            {filters.map((filter) => (
-                                <Button
-                                    key={filter.view}
-                                    asChild
-                                    variant={
-                                        review.view === filter.view
-                                            ? 'secondary'
-                                            : 'ghost'
-                                    }
-                                    size="sm"
-                                >
-                                    <Link
-                                        href={gmailDataSource({
-                                            query: { view: filter.view },
-                                        })}
-                                        preserveScroll
-                                        onStart={() => setLoading(true)}
-                                        onFinish={() => setLoading(false)}
-                                        aria-current={
-                                            review.view === filter.view
-                                                ? 'page'
-                                                : undefined
-                                        }
-                                    >
-                                        {filter.label}{' '}
-                                        <span className="tabular-nums">
-                                            {filter.count}
-                                        </span>
-                                    </Link>
-                                </Button>
-                            ))}
-                        </nav>
-
-                        {review.unrecognized_count > 0 &&
-                            review.view !== 'dismissed' && (
-                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
-                                    <p className="type-body text-muted-foreground">
-                                        Updated parsers can be tried on
-                                        unrecognized emails.
-                                    </p>
-                                    <Form
-                                        {...GmailUnsupportedMessagesRetryController.form()}
-                                        options={{ preserveScroll: true }}
-                                    >
-                                        {({ processing }) => (
-                                            <Button
-                                                type="submit"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={
-                                                    processing || !canImport
-                                                }
-                                            >
-                                                <RefreshCw
-                                                    className={
-                                                        processing
-                                                            ? 'animate-spin'
-                                                            : ''
-                                                    }
-                                                />
-                                                {processing
-                                                    ? 'Queueing...'
-                                                    : 'Retry all unrecognized'}
-                                            </Button>
-                                        )}
-                                    </Form>
-                                </div>
-                            )}
-                        {loading && (
-                            <p role="status" className="type-meta">
-                                Loading email summaries...
-                            </p>
-                        )}
-                    </CardContent>
-
-                    <CardContent className="p-0">
-                        {review.items.data.length === 0 ? (
-                            <Empty className="min-h-52 border-t">
-                                <EmptyHeader>
-                                    <EmptyMedia variant="icon">
-                                        <Inbox />
-                                    </EmptyMedia>
-                                    <EmptyTitle>
-                                        {review.view === 'dismissed'
-                                            ? 'No dismissed emails'
-                                            : review.attention_count === 0
-                                              ? 'No emails need attention'
-                                              : 'No emails in this view'}
-                                    </EmptyTitle>
-                                    <EmptyDescription>
-                                        {gmail.state === 'disconnected'
-                                            ? 'Connect Gmail to begin reviewing imported mail.'
-                                            : review.view === 'dismissed'
-                                              ? 'Emails you dismiss will appear here.'
-                                              : review.attention_count === 0
-                                                ? 'Your email review is complete for now.'
-                                                : 'Try another view or the previous page.'}
-                                    </EmptyDescription>
-                                </EmptyHeader>
-                            </Empty>
-                        ) : (
-                            <div>
-                                {review.items.data.map((item) => (
-                                    <ReviewRow key={item.id} item={item} />
-                                ))}
-                            </div>
-                        )}
-                    </CardContent>
-
-                    {review.items.last_page > 1 && (
-                        <CardContent className="flex flex-wrap items-center justify-between gap-3 border-t p-4 md:p-5">
-                            <p className="type-meta">
-                                Page {review.items.current_page} of{' '}
-                                {review.items.last_page}
-                            </p>
-                            <div className="flex gap-2">
-                                <Button
-                                    asChild={Boolean(
-                                        review.items.prev_page_url,
-                                    )}
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={!review.items.prev_page_url}
-                                >
-                                    {review.items.prev_page_url ? (
-                                        <Link
-                                            href={review.items.prev_page_url}
-                                            preserveScroll
-                                            onStart={() => setLoading(true)}
-                                            onFinish={() => setLoading(false)}
-                                        >
-                                            Previous
-                                        </Link>
-                                    ) : (
-                                        <span>Previous</span>
-                                    )}
-                                </Button>
-                                <Button
-                                    asChild={Boolean(
-                                        review.items.next_page_url,
-                                    )}
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={!review.items.next_page_url}
-                                >
-                                    {review.items.next_page_url ? (
-                                        <Link
-                                            href={review.items.next_page_url}
-                                            preserveScroll
-                                            onStart={() => setLoading(true)}
-                                            onFinish={() => setLoading(false)}
-                                        >
-                                            Next
-                                        </Link>
-                                    ) : (
-                                        <span>Next</span>
-                                    )}
-                                </Button>
-                            </div>
-                        </CardContent>
-                    )}
-                </Card>
-
-                <div className="grid min-w-0 content-start gap-4 xl:col-start-1 xl:row-start-2">
-                    {!gmail.configured && (
-                        <Alert variant="destructive">
-                            <TriangleAlert />
-                            <AlertTitle>Google OAuth setup required</AlertTitle>
-                            <AlertDescription>
-                                Add the Gmail client credentials and production
-                                callback settings before connecting an account.
-                            </AlertDescription>
-                        </Alert>
-                    )}
-
-                    {gmail.latest_failure?.type === 'synchronization' && (
-                        <Alert variant="destructive">
-                            <TriangleAlert />
-                            <AlertTitle>
-                                The latest Gmail import failed
-                            </AlertTitle>
-                            <AlertDescription>
-                                <LocalTimestamp
-                                    value={gmail.latest_failure.occurred_at}
-                                />{' '}
-                                · {gmail.latest_failure.error_code}
-                            </AlertDescription>
-                        </Alert>
-                    )}
-
-                    <Card id="gmail" className="min-w-0 gap-0 py-0">
-                        <CardHeader className="gap-3 p-4 sm:flex-row sm:items-start sm:justify-between md:p-5">
+                <div className="grid min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(18rem,0.75fr)_minmax(36rem,1.25fr)] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:overflow-hidden">
+                    <Card
+                        className="min-h-0 min-w-0 gap-0 overflow-hidden py-0 xl:col-start-2 xl:row-start-1 xl:h-full"
+                        data-test="gmail-review"
+                    >
+                        <CardHeader className="shrink-0 gap-3 p-4 sm:flex-row sm:items-start sm:justify-between md:p-5">
                             <div className="grid gap-1">
-                                <CardTitle>
-                                    {gmail.account_identity ??
-                                        'Gmail is not connected'}
-                                </CardTitle>
+                                <CardTitle>Emails needing attention</CardTitle>
                                 <CardDescription>
-                                    {gmail.preview
-                                        ? 'Sample emails for trying the review workflow. No Gmail account is connected.'
-                                        : details.summary}
+                                    Unrecognized emails have no matching
+                                    supported format. Processing failures could
+                                    not be completed.
                                 </CardDescription>
                             </div>
-                            <Badge variant={details.variant}>
-                                {gmail.preview ? (
-                                    'Sample data'
-                                ) : (
-                                    <>
-                                        {gmail.state === 'connected' && (
-                                            <CircleCheck />
-                                        )}
-                                        {details.label}
-                                    </>
-                                )}
+                            <Badge variant="secondary">
+                                {review.attention_count} to review
                             </Badge>
                         </CardHeader>
-                        <CardContent className="flex flex-col gap-4 border-t p-4 md:p-5">
+
+                        <CardContent className="flex shrink-0 flex-col gap-4 border-t p-4 md:p-5">
+                            <nav
+                                aria-label="Email review views"
+                                className="flex flex-wrap gap-2"
+                            >
+                                {filters.map((filter) => (
+                                    <Button
+                                        key={filter.view}
+                                        asChild
+                                        variant={
+                                            review.view === filter.view
+                                                ? 'secondary'
+                                                : 'ghost'
+                                        }
+                                        size="sm"
+                                    >
+                                        <Link
+                                            href={gmailDataSource({
+                                                query: { view: filter.view },
+                                            })}
+                                            preserveScroll
+                                            onStart={() => setLoading(true)}
+                                            onFinish={() => setLoading(false)}
+                                            aria-current={
+                                                review.view === filter.view
+                                                    ? 'page'
+                                                    : undefined
+                                            }
+                                        >
+                                            {filter.label}{' '}
+                                            <span className="tabular-nums">
+                                                {filter.count}
+                                            </span>
+                                        </Link>
+                                    </Button>
+                                ))}
+                            </nav>
+
+                            {review.unrecognized_count > 0 &&
+                                review.view !== 'dismissed' && (
+                                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
+                                        <p className="type-body text-muted-foreground">
+                                            Updated parsers can be tried on
+                                            unrecognized emails.
+                                        </p>
+                                        <Form
+                                            {...GmailUnsupportedMessagesRetryController.form()}
+                                            options={{ preserveScroll: true }}
+                                        >
+                                            {({ processing }) => (
+                                                <Button
+                                                    type="submit"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={
+                                                        processing || !canImport
+                                                    }
+                                                >
+                                                    <RefreshCw
+                                                        className={
+                                                            processing
+                                                                ? 'animate-spin'
+                                                                : ''
+                                                        }
+                                                    />
+                                                    {processing
+                                                        ? 'Queueing...'
+                                                        : 'Retry all unrecognized'}
+                                                </Button>
+                                            )}
+                                        </Form>
+                                    </div>
+                                )}
+                            {loading && (
+                                <p role="status" className="type-meta">
+                                    Loading email summaries...
+                                </p>
+                            )}
+                        </CardContent>
+
+                        <CardContent
+                            className="min-h-0 flex-1 p-0 xl:overflow-y-auto"
+                            data-test="gmail-review-items"
+                        >
+                            {review.items.data.length === 0 ? (
+                                <Empty className="min-h-52 border-t">
+                                    <EmptyHeader>
+                                        <EmptyMedia variant="icon">
+                                            <Inbox />
+                                        </EmptyMedia>
+                                        <EmptyTitle>
+                                            {review.view === 'dismissed'
+                                                ? 'No dismissed emails'
+                                                : review.attention_count === 0
+                                                  ? 'No emails need attention'
+                                                  : 'No emails in this view'}
+                                        </EmptyTitle>
+                                        <EmptyDescription>
+                                            {gmail.state === 'disconnected'
+                                                ? 'Connect Gmail to begin reviewing imported mail.'
+                                                : review.view === 'dismissed'
+                                                  ? 'Emails you dismiss will appear here.'
+                                                  : review.attention_count === 0
+                                                    ? 'Your email review is complete for now.'
+                                                    : 'Try another view or the previous page.'}
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                </Empty>
+                            ) : (
+                                <div>
+                                    {review.items.data.map((item) => (
+                                        <ReviewRow key={item.id} item={item} />
+                                    ))}
+                                </div>
+                            )}
+                        </CardContent>
+
+                        {review.items.last_page > 1 && (
+                            <CardContent className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t p-4 md:p-5">
+                                <p className="type-meta">
+                                    Page {review.items.current_page} of{' '}
+                                    {review.items.last_page}
+                                </p>
+                                <div className="flex gap-2">
+                                    <Button
+                                        asChild={Boolean(
+                                            review.items.prev_page_url,
+                                        )}
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={!review.items.prev_page_url}
+                                    >
+                                        {review.items.prev_page_url ? (
+                                            <Link
+                                                href={
+                                                    review.items.prev_page_url
+                                                }
+                                                preserveScroll
+                                                onStart={() => setLoading(true)}
+                                                onFinish={() =>
+                                                    setLoading(false)
+                                                }
+                                            >
+                                                Previous
+                                            </Link>
+                                        ) : (
+                                            <span>Previous</span>
+                                        )}
+                                    </Button>
+                                    <Button
+                                        asChild={Boolean(
+                                            review.items.next_page_url,
+                                        )}
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={!review.items.next_page_url}
+                                    >
+                                        {review.items.next_page_url ? (
+                                            <Link
+                                                href={
+                                                    review.items.next_page_url
+                                                }
+                                                preserveScroll
+                                                onStart={() => setLoading(true)}
+                                                onFinish={() =>
+                                                    setLoading(false)
+                                                }
+                                            >
+                                                Next
+                                            </Link>
+                                        ) : (
+                                            <span>Next</span>
+                                        )}
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        )}
+                    </Card>
+
+                    <div className="grid min-w-0 content-start gap-4 xl:col-start-1 xl:row-start-1">
+                        {!gmail.configured && (
+                            <Alert variant="destructive">
+                                <TriangleAlert />
+                                <AlertTitle>
+                                    Google OAuth setup required
+                                </AlertTitle>
+                                <AlertDescription>
+                                    Add the Gmail client credentials and
+                                    production callback settings before
+                                    connecting an account.
+                                </AlertDescription>
+                            </Alert>
+                        )}
+
+                        {gmail.latest_failure?.type === 'synchronization' && (
+                            <Alert variant="destructive">
+                                <TriangleAlert />
+                                <AlertTitle>
+                                    The latest Gmail import failed
+                                </AlertTitle>
+                                <AlertDescription>
+                                    <LocalTimestamp
+                                        value={gmail.latest_failure.occurred_at}
+                                    />{' '}
+                                    · {gmail.latest_failure.error_code}
+                                </AlertDescription>
+                            </Alert>
+                        )}
+
+                        <Card id="gmail" className="min-w-0 gap-0 py-0">
+                            <CardHeader className="flex flex-wrap items-start justify-between gap-3 p-4 md:p-5">
+                                <div className="flex min-w-0 flex-1 items-start gap-3">
+                                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-muted/40">
+                                        <Mail className="size-5 text-muted-foreground" />
+                                    </span>
+                                    <div className="grid min-w-0 gap-1">
+                                        <CardTitle className="break-all">
+                                            {gmail.account_identity ??
+                                                'Gmail is not connected'}
+                                        </CardTitle>
+                                        <CardDescription>
+                                            {details.summary}
+                                        </CardDescription>
+                                    </div>
+                                </div>
+                                <Badge variant={details.variant}>
+                                    {gmail.state === 'connected' && (
+                                        <CircleCheck />
+                                    )}
+                                    {details.label}
+                                </Badge>
+                            </CardHeader>
                             {gmail.account_identity !== null && (
-                                <div className="flex flex-wrap gap-x-8 gap-y-2 type-meta">
-                                    <span>
-                                        Last successful import:{' '}
-                                        <span data-test="gmail-last-successful-sync">
+                                <CardContent className="grid divide-y border-t p-0">
+                                    <div className="grid gap-1 p-4 md:p-5">
+                                        <p className="flex items-center gap-2 type-meta">
+                                            <CalendarClock className="size-4" />
+                                            Next automatic import
+                                        </p>
+                                        <LocalTimestamp
+                                            value={gmail.next_scheduled_sync_at}
+                                            missingLabel="Paused"
+                                            className="font-medium"
+                                        />
+                                        <p className="type-meta">
+                                            Runs every five minutes
+                                        </p>
+                                    </div>
+                                    <div className="grid gap-1 p-4 md:p-5">
+                                        <p className="flex items-center gap-2 type-meta">
+                                            <Download className="size-4" />
+                                            Last successful import
+                                        </p>
+                                        <span
+                                            data-test="gmail-last-successful-sync"
+                                            className="font-medium"
+                                        >
                                             <LocalTimestamp
                                                 value={
                                                     gmail.last_successful_sync_at
@@ -619,44 +715,50 @@ export default function GmailDataSource({
                                                 missingLabel="No imports yet"
                                             />
                                         </span>
-                                    </span>
-                                    <span>
-                                        Next import:{' '}
-                                        <LocalTimestamp
-                                            value={gmail.next_scheduled_sync_at}
-                                            missingLabel="Paused"
-                                        />
-                                    </span>
-                                    <span>
-                                        Connection checked:{' '}
+                                    </div>
+                                    <div className="grid gap-1 p-4 md:p-5">
+                                        <p className="flex items-center gap-2 type-meta">
+                                            <Clock3 className="size-4" />
+                                            Connection checked
+                                        </p>
                                         <LocalTimestamp
                                             value={
                                                 gmail.last_successful_check_at
                                             }
                                             missingLabel="Not checked yet"
+                                            className="font-medium"
                                         />
-                                    </span>
-                                </div>
-                            )}
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                <p className="type-meta">
-                                    {gmail.preview
-                                        ? 'Sample messages are local. They cannot open in Gmail.'
-                                        : 'Read-only Gmail access. Money Assistant cannot send, edit, or delete mail.'}
-                                </p>
-                                {canImport ? (
-                                    <div className="flex flex-wrap gap-2">
-                                        <ConnectionCheckButton />
-                                        <ManualImportButton />
                                     </div>
-                                ) : (
-                                    <ConnectAndImport
-                                        configured={gmail.configured}
-                                    />
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
+                                </CardContent>
+                            )}
+                            <CardContent className="grid gap-4 border-t p-4 md:p-5">
+                                <div className="flex items-start gap-3">
+                                    <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                                    <div className="grid gap-1">
+                                        <p className="font-medium">
+                                            Read-only Gmail access
+                                        </p>
+                                        <p className="type-meta">
+                                            Money Assistant cannot send, edit,
+                                            or delete mail.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {canImport ? (
+                                        <ConnectionCheckButton />
+                                    ) : (
+                                        <ConnectAndImport
+                                            configured={gmail.configured}
+                                        />
+                                    )}
+                                    {gmail.account_identity !== null && (
+                                        <DisconnectButton />
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
                 </div>
             </main>
         </>
@@ -665,4 +767,5 @@ export default function GmailDataSource({
 
 GmailDataSource.layout = {
     breadcrumbs: [{ title: 'Gmail', href: gmailDataSource() }],
+    viewportConstrained: true,
 };

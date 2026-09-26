@@ -129,7 +129,7 @@ final class ReadGmailReview
                     && ($discovery->processing_failed_at !== null
                         ? $discovery->processed_at === null && $discovery->failed_job_uuid !== null
                         : $reference?->isRetryable() === true),
-                'gmail_url' => $summaryState === 'available' && $summary->threadId !== ''
+                'gmail_url' => $summaryState === 'available'
                     ? 'https://mail.google.com/mail/u/'
                         .rawurlencode($connection->gmail_account_identity)
                         .'/#all/'
