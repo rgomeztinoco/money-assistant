@@ -11,6 +11,10 @@ export type AppLayoutProps = {
 export type FlashToast = {
     type: 'success' | 'info' | 'warning' | 'error';
     message: string;
+    action?: {
+        type: 'apply_existing_merchant_rule';
+        rule_id: number;
+    };
 };
 
 export type AuthLayoutProps = {

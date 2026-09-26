@@ -14,6 +14,14 @@ import InputError from '@/components/input-error';
 import { TransactionEditor } from '@/components/transaction-editor';
 import type { EditorTransaction } from '@/components/transaction-editor';
 import type { TransactionAction } from '@/components/transaction-table';
+import {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -28,6 +36,7 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { formatMinorUnits } from '@/lib/format-minor-units';
+import { cn } from '@/lib/utils';
 import { CategorySplit } from '@/pages/breakdown/category-split';
 import type { BreakdownProps } from '@/pages/breakdown/types';
 
@@ -384,60 +393,18 @@ export function TransactionActionDialog({
                   ? `Restore ${transaction.description}`
                   : `Void ${transaction.description}`;
 
-    return (
-        <Dialog
-            open
-            onOpenChange={(open) => {
-                if (!open) {
-                    onClose();
-                }
-            }}
-        >
-            <DialogContent className="inset-0 h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none p-4 sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-6">
-                <DialogHeader>
-                    <DialogTitle>{title}</DialogTitle>
-                    <DialogDescription>
-                        {action === 'edit'
-                            ? transaction.voided_at
-                                ? 'Voided Transaction. Update its recorded details.'
-                                : 'Update this confirmed movement.'
-                            : action === 'split'
-                              ? 'Allocate the full amount across Categories.'
-                              : action === 'rule'
-                                ? 'Known values are filled from this Transaction. Review and change them as needed.'
-                                : action === 'restore'
-                                  ? 'The Transaction will count in summaries again.'
-                                  : 'The Transaction stays in your records but is excluded from summaries.'}
-                    </DialogDescription>
-                </DialogHeader>
-                {action === 'edit' && (
-                    <TransactionEditor
-                        key={transaction.id}
-                        transaction={transaction}
-                        currency={transaction.currency}
-                        today={today}
-                        categoryOptions={categoryOptions}
-                        onCancel={onClose}
-                        onSaved={onClose}
-                    />
-                )}
-                {action === 'split' && (
-                    <CategorySplit
-                        key={`${transaction.id}-${transaction.split?.map((row) => row.id).join('-') ?? 'none'}`}
-                        transaction={transaction}
-                        categoryOptions={splitCategoryOptions}
-                    />
-                )}
-                {action === 'rule' && (
-                    <MerchantRuleForm
-                        key={transaction.id}
-                        transaction={transaction}
-                        categoryOptions={categoryOptions}
-                        onCancel={onClose}
-                        onSaved={onClose}
-                    />
-                )}
-                {(action === 'void' || action === 'restore') && (
+    if (action === 'void' || action === 'restore') {
+        return (
+            <AlertDialog open onOpenChange={(open) => !open && onClose()}>
+                <AlertDialogContent className="data-[size=default]:sm:max-w-md">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>{title}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {action === 'void'
+                                ? 'The Transaction stays in your records but is excluded from summaries.'
+                                : 'The Transaction will count in summaries again.'}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
                     <Form
                         {...(action === 'void'
                             ? voidTransaction.form(transaction.id)
@@ -448,7 +415,7 @@ export function TransactionActionDialog({
                         {({ processing, errors }) => (
                             <div className="grid gap-4">
                                 <InputError message={errors.void_state} />
-                                <DialogFooter>
+                                <AlertDialogFooter>
                                     <Button
                                         type="button"
                                         variant="outline"
@@ -470,11 +437,76 @@ export function TransactionActionDialog({
                                             ? 'Void Transaction'
                                             : 'Restore Transaction'}
                                     </Button>
-                                </DialogFooter>
+                                </AlertDialogFooter>
                             </div>
                         )}
                     </Form>
+                </AlertDialogContent>
+            </AlertDialog>
+        );
+    }
+
+    return (
+        <Dialog
+            open
+            onOpenChange={(open) => {
+                if (!open) {
+                    onClose();
+                }
+            }}
+        >
+            <DialogContent
+                className={cn(
+                    'inset-0 flex h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:h-[min(48rem,90dvh)] sm:max-h-[90dvh] sm:w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg',
+                    action === 'split'
+                        ? 'sm:h-[min(38rem,90dvh)] sm:max-w-4xl'
+                        : 'sm:max-w-3xl',
                 )}
+            >
+                <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:px-6">
+                    <DialogTitle>{title}</DialogTitle>
+                    <DialogDescription>
+                        {action === 'edit'
+                            ? transaction.voided_at
+                                ? 'Voided Transaction. Update its recorded details.'
+                                : 'Update this confirmed movement.'
+                            : action === 'split'
+                              ? 'Allocate the full amount across Categories.'
+                              : 'Known values are filled from this Transaction. Review and change them as needed.'}
+                    </DialogDescription>
+                </DialogHeader>
+                <div
+                    className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6"
+                    data-test="transaction-dialog-scroll"
+                >
+                    {action === 'edit' && (
+                        <TransactionEditor
+                            key={transaction.id}
+                            transaction={transaction}
+                            currency={transaction.currency}
+                            today={today}
+                            categoryOptions={categoryOptions}
+                            onCancel={onClose}
+                            onSaved={onClose}
+                        />
+                    )}
+                    {action === 'split' && (
+                        <CategorySplit
+                            key={`${transaction.id}-${transaction.split?.map((row) => row.id).join('-') ?? 'none'}`}
+                            transaction={transaction}
+                            categoryOptions={splitCategoryOptions}
+                        />
+                    )}
+                    {action === 'rule' && (
+                        <MerchantRuleForm
+                            key={transaction.id}
+                            transaction={transaction}
+                            categoryOptions={categoryOptions}
+                            onCancel={onClose}
+                            onSaved={onClose}
+                        />
+                    )}
+                </div>
             </DialogContent>
         </Dialog>
     );

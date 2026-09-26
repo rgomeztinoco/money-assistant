@@ -803,12 +803,24 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->assertSee('Transaction updated.')
         ->click('[data-test="breakdown-transaction-'.$current->id.'"]')
         ->click('[data-slot="dropdown-menu-item"]:has-text("Split by Category")')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const headers = Array.from(dialog?.querySelectorAll('table thead th') ?? [])
+                    .map((header) => header.textContent?.trim());
+                const height = dialog?.getBoundingClientRect().height ?? 0;
+
+                return headers[0] === 'Category'
+                    && headers[1] === 'Amount'
+                    && dialog?.querySelectorAll('table tbody tr').length === 2
+                    && height >= 550
+                    && height <= 640;
+            })()
+            JS)
         ->fill('[name="line_items[0][line_total]"]', '20.00')
         ->fill('[name="line_items[1][line_total]"]', '5.00')
-        ->select(
-            '[name="line_items[0][category_id]"]',
-            (string) $groceries->id,
-        )
+        ->click('[data-slot="dialog-content"] table tbody tr:first-child [data-slot="popover-trigger"]')
+        ->click('[data-test="split-'.$current->id.'-'.$current->id.'-initial-0-category-option-'.$groceries->id.'"]')
         ->select(
             '[name="line_items[1][category_id]"]',
             (string) $household->id,
@@ -816,7 +828,22 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->assertSee('Amounts reconcile exactly')
         ->press('Save Category split')
         ->assertSee('Category split saved.')
+        ->assertScript(<<<'JS'
+            (() => {
+                window.dialogTitlesAfterClose = [];
+                new MutationObserver(() => {
+                    const title = document.querySelector('[data-slot="dialog-title"]')?.textContent;
+
+                    if (title) {
+                        window.dialogTitlesAfterClose.push(title);
+                    }
+                }).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+                return true;
+            })()
+            JS)
         ->click('[data-slot="dialog-content"] > button')
+        ->assertScript('!window.dialogTitlesAfterClose.includes("Edit Café Central Lima")')
         ->press('Add Transaction')
         ->fill('#transaction-amount', '7.50')
         ->fill('#transaction-description', 'Manual bakery')
@@ -833,6 +860,51 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->and(MerchantRule::query()->whereBelongsTo($owner, 'owner')->exists())->toBeTrue()
         ->and(ReceiptBreakdown::query()->whereBelongsTo($current)->exists())->toBeTrue()
         ->and(Transaction::query()->where('description', 'Manual bakery')->exists())->toBeTrue();
+});
+
+test('the Breakdown Category dropdown creates a future-only rule and offers a reviewed history action', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $today = now()->toDateString();
+    $source = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Café Central',
+    ]);
+    $previous = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => ' café central ',
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
+
+    $page
+        ->click('[aria-label="Category for Café Central"]')
+        ->click('@category-'.$source->id.'-option-'.$category->id)
+        ->click('[data-test="create-merchant-rule-'.$source->id.'"]')
+        ->assertPathIs('/breakdown')
+        ->assertSee('Merchant Rule created for future Transactions.')
+        ->assertSee('Apply to previous')
+        ->assertNoJavaScriptErrors();
+
+    expect($source->refresh()->category_id)->toBeNull()
+        ->and($previous->refresh()->category_id)->toBeNull();
+
+    $page
+        ->click('Apply to previous')
+        ->assertSee('Apply Merchant Rule to previous Transactions?')
+        ->waitForText('2 previous Transactions match')
+        ->assertSee('#'.$source->id)
+        ->assertSee('#'.$previous->id)
+        ->press('Apply to previous Transactions')
+        ->assertPathIs('/breakdown')
+        ->assertSee('2 previous Transactions updated.')
+        ->click('[aria-label="Category for Café Central"]')
+        ->assertPresent('[data-test="create-merchant-rule-'.$source->id.'"]')
+        ->assertNoJavaScriptErrors();
+
+    expect($source->refresh()->category_id)->toBe($category->id)
+        ->and($previous->refresh()->category_id)->toBe($category->id);
 });
 
 test('the owner edits a Transaction in the Breakdown dialog', function () {
@@ -1164,7 +1236,26 @@ test('the editor is centered on desktop and fills the phone viewport without sav
                     && Math.abs((bounds.left + bounds.right) / 2 - innerWidth / 2) <= 2
                     && Math.abs((bounds.top + bounds.bottom) / 2 - innerHeight / 2) <= 2
                     && bounds.width < innerWidth
+                    && bounds.height >= 650
                     && bounds.height < innerHeight;
+            })()
+            JS)
+        ->resize(1280, 600)
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const header = dialog?.querySelector('[data-slot="dialog-header"]');
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
+
+                if (!header || !scroller) {
+                    return false;
+                }
+
+                const headerTop = header.getBoundingClientRect().top;
+                scroller.scrollTop = scroller.scrollHeight;
+
+                return scroller.scrollTop > 0
+                    && Math.abs(header.getBoundingClientRect().top - headerTop) < 1;
             })()
             JS)
         ->resize(390, 844)

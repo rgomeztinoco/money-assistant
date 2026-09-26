@@ -482,6 +482,7 @@ function useBreakdownTransactions(
                 }
                 renderCategory={(transaction) => (
                     <TransactionCategorySelect
+                        key={`${transaction.id}-${transaction.category?.id ?? 'none'}`}
                         transaction={{
                             ...transaction,
                             has_split: transaction.split !== null,
@@ -499,10 +500,12 @@ function useBreakdownTransactions(
 
 export default function BreakdownIndex(props: BreakdownProps) {
     const [activeAction, setActiveAction] = useState<TransactionAction>('edit');
+    const [closingAction, setClosingAction] = useState(false);
     const tableScroll = useRef<number | null>(null);
     const transactionList = useBreakdownTransactions(
         props,
         (transactionId, action) => {
+            setClosingAction(false);
             setActiveAction(action);
             tableScroll.current =
                 document.querySelector<HTMLElement>(
@@ -554,10 +557,13 @@ export default function BreakdownIndex(props: BreakdownProps) {
     });
 
     function closeEditor(): void {
-        setActiveAction('edit');
+        setClosingAction(true);
         router.visit(closeDetailsHref, {
             preserveScroll: true,
             preserveState: true,
+            onSuccess: () => setClosingAction(false),
+            onError: () => setClosingAction(false),
+            onCancel: () => setClosingAction(false),
             onFinish: () => {
                 if (tableScroll.current !== null) {
                     const position = tableScroll.current;
@@ -819,7 +825,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                 </div>
             </main>
 
-            {selectedTransaction && (
+            {selectedTransaction && !closingAction && (
                 <TransactionActionDialog
                     transaction={selectedTransaction}
                     action={activeAction}

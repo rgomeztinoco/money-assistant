@@ -57,6 +57,10 @@ Route::middleware(['auth'])->group(function () {
         ]);
     Route::get('merchant-rules/matches', [MerchantRuleController::class, 'matches'])
         ->name('merchant_rules.matches');
+    Route::get('merchant-rules/{merchant_rule}/matches', [MerchantRuleController::class, 'ruleMatches'])
+        ->name('merchant_rules.rule_matches');
+    Route::post('merchant-rules/{merchant_rule}/apply-existing', [MerchantRuleController::class, 'applyExisting'])
+        ->name('merchant_rules.apply_existing');
     Route::post('transactions/{transaction}/void', [TransactionVoidController::class, 'store'])
         ->name('transactions.void.store');
     Route::delete('transactions/{transaction}/void', [TransactionVoidController::class, 'destroy'])

@@ -141,6 +141,48 @@ test('row actions void and restore a Transaction without leaving Transactions', 
     expect($transaction->refresh()->voided_at)->toBeNull();
 });
 
+test('closing Void does not show the Edit dialog before it disappears', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => 'Duplicate card movement',
+    ]);
+    $this->actingAs($owner);
+
+    visit('/transactions')
+        ->click('[data-test="transaction-'.$transaction->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Void Transaction")')
+        ->assertSee('Void Duplicate card movement')
+        ->assertScript(<<<'JS'
+            (() => {
+                const confirm = document.querySelector('[data-slot="alert-dialog-content"]');
+                const bounds = confirm?.getBoundingClientRect();
+
+                return bounds !== undefined
+                    && bounds.width <= 450
+                    && bounds.height < 350
+                    && document.querySelector('[data-slot="dialog-content"]') === null;
+            })()
+            JS)
+        ->assertScript(<<<'JS'
+            (() => {
+                window.dialogTitlesAfterClose = [];
+                new MutationObserver(() => {
+                    const title = document.querySelector('[data-slot="dialog-title"]')?.textContent;
+
+                    if (title) {
+                        window.dialogTitlesAfterClose.push(title);
+                    }
+                }).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+                return true;
+            })()
+            JS)
+        ->press('Cancel')
+        ->assertQueryStringMissing('selected')
+        ->assertScript('!window.dialogTitlesAfterClose.includes("Edit Duplicate card movement")')
+        ->assertNoJavaScriptErrors();
+});
+
 test('a Transaction with an unknown Category source can still be edited', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);

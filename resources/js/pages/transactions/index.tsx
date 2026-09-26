@@ -101,6 +101,7 @@ export default function TransactionsIndex({
 }: TransactionsIndexProps) {
     const [loading, setLoading] = useState(false);
     const [activeAction, setActiveAction] = useState<TransactionAction>('edit');
+    const [closingAction, setClosingAction] = useState(false);
     const scrollPosition = useRef<{ window: number; table: number } | null>(
         null,
     );
@@ -119,7 +120,7 @@ export default function TransactionsIndex({
     }
 
     function closeDetails(): void {
-        setActiveAction('edit');
+        setClosingAction(true);
         const position = scrollPosition.current;
 
         router.get(
@@ -128,6 +129,9 @@ export default function TransactionsIndex({
             {
                 preserveScroll: true,
                 preserveState: true,
+                onSuccess: () => setClosingAction(false),
+                onError: () => setClosingAction(false),
+                onCancel: () => setClosingAction(false),
                 onFinish: () => {
                     setLoading(false);
 
@@ -235,6 +239,7 @@ export default function TransactionsIndex({
                                 visit(transactionUrl(filters, page))
                             }
                             onAction={(transaction, action) => {
+                                setClosingAction(false);
                                 setActiveAction(action);
                                 router.get(
                                     transactionUrl(
@@ -263,6 +268,7 @@ export default function TransactionsIndex({
                             }
                             renderCategory={(transaction) => (
                                 <TransactionCategorySelect
+                                    key={`${transaction.id}-${transaction.category?.id ?? 'none'}`}
                                     transaction={transaction}
                                     categoryOptions={category_options}
                                 />
@@ -273,7 +279,7 @@ export default function TransactionsIndex({
                 </Card>
             </div>
 
-            {selected_transaction_id !== null && (
+            {selected_transaction_id !== null && !closingAction && (
                 <Deferred
                     data="selected_transaction"
                     fallback={

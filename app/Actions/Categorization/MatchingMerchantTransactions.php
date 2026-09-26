@@ -18,14 +18,14 @@ final class MatchingMerchantTransactions
     /**
      * @return array{count: int, transactions: list<array{id: int, occurred_on: string, description: string, amount_minor: string, currency: string, category: string|null}>}
      */
-    public function preview(User $owner, string $merchant, ?TransactionKind $kind, ?Currency $currency): array
+    public function preview(User $owner, string $merchant, ?TransactionKind $kind, ?Currency $currency, ?int $excludeRuleId = null): array
     {
         $count = 0;
         $transactions = [];
 
         $merchantKey = $this->merchantNormalizer->normalize($merchant);
 
-        foreach ($this->candidates($owner, $kind, $currency)->lazyById(200) as $transaction) {
+        foreach ($this->candidates($owner, $kind, $currency, $excludeRuleId)->lazyById(200) as $transaction) {
             if (! $this->matches($transaction, $merchantKey)) {
                 continue;
             }
@@ -52,7 +52,7 @@ final class MatchingMerchantTransactions
         $count = 0;
         $merchantKey = $rule->merchant_key;
 
-        $this->candidates($owner, $rule->transaction_kind, $rule->currency)
+        $this->candidates($owner, $rule->transaction_kind, $rule->currency, $rule->id)
             ->chunkById(200, function ($transactions) use ($rule, $merchantKey, &$count): void {
                 foreach ($transactions as $transaction) {
                     if (! $this->matches($transaction, $merchantKey)) {
@@ -71,7 +71,7 @@ final class MatchingMerchantTransactions
     }
 
     /** @return Builder<Transaction> */
-    private function candidates(User $owner, ?TransactionKind $kind, ?Currency $currency): Builder
+    private function candidates(User $owner, ?TransactionKind $kind, ?Currency $currency, ?int $excludeRuleId = null): Builder
     {
         return Transaction::query()
             ->whereBelongsTo($owner, 'owner')
@@ -79,6 +79,9 @@ final class MatchingMerchantTransactions
             ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
             ->when($kind !== null, fn (Builder $query) => $query->where('kind', $kind))
             ->when($currency !== null, fn (Builder $query) => $query->where('currency', $currency))
+            ->when($excludeRuleId !== null, fn (Builder $query) => $query->where(fn (Builder $scope) => $scope
+                ->whereNull('merchant_rule_id')
+                ->orWhere('merchant_rule_id', '!=', $excludeRuleId)))
             ->whereDoesntHave('receiptBreakdown')
             ->with('category:id,name')
             ->orderBy('id');

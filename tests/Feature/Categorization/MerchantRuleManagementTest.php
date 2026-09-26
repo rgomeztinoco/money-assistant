@@ -104,6 +104,86 @@ test('a future-only rule leaves existing Transactions unchanged', function () {
     expect($transaction->refresh()->category_id)->toBeNull();
 });
 
+test('a rule created from a Transaction leaves history unchanged until the owner applies it', function () {
+    $owner = User::factory()->create();
+    $oldCategory = Category::factory()->for($owner, 'owner')->create(['name' => 'Old']);
+    $newCategory = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
+    $source = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => 'Market Plaza',
+        'category_id' => $oldCategory->id,
+        'category_assignment_provenance' => CategoryAssignmentProvenance::Owner,
+    ]);
+    $previous = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'description' => ' market plaza ',
+    ]);
+    $otherKind = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'description' => 'Market Plaza',
+    ]);
+    $workspace = route('breakdown.index');
+
+    $this->actingAs($owner)
+        ->from($workspace)
+        ->post(route('merchant_rules.store'), [
+            'merchant' => $source->description,
+            'category_id' => $newCategory->id,
+            'transaction_kind' => 'spending',
+            'currency' => 'PEN',
+            'enabled' => true,
+            'apply_existing' => false,
+            'source_transaction_id' => $source->id,
+        ])
+        ->assertRedirect($workspace)
+        ->assertSessionHasNoErrors();
+
+    $rule = MerchantRule::query()->sole();
+
+    expect($source->refresh()->category_id)->toBe($oldCategory->id)
+        ->and($previous->refresh()->category_id)->toBeNull();
+
+    $this->getJson(route('merchant_rules.rule_matches', $rule))
+        ->assertOk()
+        ->assertJsonPath('count', 2)
+        ->assertJsonPath('category', 'Groceries')
+        ->assertJsonPath('transactions.0.id', $source->id)
+        ->assertJsonPath('transactions.1.id', $previous->id);
+
+    $this->from($workspace)
+        ->post(route('merchant_rules.apply_existing', $rule))
+        ->assertRedirect($workspace);
+
+    expect($source->refresh()->category_id)->toBe($newCategory->id)
+        ->and($source->merchant_rule_id)->toBe($rule->id)
+        ->and($previous->refresh()->category_id)->toBe($newCategory->id)
+        ->and($previous->merchant_rule_id)->toBe($rule->id)
+        ->and($otherKind->refresh()->category_id)->toBeNull();
+
+    $this->getJson(route('merchant_rules.rule_matches', $rule))
+        ->assertOk()
+        ->assertJsonPath('count', 0);
+});
+
+test('a Merchant Rule cannot preview or apply another owner’s history', function () {
+    $owner = User::factory()->create();
+    $otherOwner = User::factory()->create();
+    $category = Category::factory()->for($otherOwner, 'owner')->create();
+    $rule = MerchantRule::factory()->for($otherOwner, 'owner')->for($category)->create();
+    $ownCategory = Category::factory()->for($owner, 'owner')->create();
+    $disabledRule = MerchantRule::factory()->for($owner, 'owner')->for($ownCategory)->disabled()->create();
+
+    $this->actingAs($owner)
+        ->getJson(route('merchant_rules.rule_matches', $rule))
+        ->assertNotFound();
+
+    $this->post(route('merchant_rules.apply_existing', $rule))
+        ->assertNotFound();
+
+    $this->getJson(route('merchant_rules.rule_matches', $disabledRule))
+        ->assertNotFound();
+
+    $this->post(route('merchant_rules.apply_existing', $disabledRule))
+        ->assertNotFound();
+});
+
 test('creating a rule can apply to existing matching Transactions while preserving the source workspace', function () {
     $owner = User::factory()->create();
     $oldCategory = Category::factory()->for($owner, 'owner')->create();
