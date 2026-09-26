@@ -83,7 +83,9 @@ class SpendingNotificationReference extends Model
             ->where('gmail_account_identity', $connection->gmail_account_identity)
             ->where('processing_outcome', SpendingNotificationProcessingOutcome::Unsupported->value)
             ->whereNull('transaction_id')
-            ->whereNotNull('gmail_message_discovery_id');
+            ->whereHas('discovery', fn (Builder $discovery) => $discovery
+                ->where('gmail_connection_id', $connection->id)
+                ->whereNull('dismissed_at'));
     }
 
     /** @return array<string, string> */

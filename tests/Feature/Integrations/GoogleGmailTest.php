@@ -425,6 +425,7 @@ test('the Google adapter lists source messages with metadata only', function () 
     $mockHandler = new MockHandler([
         new Response(200, ['Content-Type' => 'application/json'], json_encode([
             'id' => 'immutable-message-summary',
+            'threadId' => 'thread-for-message-summary',
             'internalDate' => '1785258000000',
             'payload' => [
                 'mimeType' => 'multipart/alternative',
@@ -450,6 +451,7 @@ test('the Google adapter lists source messages with metadata only', function () 
     );
 
     expect($summary->messageId)->toBe('immutable-message-summary')
+        ->and($summary->threadId)->toBe('thread-for-message-summary')
         ->and($summary->fromAddress)->toBe('alerts@bank.example')
         ->and($summary->subject)->toBe('Purchase approved')
         ->and($summary->receivedAt->toIso8601String())->toBe('2026-07-28T17:00:00+00:00');
@@ -457,7 +459,7 @@ test('the Google adapter lists source messages with metadata only', function () 
     parse_str((string) $requests[0]['request']->getUri()->getQuery(), $query);
 
     expect($query)->toMatchArray([
-        'fields' => 'id,internalDate,payload(headers)',
+        'fields' => 'id,threadId,internalDate,payload(headers)',
         'format' => 'metadata',
     ])
         ->and((string) $requests[0]['request']->getUri())

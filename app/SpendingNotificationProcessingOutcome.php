@@ -13,6 +13,6 @@ enum SpendingNotificationProcessingOutcome: string
 
     public function isRetryable(): bool
     {
-        return $this === self::Unsupported;
+        return in_array($this, [self::Unsupported, self::Failed, self::AuthenticationFailed], true);
     }
 }

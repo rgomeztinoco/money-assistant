@@ -295,7 +295,7 @@ final class GoogleGmail implements Gmail
                 'me',
                 $messageId,
                 [
-                    'fields' => 'id,internalDate,payload(headers)',
+                    'fields' => 'id,threadId,internalDate,payload(headers)',
                     'format' => 'metadata',
                     'metadataHeaders' => ['From', 'Subject'],
                 ],
@@ -305,11 +305,14 @@ final class GoogleGmail implements Gmail
         }
 
         $returnedMessageId = $message->getId();
+        $threadId = $message->getThreadId();
         $receivedAt = $message->getInternalDate();
         $payload = $message->getPayload();
 
         if (! is_string($returnedMessageId)
             || $returnedMessageId !== $messageId
+            || ! is_string($threadId)
+            || $threadId === ''
             || ! is_string($receivedAt)
             || ! ctype_digit($receivedAt)
             || ! $payload instanceof MessagePart) {
@@ -326,6 +329,7 @@ final class GoogleGmail implements Gmail
 
         return new GmailMessageSummary(
             messageId: $returnedMessageId,
+            threadId: $threadId,
             receivedAt: CarbonImmutable::createFromTimestampMsUTC($receivedAt),
             fromAddress: $fromAddress,
             subject: $subject,

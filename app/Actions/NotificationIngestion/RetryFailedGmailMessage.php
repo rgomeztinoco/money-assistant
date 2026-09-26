@@ -33,6 +33,7 @@ class RetryFailedGmailMessage
 
             if (
                 $discovery->processed_at !== null
+                || $discovery->dismissed_at !== null
                 || $discovery->processing_failed_at === null
                 || $discovery->failed_job_uuid === null
                 || $discovery->gmailConnection->ingestionIsPaused()

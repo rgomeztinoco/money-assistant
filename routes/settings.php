@@ -5,6 +5,7 @@ use App\Http\Controllers\Settings\GmailAuthorizationController;
 use App\Http\Controllers\Settings\GmailConnectionCheckController;
 use App\Http\Controllers\Settings\GmailFailedMessageRetryController;
 use App\Http\Controllers\Settings\GmailImportController;
+use App\Http\Controllers\Settings\GmailReviewMessageController;
 use App\Http\Controllers\Settings\GmailUnsupportedMessagesRetryController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -55,6 +56,13 @@ Route::middleware(['auth'])->group(function () {
         'data-sources/gmail/unsupported-messages/retry',
         GmailUnsupportedMessagesRetryController::class,
     )->name('gmail.unsupported_messages.retry');
+
+    Route::post('data-sources/gmail/messages/{gmailMessageDiscovery}/retry', [GmailReviewMessageController::class, 'retry'])
+        ->name('gmail.messages.retry');
+    Route::post('data-sources/gmail/messages/{gmailMessageDiscovery}/dismiss', [GmailReviewMessageController::class, 'dismiss'])
+        ->name('gmail.messages.dismiss');
+    Route::delete('data-sources/gmail/messages/{gmailMessageDiscovery}/dismiss', [GmailReviewMessageController::class, 'restore'])
+        ->name('gmail.messages.restore');
 
     Route::inertia('settings/appearance', 'settings/appearance')->name('appearance.edit');
 });

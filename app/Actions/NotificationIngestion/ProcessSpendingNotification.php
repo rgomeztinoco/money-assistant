@@ -48,7 +48,7 @@ final class ProcessSpendingNotification
 
             if ($existingReference !== null && ! $existingReference->isRetryable()) {
                 throw new InvalidArgumentException(
-                    'Only an unresolved unsupported message may be retried.',
+                    'Only an unresolved message without a Transaction may be retried.',
                 );
             }
 
