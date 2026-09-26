@@ -120,6 +120,7 @@ test('the owner can inspect, dismiss, and restore an unrecognized Gmail email', 
     $gmail = new FakeGmail;
     $gmail->messageSummaries[$discovery->message_id] = new GmailMessageSummary(
         $discovery->message_id,
+        'payment-alert-thread',
         now()->toImmutable(),
         'bank@example.test',
         'Payment alert',
@@ -132,6 +133,7 @@ test('the owner can inspect, dismiss, and restore an unrecognized Gmail email', 
         ->assertSee('bank@example.test')
         ->assertSee('Open in Gmail')
         ->assertAttribute('a[href*="mail.google.com"]', 'target', '_blank')
+        ->assertScript('document.querySelector(\'a[href*="mail.google.com"]\')?.href.includes("/#all/payment-alert-thread")')
         ->resize(390, 844)
         ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
         ->press('Dismiss')
