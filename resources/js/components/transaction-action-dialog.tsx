@@ -289,12 +289,16 @@ function MerchantRuleForm({
                                         {preview.count === 1
                                             ? 'Transaction'
                                             : 'Transactions'}{' '}
-                                        will change
+                                        {preview.count === 1
+                                            ? 'matches'
+                                            : 'match'}{' '}
+                                        this rule right now
                                     </p>
                                     <p className="type-meta text-muted-foreground">
                                         Existing Categories will be replaced.
                                         Category splits and Voided Transactions
-                                        are excluded.
+                                        are excluded. Matches are checked again
+                                        when you create the rule.
                                     </p>
                                     <ul className="mt-2 max-h-44 overflow-y-auto type-meta">
                                         {preview.transactions.map((match) => (

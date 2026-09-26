@@ -68,7 +68,7 @@ class MerchantRuleController extends Controller
         });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $appliedCount > 0
-            ? __('Merchant Rule created and :count Transactions updated.', ['count' => $appliedCount])
+            ? trans_choice('{1} Merchant Rule created and 1 Transaction updated.|[2,*] Merchant Rule created and :count Transactions updated.', $appliedCount, ['count' => $appliedCount])
             : __('Merchant Rule created.')]);
 
         return back(fallback: route('merchant_rules.index'));

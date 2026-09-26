@@ -228,13 +228,19 @@ test('a Transaction opens a Merchant Rule dialog with known values prefilled', f
         ->assertSelected('#action-rule-currency', 'PEN')
         ->click('@action-rule-category-trigger')
         ->click('@action-rule-category-option-'.$category->id)
+        ->click('[data-test="rule-apply-existing"]')
+        ->waitForText('matches this rule right now')
+        ->assertSeeIn('[data-test="merchant-rule-preview"]', '1 existing Transaction matches this rule right now')
+        ->assertSeeIn('[data-test="merchant-rule-preview"]', '#'.$transaction->id)
         ->press('Create Merchant Rule')
         ->assertPathIs('/transactions')
-        ->assertSee('Merchant Rule created.')
+        ->assertSee('Merchant Rule created and 1 Transaction updated.')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
     expect(MerchantRule::query()->sole())
         ->merchant_key->toBe('café central')
         ->category_id->toBe($category->id);
+
+    expect($transaction->refresh()->category_id)->toBe($category->id);
 });
