@@ -794,6 +794,19 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->click('[data-test="rule-apply-existing"]')
         ->waitForText('match this rule right now')
         ->assertSeeIn('[data-test="merchant-rule-preview"]', 'match this rule right now')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
+                const matches = dialog?.querySelector('[data-test="merchant-rule-preview"] ul');
+
+                return dialog !== null
+                    && scroller !== null
+                    && matches !== null
+                    && getComputedStyle(scroller).overflowY === 'auto'
+                    && getComputedStyle(matches).overflowY !== 'auto';
+            })()
+            JS)
         ->press('Create Merchant Rule')
         ->assertSee('Merchant Rule created')
         ->click('[data-test="breakdown-transaction-'.$current->id.'"]')
@@ -809,12 +822,13 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
                 const headers = Array.from(dialog?.querySelectorAll('table thead th') ?? [])
                     .map((header) => header.textContent?.trim());
                 const height = dialog?.getBoundingClientRect().height ?? 0;
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
 
                 return headers[0] === 'Category'
                     && headers[1] === 'Amount'
                     && dialog?.querySelectorAll('table tbody tr').length === 2
-                    && height >= 550
-                    && height <= 640;
+                    && height < 550
+                    && (scroller?.scrollHeight ?? 0) <= (scroller?.clientHeight ?? 0) + 1;
             })()
             JS)
         ->fill('[name="line_items[0][line_total]"]', '20.00')
@@ -944,7 +958,19 @@ test('the owner records a categorized Spending with the shared editor', function
     $this->actingAs($owner);
 
     visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->resize(1280, 800)
         ->press('Add Transaction')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const scroller = dialog?.querySelector('[data-slot="dialog-header"]')?.nextElementSibling;
+
+                return dialog !== null
+                    && dialog.getBoundingClientRect().height < 720
+                    && scroller !== null
+                    && scroller.scrollHeight <= scroller.clientHeight + 1;
+            })()
+            JS)
         ->assertValue('#transaction-date', $today)
         ->assertValue('#transaction-kind', 'spending')
         ->assertValue('#transaction-direction', 'debit')
@@ -1234,13 +1260,15 @@ test('the editor is centered on desktop and fills the phone viewport without sav
             (() => {
                 const dialog = document.querySelector('[data-slot="dialog-content"]');
                 const bounds = dialog?.getBoundingClientRect();
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
 
                 return bounds !== undefined
                     && Math.abs((bounds.left + bounds.right) / 2 - innerWidth / 2) <= 2
                     && Math.abs((bounds.top + bounds.bottom) / 2 - innerHeight / 2) <= 2
                     && bounds.width < innerWidth
-                    && bounds.height >= 650
-                    && bounds.height < innerHeight;
+                    && bounds.height > 400
+                    && bounds.height < 720
+                    && (scroller?.scrollHeight ?? 0) <= (scroller?.clientHeight ?? 0) + 1;
             })()
             JS)
         ->resize(1280, 600)

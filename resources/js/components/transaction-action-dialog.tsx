@@ -309,7 +309,7 @@ function MerchantRuleForm({
                                         are excluded. Matches are checked again
                                         when you create the rule.
                                     </p>
-                                    <ul className="mt-2 max-h-44 overflow-y-auto type-meta">
+                                    <ul className="mt-2 type-meta">
                                         {preview.transactions.map((match) => (
                                             <li
                                                 key={match.id}
@@ -457,9 +457,9 @@ export function TransactionActionDialog({
         >
             <DialogContent
                 className={cn(
-                    'inset-0 flex h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:h-[min(48rem,90dvh)] sm:max-h-[90dvh] sm:w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg',
+                    'inset-0 flex h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[min(48rem,90dvh)] sm:w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg',
                     action === 'split'
-                        ? 'sm:h-[min(38rem,90dvh)] sm:max-w-4xl'
+                        ? 'sm:max-h-[min(38rem,90dvh)] sm:max-w-4xl'
                         : 'sm:max-w-3xl',
                 )}
             >
@@ -476,7 +476,7 @@ export function TransactionActionDialog({
                     </DialogDescription>
                 </DialogHeader>
                 <div
-                    className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6"
+                    className="min-h-0 overflow-y-auto p-4 sm:p-6"
                     data-test="transaction-dialog-scroll"
                 >
                     {action === 'edit' && (
