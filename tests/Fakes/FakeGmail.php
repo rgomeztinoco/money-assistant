@@ -11,6 +11,7 @@ use App\Integrations\Gmail\GmailMessageIdentity;
 use App\Integrations\Gmail\GmailMessagePage;
 use App\Integrations\Gmail\GmailMessageSummary;
 use App\Integrations\Gmail\GmailProfile;
+use App\Integrations\Gmail\GmailRequestFailed;
 use RuntimeException;
 use Throwable;
 
@@ -62,7 +63,7 @@ final class FakeGmail implements Gmail
     /** @var array<string, GmailMessage> */
     public array $messages = [];
 
-    /** @var array<string, GmailMessageSummary> */
+    /** @var array<string, GmailMessageSummary|GmailRequestFailed> */
     public array $messageSummaries = [];
 
     /** @var list<array{access_token: string, after_epoch_seconds: int, page_token: string|null}> */
@@ -198,7 +199,13 @@ final class FakeGmail implements Gmail
             'message_id' => $messageId,
         ];
 
-        return $this->messageSummaries[$messageId]
-            ?? throw new RuntimeException("No fake Gmail message summary was configured for [{$messageId}].");
+        $summary = $this->messageSummaries[$messageId]
+            ?? throw GmailRequestFailed::messageSummary()->withHttpStatus(404);
+
+        if ($summary instanceof GmailRequestFailed) {
+            throw $summary;
+        }
+
+        return $summary;
     }
 }
