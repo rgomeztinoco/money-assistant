@@ -22,7 +22,8 @@ export function useFlashToast(
                     ruleId === null
                         ? undefined
                         : {
-                              duration: 12000,
+                              duration: Infinity,
+                              closeButton: true,
                               action: {
                                   label: 'Apply to previous',
                                   onClick: () => onApplyExistingRule(ruleId),

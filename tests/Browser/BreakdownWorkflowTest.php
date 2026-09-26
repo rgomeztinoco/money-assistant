@@ -885,6 +885,9 @@ test('the Breakdown Category dropdown creates a future-only rule and offers a re
         ->assertPathIs('/breakdown')
         ->assertSee('Merchant Rule created for future Transactions.')
         ->assertSee('Apply to previous')
+        ->assertPresent('[aria-label="Close toast"]')
+        ->wait(13)
+        ->assertSee('Apply to previous')
         ->assertNoJavaScriptErrors();
 
     expect($source->refresh()->category_id)->toBeNull()
