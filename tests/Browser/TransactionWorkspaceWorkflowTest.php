@@ -123,6 +123,7 @@ test('date-only values stay fixed while instants follow the browser timezone', f
         'description' => 'Timezone boundary purchase',
     ]);
     $this->actingAs($owner);
+    $dateSelector = '[data-slot="sheet-content"] [data-test="transaction-'.$transaction->id.'-occurred-on"]';
 
     $limaPage = visit(route('transactions.index', [
         'selected' => $transaction->id,
@@ -132,7 +133,7 @@ test('date-only values stay fixed while instants follow the browser timezone', f
 
     $limaPage
         ->assertSeeIn(
-            '[data-test="transaction-'.$transaction->id.'-occurred-on"]',
+            $dateSelector,
             '20 Jul 2026',
         )
         ->assertSeeIn(
@@ -140,7 +141,7 @@ test('date-only values stay fixed while instants follow the browser timezone', f
             '19 Jul 2026, 9:30 PM',
         )
         ->assertScript(
-            'document.querySelector(\'[data-test="transaction-'.$transaction->id.'-occurred-on"] time\')?.dateTime === \'2026-07-20\'',
+            'document.querySelector(\''.$dateSelector.' time\')?.dateTime === \'2026-07-20\'',
         )
         ->assertScript(
             'document.querySelector(\'[data-test="transaction-confirmed-at"] time\')?.dateTime.startsWith(\'2026-07-20T02:30:00\')',
@@ -154,7 +155,7 @@ test('date-only values stay fixed while instants follow the browser timezone', f
 
     $tokyoPage
         ->assertSeeIn(
-            '[data-test="transaction-'.$transaction->id.'-occurred-on"]',
+            $dateSelector,
             '20 Jul 2026',
         )
         ->assertSeeIn(

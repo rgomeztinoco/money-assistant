@@ -1,7 +1,9 @@
 <?php
 
 use App\Actions\Ledger\RecordManualTransaction;
+use App\CategoryAssignmentProvenance;
 use App\Currency;
+use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionKind;
@@ -51,6 +53,54 @@ test('the owner records USD and PEN amounts in currency units without floating p
 
     expect(Transaction::query()->sole()->amount_minor)->toBe(1_250);
 })->with(['USD', 'PEN']);
+
+test('the owner assigns a Category while recording a manual Spending or Refund', function (string $kind) {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+
+    $this->actingAs($owner)->post(route('transactions.store'), [
+        'occurred_on' => '2026-07-24',
+        'amount' => '12.50',
+        'currency' => 'PEN',
+        'kind' => $kind,
+        'description' => 'Cash purchase',
+        'category_id' => $category->id,
+    ])->assertSessionHasNoErrors();
+
+    $transaction = Transaction::query()->sole();
+
+    expect($transaction->category_id)->toBe($category->id)
+        ->and($transaction->category_assignment_provenance)->toBe(CategoryAssignmentProvenance::Owner)
+        ->and($transaction->merchant_rule_id)->toBeNull();
+})->with(['spending', 'refund']);
+
+test('manual creation rejects inaccessible Categories without recording a Transaction', function (string $kind, string $categoryState) {
+    $owner = User::factory()->create();
+    $otherOwner = User::factory()->create();
+    $category = match ($categoryState) {
+        'other owner' => Category::factory()->for($otherOwner, 'owner')->create(),
+        'archived' => Category::factory()->for($owner, 'owner')->archived()->create(),
+        'archived parent' => Category::factory()->for($owner, 'owner')->create([
+            'parent_id' => Category::factory()->for($owner, 'owner')->archived()->create()->id,
+        ]),
+    };
+
+    $this->actingAs($owner)->post(route('transactions.store'), [
+        'occurred_on' => '2026-07-24',
+        'amount' => '12.50',
+        'currency' => 'PEN',
+        'kind' => $kind,
+        'description' => 'Cash purchase',
+        'category_id' => $category->id,
+    ])->assertSessionHasErrors('category_id');
+
+    expect(Transaction::query()->doesntExist())->toBeTrue();
+})->with([
+    ['spending', 'other owner'],
+    ['spending', 'archived'],
+    ['refund', 'archived parent'],
+    ['income', 'other owner'],
+]);
 
 test('manual currency-unit amounts reject ambiguous or inexact values', function (string $amount) {
     $owner = User::factory()->create();

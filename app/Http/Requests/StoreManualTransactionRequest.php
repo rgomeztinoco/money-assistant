@@ -5,12 +5,14 @@ namespace App\Http\Requests;
 use App\Currency;
 use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
 use App\IncomeSource;
+use App\Models\Category;
 use App\MovementDirection;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class StoreManualTransactionRequest extends FormRequest
 {
@@ -62,7 +64,33 @@ class StoreManualTransactionRequest extends FormRequest
             'description' => ['required', 'string', 'max:255'],
             'instrument_label' => ['nullable', 'string', 'max:100'],
             'instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
+            'category_id' => [
+                'nullable',
+                'integer',
+                Rule::prohibitedIf(! in_array($this->input('kind'), [TransactionKind::Spending->value, TransactionKind::Refund->value], true)),
+                Rule::exists('categories', 'id')->where('user_id', $this->user()->getKey()),
+            ],
         ];
+    }
+
+    /** @return array<int, callable(Validator): void> */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            if ($validator->errors()->isNotEmpty() || ! $this->filled('category_id')) {
+                return;
+            }
+
+            $isAssignable = Category::query()
+                ->whereBelongsTo($this->user(), 'owner')
+                ->whereKey($this->integer('category_id'))
+                ->availableForAssignment()
+                ->exists();
+
+            if (! $isAssignable) {
+                $validator->errors()->add('category_id', 'Choose an active Category owned by you.');
+            }
+        }];
     }
 
     /** @return array<string, string> */

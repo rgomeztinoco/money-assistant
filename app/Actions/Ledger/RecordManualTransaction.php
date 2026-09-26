@@ -3,6 +3,7 @@
 namespace App\Actions\Ledger;
 
 use App\Actions\Categorization\ApplyMerchantRuleToTransaction;
+use App\CategoryAssignmentProvenance;
 use App\Currency;
 use App\IncomeSource;
 use App\Models\Transaction;
@@ -38,6 +39,8 @@ class RecordManualTransaction
         array $provisionalFields = [],
         ?string $instrumentLabel = null,
         ?string $instrumentLastFour = null,
+        ?int $categoryId = null,
+        bool $categorySpecified = false,
     ): Transaction {
         if (! is_int($amountMinor) || $amountMinor <= 0) {
             throw new InvalidArgumentException('A Transaction amount must be positive.');
@@ -54,7 +57,7 @@ class RecordManualTransaction
             TransactionKind::Refund, TransactionKind::Income => MovementDirection::Credit,
         };
 
-        return DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $direction, $description, $incomeSource, $transferPurpose, $provisionalFields, $instrumentLabel, $instrumentLastFour): Transaction {
+        return DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $direction, $description, $incomeSource, $transferPurpose, $provisionalFields, $instrumentLabel, $instrumentLastFour, $categoryId, $categorySpecified): Transaction {
             $transaction = Transaction::create([
                 'user_id' => $owner->getKey(),
                 'occurred_on' => $occurredOn,
@@ -67,6 +70,10 @@ class RecordManualTransaction
                 'description' => $description,
                 'instrument_label' => $instrumentLabel,
                 'instrument_last_four' => $instrumentLastFour,
+                'category_id' => $kind->supportsCategory() ? $categoryId : null,
+                'category_assignment_provenance' => $kind->supportsCategory() && $categoryId !== null
+                    ? CategoryAssignmentProvenance::Owner
+                    : null,
                 'confirmed_at' => now(),
                 'provisional_fields' => collect($provisionalFields)
                     ->map(fn (ReviewableTransactionField $field): string => $field->value)
@@ -75,7 +82,7 @@ class RecordManualTransaction
                     ->all(),
             ]);
 
-            return $kind->supportsCategory()
+            return $kind->supportsCategory() && ! $categorySpecified
                 ? $this->applyMerchantRuleToTransaction->handle($transaction)
                 : $transaction;
         });
