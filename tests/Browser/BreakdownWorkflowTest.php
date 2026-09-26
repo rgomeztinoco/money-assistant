@@ -951,6 +951,49 @@ test('the owner edits a Transaction in the Breakdown dialog', function () {
         ->and($transaction->instrument_last_four)->toBe('4242');
 });
 
+test('a long Merchant Rule preview uses the capped dialog scroll', function () {
+    $owner = User::factory()->create();
+    $today = now()->toDateString();
+    $source = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Café Central',
+    ]);
+    Transaction::factory()->count(20)->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Café Central',
+    ]);
+    $this->actingAs($owner);
+
+    visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
+        ->resize(1280, 720)
+        ->click('[data-test="breakdown-transaction-'.$source->id.'"]')
+        ->click('[data-slot="dropdown-menu-item"]:has-text("Create Merchant Rule")')
+        ->click('[data-test="rule-apply-existing"]')
+        ->waitForText('21 existing Transactions match this rule right now')
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="dialog-content"]');
+                const header = dialog?.querySelector('[data-slot="dialog-header"]');
+                const scroller = dialog?.querySelector('[data-test="transaction-dialog-scroll"]');
+                const matches = dialog?.querySelector('[data-test="merchant-rule-preview"] ul');
+
+                if (!dialog || !header || !scroller || !matches) {
+                    return false;
+                }
+
+                const headerTop = header.getBoundingClientRect().top;
+                matches.scrollTop = 100;
+                scroller.scrollTop = scroller.scrollHeight;
+
+                return Math.abs(dialog.getBoundingClientRect().height - 648) <= 2
+                    && scroller.scrollTop > 0
+                    && matches.scrollTop === 0
+                    && Math.abs(header.getBoundingClientRect().top - headerTop) < 1;
+            })()
+            JS)
+        ->assertNoJavaScriptErrors();
+});
+
 test('the owner records a categorized Spending with the shared editor', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
