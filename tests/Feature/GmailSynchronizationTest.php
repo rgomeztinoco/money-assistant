@@ -309,7 +309,7 @@ test('a newly supported Gmail message creates its agreed Transaction exactly onc
     ],
 ]);
 
-test('an unsupported Spending Notification can be reprocessed idempotently after its format ships', function () {
+test('an unresolved Spending Notification can be reprocessed idempotently after its format ships', function (string $outcome) {
     $connection = GmailConnection::factory()->create([
         'access_token' => 'current-access-token',
         'access_token_expires_at' => now()->addHour(),
@@ -339,7 +339,7 @@ test('an unsupported Spending Notification can be reprocessed idempotently after
         'gmail_message_discovery_id' => $discovery->id,
         'gmail_account_identity' => $connection->gmail_account_identity,
         'message_id' => $gmailMessage->messageId,
-        'processing_outcome' => 'unsupported',
+        'processing_outcome' => $outcome,
         'attempt_count' => 1,
     ]);
     $gmail = new FakeGmail;
@@ -356,7 +356,7 @@ test('an unsupported Spending Notification can be reprocessed idempotently after
         ->processing_outcome->toBe('created')
         ->attempt_count->toBe(2)
         ->and($gmail->messageCalls)->toHaveCount(1);
-});
+})->with(['unsupported format' => 'unsupported', 'failed parsing' => 'failed', 'sender authentication' => 'authentication_failed']);
 
 test('a Gmail message removed after discovery is recorded as ignored instead of failing forever', function () {
     $connection = GmailConnection::factory()->create([

@@ -10,6 +10,7 @@ use App\Models\GmailMessageDiscovery;
 use App\Models\User;
 use App\SpendingNotificationProcessingOutcome;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 final class ReadGmailReview
 {
@@ -20,7 +21,16 @@ final class ReadGmailReview
         private RefreshGmailConnection $refreshGmailConnection,
     ) {}
 
-    /** @return array<string, mixed> */
+    /**
+     * @return array{
+     *     view: 'all'|'unrecognized'|'failed'|'dismissed',
+     *     attention_count: int,
+     *     unrecognized_count: int,
+     *     failed_count: int,
+     *     dismissed_count: int,
+     *     items: LengthAwarePaginator<int, array<string, mixed>>
+     * }
+     */
     public function handle(User $owner, string $requestedView): array
     {
         $view = in_array($requestedView, ['all', 'unrecognized', 'failed', 'dismissed'], true)
@@ -35,14 +45,7 @@ final class ReadGmailReview
                 'unrecognized_count' => 0,
                 'failed_count' => 0,
                 'dismissed_count' => 0,
-                'items' => [
-                    'data' => [],
-                    'current_page' => 1,
-                    'last_page' => 1,
-                    'total' => 0,
-                    'prev_page_url' => null,
-                    'next_page_url' => null,
-                ],
+                'items' => new LengthAwarePaginator([], 0, self::PAGE_SIZE, 1),
             ];
         }
 
@@ -103,7 +106,11 @@ final class ReadGmailReview
                     $summary = $this->gmail->messageSummary($connection->access_token, $discovery->message_id);
                     $summaryState = $summary->messageId === $discovery->message_id ? 'available' : 'unavailable';
                 } catch (GmailRequestFailed $exception) {
-                    $summaryState = $exception->httpStatus() === 404 ? 'missing' : 'unavailable';
+                    $summaryState = match ($exception->httpStatus()) {
+                        404 => 'missing',
+                        401, 403 => 'reauthorization_required',
+                        default => 'unavailable',
+                    };
                 }
             }
 
@@ -122,10 +129,12 @@ final class ReadGmailReview
                     && ($discovery->processing_failed_at !== null
                         ? $discovery->processed_at === null && $discovery->failed_job_uuid !== null
                         : $reference?->isRetryable() === true),
-                'gmail_url' => 'https://mail.google.com/mail/u/'
-                    .rawurlencode($connection->gmail_account_identity)
-                    .'/#all/'
-                    .rawurlencode($summaryState === 'available' ? $summary->threadId : $discovery->message_id),
+                'gmail_url' => $summaryState === 'available'
+                    ? 'https://mail.google.com/mail/u/'
+                        .rawurlencode($connection->gmail_account_identity)
+                        .'/#all/'
+                        .rawurlencode($summary->threadId)
+                    : null,
             ];
         });
 

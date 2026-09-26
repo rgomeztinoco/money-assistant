@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\SpendingNotificationProcessingOutcome;
 use Carbon\CarbonImmutable;
 use Database\Factories\GmailMessageDiscoveryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -49,6 +50,19 @@ class GmailMessageDiscovery extends Model
     public function reference(): HasOne
     {
         return $this->hasOne(SpendingNotificationReference::class, 'gmail_message_discovery_id');
+    }
+
+    public function needsReview(): bool
+    {
+        $reference = $this->reference;
+
+        return $reference?->transaction_id === null
+            && ($this->processing_failed_at !== null
+                || in_array($reference?->processing_outcome, [
+                    SpendingNotificationProcessingOutcome::Unsupported->value,
+                    SpendingNotificationProcessingOutcome::Failed->value,
+                    SpendingNotificationProcessingOutcome::AuthenticationFailed->value,
+                ], true));
     }
 
     /** @return array<string, string> */

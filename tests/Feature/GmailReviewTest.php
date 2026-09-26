@@ -59,6 +59,8 @@ test('the owner sees separate unresolved outcomes and only current page Gmail su
             ->where('review.failed_count', 2)
             ->where('review.items.total', 3)
             ->where('review.items.data.0.summary_state', 'unavailable')
+            ->where('review.items.data.0.gmail_url', null)
+            ->where('review.items.data.0.retryable', true)
             ->where('review.items.data.1.outcome', 'failed')
             ->where('review.items.data.2.sender', 'bank@example.test')
             ->where('review.items.data.2.subject', 'A spending notification')
@@ -163,6 +165,21 @@ test('dismissed resolved email can be restored without returning to attention', 
             ->where('review.dismissed_count', 0));
 });
 
+test('a stale dismissal cannot hide a pending or imported message', function () {
+    $connection = GmailConnection::factory()->create();
+    $pending = GmailMessageDiscovery::factory()->for($connection)->create();
+    $imported = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
+    referenceForReview($connection, $imported, 'created', Transaction::factory()->create(['user_id' => $connection->user_id])->id);
+
+    $this->actingAs($connection->owner)
+        ->post(route('gmail.messages.dismiss', $pending))
+        ->assertRedirect();
+    $this->post(route('gmail.messages.dismiss', $imported))->assertRedirect();
+
+    expect($pending->fresh()->dismissed_at)->toBeNull()
+        ->and($imported->fresh()->dismissed_at)->toBeNull();
+});
+
 test('the owner can queue one unsupported email but cannot retry dismissed or foreign email', function () {
     Queue::fake([ProcessGmailMessage::class]);
     $connection = GmailConnection::factory()->create();
@@ -188,6 +205,24 @@ test('the owner can queue one unsupported email but cannot retry dismissed or fo
     Queue::assertPushed(ProcessGmailMessage::class, 1);
     expect($foreign->fresh()->dismissed_at)->toBeNull();
 });
+
+test('the owner can retry a recorded processing outcome after a parser or sender fix', function (string $outcome) {
+    Queue::fake([ProcessGmailMessage::class]);
+    $connection = GmailConnection::factory()->create();
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
+    referenceForReview($connection, $discovery, $outcome);
+    app()->instance(Gmail::class, new FakeGmail);
+
+    $this->actingAs($connection->owner)
+        ->get(route('data_sources.gmail'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('review.items.data.0.outcome', 'failed')
+            ->where('review.items.data.0.retryable', true));
+
+    $this->post(route('gmail.messages.retry', $discovery))->assertRedirect();
+
+    Queue::assertPushed(ProcessGmailMessage::class, fn (ProcessGmailMessage $job): bool => $job->discoveryId === $discovery->id && $job->retryUnsupported);
+})->with(['failed parsing' => 'failed', 'sender authentication' => 'authentication_failed']);
 
 test('Gmail review actions require authentication', function () {
     $discovery = GmailMessageDiscovery::factory()->create();

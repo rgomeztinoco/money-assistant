@@ -16,6 +16,15 @@ class GmailReviewMessageController extends Controller
     {
         $discovery = $this->forOwner($request, $gmailMessageDiscovery);
 
+        if (! $discovery->needsReview()) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => __('This email no longer needs review.'),
+            ]);
+
+            return back();
+        }
+
         if ($discovery->dismissed_at === null) {
             $discovery->update(['dismissed_at' => now()]);
         }
@@ -71,6 +80,7 @@ class GmailReviewMessageController extends Controller
     private function forOwner(Request $request, GmailMessageDiscovery $discovery): GmailMessageDiscovery
     {
         return GmailMessageDiscovery::query()
+            ->with('reference')
             ->whereKey($discovery->id)
             ->whereHas('gmailConnection', fn ($query) => $query->whereBelongsTo($request->user(), 'owner'))
             ->firstOrFail();
