@@ -31,7 +31,7 @@ final class ReadGmailReview
      *     items: LengthAwarePaginator<int, array<string, mixed>>
      * }
      */
-    public function handle(User $owner, string $requestedView): array
+    public function handle(User $owner, string $requestedView, bool $includeSummaries = true): array
     {
         $view = in_array($requestedView, ['all', 'unrecognized', 'failed', 'dismissed'], true)
             ? $requestedView
@@ -64,12 +64,17 @@ final class ReadGmailReview
         $page = $itemsQuery
             ->with('reference')
             ->orderByDesc('id')
-            ->paginate(self::PAGE_SIZE)
-            ->withQueryString();
+            ->paginate(self::PAGE_SIZE);
+
+        if ($page->currentPage() > $page->lastPage()) {
+            $page = $itemsQuery->paginate(self::PAGE_SIZE, page: $page->lastPage());
+        }
+
+        $page->withPath(route('data_sources.gmail'))->withQueryString()->appends(['view' => $view]);
 
         $metadataState = $connection->ingestionIsPaused() ? 'reauthorization_required' : null;
 
-        if ($page->isNotEmpty() && $metadataState === null && $connection->access_token_expires_at->lessThanOrEqualTo(now()->addMinute())) {
+        if ($includeSummaries && $page->isNotEmpty() && $metadataState === null && $connection->access_token_expires_at->lessThanOrEqualTo(now()->addMinute())) {
             try {
                 $connection = $this->refreshGmailConnection->handle($connection);
                 if ($connection->ingestionIsPaused()) {
@@ -82,7 +87,7 @@ final class ReadGmailReview
             }
         }
 
-        $page->through(function (GmailMessageDiscovery $discovery) use ($connection, $metadataState): array {
+        $page->through(function (GmailMessageDiscovery $discovery) use ($connection, $metadataState, $includeSummaries): array {
             $reference = $discovery->reference;
             $resolved = $reference?->transaction_id !== null;
             $failed = $discovery->processing_failed_at !== null
@@ -99,7 +104,7 @@ final class ReadGmailReview
                 default => 'No supported format matched. The precise reason is unknown.',
             };
             $summary = null;
-            $summaryState = $metadataState;
+            $summaryState = $metadataState ?? ($includeSummaries ? null : 'not_loaded');
 
             if ($summaryState === null) {
                 try {
@@ -129,11 +134,11 @@ final class ReadGmailReview
                     && ($discovery->processing_failed_at !== null
                         ? $discovery->processed_at === null && $discovery->failed_job_uuid !== null
                         : $reference?->isRetryable() === true),
-                'gmail_url' => $summaryState === 'available'
-                    ? 'https://mail.google.com/mail/u/'
+                'gmail_url' => in_array($summaryState, ['available', 'not_loaded'], true)
+                    ? 'https://mail.google.com/mail/?authuser='
                         .rawurlencode($connection->gmail_account_identity)
-                        .'/#all/'
-                        .rawurlencode($summary->threadId)
+                        .'#all/'
+                        .rawurlencode($discovery->message_id)
                     : null,
             ];
         });

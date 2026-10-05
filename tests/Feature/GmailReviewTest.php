@@ -65,9 +65,65 @@ test('the owner sees separate unresolved outcomes and only current page Gmail su
             ->where('review.items.data.2.sender', 'bank@example.test')
             ->where('review.items.data.2.subject', 'A spending notification')
             ->where('review.items.data.2.explanation', 'No supported format matched. The precise reason is unknown.')
-            ->where('review.items.data.2.gmail_url', 'https://mail.google.com/mail/u/'.rawurlencode($connection->gmail_account_identity).'/#all/bank-thread'));
+            ->where('review.items.data.2.gmail_url', 'https://mail.google.com/mail/?authuser='.rawurlencode($connection->gmail_account_identity).'#all/'.rawurlencode($unrecognized->message_id)));
 
     expect($gmail->messageSummaryCalls)->toHaveCount(3);
+});
+
+test('dismissing an email updates the review without requesting Gmail summaries', function () {
+    $connection = GmailConnection::factory()->create();
+    $first = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
+    $second = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
+    referenceForReview($connection, $first);
+    referenceForReview($connection, $second);
+    $gmail = new FakeGmail;
+    app()->instance(Gmail::class, $gmail);
+
+    $this->actingAs($connection->owner)
+        ->postJson(route('gmail.messages.dismiss', $first), ['view' => 'all'])
+        ->assertOk()
+        ->assertJsonPath('review.attention_count', 1)
+        ->assertJsonPath('review.dismissed_count', 1)
+        ->assertJsonPath('review.items.data.0.id', $second->id)
+        ->assertJsonPath('review.items.data.0.summary_state', 'not_loaded')
+        ->assertJsonPath('review.items.data.0.gmail_url', 'https://mail.google.com/mail/?authuser='.rawurlencode($connection->gmail_account_identity).'#all/'.rawurlencode($second->message_id));
+
+    expect($first->fresh()->dismissed_at)->not->toBeNull();
+    expect($gmail->operations)->toBeEmpty();
+});
+
+test('a stale JSON dismissal explains that the email no longer needs review', function () {
+    $connection = GmailConnection::factory()->create();
+    $discovery = GmailMessageDiscovery::factory()->for($connection)->create();
+
+    $this->actingAs($connection->owner)
+        ->postJson(route('gmail.messages.dismiss', $discovery))
+        ->assertConflict()
+        ->assertJsonPath('message', 'This email no longer needs review.');
+
+    expect($discovery->fresh()->dismissed_at)->toBeNull();
+});
+
+test('dismissing the last email on a page returns valid review pagination', function () {
+    $connection = GmailConnection::factory()->create();
+    $gmail = new FakeGmail;
+    app()->instance(Gmail::class, $gmail);
+
+    foreach (range(1, 21) as $number) {
+        $discovery = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
+        referenceForReview($connection, $discovery);
+    }
+
+    $lastPageEmail = GmailMessageDiscovery::query()->whereBelongsTo($connection)->oldest('id')->firstOrFail();
+    $this->actingAs($connection->owner)
+        ->postJson(route('gmail.messages.dismiss', $lastPageEmail), ['view' => 'all', 'page' => 2])
+        ->assertOk()
+        ->assertJsonPath('review.items.current_page', 1)
+        ->assertJsonPath('review.items.last_page', 1)
+        ->assertJsonPath('review.items.path', route('data_sources.gmail'))
+        ->assertJsonCount(20, 'review.items.data');
+
+    expect($gmail->operations)->toBeEmpty();
 });
 
 test('review pagination bounds Gmail metadata requests and keeps counts across pages', function () {
