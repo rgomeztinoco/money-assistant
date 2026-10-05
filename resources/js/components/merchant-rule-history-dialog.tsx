@@ -88,17 +88,17 @@ export function MerchantRuleHistoryDialog({
 
     return (
         <AlertDialog open onOpenChange={(open) => !open && onClose()}>
-            <AlertDialogContent className="flex max-h-[min(42rem,90dvh)] flex-col sm:max-w-xl">
-                <AlertDialogHeader className="shrink-0">
+            <AlertDialogContent className="flex max-h-[min(42rem,90dvh)] min-w-0 flex-col overflow-hidden p-4 sm:max-w-xl sm:p-6">
+                <AlertDialogHeader className="min-w-0 shrink-0">
                     <AlertDialogTitle>
                         {draft
                             ? 'Create merchant rule'
-                            : 'Apply Merchant Rule to previous Transactions?'}
+                            : 'Update previous transactions?'}
                     </AlertDialogTitle>
-                    <AlertDialogDescription>
+                    <AlertDialogDescription className="wrap-anywhere">
                         {draft
-                            ? `Save a rule for ${draft.merchant}. Choose whether to update previous Transactions too.`
-                            : 'Review the matches before replacing their Categories.'}
+                            ? `Use the selected category for future transactions from ${draft.merchant}.`
+                            : 'Apply this rule to the matching transactions below.'}
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <Form
@@ -115,25 +115,24 @@ export function MerchantRuleHistoryDialog({
                     }
                     options={{ preserveScroll: true, preserveState: true }}
                     onSuccess={onClose}
-                    className="flex min-h-0 flex-col gap-4"
+                    className="flex min-h-0 min-w-0 flex-col gap-4"
                 >
                     {({ processing, errors }) => (
                         <>
-                            <div className="min-h-0 overflow-y-auto type-body">
+                            <div className="min-h-0 overflow-y-auto type-body wrap-anywhere">
                                 {preview === null && !previewError && (
                                     <p
                                         role="status"
                                         className="flex items-center gap-2"
                                     >
-                                        <Spinner /> Checking previous
-                                        Transactions…
+                                        <Spinner /> Finding matches…
                                     </p>
                                 )}
                                 {previewError && (
                                     <div className="grid gap-2">
                                         <p role="alert">
-                                            Could not check previous
-                                            Transactions.
+                                            Could not load matching
+                                            transactions.
                                         </p>
                                         <Button
                                             type="button"
@@ -151,22 +150,16 @@ export function MerchantRuleHistoryDialog({
                                     <div className="grid gap-3">
                                         <p>
                                             <strong>{preview.count}</strong>{' '}
-                                            previous{' '}
                                             {preview.count === 1
-                                                ? 'Transaction matches'
-                                                : 'Transactions match'}{' '}
-                                            {draft?.merchant ??
-                                                preview.merchant}{' '}
-                                            right now.
+                                                ? 'matching transaction'
+                                                : 'matching transactions'}
                                         </p>
                                         <p className="type-meta text-muted-foreground">
                                             {draft
-                                                ? 'Matching Categories will change to the Category you selected.'
-                                                : `Matching Categories will change to ${preview.category}.`}{' '}
-                                            Category splits and Voided
-                                            Transactions are excluded. Matches
-                                            are checked again when you apply the
-                                            rule.
+                                                ? 'You can also apply the selected category to these previous transactions.'
+                                                : `Their category will change to ${preview.category}.`}{' '}
+                                            Split and voided transactions are
+                                            excluded.
                                         </p>
                                         <ul className="divide-y border-y type-meta">
                                             {preview.transactions.map(
@@ -207,40 +200,51 @@ export function MerchantRuleHistoryDialog({
                                 )}
                             </div>
                             <InputError message={Object.values(errors)[0]} />
-                            <AlertDialogFooter className="shrink-0">
+                            <AlertDialogFooter className="grid min-w-0 shrink-0 grid-cols-1 gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
                                 <Button
                                     type="button"
-                                    variant="outline"
+                                    variant="ghost"
                                     onClick={onClose}
+                                    disabled={processing}
+                                    className="order-last sm:order-none"
                                 >
                                     Cancel
                                 </Button>
-                                {draft && (
+                                <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+                                    {draft && (
+                                        <Button
+                                            type="submit"
+                                            variant="outline"
+                                            disabled={processing}
+                                            onClick={() =>
+                                                setApplyHistory(false)
+                                            }
+                                            data-test="save-merchant-rule-future"
+                                        >
+                                            Save for future
+                                        </Button>
+                                    )}
                                     <Button
                                         type="submit"
-                                        variant="outline"
-                                        disabled={processing}
-                                        onClick={() => setApplyHistory(false)}
-                                        data-test="save-merchant-rule-future"
+                                        disabled={
+                                            processing ||
+                                            !preview ||
+                                            preview.count === 0
+                                        }
+                                        data-test="apply-merchant-rule-history"
+                                        onClick={() => setApplyHistory(true)}
+                                        className={
+                                            draft
+                                                ? undefined
+                                                : 'sm:col-span-2 sm:justify-self-end'
+                                        }
                                     >
-                                        Save for future only
+                                        {processing && <Spinner />}
+                                        {draft
+                                            ? 'Save and update past'
+                                            : 'Apply to previous'}
                                     </Button>
-                                )}
-                                <Button
-                                    type="submit"
-                                    disabled={
-                                        processing ||
-                                        !preview ||
-                                        preview.count === 0
-                                    }
-                                    data-test="apply-merchant-rule-history"
-                                    onClick={() => setApplyHistory(true)}
-                                >
-                                    {processing && <Spinner />}
-                                    {draft
-                                        ? 'Save and apply to previous Transactions'
-                                        : 'Apply to previous Transactions'}
-                                </Button>
+                                </div>
                             </AlertDialogFooter>
                         </>
                     )}

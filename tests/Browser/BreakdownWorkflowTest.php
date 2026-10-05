@@ -221,7 +221,7 @@ test('Category and day charts drill into the same supporting detail', function (
                     / track.getBoundingClientRect().width;
 
                 return Math.abs(ratio - (4000 / 4900)) < 0.01
-                    && !category.textContent.includes('%')
+                    && category.textContent.includes('81.63% of total spending')
                     && getComputedStyle(filterBar).borderBottomWidth === '0px';
             })()
             JS)
@@ -230,6 +230,17 @@ test('Category and day charts drill into the same supporting detail', function (
         ->assertSee('Neighborhood market')
         ->assertSee('Corner cafe')
         ->assertDontSee('Bus pass')
+        ->assertSeeIn('[data-test="breakdown-category-'.$dining->id.'"]', '62.5% of group')
+        ->assertSeeIn('[data-test="breakdown-category-direct:'.$food->id.'"]', '37.5% of group')
+        ->assertSeeIn('[data-test="breakdown-category-direct:'.$food->id.'"]', 'S/ 15.00')
+        ->assertPresent('[data-test="breakdown-category-bar-'.$dining->id.'-PEN"]')
+        ->click('[data-test="breakdown-category-direct:'.$food->id.'"]')
+        ->assertQueryStringHas('category', 'direct:'.$food->id)
+        ->assertSee('Corner cafe')
+        ->assertDontSee('Neighborhood market')
+        ->assertSee('Directly in Food')
+        ->click('[data-test="breakdown-category-direct:'.$food->id.'"]')
+        ->assertQueryStringHas('category', (string) $food->id)
         ->click('[data-test="breakdown-category-'.$dining->id.'"]')
         ->assertQueryStringHas('category', (string) $dining->id)
         ->assertSee('Neighborhood market')
@@ -847,11 +858,26 @@ test('the Breakdown Category selection saves immediately and offers a rule with 
 
     $page
         ->press('Create merchant rule')
-        ->assertSee('Save a rule for Café Central')
-        ->waitForText('2 previous Transactions match')
+        ->assertSee('Use the selected category for future transactions from Café Central.')
+        ->waitForText('2 matching transactions')
         ->assertSee('#'.$source->id)
         ->assertSee('#'.$previous->id)
-        ->press($applyHistory ? 'Save and apply to previous Transactions' : 'Save for future only')
+        ->resize($applyHistory ? 1024 : 390, $applyHistory ? 768 : 844)
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="alert-dialog-content"]');
+                const bounds = dialog.getBoundingClientRect();
+
+                return bounds.left >= 0 && bounds.right <= innerWidth
+                    && bounds.top >= 0 && bounds.bottom <= innerHeight
+                    && Array.from(dialog.querySelectorAll('button')).every((button) => {
+                        const action = button.getBoundingClientRect();
+                        return action.left >= bounds.left && action.right <= bounds.right
+                            && action.top >= bounds.top && action.bottom <= bounds.bottom;
+                    });
+            })()
+            JS)
+        ->press($applyHistory ? 'Save and update past' : 'Save for future')
         ->assertSee($applyHistory ? 'Merchant Rule created and 2 Transactions updated.' : 'Merchant Rule created for future Transactions.')
         ->assertPathIs('/breakdown')
         ->assertNoJavaScriptErrors();

@@ -87,7 +87,10 @@ test('Breakdown opens the current month with every currency kept independent', f
             ->where('category_groups.0.category.name', 'Food')
             ->where('category_groups.0.amount_minor.PEN', '8000')
             ->where('category_groups.0.percentage.PEN', '100')
+            ->where('category_groups.0.direct_amount_minor.PEN', '6000')
+            ->where('category_groups.0.direct_percentage.PEN', '75')
             ->where('category_groups.0.children.0.category.name', 'Dining')
+            ->where('category_groups.0.children.0.percentage.PEN', '25')
             ->has('days', 31)
             ->where('days.0.date', '2026-08-01')
             ->where('days.0.date_to', '2026-08-01')
@@ -287,6 +290,53 @@ test('Category and day selections filter the same supporting Breakdown detail', 
         ->where('transaction_days.0.transactions.0.id', $splitTransaction->id));
 
     expect($market->id)->not->toBe($cafe->id);
+});
+
+test('direct Category drilldown includes parent allocations and keeps currency shares separate', function () {
+    $owner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create(['name' => 'Dining']);
+    $direct = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-15', 'category_id' => $food->id, 'amount_minor' => 8_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-15', 'category_id' => $dining->id, 'amount_minor' => 2_000,
+    ]);
+    $split = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-15', 'category_id' => $dining->id, 'amount_minor' => 4_000,
+    ]);
+    $breakdown = ReceiptBreakdown::factory()->for($split)->create();
+    LineItem::factory()->for($breakdown)->create(['category_id' => $food->id, 'line_total_minor' => 1_000]);
+    LineItem::factory()->for($breakdown)->create(['category_id' => $dining->id, 'line_total_minor' => 3_000]);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => '2026-08-15', 'category_id' => $food->id, 'amount_minor' => 500,
+    ]);
+    $usdDirect = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2026-08-15', 'category_id' => $food->id, 'amount_minor' => 1_000,
+    ]);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create([
+        'occurred_on' => '2026-08-15', 'category_id' => $dining->id, 'amount_minor' => 3_000,
+    ]);
+
+    $this->actingAs($owner)->get(route('breakdown.index', [
+        'period' => 'month', 'anchor' => '2026-08-15', 'category' => 'direct:'.$food->id,
+    ]))->assertInertia(fn (Assert $page) => $page
+        ->where('filters.category', 'direct:'.$food->id)
+        ->where('category_groups.0.amount_minor.PEN', '13500')
+        ->where('category_groups.0.direct_amount_minor.PEN', '8500')
+        ->where('category_groups.0.direct_percentage.PEN', '62.96')
+        ->where('category_groups.0.children.0.amount_minor.PEN', '5000')
+        ->where('category_groups.0.children.0.percentage.PEN', '37.04')
+        ->where('category_groups.0.amount_minor.USD', '4000')
+        ->where('category_groups.0.direct_amount_minor.USD', '1000')
+        ->where('category_groups.0.direct_percentage.USD', '25')
+        ->where('category_groups.0.children.0.percentage.USD', '75')
+        ->has('transaction_days', 1)
+        ->has('transaction_days.0.transactions', 4)
+        ->where('transaction_days.0.transactions.0.id', $usdDirect->id)
+        ->where('transaction_days.0.transactions.1.id', $refund->id)
+        ->where('transaction_days.0.transactions.2.id', $split->id)
+        ->where('transaction_days.0.transactions.3.id', $direct->id));
 });
 
 test('Category options expose parent groups and zero-spend Categories stay out of the chart', function () {

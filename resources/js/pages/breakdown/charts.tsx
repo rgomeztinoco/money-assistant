@@ -46,6 +46,58 @@ function categoryKey(categoryId: number | null): string {
     return categoryId === null ? 'uncategorized' : categoryId.toString();
 }
 
+function CategoryAmountBars({
+    currencyFilter,
+    amounts,
+    percentages,
+    category,
+    percentageLabel,
+}: {
+    currencyFilter: Currency | null;
+    amounts: BreakdownCategoryGroup['amount_minor'];
+    percentages: BreakdownCategoryGroup['percentage'];
+    category: string;
+    percentageLabel: string;
+}) {
+    return (
+        <span className="col-span-2 grid min-w-0 grid-cols-subgrid gap-y-2">
+            {visibleCurrencies(currencyFilter)
+                .filter((currency) => amounts[currency] !== '0')
+                .map((currency) => (
+                    <span
+                        key={currency}
+                        className="col-span-2 grid grid-cols-subgrid items-center gap-x-3"
+                    >
+                        <span
+                            className="h-1.5 overflow-hidden rounded-full bg-muted"
+                            data-test={`breakdown-category-bar-${category}-${currency}`}
+                            aria-hidden="true"
+                        >
+                            <span
+                                className={
+                                    currency === 'PEN'
+                                        ? 'block h-full rounded-full bg-chart-1'
+                                        : 'block h-full rounded-full bg-chart-2'
+                                }
+                                style={{
+                                    width: `${Math.min(100, Math.abs(Number(percentages[currency])))}%`,
+                                }}
+                            />
+                        </span>
+                        <span className="text-right whitespace-nowrap tabular-nums">
+                            <span className="block">
+                                {formatMinorUnits(amounts[currency], currency)}
+                            </span>
+                            <span className="block type-meta text-muted-foreground">
+                                {percentages[currency]}% {percentageLabel}
+                            </span>
+                        </span>
+                    </span>
+                ))}
+        </span>
+    );
+}
+
 export function CategoryBreakdown({
     currencyFilter,
     period,
@@ -57,12 +109,25 @@ export function CategoryBreakdown({
     groups: BreakdownCategoryGroup[];
     filters: BreakdownProps['filters'];
 }) {
+    function categoryUrl(category: string | null) {
+        return selectionUrl({
+            currencyFilter,
+            period,
+            category,
+            day: filters.day,
+            focus: filters.focus,
+            merchant: filters.merchant,
+            attention: filters.attention,
+            selected: null,
+        });
+    }
+
     return (
         <section className="grid min-w-0 content-start gap-3">
             <div>
                 <h2 className="type-section-title">Where the money went</h2>
                 <p className="type-subtitle">
-                    Choose a category to filter the transaction list.
+                    Choose a group to see its subcategories and transactions.
                 </p>
             </div>
             {groups.length === 0 ? (
@@ -70,152 +135,119 @@ export function CategoryBreakdown({
                     No category spending in this selection.
                 </p>
             ) : (
-                <ol className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-y">
+                <ol className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-y">
                     {groups.map((group) => {
                         const key = categoryKey(group.category.id);
+                        const directKey = `direct:${key}`;
                         const selected = filters.category === key;
+                        const expanded =
+                            selected ||
+                            filters.category === directKey ||
+                            group.children.some(
+                                (child) =>
+                                    filters.category ===
+                                    String(child.category.id),
+                            );
+                        const children = group.children.map((child) => ({
+                            key: String(child.category.id),
+                            name: child.category.name,
+                            amounts: child.amount_minor,
+                            percentages: child.percentage,
+                        }));
+
+                        if (
+                            visibleCurrencies(currencyFilter).some(
+                                (currency) =>
+                                    group.direct_amount_minor[currency] !== '0',
+                            )
+                        ) {
+                            children.unshift({
+                                key: directKey,
+                                name: `Directly in ${group.category.name}`,
+                                amounts: group.direct_amount_minor,
+                                percentages: group.direct_percentage,
+                            });
+                        }
 
                         return (
                             <li
                                 key={key}
-                                className="col-span-2 grid grid-cols-subgrid border-b last:border-b-0"
+                                className="col-span-2 grid min-w-0 grid-cols-subgrid border-b last:border-b-0"
                             >
                                 <Link
-                                    href={selectionUrl({
-                                        currencyFilter,
-                                        period,
-                                        category: selected ? null : key,
-                                        day: filters.day,
-                                        focus: filters.focus,
-                                        merchant: filters.merchant,
-                                        attention: filters.attention,
-                                        selected: null,
-                                    })}
+                                    href={categoryUrl(selected ? null : key)}
                                     preserveScroll
                                     data-test={`breakdown-category-${key}`}
-                                    className={`col-span-2 grid grid-cols-subgrid gap-y-2 px-1 py-3 type-row transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${selected ? 'bg-primary/5' : ''}`}
+                                    aria-current={selected ? 'true' : undefined}
+                                    aria-expanded={
+                                        group.children.length > 0
+                                            ? expanded
+                                            : undefined
+                                    }
+                                    className="col-span-2 grid min-w-0 grid-cols-subgrid gap-y-2 px-1 py-3 type-row transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden aria-current:bg-primary/5"
                                 >
-                                    <span className="col-span-2">
+                                    <span className="col-span-2 wrap-anywhere">
                                         {group.category.name}
                                     </span>
-                                    <span className="col-span-2 grid grid-cols-subgrid gap-y-1.5">
-                                        {visibleCurrencies(currencyFilter)
-                                            .filter(
-                                                (currency) =>
-                                                    group.amount_minor[
-                                                        currency
-                                                    ] !== '0',
-                                            )
-                                            .map((currency) => (
-                                                <span
-                                                    key={currency}
-                                                    className="col-span-2 grid grid-cols-subgrid items-center"
-                                                >
-                                                    <span
-                                                        className="h-1.5 overflow-hidden rounded-full bg-muted"
-                                                        data-test={`breakdown-category-bar-${key}-${currency}`}
-                                                    >
-                                                        <span
-                                                            className={`block h-full rounded-full ${currency === 'PEN' ? 'bg-chart-1' : 'bg-chart-2'}`}
-                                                            style={{
-                                                                width: `${Math.min(100, Math.abs(Number(group.percentage[currency])))}%`,
-                                                            }}
-                                                        />
-                                                    </span>
-                                                    <span className="text-right whitespace-nowrap tabular-nums">
-                                                        {formatMinorUnits(
-                                                            group.amount_minor[
-                                                                currency
-                                                            ],
-                                                            currency,
-                                                        )}
-                                                    </span>
-                                                </span>
-                                            ))}
-                                    </span>
+                                    <CategoryAmountBars
+                                        currencyFilter={currencyFilter}
+                                        amounts={group.amount_minor}
+                                        percentages={group.percentage}
+                                        category={key}
+                                        percentageLabel="of total spending"
+                                    />
                                 </Link>
-                                {(selected ||
-                                    group.children.some(
-                                        (child) =>
-                                            filters.category ===
-                                            String(child.category.id),
-                                    )) &&
-                                    group.children.length > 0 && (
-                                        <ol
-                                            className="col-span-2 flex flex-col gap-1 pb-2 pl-4"
-                                            aria-label={`Subcategories of ${group.category.name}`}
-                                        >
-                                            {group.children.map((child) => {
-                                                const childKey = String(
-                                                    child.category.id,
-                                                );
-                                                const childSelected =
-                                                    filters.category ===
-                                                    childKey;
+                                {expanded && group.children.length > 0 && (
+                                    <ol
+                                        className="col-span-2 grid min-w-0 grid-cols-subgrid gap-y-1 border-l pb-2 pl-3"
+                                        aria-label={`Subcategories of ${group.category.name}`}
+                                    >
+                                        {children.map((child) => {
+                                            const childSelected =
+                                                filters.category === child.key;
 
-                                                return (
-                                                    <li key={childKey}>
-                                                        <Link
-                                                            href={selectionUrl({
-                                                                currencyFilter,
-                                                                period,
-                                                                category:
-                                                                    childSelected
-                                                                        ? key
-                                                                        : childKey,
-                                                                day: filters.day,
-                                                                focus: filters.focus,
-                                                                merchant:
-                                                                    filters.merchant,
-                                                                attention:
-                                                                    filters.attention,
-                                                                selected: null,
-                                                            })}
-                                                            preserveScroll
-                                                            data-test={`breakdown-category-${childKey}`}
-                                                            aria-current={
-                                                                childSelected
-                                                                    ? 'true'
-                                                                    : undefined
+                                            return (
+                                                <li
+                                                    key={child.key}
+                                                    className="col-span-2 grid min-w-0 grid-cols-subgrid"
+                                                >
+                                                    <Link
+                                                        href={categoryUrl(
+                                                            childSelected
+                                                                ? key
+                                                                : child.key,
+                                                        )}
+                                                        preserveScroll
+                                                        data-test={`breakdown-category-${child.key}`}
+                                                        aria-current={
+                                                            childSelected
+                                                                ? 'true'
+                                                                : undefined
+                                                        }
+                                                        className="col-span-2 grid min-w-0 grid-cols-subgrid gap-y-1.5 rounded px-2 py-2 type-row hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden aria-current:bg-primary/5"
+                                                    >
+                                                        <span className="col-span-2 wrap-anywhere">
+                                                            {child.name}
+                                                        </span>
+                                                        <CategoryAmountBars
+                                                            currencyFilter={
+                                                                currencyFilter
                                                             }
-                                                            className="flex flex-wrap items-center justify-between gap-2 rounded px-2 py-2 type-row hover:bg-muted/50 aria-current:bg-primary/5"
-                                                        >
-                                                            <span>
-                                                                {
-                                                                    child
-                                                                        .category
-                                                                        .name
-                                                                }
-                                                            </span>
-                                                            <span className="flex flex-wrap gap-3 tabular-nums">
-                                                                {visibleCurrencies(
-                                                                    currencyFilter,
-                                                                ).map(
-                                                                    (
-                                                                        currency,
-                                                                    ) => (
-                                                                        <span
-                                                                            key={
-                                                                                currency
-                                                                            }
-                                                                        >
-                                                                            {formatMinorUnits(
-                                                                                child
-                                                                                    .amount_minor[
-                                                                                    currency
-                                                                                ],
-                                                                                currency,
-                                                                            )}
-                                                                        </span>
-                                                                    ),
-                                                                )}
-                                                            </span>
-                                                        </Link>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ol>
-                                    )}
+                                                            amounts={
+                                                                child.amounts
+                                                            }
+                                                            percentages={
+                                                                child.percentages
+                                                            }
+                                                            category={child.key}
+                                                            percentageLabel="of group"
+                                                        />
+                                                    </Link>
+                                                </li>
+                                            );
+                                        })}
+                                    </ol>
+                                )}
                             </li>
                         );
                     })}
