@@ -221,7 +221,7 @@ test('Category and day charts drill into the same supporting detail', function (
                     / track.getBoundingClientRect().width;
 
                 return Math.abs(ratio - (4000 / 4900)) < 0.01
-                    && !category.textContent.includes('%')
+                    && category.textContent.includes('81.63% of total spending')
                     && getComputedStyle(filterBar).borderBottomWidth === '0px';
             })()
             JS)
@@ -230,6 +230,24 @@ test('Category and day charts drill into the same supporting detail', function (
         ->assertSee('Neighborhood market')
         ->assertSee('Corner cafe')
         ->assertDontSee('Bus pass')
+        ->assertSeeIn('[data-test="breakdown-category-'.$dining->id.'"]', '62.5% of group')
+        ->assertSeeIn('[data-test="breakdown-category-direct:'.$food->id.'"]', '37.5% of group')
+        ->assertSeeIn('[data-test="breakdown-category-direct:'.$food->id.'"]', 'S/ 15.00')
+        ->assertPresent('[data-test="breakdown-category-bar-'.$dining->id.'-PEN"]')
+        ->click('[data-test="breakdown-category-direct:'.$food->id.'"]')
+        ->assertQueryStringHas('category', 'direct:'.$food->id)
+        ->assertSee('Corner cafe')
+        ->assertDontSee('Neighborhood market')
+        ->assertSee('Directly in Food')
+        ->click('[data-test="breakdown-category-direct:'.$food->id.'"]')
+        ->assertQueryStringHas('category', (string) $food->id)
+        ->click('[data-test="breakdown-category-'.$dining->id.'"]')
+        ->assertQueryStringHas('category', (string) $dining->id)
+        ->assertSee('Neighborhood market')
+        ->assertDontSee('Corner cafe')
+        ->click('[data-test="breakdown-category-'.$dining->id.'"]')
+        ->assertQueryStringHas('category', (string) $food->id)
+        ->assertSee('Corner cafe')
         ->click('[data-test="breakdown-day-'.$today.'"]')
         ->assertQueryStringHas('day', $today)
         ->assertSee('Neighborhood market')
@@ -656,6 +674,72 @@ test('Breakdown keeps desktop cards in the viewport and scrolls their content', 
         ->assertNoConsoleLogs();
 });
 
+test('Category drilldowns preserve the scrolled position', function (int $width, int $height, string $position) {
+    $owner = User::factory()->create();
+    $date = '2026-09-15';
+    $categories = Category::factory()->count(24)->for($owner, 'owner')->sequence(
+        fn (Sequence $sequence) => ['name' => sprintf('Category %02d', $sequence->index)],
+    )->create();
+    $parent = $categories[12];
+    $child = Category::factory()->for($owner, 'owner')->for($parent, 'parent')->create([
+        'name' => 'Child category',
+    ]);
+
+    foreach ($categories as $index => $category) {
+        Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+            'occurred_on' => $date,
+            'amount_minor' => 200 - $index,
+            'category_id' => $category->id,
+        ]);
+    }
+
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $date,
+        'amount_minor' => 1,
+        'category_id' => $child->id,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&period=custom&date_from={$date}&date_to={$date}&view=categories")
+        ->resize($width, $height);
+
+    foreach ([
+        [$parent->id, (string) $parent->id],
+        [$child->id, (string) $child->id],
+        ['direct:'.$parent->id, 'direct:'.$parent->id],
+        [$parent->id, (string) $parent->id],
+        [$parent->id, null],
+    ] as [$categoryId, $selectedCategory]) {
+        $page->script(<<<JS
+            window.__categorySelector = '[data-test="breakdown-category-{$categoryId}"]';
+            document.querySelector(window.__categorySelector)
+                .scrollIntoView({ block: 'center' });
+            JS);
+        $page->script("window.__categoryPosition = {$position}");
+
+        $page
+            ->assertScript(<<<'JS'
+                window.scrollY > 0 || document.querySelector(
+                    '[data-test="breakdown-categories-scroll"]',
+                ).scrollTop > 0
+                JS)
+            ->click('[data-test="breakdown-category-'.$categoryId.'"]');
+
+        if ($selectedCategory === null) {
+            $page->assertQueryStringMissing('category');
+        } else {
+            $page->assertQueryStringHas('category', $selectedCategory);
+        }
+
+        $page->assertScript("Math.abs({$position} - window.__categoryPosition) < 2");
+    }
+
+    $page->assertNoJavaScriptErrors();
+})->with([
+    'desktop category panel' => [1280, 720, 'document.querySelector(\'[data-test="breakdown-categories-scroll"]\').scrollTop'],
+    'phone page' => [390, 844, 'document.querySelector(window.__categorySelector).getBoundingClientRect().top'],
+]);
+
 test('the owner classifies edits records and splits Transactions inside Breakdown', function () {
     $owner = User::factory()->create();
     $essentials = Category::factory()->for($owner, 'owner')->create([
@@ -712,80 +796,16 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         )
         ->assertSee('Essentials > Weekly groceries and household supplies')
         ->click('@category-'.$current->id.'-option-'.$groceries->id)
-        ->assertSee('Apply once')
-        ->assertScript(<<<JS
-            (() => {
-                const trigger = document.querySelector(
-                    '[aria-label="Category for Café Central"]',
-                );
-                const row = trigger?.closest('tr');
-                const confirmation = document.querySelector(
-                    '[data-test="category-confirmation-{$current->id}"]',
-                );
-                const popover = confirmation?.closest(
-                    '[data-slot="popover-content"]',
-                );
-
-                if (
-                    trigger === null
-                    || row === null
-                    || row === undefined
-                    || confirmation === null
-                    || popover === null
-                    || popover === undefined
-                ) {
-                    return false;
-                }
-
-                return popover.contains(confirmation);
-            })()
-            JS)
-        ->assertScript(<<<'JS'
-            (() => {
-                const trigger = document.querySelector(
-                    '[aria-label="Category for Café Central"]',
-                );
-                const row = trigger?.closest('tr');
-
-                if (row === null || row === undefined) {
-                    return false;
-                }
-
-                return Math.abs(
-                    row.getBoundingClientRect().height
-                        - Number(row.dataset.heightBeforeCategorySelection),
-                ) < 0.5;
-            })()
-            JS)
-        ->assertScript(<<<'JS'
-            (() => {
-                const trigger = document.querySelector(
-                    '[aria-label="Category for Café Central"]',
-                );
-                const row = trigger?.closest('tr');
-
-                if (trigger === null || row === null || row === undefined) {
-                    return false;
-                }
-
-                const rowBounds = row.getBoundingClientRect();
-
-                return trigger.textContent.includes(
-                    'Weekly groceries and household supplies',
-                )
-                    && rowBounds.left >= 0
-                    && rowBounds.right <= innerWidth
-                    && document.documentElement.scrollWidth
-                        <= document.documentElement.clientWidth;
-            })()
-            JS);
+        ->assertSee('Classification updated.')
+        ->assertNotPresent('[data-test="apply-category-once-'.$current->id.'"]')
+        ->assertScript('document.documentElement.scrollWidth <= document.documentElement.clientWidth')
+        ->assertNoJavaScriptErrors();
 
     expect($current->refresh())
-        ->category_id->toBeNull()
+        ->category_id->toBe($groceries->id)
         ->merchant_rule_id->toBeNull();
 
     $page
-        ->click('[data-test="apply-category-once-'.$current->id.'"]')
         ->resize(1280, 720)
         ->click('[data-test="breakdown-transaction-'.$current->id.'"]')
         ->click('[data-slot="dropdown-menu-item"]:has-text("Create Merchant Rule")')
@@ -876,7 +896,7 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
         ->and(Transaction::query()->where('description', 'Manual bakery')->exists())->toBeTrue();
 });
 
-test('the Breakdown Category dropdown creates a future-only rule and offers a reviewed history action', function () {
+test('the Breakdown Category selection saves immediately and offers a rule with an explicit history choice', function (bool $applyHistory) {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
     $today = now()->toDateString();
@@ -891,38 +911,47 @@ test('the Breakdown Category dropdown creates a future-only rule and offers a re
     $this->actingAs($owner);
 
     $page = visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}");
-
     $page
         ->click('[aria-label="Category for Café Central"]')
         ->click('@category-'.$source->id.'-option-'.$category->id)
-        ->click('[data-test="create-merchant-rule-'.$source->id.'"]')
-        ->assertPathIs('/breakdown')
-        ->assertSee('Merchant Rule created for future Transactions.')
-        ->assertSee('Apply to previous')
-        ->assertPresent('[aria-label="Close toast"]')
-        ->wait(13)
-        ->assertSee('Apply to previous')
+        ->assertSee('Classification updated.')
+        ->assertSee('Create merchant rule')
         ->assertNoJavaScriptErrors();
 
-    expect($source->refresh()->category_id)->toBeNull()
-        ->and($previous->refresh()->category_id)->toBeNull();
+    expect($source->refresh()->category_id)->toBe($category->id);
+    expect($previous->refresh()->category_id)->toBeNull();
+    expect(MerchantRule::query()->count())->toBe(0);
 
     $page
-        ->click('Apply to previous')
-        ->assertSee('Apply Merchant Rule to previous Transactions?')
-        ->waitForText('2 previous Transactions match')
+        ->press('Create merchant rule')
+        ->assertSee('Use the selected category for future transactions from Café Central.')
+        ->waitForText('2 matching transactions')
         ->assertSee('#'.$source->id)
         ->assertSee('#'.$previous->id)
-        ->press('Apply to previous Transactions')
+        ->resize($applyHistory ? 1024 : 390, $applyHistory ? 768 : 844)
+        ->assertScript(<<<'JS'
+            (() => {
+                const dialog = document.querySelector('[data-slot="alert-dialog-content"]');
+                const bounds = dialog.getBoundingClientRect();
+
+                return bounds.left >= 0 && bounds.right <= innerWidth
+                    && bounds.top >= 0 && bounds.bottom <= innerHeight
+                    && Array.from(dialog.querySelectorAll('button')).every((button) => {
+                        const action = button.getBoundingClientRect();
+                        return action.left >= bounds.left && action.right <= bounds.right
+                            && action.top >= bounds.top && action.bottom <= bounds.bottom;
+                    });
+            })()
+            JS)
+        ->press($applyHistory ? 'Save and update past' : 'Save for future')
+        ->assertSee($applyHistory ? 'Merchant Rule created and 2 Transactions updated.' : 'Merchant Rule created for future Transactions.')
         ->assertPathIs('/breakdown')
-        ->assertSee('2 previous Transactions updated.')
-        ->click('[aria-label="Category for Café Central"]')
-        ->assertPresent('[data-test="create-merchant-rule-'.$source->id.'"]')
         ->assertNoJavaScriptErrors();
 
-    expect($source->refresh()->category_id)->toBe($category->id)
-        ->and($previous->refresh()->category_id)->toBe($category->id);
-});
+    expect($source->refresh()->category_id)->toBe($category->id);
+    expect($previous->refresh()->category_id)->toBe($applyHistory ? $category->id : null);
+    expect(MerchantRule::query()->sole()->category_id)->toBe($category->id);
+})->with(['future only' => false, 'include previous' => true]);
 
 test('the owner edits a Transaction in the Breakdown dialog', function () {
     $owner = User::factory()->create();

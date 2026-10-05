@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
-type NativeSelectOption = { value: string; label: string };
+type NativeSelectOption = { value: string; label: string; disabled?: boolean };
 
 type NativeSelectProps = Omit<ComponentProps<'select'>, 'children'> &
     (
@@ -33,14 +33,22 @@ export function NativeSelect({
             {...props}
         >
             {options?.map((option) => (
-                <option key={option.value} value={option.value}>
+                <option
+                    key={option.value}
+                    value={option.value}
+                    disabled={option.disabled}
+                >
                     {option.label}
                 </option>
             ))}
             {groups?.map((group) => (
                 <optgroup key={group.label} label={group.label}>
                     {group.options.map((option) => (
-                        <option key={option.value} value={option.value}>
+                        <option
+                            key={option.value}
+                            value={option.value}
+                            disabled={option.disabled}
+                        >
                             {option.label}
                         </option>
                     ))}

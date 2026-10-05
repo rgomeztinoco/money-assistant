@@ -54,7 +54,7 @@ final class ReadTrends
      */
     public function handle(User $owner, ?Currency $currency, array $filters = []): array
     {
-        $today = CarbonImmutable::today(config('app.timezone'));
+        $today = CarbonImmutable::parse(now(config('app.reporting_timezone'))->toDateString(), config('app.timezone'));
         $selectedPeriod = ReportingPeriod::fromFilters($filters);
         $analysisPeriod = $selectedPeriod->elapsedThrough($today);
         $primaryCurrency = $currency ?? Currency::Pen;

@@ -8,6 +8,7 @@ use App\MovementDirection;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Illuminate\Contracts\Process\InvokedProcess;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Tests\SyntheticPdf;
 
@@ -93,7 +94,7 @@ test('the owner reviews the full statement with automatic matches and confirms t
         ->and($page->value('#movement-2-resolution'))
         ->toBe("link:{$recordedTransaction->id}")
         ->and($page->script("document.querySelector('#movement-2-resolution').selectedOptions[0].textContent"))
-        ->toBe('20 Jan 2026 · −S/ 20.00 · Grocery')
+        ->toBe('#'.$recordedTransaction->id.' · 20 Jan 2026 · −S/ 20.00 · Grocery')
         ->and($page->script("document.querySelector('[data-test=statement-movements]').textContent.includes('Low-confidence match')"))
         ->toBeFalse();
     $page
@@ -292,6 +293,47 @@ test('an abandoned preview remains transient and is editable on a mobile viewpor
 /**
  * @return array{InvokedProcess, string}
  */
+test('a statement candidate can be selected by only one movement at a time', function () {
+    $owner = User::factory()->create();
+    $transactions = Transaction::factory()->count(2)->for($owner, 'owner')->create([
+        'occurred_on' => '2026-02-01',
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => 'WARDA',
+    ]);
+    $statement = str_replace(
+        ["01FEB 01FEB WARDA                                  20.00\n", '    30.01    55.00', '                   124.99'],
+        ["01FEB 01FEB WARDA                                  20.00\n01FEB 01FEB WARDA                                  20.00\n", '    50.01    55.00', '                   104.99'],
+        (string) file_get_contents(base_path('tests/Fixtures/Statements/bcp.txt')),
+    );
+    $firstId = $transactions[0]->id;
+    $secondId = $transactions[1]->id;
+    $page = visit($this->browserApplicationUrl.'/login');
+    $page->type('#email', $owner->email)->type('#password', 'password')
+        ->click('[data-test="login-button"]')->assertPathIs('/')
+        ->navigate($this->browserApplicationUrl.'/statement-imports/create');
+    selectPdfInBrowser($page, '#preview-statement', SyntheticPdf::fromText($statement));
+
+    $page->press('Upload and check')
+        ->assertScript("document.querySelector('#movement-0-resolution option[value=\"link:{$firstId}\"]').textContent.includes('#{$firstId}')")
+        ->assertScript("document.querySelector('#movement-0-resolution option[value=\"link:{$secondId}\"]').textContent.includes('#{$secondId}')")
+        ->select('#movement-0-resolution', 'link:'.$firstId)
+        ->assertSelected('#movement-0-resolution', 'link:'.$firstId)
+        ->assertScript("document.querySelector('#movement-1-resolution option[value=\"link:{$firstId}\"]').disabled")
+        ->assertScript("!document.querySelector('#movement-0-resolution option[value=\"link:{$firstId}\"]').disabled")
+        ->select('#movement-1-resolution', 'link:'.$secondId)
+        ->assertSelected('#movement-1-resolution', 'link:'.$secondId)
+        ->select('#movement-0-resolution', 'create')
+        ->assertScript("!document.querySelector('#movement-1-resolution option[value=\"link:{$firstId}\"]').disabled")
+        ->assertScript("document.querySelector('#movement-0-resolution option[value=\"link:{$secondId}\"]').disabled")
+        ->assertNoJavaScriptErrors();
+
+    expect(StatementImport::query()->count())->toBe(0);
+});
+
 function startBrowserApplication(): array
 {
     $socket = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
@@ -322,8 +364,11 @@ function startBrowserApplication(): array
             'INERTIA_SSR_ENABLED' => false,
             'PHP_CLI_SERVER_WORKERS' => false,
             'SESSION_DRIVER' => 'database',
+            'SESSION_SECURE_COOKIE' => false,
+            'SESSION_DOMAIN' => '',
         ])
         ->timeout(120)
+        ->quietly()
         ->start([
             PHP_BINARY,
             '-S',
@@ -331,9 +376,7 @@ function startBrowserApplication(): array
             base_path('vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php'),
         ]);
 
-    $server->waitUntil(
-        fn (string $type, string $output): bool => str_contains($output, 'Development Server'),
-    );
+    Http::retry(20, 50)->timeout(2)->get($applicationUrl.'/up')->throw();
 
     return [$server, $applicationUrl];
 }

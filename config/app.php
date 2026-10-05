@@ -67,6 +67,8 @@ return [
 
     'timezone' => 'UTC',
 
+    'reporting_timezone' => env('APP_REPORTING_TIMEZONE', 'America/Lima'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration

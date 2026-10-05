@@ -135,7 +135,7 @@ test('the owner can inspect, dismiss, and restore an unrecognized Gmail email', 
         ->assertSee('bank@example.test')
         ->assertSee('Open in Gmail')
         ->assertAttribute('a[href*="mail.google.com"]', 'target', '_blank')
-        ->assertScript('document.querySelector(\'a[href*="mail.google.com"]\')?.href.includes("/#all/payment-alert-thread")')
+        ->assertAttribute('a[href*="mail.google.com"]', 'href', 'https://mail.google.com/mail/?authuser='.rawurlencode($connection->gmail_account_identity).'#all/'.rawurlencode($discovery->message_id))
         ->resize(390, 844)
         ->assertScript('document.documentElement.scrollWidth <= window.innerWidth')
         ->press('Dismiss')
@@ -147,6 +147,40 @@ test('the owner can inspect, dismiss, and restore an unrecognized Gmail email', 
         ->assertNoJavaScriptErrors();
 
     expect($discovery->fresh()->dismissed_at)->toBeNull();
+});
+
+test('dismissing one email preserves the other summaries without fetching them again', function () {
+    $connection = GmailConnection::factory()->create();
+    $gmail = new FakeGmail;
+
+    foreach (['First notice', 'Second notice'] as $subject) {
+        $discovery = GmailMessageDiscovery::factory()->for($connection)->create(['processed_at' => now()]);
+        SpendingNotificationReference::factory()->create([
+            'user_id' => $connection->user_id,
+            'transaction_id' => null,
+            'gmail_message_discovery_id' => $discovery->id,
+            'gmail_account_identity' => $connection->gmail_account_identity,
+            'message_id' => $discovery->message_id,
+            'processing_outcome' => 'unsupported',
+        ]);
+        $gmail->messageSummaries[$discovery->message_id] = new GmailMessageSummary(
+            $discovery->message_id, 'thread-'.$discovery->id, now()->toImmutable(), 'bank@example.test', $subject,
+        );
+    }
+
+    app()->instance(Gmail::class, $gmail);
+    $this->actingAs($connection->owner);
+    visit(route('data_sources.gmail'))
+        ->assertSee('First notice')
+        ->assertSee('Second notice')
+        ->click('article:has-text("First notice") button:has-text("Dismiss")')
+        ->assertDontSee('First notice')
+        ->assertSee('Second notice')
+        ->assertSee('Dismissed 1')
+        ->assertNoJavaScriptErrors();
+
+    expect($gmail->messageSummaryCalls)->toHaveCount(2);
+    expect(GmailMessageDiscovery::query()->whereNotNull('dismissed_at')->count())->toBe(1);
 });
 
 test('the email list scrolls inside the viewport-height review card', function () {

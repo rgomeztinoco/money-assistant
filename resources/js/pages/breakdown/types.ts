@@ -26,9 +26,12 @@ export type BreakdownCategoryGroup = {
     category: BreakdownCategory;
     amount_minor: CurrencyAmounts;
     percentage: CurrencyAmounts;
+    direct_amount_minor: CurrencyAmounts;
+    direct_percentage: CurrencyAmounts;
     children: Array<{
         category: { id: number; name: string };
         amount_minor: CurrencyAmounts;
+        percentage: CurrencyAmounts;
     }>;
 };
 

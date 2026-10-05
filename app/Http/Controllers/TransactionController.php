@@ -39,7 +39,7 @@ class TransactionController extends Controller
             'transactions/index',
             [
                 ...$this->readTransactions->handle($request->user(), $validated),
-                'today' => now(config('app.timezone'))->toDateString(),
+                'today' => now(config('app.reporting_timezone'))->toDateString(),
                 'category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()),
                 'selected_transaction_id' => isset($validated['selected'])
                     ? (int) $validated['selected']

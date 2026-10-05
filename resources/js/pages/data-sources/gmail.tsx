@@ -1,4 +1,4 @@
-import { Form, Head, Link } from '@inertiajs/react';
+import { Form, Head, Link, router, useHttp, usePage } from '@inertiajs/react';
 import {
     CalendarClock,
     CircleCheck,
@@ -12,6 +12,7 @@ import {
     TriangleAlert,
 } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { create as createGmailAuthorization } from '@/actions/App/Http/Controllers/Settings/GmailAuthorizationController';
 import GmailConnectionCheckController from '@/actions/App/Http/Controllers/Settings/GmailConnectionCheckController';
 import GmailConnectionDisconnectController from '@/actions/App/Http/Controllers/Settings/GmailConnectionDisconnectController';
@@ -79,7 +80,11 @@ type ReviewItem = {
     subject: string | null;
     received_at: string | null;
     summary_state:
-        'available' | 'missing' | 'unavailable' | 'reauthorization_required';
+        | 'available'
+        | 'missing'
+        | 'unavailable'
+        | 'reauthorization_required'
+        | 'not_loaded';
     outcome: 'unrecognized' | 'failed' | 'resolved';
     explanation: string;
     dismissed_at: string | null;
@@ -134,6 +139,8 @@ const statusDetails = {
 } as const;
 
 const summaryFallback = {
+    not_loaded:
+        'Open in Gmail to view this email, or refresh to load its details.',
     missing: 'This email is no longer available in Gmail.',
     unavailable:
         'Email details are temporarily unavailable. Refresh to try opening the original.',
@@ -254,6 +261,71 @@ function DisconnectButton() {
     );
 }
 
+function DismissEmailButton({ item }: { item: ReviewItem }) {
+    const { review } = usePage<{ review: Review }>().props;
+    const http = useHttp<
+        { view: ReviewView; page: number },
+        { review: Review }
+    >({ view: review.view, page: review.items.current_page });
+
+    return (
+        <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={http.processing}
+            onClick={() => {
+                http.transform(() => ({
+                    view: review.view,
+                    page: review.items.current_page,
+                }));
+                http.post(dismiss.url(item.id), {
+                    onSuccess: (data) => {
+                        const next = data.review;
+                        router.replaceProp('review', (previous: Review) => {
+                            const summaries = new Map(
+                                previous.items.data.map((row) => [row.id, row]),
+                            );
+
+                            return {
+                                ...next,
+                                items: {
+                                    ...next.items,
+                                    data: next.items.data.map((row) => {
+                                        const summary = summaries.get(row.id);
+
+                                        return summary
+                                            ? {
+                                                  ...row,
+                                                  sender: summary.sender,
+                                                  subject: summary.subject,
+                                                  received_at:
+                                                      summary.received_at,
+                                                  summary_state:
+                                                      summary.summary_state,
+                                                  gmail_url: summary.gmail_url,
+                                              }
+                                            : row;
+                                    }),
+                                },
+                            };
+                        });
+                        toast.success(
+                            'Email dismissed from the attention list.',
+                        );
+                    },
+                    onError: () =>
+                        toast.error(
+                            'Could not dismiss this email. Refresh the list and try again.',
+                        ),
+                });
+            }}
+        >
+            {http.processing ? 'Dismissing...' : 'Dismiss'}
+        </Button>
+    );
+}
+
 function ReviewActions({ item }: { item: ReviewItem }) {
     return (
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -292,21 +364,7 @@ function ReviewActions({ item }: { item: ReviewItem }) {
                             )}
                         </Form>
                     )}
-                    <Form
-                        {...dismiss.form(item.id)}
-                        options={{ preserveScroll: true }}
-                    >
-                        {({ processing }) => (
-                            <Button
-                                type="submit"
-                                variant="ghost"
-                                size="sm"
-                                disabled={processing}
-                            >
-                                Dismiss
-                            </Button>
-                        )}
-                    </Form>
+                    <DismissEmailButton item={item} />
                 </>
             ) : (
                 <Form

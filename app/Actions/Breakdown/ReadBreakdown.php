@@ -156,7 +156,7 @@ class ReadBreakdown
             'transaction_days' => $this->transactionDays($detailTransactions, $merchantMatchCounts),
             'category_options' => $this->categoryOptions($categories),
             'income_source_options' => $this->incomeSourceOptions($owner),
-            'today' => now()->toDateString(),
+            'today' => now(config('app.reporting_timezone'))->toDateString(),
         ];
     }
 
@@ -261,6 +261,7 @@ class ReadBreakdown
             }
 
             $children = [];
+            $directAmount = $amount;
 
             foreach ($categories->where('parent_id', $category->id) as $child) {
                 $childAmount = $amounts[$child->id] ?? null;
@@ -272,13 +273,17 @@ class ReadBreakdown
                 $children[] = [
                     'category' => ['id' => $child->id, 'name' => $child->name],
                     'amount_minor' => $childAmount->value(),
+                    'percentage' => $this->percentage($childAmount, $amount),
                 ];
+                $directAmount = $directAmount->subtract($childAmount);
             }
 
             $groups[] = [
                 'category' => ['id' => $category->id, 'name' => $category->name],
                 'amount_minor' => $amount->value(),
                 'percentage' => $this->percentage($amount, $totalSpending),
+                'direct_amount_minor' => $directAmount->value(),
+                'direct_percentage' => $this->percentage($directAmount, $amount),
                 'children' => $children,
             ];
         }
@@ -290,6 +295,8 @@ class ReadBreakdown
                 'category' => ['id' => null, 'name' => 'Uncategorized'],
                 'amount_minor' => $uncategorized->value(),
                 'percentage' => $this->percentage($uncategorized, $totalSpending),
+                'direct_amount_minor' => $uncategorized->value(),
+                'direct_percentage' => '100',
                 'children' => [],
             ];
         }
@@ -323,18 +330,24 @@ class ReadBreakdown
                     'category' => $group['category'],
                     'amount_minor' => $this->emptyCurrencyAmounts(),
                     'percentage' => $this->emptyCurrencyAmounts(),
+                    'direct_amount_minor' => $this->emptyCurrencyAmounts(),
+                    'direct_percentage' => $this->emptyCurrencyAmounts(),
                     'children' => [],
                 ];
                 $groupsByCategory[$key]['amount_minor'][$currency->value] = $group['amount_minor'];
                 $groupsByCategory[$key]['percentage'][$currency->value] = $group['percentage'];
+                $groupsByCategory[$key]['direct_amount_minor'][$currency->value] = $group['direct_amount_minor'];
+                $groupsByCategory[$key]['direct_percentage'][$currency->value] = $group['direct_percentage'];
 
                 foreach ($group['children'] as $child) {
                     $childId = $child['category']['id'];
                     $groupsByCategory[$key]['children'][$childId] ??= [
                         'category' => $child['category'],
                         'amount_minor' => $this->emptyCurrencyAmounts(),
+                        'percentage' => $this->emptyCurrencyAmounts(),
                     ];
                     $groupsByCategory[$key]['children'][$childId]['amount_minor'][$currency->value] = $child['amount_minor'];
+                    $groupsByCategory[$key]['children'][$childId]['percentage'][$currency->value] = $child['percentage'];
                 }
             }
         }
@@ -581,14 +594,15 @@ class ReadBreakdown
             return in_array(null, $contributionCategoryIds, true);
         }
 
-        $categoryId = (int) $categoryFilter;
+        $directOnly = str_starts_with($categoryFilter, 'direct:');
+        $categoryId = (int) ($directOnly ? substr($categoryFilter, 7) : $categoryFilter);
 
         foreach ($contributionCategoryIds as $contributionCategoryId) {
             if ($contributionCategoryId === $categoryId) {
                 return true;
             }
 
-            if ($contributionCategoryId !== null && $categoriesById->get($contributionCategoryId)?->parent_id === $categoryId) {
+            if (! $directOnly && $contributionCategoryId !== null && $categoriesById->get($contributionCategoryId)?->parent_id === $categoryId) {
                 return true;
             }
         }

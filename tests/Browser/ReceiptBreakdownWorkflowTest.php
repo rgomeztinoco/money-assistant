@@ -46,6 +46,7 @@ test('the owner saves replaces and removes a Category split from Transactions', 
         ->fill('[name="line_items[0][line_total]"]', '15.00')
         ->fill('[name="line_items[1][line_total]"]', '10.00')
         ->press('Replace Category split')
+        ->waitForEvent('networkidle')
         ->assertSee('Category split saved.')
         ->press('Remove Category split')
         ->assertSee('Category split removed.')

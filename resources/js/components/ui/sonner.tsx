@@ -3,12 +3,13 @@ import { useState } from 'react';
 import { MerchantRuleHistoryDialog } from '@/components/merchant-rule-history-dialog';
 import { useAppearance } from '@/hooks/use-appearance';
 import { useFlashToast } from '@/hooks/use-flash-toast';
+import type { FlashToast } from '@/types/ui';
 
 function Toaster({ ...props }: ToasterProps) {
     const { appearance } = useAppearance();
-    const [historyRuleId, setHistoryRuleId] = useState<number | null>(null);
+    const [action, setAction] = useState<FlashToast['action']>();
 
-    useFlashToast(setHistoryRuleId);
+    useFlashToast(setAction);
 
     return (
         <>
@@ -25,10 +26,24 @@ function Toaster({ ...props }: ToasterProps) {
                 }
                 {...props}
             />
-            {historyRuleId !== null && (
+            {action !== undefined && (
                 <MerchantRuleHistoryDialog
-                    ruleId={historyRuleId}
-                    onClose={() => setHistoryRuleId(null)}
+                    key={
+                        action.type === 'create_merchant_rule'
+                            ? `draft-${action.draft.source_transaction_id}-${action.draft.category_id}`
+                            : `rule-${action.rule_id}`
+                    }
+                    ruleId={
+                        action.type === 'apply_existing_merchant_rule'
+                            ? action.rule_id
+                            : undefined
+                    }
+                    draft={
+                        action.type === 'create_merchant_rule'
+                            ? action.draft
+                            : undefined
+                    }
+                    onClose={() => setAction(undefined)}
                 />
             )}
         </>

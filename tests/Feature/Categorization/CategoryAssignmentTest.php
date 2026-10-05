@@ -16,7 +16,10 @@ test('the owner can assign an active Category and return a Transaction to Uncate
         ->put(route('transactions.category.update', $transaction), [
             'category_id' => $category->id,
         ])
-        ->assertSessionHasNoErrors();
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast.action.type', 'create_merchant_rule')
+        ->assertInertiaFlash('toast.action.draft.category_id', $category->id)
+        ->assertInertiaFlash('toast.action.draft.source_transaction_id', $transaction->id);
 
     expect($transaction->fresh())
         ->category_id->toBe($category->id)

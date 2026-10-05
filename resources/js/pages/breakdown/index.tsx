@@ -61,12 +61,14 @@ function selectedCategoryLabel(props: BreakdownProps): string | null {
         return 'Uncategorized';
     }
 
-    const categoryId = Number(props.filters.category);
+    const directOnly = props.filters.category.startsWith('direct:');
+    const categoryId = Number(props.filters.category.replace(/^direct:/, ''));
 
-    return (
+    const label =
         props.category_options.find((option) => option.id === categoryId)
-            ?.path ?? `Category ${props.filters.category}`
-    );
+            ?.path ?? `Category ${props.filters.category}`;
+
+    return directOnly ? `Directly in ${label}` : label;
 }
 
 function CurrencyAmountsList({

@@ -27,6 +27,7 @@ export function selectionUrl({
     merchant,
     attention,
     selected,
+    view,
 }: {
     currencyFilter: Currency | null;
     period: BreakdownPeriod;
@@ -36,6 +37,7 @@ export function selectionUrl({
     merchant?: string | null;
     attention?: boolean;
     selected: number | null;
+    view?: 'summary' | 'categories' | 'merchants';
 }) {
     return breakdownIndex({
         query: {
@@ -46,6 +48,7 @@ export function selectionUrl({
             merchant: merchant ?? undefined,
             attention: attention ? 1 : undefined,
             selected: selected ?? undefined,
+            view,
         },
     });
 }

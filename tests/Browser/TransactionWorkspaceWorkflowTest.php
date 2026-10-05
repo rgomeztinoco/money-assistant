@@ -108,7 +108,7 @@ test('Transactions can classify a row from the Category dropdown', function () {
         ->assertSeeIn('[data-test="transaction-row-id-'.$transaction->id.'"]', '#'.$transaction->id)
         ->click('[aria-label="Category for Corner store"]')
         ->click('@category-'.$transaction->id.'-option-'.$category->id)
-        ->click('[data-test="apply-category-once-'.$transaction->id.'"]')
+        ->assertSee('Classification updated.')
         ->assertSee('Groceries')
         ->assertNoJavaScriptErrors();
 
