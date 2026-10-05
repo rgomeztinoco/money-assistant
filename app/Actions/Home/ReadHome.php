@@ -47,7 +47,7 @@ final class ReadHome
         $currencies = $currencyFilter === null
             ? [Currency::Pen, Currency::Usd]
             : [$currencyFilter];
-        $today = CarbonImmutable::today(config('app.timezone'));
+        $today = CarbonImmutable::parse(now(config('app.reporting_timezone'))->toDateString(), config('app.timezone'));
         $selectedPeriod = $this->reportingPeriod($owner, $currencies, $filters, $today);
         $analysisPeriod = $selectedPeriod->elapsedThrough($today);
         $briefings = array_values(array_filter(array_map(

@@ -17,7 +17,7 @@ final readonly class ReportingPeriod
      */
     public static function fromFilters(array $filters): self
     {
-        $today = CarbonImmutable::today(config('app.timezone'));
+        $today = CarbonImmutable::parse(now(config('app.reporting_timezone'))->toDateString(), config('app.timezone'));
         $periodUnit = $filters['period'] ?? null;
         $anchor = CarbonImmutable::parse($filters['anchor'] ?? $today, config('app.timezone'));
         $preset = $filters['preset'] ?? null;

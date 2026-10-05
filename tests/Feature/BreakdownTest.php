@@ -13,6 +13,17 @@ use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Inertia\Testing\AssertableInertia as Assert;
 
+test('Breakdown keeps September selected until midnight in Lima', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-01 00:30:00', 'UTC'));
+
+    $this->actingAs(User::factory()->create())
+        ->get(route('breakdown.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('today', '2026-09-30')
+            ->where('period.date_from', '2026-09-01')
+            ->where('period.date_to', '2026-09-30'));
+});
+
 test('Breakdown opens the current month with every currency kept independent', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
     $owner = User::factory()->create();

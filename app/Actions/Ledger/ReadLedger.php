@@ -111,7 +111,7 @@ class ReadLedger
         );
 
         return [
-            'today' => now(config('app.timezone'))->toDateString(),
+            'today' => now(config('app.reporting_timezone'))->toDateString(),
             'transactions' => array_values($ledgerRows
                 ->whereNull('voided_at')
                 ->all()),

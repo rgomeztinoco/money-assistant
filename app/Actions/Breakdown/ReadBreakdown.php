@@ -156,7 +156,7 @@ class ReadBreakdown
             'transaction_days' => $this->transactionDays($detailTransactions, $merchantMatchCounts),
             'category_options' => $this->categoryOptions($categories),
             'income_source_options' => $this->incomeSourceOptions($owner),
-            'today' => now()->toDateString(),
+            'today' => now(config('app.reporting_timezone'))->toDateString(),
         ];
     }
 
