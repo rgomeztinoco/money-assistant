@@ -119,6 +119,7 @@ export function CategoryBreakdown({
             merchant: filters.merchant,
             attention: filters.attention,
             selected: null,
+            view: 'categories',
         });
     }
 
@@ -177,6 +178,7 @@ export function CategoryBreakdown({
                                 <Link
                                     href={categoryUrl(selected ? null : key)}
                                     preserveScroll
+                                    preserveState
                                     data-test={`breakdown-category-${key}`}
                                     aria-current={selected ? 'true' : undefined}
                                     aria-expanded={
@@ -218,6 +220,7 @@ export function CategoryBreakdown({
                                                                 : child.key,
                                                         )}
                                                         preserveScroll
+                                                        preserveState
                                                         data-test={`breakdown-category-${child.key}`}
                                                         aria-current={
                                                             childSelected

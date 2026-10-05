@@ -674,6 +674,72 @@ test('Breakdown keeps desktop cards in the viewport and scrolls their content', 
         ->assertNoConsoleLogs();
 });
 
+test('Category drilldowns preserve the scrolled position', function (int $width, int $height, string $position) {
+    $owner = User::factory()->create();
+    $date = '2026-09-15';
+    $categories = Category::factory()->count(24)->for($owner, 'owner')->sequence(
+        fn (Sequence $sequence) => ['name' => sprintf('Category %02d', $sequence->index)],
+    )->create();
+    $parent = $categories[12];
+    $child = Category::factory()->for($owner, 'owner')->for($parent, 'parent')->create([
+        'name' => 'Child category',
+    ]);
+
+    foreach ($categories as $index => $category) {
+        Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+            'occurred_on' => $date,
+            'amount_minor' => 200 - $index,
+            'category_id' => $category->id,
+        ]);
+    }
+
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $date,
+        'amount_minor' => 1,
+        'category_id' => $child->id,
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&period=custom&date_from={$date}&date_to={$date}&view=categories")
+        ->resize($width, $height);
+
+    foreach ([
+        [$parent->id, (string) $parent->id],
+        [$child->id, (string) $child->id],
+        ['direct:'.$parent->id, 'direct:'.$parent->id],
+        [$parent->id, (string) $parent->id],
+        [$parent->id, null],
+    ] as [$categoryId, $selectedCategory]) {
+        $page->script(<<<JS
+            window.__categorySelector = '[data-test="breakdown-category-{$categoryId}"]';
+            document.querySelector(window.__categorySelector)
+                .scrollIntoView({ block: 'center' });
+            JS);
+        $page->script("window.__categoryPosition = {$position}");
+
+        $page
+            ->assertScript(<<<'JS'
+                window.scrollY > 0 || document.querySelector(
+                    '[data-test="breakdown-categories-scroll"]',
+                ).scrollTop > 0
+                JS)
+            ->click('[data-test="breakdown-category-'.$categoryId.'"]');
+
+        if ($selectedCategory === null) {
+            $page->assertQueryStringMissing('category');
+        } else {
+            $page->assertQueryStringHas('category', $selectedCategory);
+        }
+
+        $page->assertScript("Math.abs({$position} - window.__categoryPosition) < 2");
+    }
+
+    $page->assertNoJavaScriptErrors();
+})->with([
+    'desktop category panel' => [1280, 720, 'document.querySelector(\'[data-test="breakdown-categories-scroll"]\').scrollTop'],
+    'phone page' => [390, 844, 'document.querySelector(window.__categorySelector).getBoundingClientRect().top'],
+]);
+
 test('the owner classifies edits records and splits Transactions inside Breakdown', function () {
     $owner = User::factory()->create();
     $essentials = Category::factory()->for($owner, 'owner')->create([
