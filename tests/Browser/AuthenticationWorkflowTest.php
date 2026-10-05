@@ -98,8 +98,14 @@ function recoverAccessWithPassword(PendingAwaitablePage $page, User $owner): voi
 }
 
 test('the owner can register a passkey and use it for normal sign-in', function () {
+    $this->travelTo(now()->startOfMinute()->addMinute()->addSeconds(30));
+
     $owner = User::factory()->create();
     $page = visit('/login');
+
+    $browserNow = now()->getTimestamp() * 1_000 + 1_000;
+    $page->page()->context()->addInitScript("Date.now = () => {$browserNow};");
+    $page->script('window.location.reload()');
 
     configurePasskeysForBrowser($page);
     installVirtualPasskeyAuthenticator($page);
@@ -146,7 +152,7 @@ test('the owner can register a passkey and use it for normal sign-in', function 
     $page->script(<<<'JS'
         (() => {
             const nativeNow = Date.now.bind(Date);
-            Date.now = () => nativeNow() + 149_000;
+            Date.now = () => nativeNow() + 120_000;
             globalThis.dispatchEvent(new Event('focus'));
         })()
     JS);
