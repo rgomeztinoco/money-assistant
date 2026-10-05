@@ -86,6 +86,7 @@ type MovementEditorProps = {
     movement: ConfirmationMovement;
     movementIndex: number;
     sourceMovement: StatementPreviewMovement;
+    claimedTransactionIds: Set<number>;
     updateMovement: (
         movementIndex: number,
         movement: ConfirmationMovement,
@@ -264,7 +265,7 @@ function candidateSupportsMovement(
 function candidateLabel(candidate: StatementMatchCandidate): string {
     const sign = candidate.direction === 'credit' ? '+' : '−';
 
-    return `${formatFullDate(candidate.occurred_on)} · ${sign}${formatMinorUnits(candidate.amount_minor, candidate.currency)} · ${candidate.description}`;
+    return `#${candidate.id} · ${formatFullDate(candidate.occurred_on)} · ${sign}${formatMinorUnits(candidate.amount_minor, candidate.currency)} · ${candidate.description}`;
 }
 
 function invalidateLinkedMovements(
@@ -286,6 +287,7 @@ function MovementEditor({
     movement,
     movementIndex,
     sourceMovement,
+    claimedTransactionIds,
     updateMovement,
     movementError,
 }: MovementEditorProps) {
@@ -517,6 +519,12 @@ function MovementEditor({
                                         (candidate) => ({
                                             value: `link:${candidate.id}`,
                                             label: candidateLabel(candidate),
+                                            disabled:
+                                                claimedTransactionIds.has(
+                                                    candidate.id,
+                                                ) &&
+                                                candidate.id !==
+                                                    movement.transaction_id,
                                         }),
                                     ),
                                     {
@@ -725,6 +733,14 @@ export default function CreateStatementImport() {
         )
         .map(({ movementIndex }) => movementIndex);
     const unresolvedCount = unresolvedMovementIndexes.length;
+    const claimedTransactionIds = new Set(
+        confirmation.data.movements
+            .filter(
+                (row) =>
+                    row.resolution === 'link' && row.transaction_id !== null,
+            )
+            .map((row) => row.transaction_id!),
+    );
     const spendingMovementCount = confirmation.data.movements.filter(
         (movement) =>
             statementMovementContributesToSpending(movement.classification),
@@ -1232,6 +1248,9 @@ export default function CreateStatementImport() {
                                                             preview.movements[
                                                                 movementIndex
                                                             ]
+                                                        }
+                                                        claimedTransactionIds={
+                                                            claimedTransactionIds
                                                         }
                                                         updateMovement={
                                                             updateMovement

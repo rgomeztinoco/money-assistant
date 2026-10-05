@@ -24,6 +24,30 @@ function unifiedIngestionStatementPdf(): string
     ));
 }
 
+test('statement matching requires the same date and a resembling name', function (string $description, string $date, string $status, bool $hasInstrument) {
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->create([
+        'occurred_on' => $date,
+        'amount_minor' => 2000,
+        'currency' => 'PEN',
+        'kind' => TransactionKind::Transfer,
+        'direction' => MovementDirection::Debit,
+        'transfer_purpose' => TransferPurpose::Savings,
+        'description' => $description,
+        'instrument_label' => $hasInstrument ? 'BCP Cuenta Digital' : null,
+        'instrument_last_four' => $hasInstrument ? '1234' : null,
+    ]);
+
+    $preview = app(StatementImportWorkflow::class)->preview($owner, UploadedFile::fake()->createWithContent('statement.pdf', unifiedIngestionStatementPdf()));
+
+    expect($preview->movements[0]->match->status->value)->toBe($status);
+})->with([
+    'resembling merchant' => ['Ahorro WARDA BCP', '2026-02-01', 'matched', true],
+    'resembling merchant without instrument' => ['Ahorro WARDA BCP', '2026-02-01', 'matched', false],
+    'unrelated merchant' => ['Airport taxi', '2026-02-01', 'ambiguous', true],
+    'nearby date' => ['WARDA', '2026-02-02', 'ambiguous', true],
+]);
+
 function unifiedIngestionInterbankStatementPdf(): string
 {
     return SyntheticPdf::fromText((string) file_get_contents(
@@ -89,7 +113,7 @@ test('every app-owned Gmail format is fixture-backed and extracts its agreed Tra
 test('a clear statement match links statement and Gmail evidence to one Transaction', function () {
     $owner = User::factory()->create();
     $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
-        'occurred_on' => '2026-02-02',
+        'occurred_on' => '2026-02-01',
         'amount_minor' => 2000,
         'currency' => 'PEN',
         'kind' => TransactionKind::Transfer,
@@ -144,7 +168,7 @@ test('an Interbank statement card payment links opposite account and card moveme
         'kind' => TransactionKind::Transfer,
         'direction' => MovementDirection::Debit,
         'transfer_purpose' => TransferPurpose::CardPayment,
-        'description' => 'Interbank card payment',
+        'description' => 'Pago tarj web app Interbank',
         'instrument_label' => 'Interbank account',
         'instrument_last_four' => '4321',
     ]);
@@ -162,6 +186,21 @@ test('an Interbank statement card payment links opposite account and card moveme
         ->and($preview->movements[1]->match)
         ->status->value->toBe('matched')
         ->transactionId->toBe($recordedTransaction->id);
+});
+
+test('generic payment wording does not make unrelated merchant names resemble each other', function () {
+    $owner = User::factory()->create();
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-01-20',
+        'amount_minor' => 2000,
+        'description' => 'Payment South',
+        'instrument_label' => 'Interbank Amex',
+        'instrument_last_four' => '1234',
+    ]);
+    $statement = str_replace('Grocery                  ', 'Payment North            ', (string) file_get_contents(base_path('tests/Fixtures/Statements/interbank.txt')));
+    $preview = app(StatementImportWorkflow::class)->preview($owner, UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText($statement)));
+
+    expect($preview->movements[2]->match->status->value)->toBe('ambiguous');
 });
 
 test('one existing Transaction claimed by repeated statement movements requires review', function () {
@@ -301,7 +340,7 @@ test('statement matching uses the three-day date proximity boundary', function (
 
     expect($preview->movements[0]->match->status->value)->toBe($expectedStatus);
 })->with([
-    'three days before' => ['2026-01-29', 'matched'],
+    'three days before' => ['2026-01-29', 'ambiguous'],
     'four days before' => ['2026-01-28', 'new'],
 ]);
 
@@ -437,7 +476,7 @@ test('ambiguous statement movements cannot select the same Transaction twice', f
 test('a clear match rejects an incompatible owner classification', function () {
     $owner = User::factory()->create();
     Transaction::factory()->for($owner, 'owner')->create([
-        'occurred_on' => '2026-02-02',
+        'occurred_on' => '2026-02-01',
         'amount_minor' => 2000,
         'currency' => 'PEN',
         'kind' => TransactionKind::Transfer,
@@ -469,7 +508,7 @@ test('a clear match rejects an incompatible owner classification', function () {
 test('a clear match rejects an edited amount that conflicts with the selected Transaction', function () {
     $owner = User::factory()->create();
     Transaction::factory()->for($owner, 'owner')->create([
-        'occurred_on' => '2026-02-02',
+        'occurred_on' => '2026-02-01',
         'amount_minor' => 2000,
         'currency' => 'PEN',
         'kind' => TransactionKind::Transfer,
@@ -504,7 +543,7 @@ test('a clear automatic match rejects edited instrument identity', function (
 ) {
     $owner = User::factory()->create();
     Transaction::factory()->for($owner, 'owner')->create([
-        'occurred_on' => '2026-02-02',
+        'occurred_on' => '2026-02-01',
         'amount_minor' => 2000,
         'currency' => 'PEN',
         'kind' => TransactionKind::Transfer,
@@ -539,7 +578,7 @@ test('a clear automatic match rejects edited instrument identity', function (
 test('confirmation reports a row error when an automatic match was linked after preview', function () {
     $owner = User::factory()->create();
     $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
-        'occurred_on' => '2026-02-02',
+        'occurred_on' => '2026-02-01',
         'amount_minor' => 2000,
         'currency' => 'PEN',
         'kind' => TransactionKind::Transfer,
@@ -575,7 +614,7 @@ test('confirmation reports a row error when an automatic match was linked after 
 test('the owner can reject a clear match and add the Statement Movement as a new Transaction', function () {
     $owner = User::factory()->create();
     $recordedTransaction = Transaction::factory()->for($owner, 'owner')->create([
-        'occurred_on' => '2026-02-02',
+        'occurred_on' => '2026-02-01',
         'amount_minor' => 2000,
         'currency' => 'PEN',
         'kind' => TransactionKind::Transfer,

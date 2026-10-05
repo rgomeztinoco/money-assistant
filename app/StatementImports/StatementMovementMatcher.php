@@ -10,6 +10,7 @@ use App\StatementMovementMatchStatus;
 use App\StatementMovementReviewReason;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 final class StatementMovementMatcher
 {
@@ -114,14 +115,16 @@ final class StatementMovementMatcher
         $candidates = $transactions->map(function (Transaction $transaction) use ($preview, $movement, $isCardPayment, $transactionKind, $transferPurpose): ?array {
             $descriptionMatches = $this->merchantNormalizer->normalize($transaction->description)
                 === $this->merchantNormalizer->normalize($movement->description);
+            $descriptionResembles = $this->descriptionsResemble($transaction->description, $movement->description);
             $lastFourMatches = $preview->instrumentLastFour !== null
                 && $transaction->instrument_last_four !== null
                 && hash_equals($preview->instrumentLastFour, $transaction->instrument_last_four);
             $labelMatches = $transaction->instrument_label !== null
                 && $this->merchantNormalizer->normalize($transaction->instrument_label)
                     === $this->merchantNormalizer->normalize($preview->instrumentLabel);
-            $dateDifference = $movement->occurredOn->diffInDays(
-                CarbonImmutable::parse($transaction->occurred_on),
+            $dateDifference = $movement->occurredOn->startOfDay()->diffInDays(
+                CarbonImmutable::parse($transaction->occurred_on->toDateString(), config('app.timezone')),
+                absolute: true,
             );
             $amountMatches = (string) $transaction->amount_minor === $movement->amountMinor;
             $currencyMatches = $transaction->currency === $movement->currency;
@@ -180,6 +183,7 @@ final class StatementMovementMatcher
                     'date_proximity' => $dateMatches,
                     'instrument' => $lastFourMatches || $labelMatches,
                     'description' => $descriptionMatches,
+                    'description_resemblance' => $descriptionResembles,
                     'kind' => $kindMatches,
                     'transfer_purpose' => $transferPurposeMatches,
                     'card_payment_counterpart' => $isCardPayment && ! $directionMatches,
@@ -230,9 +234,8 @@ final class StatementMovementMatcher
         }
 
         if (count($plausibleCandidates) === 1
-            && ($plausibleCandidates[0]['evidence']['instrument']
-                || $plausibleCandidates[0]['evidence']['description']
-                || $plausibleCandidates[0]['evidence']['card_payment_counterpart'])) {
+            && $plausibleCandidates[0]['date_difference_days'] === 0
+            && $plausibleCandidates[0]['evidence']['description_resemblance']) {
             return new StatementMovementMatch(
                 status: StatementMovementMatchStatus::Matched,
                 transactionId: $plausibleCandidates[0]['id'],
@@ -253,5 +256,33 @@ final class StatementMovementMatcher
                 ? StatementMovementReviewReason::MultipleMatches
                 : StatementMovementReviewReason::LowConfidence,
         );
+    }
+
+    private function descriptionsResemble(string $left, string $right): bool
+    {
+        $left = Str::transliterate($this->merchantNormalizer->normalize($left));
+        $right = Str::transliterate($this->merchantNormalizer->normalize($right));
+
+        if ($left === $right) {
+            return true;
+        }
+
+        $genericWords = ['payment', 'payments', 'purchase', 'purchases', 'transfer', 'transferencia', 'pago', 'pagos', 'compra', 'compras', 'pos', 'bcp', 'the', 'from'];
+        $isMerchantWord = fn (string $word): bool => strlen($word) >= 3
+            && ! ctype_digit($word)
+            && ! in_array($word, $genericWords, true);
+        $leftWords = array_unique(array_filter(explode(' ', $left), $isMerchantWord));
+        $rightWords = array_unique(array_filter(explode(' ', $right), $isMerchantWord));
+        $wordCount = min(count($leftWords), count($rightWords));
+
+        if ($wordCount > 0 && count(array_intersect($leftWords, $rightWords)) / $wordCount >= 0.5) {
+            return true;
+        }
+
+        $leftName = implode(' ', $leftWords);
+        $rightName = implode(' ', $rightWords);
+        similar_text($leftName, $rightName, $similarity);
+
+        return min(strlen($leftName), strlen($rightName)) >= 4 && $similarity >= 80;
     }
 }
