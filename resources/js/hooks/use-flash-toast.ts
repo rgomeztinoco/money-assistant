@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import type { FlashToast } from '@/types/ui';
 
 export function useFlashToast(
-    onApplyExistingRule: (ruleId: number) => void,
+    onAction: (action: NonNullable<FlashToast['action']>) => void,
 ): void {
     useEffect(() => {
         return router.on('flash', (event) => {
@@ -12,25 +12,25 @@ export function useFlashToast(
             const data = flash?.toast as FlashToast | undefined;
 
             if (data) {
-                const ruleId =
-                    data.action?.type === 'apply_existing_merchant_rule'
-                        ? data.action.rule_id
-                        : null;
+                const action = data.action;
 
                 toast[data.type](
                     data.message,
-                    ruleId === null
+                    action === undefined
                         ? undefined
                         : {
                               duration: Infinity,
                               closeButton: true,
                               action: {
-                                  label: 'Apply to previous',
-                                  onClick: () => onApplyExistingRule(ruleId),
+                                  label:
+                                      action.type === 'create_merchant_rule'
+                                          ? 'Create merchant rule'
+                                          : 'Apply to previous',
+                                  onClick: () => onAction(action),
                               },
                           },
                 );
             }
         });
-    }, [onApplyExistingRule]);
+    }, [onAction]);
 }

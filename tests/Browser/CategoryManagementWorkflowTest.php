@@ -171,8 +171,7 @@ test('an inline Category stays selected while editing a Transaction', function (
             '@category-'.$transaction->id.'-trigger',
             'Market errands',
         )
-        ->click('@category-'.$transaction->id.'-trigger')
-        ->click('[data-test="apply-category-once-'.$transaction->id.'"]')
+        ->assertSee('Classification updated.')
         ->click('[data-test="transaction-'.$transaction->id.'"]')
         ->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
         ->press('Save Transaction')

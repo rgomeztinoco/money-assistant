@@ -57,7 +57,7 @@ export function TransactionTable<T extends TransactionTableRow>({
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {transactions.length === 0 ? (
-                <div className="grid min-h-48 place-items-center p-8 text-center">
+                <div className="grid min-h-48 flex-1 place-items-center p-8 text-center">
                     <div className="grid gap-2">
                         <p className="font-medium">No matching Transactions</p>
                         <p className="type-body text-muted-foreground">

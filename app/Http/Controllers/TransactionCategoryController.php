@@ -31,6 +31,16 @@ class TransactionCategoryController extends Controller
             'message' => isset($validated['category_id'])
                 ? __('Category assigned.')
                 : __('Transaction returned to Uncategorized.'),
+            ...(isset($validated['category_id']) ? ['action' => [
+                'type' => 'create_merchant_rule',
+                'draft' => [
+                    'source_transaction_id' => $transaction->id,
+                    'merchant' => $transaction->description,
+                    'category_id' => (int) $validated['category_id'],
+                    'transaction_kind' => $transaction->kind->value,
+                    'currency' => $transaction->currency->value,
+                ],
+            ]] : []),
         ]);
 
         return $this->redirectToWorkspace('transactions.index');

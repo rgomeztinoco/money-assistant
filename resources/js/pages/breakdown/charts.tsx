@@ -134,6 +134,88 @@ export function CategoryBreakdown({
                                             ))}
                                     </span>
                                 </Link>
+                                {(selected ||
+                                    group.children.some(
+                                        (child) =>
+                                            filters.category ===
+                                            String(child.category.id),
+                                    )) &&
+                                    group.children.length > 0 && (
+                                        <ol
+                                            className="col-span-2 flex flex-col gap-1 pb-2 pl-4"
+                                            aria-label={`Subcategories of ${group.category.name}`}
+                                        >
+                                            {group.children.map((child) => {
+                                                const childKey = String(
+                                                    child.category.id,
+                                                );
+                                                const childSelected =
+                                                    filters.category ===
+                                                    childKey;
+
+                                                return (
+                                                    <li key={childKey}>
+                                                        <Link
+                                                            href={selectionUrl({
+                                                                currencyFilter,
+                                                                period,
+                                                                category:
+                                                                    childSelected
+                                                                        ? key
+                                                                        : childKey,
+                                                                day: filters.day,
+                                                                focus: filters.focus,
+                                                                merchant:
+                                                                    filters.merchant,
+                                                                attention:
+                                                                    filters.attention,
+                                                                selected: null,
+                                                            })}
+                                                            preserveScroll
+                                                            data-test={`breakdown-category-${childKey}`}
+                                                            aria-current={
+                                                                childSelected
+                                                                    ? 'true'
+                                                                    : undefined
+                                                            }
+                                                            className="flex flex-wrap items-center justify-between gap-2 rounded px-2 py-2 type-row hover:bg-muted/50 aria-current:bg-primary/5"
+                                                        >
+                                                            <span>
+                                                                {
+                                                                    child
+                                                                        .category
+                                                                        .name
+                                                                }
+                                                            </span>
+                                                            <span className="flex flex-wrap gap-3 tabular-nums">
+                                                                {visibleCurrencies(
+                                                                    currencyFilter,
+                                                                ).map(
+                                                                    (
+                                                                        currency,
+                                                                    ) => (
+                                                                        <span
+                                                                            key={
+                                                                                currency
+                                                                            }
+                                                                        >
+                                                                            {formatMinorUnits(
+                                                                                child
+                                                                                    .amount_minor[
+                                                                                    currency
+                                                                                ],
+                                                                                currency,
+                                                                            )}
+                                                                        </span>
+                                                                    ),
+                                                                )}
+                                                            </span>
+                                                        </Link>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ol>
+                                    )}
                             </li>
                         );
                     })}
