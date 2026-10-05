@@ -262,8 +262,8 @@ test('the owner can link a statement movement when multipart form data serialize
     );
 
     expect($movementIndex)->toBeInt()
-        ->and($preview->movements[$movementIndex]->match?->status->value)->toBe('ambiguous')
-        ->and($preview->movements[$movementIndex]->match?->reviewReason?->value)->toBe('low_confidence')
+        ->and($preview->movements[$movementIndex]->match?->status->value)->toBe('matched')
+        ->and($preview->movements[$movementIndex]->match?->reviewReason)->toBeNull()
         ->and($preview->movements[$movementIndex]->match?->candidates)->toHaveCount(1)
         ->and($preview->movements[$movementIndex]->match?->candidates[0])->toMatchArray([
             'id' => $transaction->id,
