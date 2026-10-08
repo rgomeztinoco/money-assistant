@@ -11,12 +11,12 @@ use Illuminate\Validation\Rule;
 
 class SaveDebtRequest extends FormRequest
 {
-    /** @return array{name: string, counterparty: string, direction: string, currency: string, opening_balance_minor: int|string, opened_on: string} */
+    /** @return array{name: string, counterparty: string, direction: string, currency: string, opening_balance_minor: int|string, opened_on: string, monthly_target_minor: int|null} */
     public function debtData(): array
     {
         return ['name' => $this->string('name')->toString(), 'counterparty' => $this->string('counterparty')->toString(),
             'direction' => $this->string('direction')->toString(), 'currency' => $this->string('currency')->toString(),
-            'opening_balance_minor' => $this->integer('opening_balance_minor'), 'opened_on' => $this->string('opened_on')->toString()];
+            'opening_balance_minor' => $this->integer('opening_balance_minor'), 'opened_on' => $this->string('opened_on')->toString(), 'monthly_target_minor' => $this->filled('monthly_target_minor') ? $this->integer('monthly_target_minor') : null];
     }
 
     public function authorize(): bool
@@ -34,6 +34,7 @@ class SaveDebtRequest extends FormRequest
             'direction' => ['required', Rule::enum(DebtDirection::class)],
             'currency' => ['required', Rule::enum(Currency::class)],
             'opening_balance_minor' => ['required', 'regex:/^\d+$/D', 'integer', 'min:0', 'max:'.PHP_INT_MAX],
-            'opened_on' => ['required', 'date_format:Y-m-d']];
+            'opened_on' => ['required', 'date_format:Y-m-d'],
+            'monthly_target_minor' => ['nullable', 'regex:/^\d+$/D', 'integer', 'min:1', 'max:'.PHP_INT_MAX]];
     }
 }

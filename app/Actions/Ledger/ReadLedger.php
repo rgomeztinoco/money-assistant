@@ -185,7 +185,7 @@ class ReadLedger
         $receiptBreakdown = $transaction->receiptBreakdown?->lineItems->isNotEmpty() === true
             ? $transaction->receiptBreakdown
             : null;
-        $unresolvedCategoryCount = $transaction->kind->supportsCategory()
+        $unresolvedCategoryCount = $transaction->hasSpendingContribution()
             ? ($receiptBreakdown === null
                 ? ($transaction->category_id === null ? 1 : 0)
                 : $receiptBreakdown->lineItems->whereNull('category_id')->count())
@@ -217,7 +217,7 @@ class ReadLedger
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
             'direction' => $transaction->direction->value,
-            'income_source' => $transaction->income_source?->value,
+            'income_source' => $transaction->effectiveIncomeSource()?->value,
             'transfer_purpose' => $transaction->transfer_purpose?->value,
             'debt_allocation' => $transaction->debtAllocation(),
             'description' => $transaction->description,
@@ -339,7 +339,7 @@ class ReadLedger
                 ->select('receipt_breakdown_id')
                 ->whereIn('category_id', $categoryIds));
 
-        $query->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+        $query->whereHasSpendingContribution()
             ->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems, $transactionsWithMatchingLineItems): void {
                 $query
                     ->where(function (Builder $query) use ($categoryIds, $transactionsWithLineItems): void {
@@ -354,7 +354,7 @@ class ReadLedger
     /** @param Builder<Transaction> $query */
     private function whereHasUncategorizedContribution(Builder $query): void
     {
-        $query->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+        $query->whereHasSpendingContribution()
             ->where(function (Builder $query): void {
                 $query
                     ->where(function (Builder $query): void {
@@ -373,7 +373,7 @@ class ReadLedger
     {
         $query->where(function (Builder $query): void {
             $query
-                ->whereNotIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+                ->whereNotIn('id', Transaction::query()->whereHasSpendingContribution()->select('id'))
                 ->orWhere(function (Builder $query): void {
                     $query
                         ->where(function (Builder $query): void {

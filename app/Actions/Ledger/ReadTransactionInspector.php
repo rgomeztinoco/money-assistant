@@ -116,7 +116,7 @@ class ReadTransactionInspector
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
             'direction' => $transaction->direction->value,
-            'income_source' => $transaction->income_source?->value,
+            'income_source' => $transaction->effectiveIncomeSource()?->value,
             'transfer_purpose' => $transaction->transfer_purpose?->value,
             'description' => $transaction->description,
             'instrument_label' => $transaction->instrument_label,
@@ -131,7 +131,7 @@ class ReadTransactionInspector
                     'provenance' => $this->readCategoryAssignmentProvenance->handle($transaction, $owner),
                 ],
             'review' => [
-                'category' => $transaction->kind->supportsCategory()
+                'category' => $transaction->hasSpendingContribution()
                     && ($receiptBreakdown === null || $receiptBreakdown['line_items'] === [])
                     && $transaction->category_id === null,
                 'fields' => $reviewFields,

@@ -31,6 +31,7 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import {
+    currencyUnitsToMinorUnits,
     formatMinorUnits,
     minorUnitsToCurrencyUnits,
 } from '@/lib/format-minor-units';
@@ -43,6 +44,7 @@ import {
     transferPurposeOptions,
 } from '@/lib/money-movement';
 import { cn } from '@/lib/utils';
+import { DebtAllocationFields } from '@/pages/debts/debt-allocation-fields';
 import type { Debt } from '@/pages/debts/types';
 import type {
     Currency,
@@ -57,6 +59,8 @@ export type EditorTransaction = {
     debt_allocation?: {
         debt_id: number;
         debt_name: string;
+        principal_minor: string;
+        interest_minor: string;
         kind: 'funding' | 'repayment';
     } | null;
     voided_at?: string | null;
@@ -110,6 +114,19 @@ export function TransactionEditor({
     const [debtId, setDebtId] = useState(
         transaction?.debt_allocation?.debt_id.toString() ?? '',
     );
+    const [principal, setPrincipal] = useState(
+        transaction
+            ? minorUnitsToCurrencyUnits(
+                  transaction.debt_allocation?.principal_minor ??
+                      transaction.amount_minor,
+              )
+            : '',
+    );
+    const [interest, setInterest] = useState(
+        minorUnitsToCurrencyUnits(
+            transaction?.debt_allocation?.interest_minor ?? '0',
+        ),
+    );
     const form = useRef<FormComponentRef>(null);
     const splitRemovalConfirmed = useRef(false);
     const [kind, setKind] = useState<TransactionKind>(
@@ -141,6 +158,11 @@ export function TransactionEditor({
     const [amount, setAmount] = useState(
         transaction ? minorUnitsToCurrencyUnits(transaction.amount_minor) : '',
     );
+    const paidInterest =
+        kind === 'debt' &&
+        direction === 'debit' &&
+        debtEntryKind === 'repayment' &&
+        (currencyUnitsToMinorUnits(interest) ?? 0n) > 0n;
     const [categoryId, setCategoryId] = useState(
         transaction?.category?.id.toString() ?? '',
     );
@@ -160,7 +182,8 @@ export function TransactionEditor({
     const removesCategory =
         transaction?.category !== null &&
         transaction?.category !== undefined &&
-        (!movementSupportsCategory(kind) || categoryId === '');
+        (!(movementSupportsCategory(kind) || paidInterest) ||
+            categoryId === '');
     const removesOriginal =
         transaction?.original_spending_id !== null &&
         transaction?.original_spending_id !== undefined &&
@@ -461,6 +484,16 @@ export function TransactionEditor({
                                         name="debt_entry_kind"
                                         value={debtEntryKind}
                                     />
+                                    {debtEntryKind === 'repayment' && (
+                                        <DebtAllocationFields
+                                            principal={principal}
+                                            interest={interest}
+                                            onPrincipal={setPrincipal}
+                                            onInterest={setInterest}
+                                            errors={errors}
+                                            allowNewCharge={!transaction?.debt_allocation}
+                                        />
+                                    )}
                                     <InputError
                                         message={
                                             errors.debt_entry_kind ??
@@ -540,7 +573,7 @@ export function TransactionEditor({
                                     />
                                 </div>
                             )}
-                            {movementSupportsCategory(kind) &&
+                            {(movementSupportsCategory(kind) || paidInterest) &&
                                 (transaction?.split ? (
                                     <div className="grid gap-2 sm:col-span-2">
                                         <Label>Category split</Label>

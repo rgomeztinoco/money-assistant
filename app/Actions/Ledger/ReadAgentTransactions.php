@@ -36,6 +36,7 @@ use JsonException;
  *     updated_at: string|null, voided_at: string|null, category: AgentCategory|null,
  *     category_assignment_provenance: string|null, original_spending: RelatedTransaction|null,
  *     linked_refunds: list<RelatedTransaction>,
+ *     debt_allocation: array{debt_id: int, debt_name: string, kind: string, principal_minor: string, interest_minor: string}|null,
  *     category_allocations: list<array{category: AgentCategory|null, amount_minor: string}>
  * }
  * @phpstan-type TransactionPage array{
@@ -188,15 +189,16 @@ class ReadAgentTransactions
             'currency' => $row['currency'],
             'kind' => $row['kind'],
             'direction' => $row['direction'],
-            'income_source' => $row['income_source'],
+            'income_source' => $transaction->effectiveIncomeSource()?->value,
+            'debt_allocation' => $transaction->debtAllocation(),
             'transfer_purpose' => $row['transfer_purpose'],
             'description' => $row['description'],
             'confirmed_at' => $row['confirmed_at'],
             'review_state' => $row['review_state'],
             'updated_at' => $transaction->updated_at?->toIso8601String(),
             'voided_at' => $transaction->voided_at?->toIso8601String(),
-            'category' => $transaction->kind->supportsCategory() ? $this->category($transaction->category) : null,
-            'category_assignment_provenance' => $transaction->kind->supportsCategory() ? $transaction->category_assignment_provenance?->value : null,
+            'category' => $transaction->hasSpendingContribution() ? $this->category($transaction->category) : null,
+            'category_assignment_provenance' => $transaction->hasSpendingContribution() ? $transaction->category_assignment_provenance?->value : null,
             'original_spending' => $transaction->originalSpending === null ? null : $this->related($transaction->originalSpending),
             'linked_refunds' => array_values($transaction->linkedRefunds->map(fn (Transaction $refund): array => $this->related($refund))->all()),
             'category_allocations' => $projectedAllocations,

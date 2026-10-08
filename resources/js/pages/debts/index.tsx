@@ -266,6 +266,11 @@ export default function Debts({
                                                     >
                                                         {debt.counterparty}
                                                     </p>
+                                                    {debt.monthly_target_minor && (
+                                                        <p className="truncate type-meta text-muted-foreground">
+                                                            {formatMinorUnits(debt.monthly_paid_minor, debt.currency)} / {formatMinorUnits(debt.monthly_target_minor, debt.currency)} this month
+                                                        </p>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     {debt.direction === 'owed'

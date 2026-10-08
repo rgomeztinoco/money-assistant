@@ -30,7 +30,7 @@ class UpdateBreakdownTransactionClassificationRequest extends FormRequest
     {
         $transaction = $this->route('transaction');
         $supportsCategory = $transaction instanceof Transaction
-            && $transaction->kind->supportsCategory();
+            && $transaction->hasSpendingContribution();
 
         return [
             'category_id' => [

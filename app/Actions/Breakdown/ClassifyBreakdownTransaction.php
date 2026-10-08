@@ -30,7 +30,11 @@ class ClassifyBreakdownTransaction
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($currentTransaction->kind->supportsCategory()) {
+            if ($currentTransaction->hasSpendingContribution()) {
+                if ($applyToMatching && ! $currentTransaction->kind->supportsCategory()) {
+                    throw ValidationException::withMessages(['apply_to_matching' => 'Debt interest Categories must be confirmed for each payment.']);
+                }
+
                 return $this->classifySpending(
                     $owner,
                     $currentTransaction,

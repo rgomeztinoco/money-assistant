@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
+import type { CategoryPickerOption } from '@/components/category-picker';
 import { DateText } from '@/components/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,9 +33,9 @@ import { DebtEntryForm } from './debt-entry-form';
 import { DebtForm } from './debt-form';
 import type { Debt, DebtEntry } from './types';
 
-type DebtDetailProps = { debt: Debt; entries: DebtEntry[]; today: string };
+type DebtDetailProps = { debt: Debt; entries: DebtEntry[]; category_options: CategoryPickerOption[]; today: string };
 
-export default function DebtDetail({ debt, entries, today }: DebtDetailProps) {
+export default function DebtDetail({ debt, entries, category_options, today }: DebtDetailProps) {
     const [editing, setEditing] = useState(false);
     const [recording, setRecording] = useState(false);
     const [editingEntry, setEditingEntry] = useState<DebtEntry | null>(null);
@@ -96,6 +97,11 @@ export default function DebtDetail({ debt, entries, today }: DebtDetailProps) {
                                 <p className="type-meta text-muted-foreground">
                                     <DateText value={debt.opened_on} />
                                 </p>
+                            </div>
+                            <div>
+                                <p className="type-meta text-muted-foreground">{debt.target_month} full payments</p>
+                                <p className="tabular-nums">{formatMinorUnits(debt.monthly_paid_minor, debt.currency)}</p>
+                                <p className="type-meta text-muted-foreground">{debt.monthly_target_minor ? `${formatMinorUnits(debt.monthly_target_minor, debt.currency)} target` : 'No monthly target'}</p>
                             </div>
                             <Badge variant="secondary">
                                 {debt.status === 'settled'
@@ -164,7 +170,7 @@ export default function DebtDetail({ debt, entries, today }: DebtDetailProps) {
                                                         : entry.kind ===
                                                             'funding'
                                                           ? 'Funding'
-                                                          : 'Adjustment'}{' '}
+                                                          : entry.kind === 'interest_charge' ? 'Interest charge' : 'Adjustment'}{' '}
                                                     {entry.voided && (
                                                         <Badge variant="outline">
                                                             Voided
@@ -211,12 +217,18 @@ export default function DebtDetail({ debt, entries, today }: DebtDetailProps) {
                                                         entry.amount_minor,
                                                         debt.currency,
                                                     )}
+                                                    {entry.kind === 'repayment' && (
+                                                        <div className="type-meta text-muted-foreground">
+                                                            <p>Principal {formatMinorUnits(entry.principal_minor ?? entry.amount_minor, debt.currency)}</p>
+                                                            <p>Interest {formatMinorUnits(entry.interest_minor, debt.currency)}</p>
+                                                        </div>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        aria-label={`Edit ${entry.kind === 'adjustment' ? entry.reason : entry.description}`}
+                                                        aria-label={`Edit ${entry.transaction_id === null ? entry.reason : entry.description}`}
                                                         onClick={() =>
                                                             setEditingEntry(
                                                                 entry,
@@ -272,6 +284,7 @@ export default function DebtDetail({ debt, entries, today }: DebtDetailProps) {
                     </DialogHeader>
                     <DebtEntryForm
                         debt={debt}
+                        categoryOptions={category_options}
                         today={today}
                         onSaved={() => setRecording(false)}
                     />
@@ -286,7 +299,7 @@ export default function DebtDetail({ debt, entries, today }: DebtDetailProps) {
                         <DialogTitle>Edit debt operation</DialogTitle>
                         <DialogDescription>
                             {editingEntry?.transaction_id === null
-                                ? 'Correct the balance adjustment.'
+                                ? 'Correct the non-cash operation.'
                                 : 'Changes update the original Transaction.'}
                         </DialogDescription>
                     </DialogHeader>
@@ -296,6 +309,7 @@ export default function DebtDetail({ debt, entries, today }: DebtDetailProps) {
                             debt={debt}
                             today={today}
                             entry={editingEntry}
+                            categoryOptions={category_options}
                             onSaved={() => setEditingEntry(null)}
                         />
                     )}

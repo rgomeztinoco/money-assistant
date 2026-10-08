@@ -29,7 +29,7 @@ A Transaction Kind for money earned or otherwise received as income. It is summa
 _Avoid_: Refund, credit
 
 **Income Source**:
-The small owner-facing taxonomy for Income: Salary, Independent work, Investments, or Other income. It is independent from Spending Categories.
+The small owner-facing taxonomy for Income: Salary, Independent work, Investments, Interest received, or Other income. It is independent from Spending Categories.
 _Avoid_: Category, merchant
 
 **Transfer**:
@@ -41,12 +41,16 @@ An obligation between the owner and a person or institution, either owed by the 
 _Avoid_: Bank account, net worth, automatic loan schedule
 
 **DebtEntry**:
-A dated change to a Debt from additional funding, repayment or collection, or a signed non-cash adjustment with a reason. Funding and repayments use a linked Debt Transaction for the actual posted movement. Non-cash adjustments create no Transaction. Movements before the opening date are already included in the baseline and cannot be applied again.
+A dated change to a Debt from additional funding, repayment or collection, an explicit interest charge, or a signed non-cash adjustment with a reason. Funding and repayments use a linked Debt Transaction for the actual posted movement. Interest charges and non-cash adjustments create no Transaction. Confirmed interest charges remain independent of payments, including charges recorded with a repayment. Movements before the opening date are already included in the baseline and cannot be applied again.
 _Avoid_: Duplicate payment, account ledger
 
 **Debt principal**:
-Money borrowed, lent, repaid, or collected against an obligation. It contributes neither to Net Spending nor Income. A Debt Transaction retains its full posted amount and independent Movement Direction and belongs to one Debt. Full repayments made and collected are reported separately for each currency and period.
+Money borrowed, lent, repaid, or collected against an obligation. It contributes neither to Net Spending nor Income. A Debt Transaction retains its full posted amount and independent Movement Direction and belongs to one Debt. Each repayment's principal and interest reconcile to its full posted amount. Paid interest contributes to Net Spending and may use a Category; received interest contributes to Income under Interest received. Full repayments made and collected are reported separately for each currency and period.
 _Avoid_: Earned Income, ordinary Spending
+
+**Monthly debt target**:
+An optional plan compared with full non-voided repayments during a calendar month. Targets and progress remain separate by currency and whether the owner owes or is owed. A settled debt retains its recorded target and history but adds no active monthly commitment.
+_Avoid_: Scheduled payment, accrued obligation, automatic repayment
 
 **Transfer Purpose**:
 The reason for a Transfer: Moved to savings, Card payment, or Other transfer. It determines whether the movement contributes to Moved to Savings without changing its Movement Direction.
