@@ -132,6 +132,18 @@ test('Statement Import reuses a reviewed Debt Transaction once at its full poste
     $this->post('/statement-imports', ['statement' => $statement, 'file_hash' => $preview['file_hash'], 'financial_statement_format' => $preview['financial_statement_format'], 'instrument_label' => $preview['instrument_label'], 'instrument_last_four' => $preview['instrument_last_four'], 'movements' => $movements])->assertSessionHasNoErrors()->assertRedirect();
     $this->get('/transactions')->assertInertia(fn (Assert $page) => $page->has('transactions', 5));
     $this->get("/debts/{$debtId}")->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', '9000')->has('entries', 1)->where('entries.0.transaction_id', $payment->id));
+    $statementUrl = $this->get('/statement-imports')->inertiaProps('statement_imports.data.0.id');
+    $this->put(route('transactions.update', $payment), ['kind' => 'debt', 'direction' => 'debit', 'currency' => 'PEN', 'amount_minor' => '2000', 'occurred_on' => '2026-02-04', 'description' => 'Corrected posted amount'])->assertSessionHasNoErrors();
+    $this->get("/statement-imports/{$statementUrl}")->assertInertia(fn (Assert $page) => $page->where('statement_import.summary.PEN.debt_payments_made_minor', '2000')->where('statement_import.movements.3.amount_minor', '1000'));
+    $this->get('/?currency=PEN&period=custom&date_from=2026-02-01&date_to=2026-02-28')->assertInertia(fn (Assert $page) => $page->where('primary.summary.debt_payments_made_minor', '2000'));
+    $this->get('/trends?currency=PEN&period=custom&date_from=2026-02-01&date_to=2026-02-28')->assertInertia(fn (Assert $page) => $page->where('summary.debt_payments_made_minor', '2000'));
+    $this->post(route('transactions.void.store', $payment))->assertSessionHasNoErrors();
+    $this->get('/breakdown?period=custom&date_from=2026-02-01&date_to=2026-02-28')->assertInertia(fn (Assert $page) => $page->where('summary.PEN.debt_payments_made_minor', '0'));
+    $this->delete(route('transactions.void.destroy', $payment))->assertSessionHasNoErrors();
+    $this->get('/breakdown?period=custom&date_from=2026-02-01&date_to=2026-02-28')->assertInertia(fn (Assert $page) => $page->where('summary.PEN.debt_payments_made_minor', '2000'));
+    $this->put(route('transactions.update', $payment), ['kind' => 'spending', 'direction' => 'debit', 'currency' => 'PEN', 'amount_minor' => '2000', 'occurred_on' => '2026-02-04', 'description' => 'Unlinked correction', 'unlink_debt' => true])->assertSessionHasNoErrors();
+    $this->get('/breakdown?period=custom&date_from=2026-02-01&date_to=2026-02-28')->assertInertia(fn (Assert $page) => $page->where('summary.PEN.debt_payments_made_minor', '0')->where('summary.PEN.net_spending_minor', '2001'));
+
 });
 
 test('ambiguous statement debt matches require owner review and cannot create unallocated debts', function () {

@@ -97,6 +97,7 @@ export function DebtEntryForm({
                     <FieldLabel htmlFor="entry-kind">Operation</FieldLabel>
                     <NativeSelect
                         id="entry-kind"
+                        aria-invalid={Boolean(form.errors.kind)}
                         value={form.data.kind}
                         onChange={(event) => {
                             form.setData(
@@ -162,6 +163,7 @@ export function DebtEntryForm({
                         </FieldLabel>
                         <NativeSelect
                             id="entry-transaction"
+                            aria-invalid={Boolean(form.errors.transaction_id)}
                             value={form.data.transaction_id}
                             required
                             onChange={(event) =>
@@ -238,6 +240,11 @@ export function DebtEntryForm({
                             </FieldLabel>
                             <Input
                                 id="entry-detail"
+                                aria-invalid={Boolean(
+                                    adjustment
+                                        ? form.errors.reason
+                                        : form.errors.description,
+                                )}
                                 value={
                                     adjustment
                                         ? form.data.reason

@@ -95,6 +95,7 @@ export function DebtForm({
                     </FieldLabel>
                     <NativeSelect
                         id="debt-direction"
+                        aria-invalid={Boolean(form.errors.direction)}
                         value={form.data.direction}
                         onChange={(event) =>
                             form.setData(
@@ -113,6 +114,7 @@ export function DebtForm({
                     <FieldLabel htmlFor="debt-currency">Currency</FieldLabel>
                     <NativeSelect
                         id="debt-currency"
+                        aria-invalid={Boolean(form.errors.currency)}
                         value={form.data.currency}
                         onChange={(event) =>
                             form.setData(
