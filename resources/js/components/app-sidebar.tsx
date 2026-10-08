@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     Files,
+    HandCoins,
     House,
     Mail,
     ReceiptText,
@@ -29,6 +30,7 @@ import { home } from '@/routes';
 import { index as breakdownIndex } from '@/routes/breakdown';
 import { index as categoriesIndex } from '@/routes/categories';
 import { gmail as gmailDataSource } from '@/routes/data_sources';
+import { index as debtsIndex } from '@/routes/debts';
 import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import { index as statementImportsIndex } from '@/routes/statement_imports';
 import { index as transactionsIndex } from '@/routes/transactions';
@@ -76,6 +78,7 @@ export function AppSidebar() {
         },
     ];
     const manageNavItems: NavItem[] = [
+        { title: 'Debts', href: debtsIndex(), icon: HandCoins },
         {
             title: 'Transactions',
             href: transactionsIndex(),

@@ -18,6 +18,7 @@ export const statementMovementClassificationOptions: Array<{
     },
     { value: 'fee', label: 'Bank fee', contributesToSpending: true },
     { value: 'tax', label: 'Tax', contributesToSpending: true },
+    { value: 'debt', label: 'Debt', contributesToSpending: false },
     { value: 'income', label: 'Income', contributesToSpending: false },
     {
         value: 'transfer',

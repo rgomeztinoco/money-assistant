@@ -150,6 +150,7 @@ class ReadLedger
             ->when($filters['void_state'] === 'voided', fn (Builder $query) => $query->whereNotNull('voided_at'))
             ->select([...self::TRANSACTION_COLUMNS, 'voided_at'])
             ->with([
+                'debtEntry.debt',
                 'originalSpending:id,description',
                 'category:id,name',
                 'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id',
@@ -218,6 +219,7 @@ class ReadLedger
             'direction' => $transaction->direction->value,
             'income_source' => $transaction->income_source?->value,
             'transfer_purpose' => $transaction->transfer_purpose?->value,
+            'debt_allocation' => $transaction->debtAllocation(),
             'description' => $transaction->description,
             'confirmed_at' => $transaction->confirmed_at->toIso8601String(),
             'original_spending' => $transaction->originalSpending === null

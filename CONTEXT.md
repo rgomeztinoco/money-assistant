@@ -13,7 +13,7 @@ Whether money moved out of an account (debit) or into an account (credit). Direc
 _Avoid_: Transaction Kind, transaction type
 
 **Transaction Kind**:
-The financial role of a Transaction: Spending, Refund or reimbursement, Income, or Transfer. It is independent from Movement Direction.
+The financial role of a Transaction: Spending, Refund or reimbursement, Income, Transfer, or Debt. It is independent from Movement Direction.
 _Avoid_: Transaction type, financial meaning
 
 **Spending**:
@@ -36,12 +36,24 @@ _Avoid_: Category, merchant
 A Transaction Kind for money moved between the owner's accounts or used to pay a card. Transfers do not affect Net Spending or Income. Savings Transfers contribute to Moved to Savings; card payments and ordinary internal Transfers do not.
 _Avoid_: Spending, Income
 
+**Debt**:
+An obligation between the owner and a person or institution, either owed by the owner or owed to the owner, with a descriptive name and one currency. The owner may combine obligations or keep separate debts for the same counterparty. Its opening balance is the amount still owed on the opening date and creates no money movement. A zero balance settles the debt while retaining its history; additional funding can reopen it.
+_Avoid_: Bank account, net worth, automatic loan schedule
+
+**DebtEntry**:
+A dated change to a Debt from additional funding, repayment or collection, or a signed non-cash adjustment with a reason. Funding and repayments use a linked Debt Transaction for the actual posted movement. Non-cash adjustments create no Transaction. Movements before the opening date are already included in the baseline and cannot be applied again.
+_Avoid_: Duplicate payment, account ledger
+
+**Debt principal**:
+Money borrowed, lent, repaid, or collected against an obligation. It contributes neither to Net Spending nor Income. A Debt Transaction retains its full posted amount and independent Movement Direction and belongs to one Debt. Full repayments made and collected are reported separately for each currency and period.
+_Avoid_: Earned Income, ordinary Spending
+
 **Transfer Purpose**:
 The reason for a Transfer: Moved to savings, Card payment, or Other transfer. It determines whether the movement contributes to Moved to Savings without changing its Movement Direction.
 _Avoid_: Category, direction
 
 **Net Spending**:
-Spending minus Refunds and reimbursements for one currency and period. Income and Transfers never reduce it.
+Spending minus Refunds and reimbursements for one currency and period. Income, Transfers, and Debt principal never reduce it.
 _Avoid_: Net external cash flow, balance change
 
 **Moved to Savings**:

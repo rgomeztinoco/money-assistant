@@ -10,6 +10,7 @@ enum StatementMovementClassification: string
     case Fee = 'fee';
     case Tax = 'tax';
     case Income = 'income';
+    case Debt = 'debt';
     case Transfer = 'transfer';
     case CardPayment = 'card_payment';
     case Savings = 'savings';
@@ -32,6 +33,7 @@ enum StatementMovementClassification: string
             self::Purchase, self::Fee, self::Tax => TransactionKind::Spending,
             self::Refund => TransactionKind::Refund,
             self::Income => TransactionKind::Income,
+            self::Debt => TransactionKind::Debt,
             self::Transfer, self::CardPayment, self::Savings => TransactionKind::Transfer,
             self::NeedsClassification, self::AlreadyRecorded, self::NotAMovement => null,
         };

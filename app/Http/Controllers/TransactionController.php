@@ -8,6 +8,7 @@ use App\Actions\Ledger\ReadTransactions;
 use App\Actions\Ledger\RecordManualTransaction;
 use App\Actions\Ledger\UpdateTransaction;
 use App\Currency;
+use App\DebtEntryKind;
 use App\Http\Requests\IndexTransactionsRequest;
 use App\Http\Requests\StoreManualTransactionRequest;
 use App\Http\Requests\UpdateTransactionRequest;
@@ -110,6 +111,9 @@ class TransactionController extends Controller
             categoryId: isset($validated['category_id']) ? (int) $validated['category_id'] : null,
             originalSpendingId: isset($validated['original_spending_id']) ? (int) $validated['original_spending_id'] : null,
             removeReceiptBreakdown: (bool) ($validated['remove_receipt_breakdown'] ?? false),
+            debtId: isset($validated['debt_id']) ? (int) $validated['debt_id'] : null,
+            debtEntryKind: isset($validated['debt_entry_kind']) ? DebtEntryKind::from($validated['debt_entry_kind']) : null,
+            unlinkDebt: (bool) ($validated['unlink_debt'] ?? false),
         );
 
         Inertia::flash('toast', [
