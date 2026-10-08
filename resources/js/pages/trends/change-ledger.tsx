@@ -241,7 +241,7 @@ export function ChangeLedger({
                         >
                             <span>Category / merchant</span>
                             <span className="text-right">This period</span>
-                            <span className="text-right">Typical</span>
+                            <span className="text-right">Median</span>
                             <span className="text-right">Change</span>
                             <span className="text-right">Frequency</span>
                             <span className="text-center">Trend</span>
@@ -303,7 +303,7 @@ export function ChangeLedger({
                                         </span>
                                         <span className="col-start-2 row-start-2 min-w-0 text-right md:col-start-3 md:row-auto">
                                             <span className="block type-meta md:hidden">
-                                                Typical
+                                                Median
                                             </span>
                                             <span className="block truncate text-muted-foreground tabular-nums">
                                                 {formatMinorUnits(
@@ -321,6 +321,7 @@ export function ChangeLedger({
                                         <span
                                             className="col-span-2 col-start-1 row-start-3 tabular-nums md:col-span-1 md:col-start-5 md:row-auto md:text-right"
                                             data-test={`trend-frequency-${testId}`}
+                                            title="Transactions this period versus the average of the previous six periods"
                                         >
                                             <span className="type-meta md:sr-only">
                                                 Frequency{' '}
@@ -366,8 +367,9 @@ export function ChangeLedger({
                 className="shrink-0 border-t p-4 type-meta"
                 data-test="trends-ledger-note"
             >
-                Category and merchant views overlap. Their changes should not be
-                added together.
+                Median spending averages the middle two totals from the previous
+                six equivalent periods. Category and merchant views overlap.
+                Their changes should not be added together.
             </p>
         </Card>
     );
