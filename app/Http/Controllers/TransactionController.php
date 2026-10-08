@@ -114,6 +114,9 @@ class TransactionController extends Controller
             debtId: isset($validated['debt_id']) ? (int) $validated['debt_id'] : null,
             debtEntryKind: isset($validated['debt_entry_kind']) ? DebtEntryKind::from($validated['debt_entry_kind']) : null,
             unlinkDebt: (bool) ($validated['unlink_debt'] ?? false),
+            debtPrincipalMinor: $request->debtAllocationMinor('principal'),
+            debtInterestMinor: $request->debtAllocationMinor('interest'),
+            debtInterestIsNew: $request->boolean('interest_is_new'),
         );
 
         Inertia::flash('toast', [

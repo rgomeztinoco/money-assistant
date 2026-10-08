@@ -31,6 +31,7 @@ export const incomeSourceOptions: ReadonlyArray<{
     { value: 'salary', label: 'Salary' },
     { value: 'independent_work', label: 'Independent work' },
     { value: 'investments', label: 'Investments' },
+    { value: 'interest_received', label: 'Interest received' },
     { value: 'other', label: 'Other income' },
 ];
 

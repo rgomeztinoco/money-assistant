@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Categorization\ReadCategoryTaxonomy;
 use App\Actions\Debts\ReadDebts;
 use App\Actions\Debts\SaveDebt;
 use App\Http\Requests\SaveDebtRequest;
@@ -13,7 +14,7 @@ use Inertia\Response;
 
 class DebtController extends Controller
 {
-    public function __construct(private SaveDebt $saveDebt, private ReadDebts $readDebts) {}
+    public function __construct(private SaveDebt $saveDebt, private ReadDebts $readDebts, private ReadCategoryTaxonomy $readCategoryTaxonomy) {}
 
     public function index(Request $request): Response
     {
@@ -38,6 +39,6 @@ class DebtController extends Controller
     {
         abort_unless($debt->user_id === $request->user()->id, 404);
 
-        return Inertia::render('debts/show', ['debt' => $this->readDebts->debtData($debt), 'today' => now(config('app.reporting_timezone'))->toDateString(), 'entries' => $this->readDebts->entries($debt), 'transaction_options' => $this->readDebts->transactionOptions($request->user(), $debt)]);
+        return Inertia::render('debts/show', ['category_options' => $this->readCategoryTaxonomy->activeOptions($request->user()), 'debt' => $this->readDebts->debtData($debt), 'today' => now(config('app.reporting_timezone'))->toDateString(), 'entries' => $this->readDebts->entries($debt), 'transaction_options' => $this->readDebts->transactionOptions($request->user(), $debt)]);
     }
 }

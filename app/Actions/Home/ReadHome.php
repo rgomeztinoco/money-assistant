@@ -2,6 +2,7 @@
 
 namespace App\Actions\Home;
 
+use App\Actions\Debts\ReadDebts;
 use App\Actions\Reporting\EquivalentPeriods;
 use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
@@ -12,7 +13,6 @@ use App\ExactInteger;
 use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
-use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Arr;
 
@@ -30,6 +30,7 @@ use Illuminate\Support\Arr;
 final class ReadHome
 {
     public function __construct(
+        private ReadDebts $readDebts,
         private ReadPeriodSummary $readPeriodSummary,
         private NetSpendingAllocation $netSpendingAllocation,
         private ReadRecordedCoverage $readRecordedCoverage,
@@ -37,7 +38,7 @@ final class ReadHome
 
     /**
      * @param  array{currency?: string, period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
-     * @return array{currency_filter: string|null, period: array{unit: string, anchor: string, date_from: string, date_to: string}, primary: Briefing|null, secondary: Briefing|null, today: string}
+     * @return array{currency_filter: string|null, period: array{unit: string, anchor: string, date_from: string, date_to: string}, primary: Briefing|null, secondary: Briefing|null, today: string, debt_summary: array<string, mixed>}
      */
     public function handle(User $owner, array $filters = []): array
     {
@@ -61,6 +62,7 @@ final class ReadHome
         )));
 
         return [
+            'debt_summary' => $this->readDebts->summary($owner),
             'currency_filter' => $currencyFilter?->value,
             'period' => $selectedPeriod->data(),
             'primary' => $briefings[0] ?? null,
@@ -132,7 +134,7 @@ final class ReadHome
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
-            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+            ->whereHasSpendingContribution()
             ->whereBetween('occurred_on', [
                 $previousPeriod[0]->toDateString(),
                 $previousPeriod[1]->toDateString(),
@@ -220,13 +222,14 @@ final class ReadHome
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
-            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+            ->whereHasSpendingContribution()
             ->whereBetween('occurred_on', [
                 $periods[1][0]->toDateString(),
                 $periods[0][1]->toDateString(),
             ])
-            ->select(['id', 'occurred_on', 'amount_minor', 'kind', 'category_id', 'description'])
+            ->select(['id', 'occurred_on', 'amount_minor', 'direction', 'kind', 'category_id', 'description'])
             ->with([
+                'debtEntry',
                 'receiptBreakdown:id,transaction_id',
                 'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id,line_total_minor',
             ])
@@ -240,7 +243,7 @@ final class ReadHome
             }
 
             $day = (int) $periods[$periodIndex][0]->diffInDays($transaction->occurred_on) + 1;
-            $transactionAmount = $transaction->kind->netSpendingAmount($transaction->amount_minor);
+            $transactionAmount = $transaction->netSpendingAmount();
             $dailyAmounts[$periodIndex][$day] = ($dailyAmounts[$periodIndex][$day] ?? ExactInteger::from(0))
                 ->add($transactionAmount);
 

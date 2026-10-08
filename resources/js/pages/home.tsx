@@ -53,6 +53,7 @@ import {
     periodBreakdownUrl,
 } from '@/lib/transaction-filter-url';
 import { home } from '@/routes';
+import { index as debtsIndex } from '@/routes/debts';
 import { create as createStatementImport } from '@/routes/statement_imports';
 import type {
     Currency,
@@ -115,7 +116,20 @@ type Briefing = {
     input_request: { transaction_count: number } | null;
 };
 
+type DebtSummaryAmounts = {
+    owed_minor: string;
+    receivable_minor: string;
+    outgoing_target_minor: string;
+    incoming_target_minor: string;
+    payments_made_minor: string;
+    payments_received_minor: string;
+};
 type HomeProps = {
+    debt_summary: {
+        target_month: string;
+        PEN: DebtSummaryAmounts;
+        USD: DebtSummaryAmounts;
+    };
     currency_filter: Currency | null;
     period: Period;
     primary: Briefing | null;
@@ -408,53 +422,76 @@ function SpendingComparisonChart({
 
 function SpendingSnapshot({ briefings }: { briefings: Briefing[] }) {
     return (
-        <dl className="grid grid-cols-1 divide-y border-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            {summaryItems.map((item, index) => {
-                const Icon = item.icon;
+        <div className="flex flex-col gap-3">
+            <dl className="grid grid-cols-1 divide-y border-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                {summaryItems.map((item, index) => {
+                    const Icon = item.icon;
 
-                return (
-                    <div
-                        key={item.label}
-                        className="grid gap-1 px-4 py-4 first:pl-0 last:pr-0"
-                    >
-                        <dt className="flex items-center gap-2 type-meta">
-                            <Icon className="size-3.5" />
-                            {item.label}
-                        </dt>
-                        <dd className="flex flex-wrap items-baseline gap-x-1 text-xl font-semibold tracking-tight tabular-nums">
-                            {briefings.map((briefing, briefingIndex) => (
-                                <span key={briefing.currency}>
-                                    {briefingIndex > 0 && (
-                                        <span className="mr-1 text-muted-foreground">
-                                            +
-                                        </span>
-                                    )}
-                                    <Link
-                                        href={periodBreakdownUrl({
-                                            currency: briefing.currency,
-                                            period: briefing.period,
-                                            focus: item.focus,
-                                        })}
-                                        data-test={
-                                            index === 0 && briefingIndex === 0
-                                                ? 'home-net-spending'
-                                                : `home-${briefing.currency.toLowerCase()}-${item.focus.replaceAll('_', '-')}`
-                                        }
-                                        className="rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-                                    >
-                                        {formatMinorUnits(
-                                            briefing.summary[item.value],
-                                            briefing.currency,
+                    return (
+                        <div
+                            key={item.label}
+                            className="grid gap-1 px-4 py-4 first:pl-0 last:pr-0"
+                        >
+                            <dt className="flex items-center gap-2 type-meta">
+                                <Icon className="size-3.5" />
+                                {item.label}
+                            </dt>
+                            <dd className="flex flex-wrap items-baseline gap-x-1 text-xl font-semibold tracking-tight tabular-nums">
+                                {briefings.map((briefing, briefingIndex) => (
+                                    <span key={briefing.currency}>
+                                        {briefingIndex > 0 && (
+                                            <span className="mr-1 text-muted-foreground">
+                                                +
+                                            </span>
                                         )}
-                                    </Link>
-                                </span>
-                            ))}
-                        </dd>
-                        <dd className="type-meta">{item.note}</dd>
-                    </div>
-                );
-            })}
-        </dl>
+                                        <Link
+                                            href={periodBreakdownUrl({
+                                                currency: briefing.currency,
+                                                period: briefing.period,
+                                                focus: item.focus,
+                                            })}
+                                            data-test={
+                                                index === 0 &&
+                                                briefingIndex === 0
+                                                    ? 'home-net-spending'
+                                                    : `home-${briefing.currency.toLowerCase()}-${item.focus.replaceAll('_', '-')}`
+                                            }
+                                            className="rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                        >
+                                            {formatMinorUnits(
+                                                briefing.summary[item.value],
+                                                briefing.currency,
+                                            )}
+                                        </Link>
+                                    </span>
+                                ))}
+                            </dd>
+                            <dd className="type-meta">{item.note}</dd>
+                        </div>
+                    );
+                })}
+            </dl>
+            <div
+                className="flex flex-wrap gap-4"
+                data-test="home-period-debt-payments"
+            >
+                {briefings.map((briefing) => (
+                    <p key={briefing.currency} className="type-meta">
+                        {briefing.currency} debt payments in selected period ·
+                        Made{' '}
+                        {formatMinorUnits(
+                            briefing.summary.debt_payments_made_minor,
+                            briefing.currency,
+                        )}{' '}
+                        · Collected{' '}
+                        {formatMinorUnits(
+                            briefing.summary.debt_payments_received_minor,
+                            briefing.currency,
+                        )}
+                    </p>
+                ))}
+            </div>
+        </div>
     );
 }
 
@@ -975,6 +1012,78 @@ export default function Home(props: HomeProps) {
 
             <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 md:p-6 xl:overflow-y-auto">
                 <HomeContextBar props={props} />
+                <Card>
+                    <CardHeader>
+                        <CardTitle>
+                            <Link href={debtsIndex.url()}>Debts</Link>
+                        </CardTitle>
+                        <CardDescription>
+                            Current outstanding balances. Monthly plan and full
+                            payments for {props.debt_summary.target_month}.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 sm:grid-cols-2">
+                        {(['PEN', 'USD'] as const)
+                            .filter(
+                                (currency) =>
+                                    !props.currency_filter ||
+                                    props.currency_filter === currency,
+                            )
+                            .map((currency) => {
+                                const summary = props.debt_summary[currency];
+
+                                return (
+                                    <div
+                                        key={currency}
+                                        className="flex flex-col gap-2"
+                                    >
+                                        <p className="type-subtitle">
+                                            {currency}
+                                        </p>
+                                        <dl className="grid grid-cols-2 gap-2">
+                                            {(
+                                                [
+                                                    ['I owe', 'owed_minor'],
+                                                    [
+                                                        'Owed to me',
+                                                        'receivable_minor',
+                                                    ],
+                                                    [
+                                                        'Outgoing monthly target',
+                                                        'outgoing_target_minor',
+                                                    ],
+                                                    [
+                                                        'Incoming monthly target',
+                                                        'incoming_target_minor',
+                                                    ],
+                                                    [
+                                                        'Payments made this month',
+                                                        'payments_made_minor',
+                                                    ],
+                                                    [
+                                                        'Payments collected this month',
+                                                        'payments_received_minor',
+                                                    ],
+                                                ] as const
+                                            ).map(([label, key]) => (
+                                                <div key={key}>
+                                                    <dt className="type-meta">
+                                                        {label}
+                                                    </dt>
+                                                    <dd className="tabular-nums">
+                                                        {formatMinorUnits(
+                                                            summary[key],
+                                                            currency,
+                                                        )}
+                                                    </dd>
+                                                </div>
+                                            ))}
+                                        </dl>
+                                    </div>
+                                );
+                            })}
+                    </CardContent>
+                </Card>
 
                 {briefings.length === 0 ? (
                     <EmptyHome currency={props.currency_filter} />

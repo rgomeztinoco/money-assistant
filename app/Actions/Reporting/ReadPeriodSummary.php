@@ -39,7 +39,7 @@ final class ReadPeriodSummary
         foreach ($transactions as $transaction) {
             $amount = ExactInteger::from($transaction->amount_minor);
             $netSpending = $netSpending->add(
-                $transaction->kind->netSpendingAmount((string) $transaction->amount_minor),
+                $transaction->netSpendingAmount(),
             );
 
             if ($transaction->kind === TransactionKind::Debt && $transaction->debtEntry?->kind === DebtEntryKind::Repayment) {
@@ -50,9 +50,7 @@ final class ReadPeriodSummary
                 }
             }
 
-            if ($transaction->kind === TransactionKind::Income) {
-                $income = $income->add($amount);
-            }
+            $income = $income->add($transaction->incomeAmount());
 
             if ($transaction->kind === TransactionKind::Transfer
                 && $transaction->transfer_purpose === TransferPurpose::Savings) {

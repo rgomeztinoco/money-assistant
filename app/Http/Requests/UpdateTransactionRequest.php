@@ -6,6 +6,7 @@ use App\Currency;
 use App\DebtEntryKind;
 use App\ExactInteger;
 use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
+use App\Http\Requests\Concerns\InteractsWithDebtAllocationInput;
 use App\IncomeSource;
 use App\Models\Category;
 use App\Models\Transaction;
@@ -29,6 +30,7 @@ class UpdateTransactionRequest extends FormRequest
     }
 
     use InteractsWithCurrencyAmountInput;
+    use InteractsWithDebtAllocationInput;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -82,9 +84,10 @@ class UpdateTransactionRequest extends FormRequest
                     ->whereNull('voided_at'),
             ],
             'remove_receipt_breakdown' => ['sometimes', 'boolean'],
+            ...$this->debtAllocationInputRules(),
             'unlink_debt' => ['sometimes', 'boolean'],
             'debt_id' => ['nullable', 'integer', Rule::exists('debts', 'id')->where('user_id', $this->user()->id)],
-            'debt_entry_kind' => ['nullable', Rule::enum(DebtEntryKind::class)->except([DebtEntryKind::Adjustment])],
+            'debt_entry_kind' => ['nullable', Rule::enum(DebtEntryKind::class)->except([DebtEntryKind::Adjustment, DebtEntryKind::InterestCharge])],
         ];
     }
 

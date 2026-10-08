@@ -22,9 +22,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property DebtDirection $direction
  * @property Currency $currency
  * @property int $opening_balance_minor
+ * @property int|null $monthly_target_minor
  * @property CarbonImmutable $opened_on
  */
-#[Fillable(['user_id', 'name', 'counterparty', 'direction', 'currency', 'opening_balance_minor', 'opened_on'])]
+#[Fillable(['user_id', 'name', 'counterparty', 'direction', 'currency', 'opening_balance_minor', 'opened_on', 'monthly_target_minor'])]
 class Debt extends Model
 {
     /** @use HasFactory<DebtFactory> */
@@ -63,6 +64,6 @@ class Debt extends Model
     protected function casts(): array
     {
         return ['direction' => DebtDirection::class, 'currency' => Currency::class,
-            'opening_balance_minor' => 'integer', 'opened_on' => 'immutable_date'];
+            'opening_balance_minor' => 'integer', 'monthly_target_minor' => 'integer', 'opened_on' => 'immutable_date'];
     }
 }

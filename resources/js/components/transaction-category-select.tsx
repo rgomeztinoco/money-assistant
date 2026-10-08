@@ -58,6 +58,14 @@ export function TransactionCategorySelect({
         return <span className="text-muted-foreground">Category split</span>;
     }
 
+    if (transaction.kind === 'debt') {
+        return (
+            <span className="text-muted-foreground">
+                {transaction.category?.name ?? 'Debt payment'}
+            </span>
+        );
+    }
+
     if (transaction.kind === 'income') {
         return (
             <span className="text-muted-foreground">

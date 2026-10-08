@@ -28,9 +28,9 @@ final class AssignCategoryToTransaction
                     ->lockForUpdate()
                     ->first();
 
-            if (! $transaction->kind->supportsCategory()) {
+            if (! $transaction->hasSpendingContribution()) {
                 throw ValidationException::withMessages([
-                    'category_id' => 'Categories are available only for Spending and Refund Transactions.',
+                    'category_id' => 'Categories are available for Spending, Refunds, and paid debt interest.',
                 ]);
             }
 
