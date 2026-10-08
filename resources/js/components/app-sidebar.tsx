@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     Files,
     HandCoins,
+    CalendarDays,
     House,
     Mail,
     ReceiptText,
@@ -35,6 +36,7 @@ import { index as merchantRulesIndex } from '@/routes/merchant_rules';
 import { index as statementImportsIndex } from '@/routes/statement_imports';
 import { index as transactionsIndex } from '@/routes/transactions';
 import { index as trendsIndex } from '@/routes/trends';
+import { index as yearlyPaymentsIndex } from '@/routes/yearly_payments';
 import type { Currency, NavItem, ReportingPeriod } from '@/types';
 
 export function AppSidebar() {
@@ -79,6 +81,11 @@ export function AppSidebar() {
     ];
     const manageNavItems: NavItem[] = [
         { title: 'Debts', href: debtsIndex(), icon: HandCoins },
+        {
+            title: 'Yearly payments',
+            href: yearlyPaymentsIndex(),
+            icon: CalendarDays,
+        },
         {
             title: 'Transactions',
             href: transactionsIndex(),
