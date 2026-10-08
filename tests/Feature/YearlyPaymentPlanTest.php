@@ -238,5 +238,5 @@ test('invalid edits and state changes leave the stored commitment intact', funct
     $this->put(route('yearly_payments.state.update', $payment), ['is_active' => 'paused'])
         ->assertSessionHasErrors('is_active');
 
-    expect($payment->fresh()->toArray())->toBe($before);
+    expect($payment->fresh()->toArray())->toEqual($before);
 });
