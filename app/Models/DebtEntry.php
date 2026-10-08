@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\DebtEntryKind;
 use Carbon\CarbonImmutable;
+use Database\Factories\DebtEntryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -20,6 +22,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['debt_id', 'transaction_id', 'kind', 'amount_minor', 'occurred_on', 'reason'])]
 class DebtEntry extends Model
 {
+    /** @use HasFactory<DebtEntryFactory> */
+    use HasFactory;
+
     /** @return BelongsTo<Debt, $this> */
     public function debt(): BelongsTo
     {

@@ -7,7 +7,9 @@ use App\DebtDirection;
 use App\DebtEntryKind;
 use App\ExactInteger;
 use Carbon\CarbonImmutable;
+use Database\Factories\DebtFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -25,6 +27,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable(['user_id', 'name', 'counterparty', 'direction', 'currency', 'opening_balance_minor', 'opened_on'])]
 class Debt extends Model
 {
+    /** @use HasFactory<DebtFactory> */
+    use HasFactory;
+
     /** @return BelongsTo<User, $this> */
     public function owner(): BelongsTo
     {

@@ -49,7 +49,7 @@ final class ReadStatementImport
                         'match_evidence',
                     ])
                     ->with([
-                        'transaction:id,kind,income_source,transfer_purpose,voided_at,category_id',
+                        'transaction:id,amount_minor,currency,direction,kind,income_source,transfer_purpose,voided_at,category_id',
                         'transaction.category:id,name',
                         'transaction.debtEntry',
                     ])
@@ -124,8 +124,10 @@ final class ReadStatementImport
             $amount = ExactInteger::from($movement->amount_minor);
             $key = $movement->classification->summaryKey($movement->direction);
             if ($movement->transaction?->kind === TransactionKind::Debt) {
+                $amount = ExactInteger::from($movement->transaction->amount_minor);
+                $currency = $movement->transaction->currency->value;
                 $key = $movement->transaction->voided_at === null && $movement->transaction->debtEntry?->kind === DebtEntryKind::Repayment
-                    ? ($movement->direction === MovementDirection::Debit ? 'debt_payments_made_minor' : 'debt_payments_received_minor')
+                    ? ($movement->transaction->direction === MovementDirection::Debit ? 'debt_payments_made_minor' : 'debt_payments_received_minor')
                     : null;
             }
 

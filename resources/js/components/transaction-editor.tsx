@@ -19,6 +19,7 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Field,
     FieldError,
@@ -380,6 +381,9 @@ export function TransactionEditor({
                                         </FieldLabel>
                                         <NativeSelect
                                             id="transaction-debt"
+                                            aria-invalid={Boolean(
+                                                errors.debt_id,
+                                            )}
                                             name="debt_id"
                                             value={debtId}
                                             onChange={(event) =>
@@ -411,6 +415,9 @@ export function TransactionEditor({
                                         </FieldLabel>
                                         <NativeSelect
                                             id="transaction-debt-operation"
+                                            aria-invalid={Boolean(
+                                                errors.debt_entry_kind,
+                                            )}
                                             name="debt_entry_kind"
                                             value={debtEntryKind}
                                             onChange={(event) =>
@@ -448,13 +455,16 @@ export function TransactionEditor({
                                             errors.unlink_debt,
                                         )}
                                     >
-                                        <FieldLabel>
-                                            <input
-                                                type="checkbox"
-                                                name="unlink_debt"
-                                                value="1"
-                                                required
-                                            />{' '}
+                                        <Checkbox
+                                            id="transaction-unlink-debt"
+                                            name="unlink_debt"
+                                            value="1"
+                                            required
+                                            aria-invalid={Boolean(
+                                                errors.unlink_debt,
+                                            )}
+                                        />
+                                        <FieldLabel htmlFor="transaction-unlink-debt">
                                             Unlink{' '}
                                             {
                                                 transaction.debt_allocation
