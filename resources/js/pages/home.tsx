@@ -54,11 +54,13 @@ import {
 } from '@/lib/transaction-filter-url';
 import { home } from '@/routes';
 import { create as createStatementImport } from '@/routes/statement_imports';
+import { index as yearlyPaymentsIndex } from '@/routes/yearly_payments';
 import type {
     Currency,
     ReportingPeriod,
     ReportingPeriodSelection,
 } from '@/types';
+import type { YearlyPaymentPlan } from '@/types/yearly-payment';
 
 type Period = ReportingPeriod;
 
@@ -114,6 +116,7 @@ type Briefing = {
 };
 
 type HomeProps = {
+    yearly_payment_plan: YearlyPaymentPlan;
     currency_filter: Currency | null;
     period: Period;
     primary: Briefing | null;
@@ -979,6 +982,65 @@ export default function Home(props: HomeProps) {
                 ) : (
                     <HomeBriefing briefings={briefings} today={props.today} />
                 )}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Yearly payments coming up</CardTitle>
+                        <CardDescription>
+                            Today through 30 days ahead. These are planned
+                            costs, independent of the reporting period.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {props.yearly_payment_plan.upcoming_commitments
+                            .length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                                No active yearly payments due in the next 30
+                                days.
+                            </p>
+                        ) : (
+                            <ul className="flex flex-col gap-3">
+                                {props.yearly_payment_plan.upcoming_commitments.map(
+                                    (payment) => (
+                                        <li
+                                            key={payment.id}
+                                            className="flex flex-wrap items-center justify-between gap-2"
+                                        >
+                                            <div>
+                                                <p className="font-medium break-words">
+                                                    {payment.name}
+                                                </p>
+                                                <p className="text-sm text-muted-foreground">
+                                                    <DateText
+                                                        value={
+                                                            payment.expected_due_on!
+                                                        }
+                                                    />
+                                                </p>
+                                            </div>
+                                            <span className="tabular-nums">
+                                                {formatMinorUnits(
+                                                    payment.target_minor,
+                                                    payment.currency,
+                                                )}
+                                            </span>
+                                        </li>
+                                    ),
+                                )}
+                            </ul>
+                        )}
+                    </CardContent>
+                    <CardFooter className="flex flex-wrap justify-between gap-3">
+                        <p className="text-sm text-muted-foreground">
+                            Planning targets do not show money saved or bills
+                            paid.
+                        </p>
+                        <Button variant="outline" asChild>
+                            <Link href={yearlyPaymentsIndex()}>
+                                Manage yearly payments
+                            </Link>
+                        </Button>
+                    </CardFooter>
+                </Card>
             </main>
         </>
     );

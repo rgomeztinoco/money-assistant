@@ -6,6 +6,7 @@ use App\Actions\Reporting\EquivalentPeriods;
 use App\Actions\Reporting\NetSpendingAllocation;
 use App\Actions\Reporting\ReadPeriodSummary;
 use App\Actions\Reporting\ReportingPeriod;
+use App\Actions\YearlyPayments\ReadYearlyPaymentPlan;
 use App\Currency;
 use App\DataSources\ReadRecordedCoverage;
 use App\ExactInteger;
@@ -26,6 +27,8 @@ use Illuminate\Support\Arr;
  * @phpstan-type PulsePoint array{day: int, current_minor: string|null, previous_minor: string|null}
  * @phpstan-type Pulse array{previous_period: AnalysisPeriod, previous_net_spending_minor: string, change_minor: string, percentage_change: int|null, daily_net_spending: list<PulsePoint>, signals: list<PulseSignal>}
  * @phpstan-type Briefing array{currency: string, period: AnalysisPeriod, coverage: Coverage, summary: Summary, pulse: Pulse|null, input_request: array{transaction_count: int}|null}
+ *
+ * @phpstan-import-type Plan from ReadYearlyPaymentPlan
  */
 final class ReadHome
 {
@@ -33,11 +36,12 @@ final class ReadHome
         private ReadPeriodSummary $readPeriodSummary,
         private NetSpendingAllocation $netSpendingAllocation,
         private ReadRecordedCoverage $readRecordedCoverage,
+        private ReadYearlyPaymentPlan $readYearlyPaymentPlan,
     ) {}
 
     /**
      * @param  array{currency?: string, period?: string, anchor?: string, preset?: string, date_from?: string, date_to?: string}  $filters
-     * @return array{currency_filter: string|null, period: array{unit: string, anchor: string, date_from: string, date_to: string}, primary: Briefing|null, secondary: Briefing|null, today: string}
+     * @return array{currency_filter: string|null, period: array{unit: string, anchor: string, date_from: string, date_to: string}, primary: Briefing|null, secondary: Briefing|null, today: string, yearly_payment_plan: Plan}
      */
     public function handle(User $owner, array $filters = []): array
     {
@@ -66,6 +70,7 @@ final class ReadHome
             'primary' => $briefings[0] ?? null,
             'secondary' => $briefings[1] ?? null,
             'today' => $today->toDateString(),
+            'yearly_payment_plan' => $this->readYearlyPaymentPlan->handle($owner),
         ];
     }
 
