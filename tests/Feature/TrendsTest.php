@@ -109,6 +109,113 @@ test('Trends compares month to date with six equivalent months and ranks financi
         ->not->toContain('Future purchase');
 });
 
+test('Trends compares spending with the median when a previous period is unusually expensive', function (
+    array $filters,
+    string $currentDate,
+    array $previousDates,
+) {
+    $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
+    $owner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+
+    foreach ($previousDates as $index => $occurredOn) {
+        Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+            'occurred_on' => $occurredOn,
+            'amount_minor' => $index === 0 ? 100_000 : 10_000,
+            'description' => 'Central Market',
+            'category_id' => $food->id,
+        ]);
+    }
+
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $currentDate,
+        'amount_minor' => 15_000,
+        'description' => 'Central Market',
+        'category_id' => $food->id,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('trends.index', ['currency' => 'PEN', ...$filters]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('comparison_periods', 6)
+            ->has('findings', 2)
+            ->where('findings.0.kind', 'category')
+            ->where('findings.0.typical_total_minor', '10000')
+            ->where('findings.0.change_minor', '5000')
+            ->where('findings.0.scenario.difference_minor', '5000')
+            ->where('findings.1.kind', 'merchant')
+            ->where('findings.1.typical_total_minor', '10000')
+            ->where('findings.1.change_minor', '5000'));
+})->with([
+    'week' => [
+        ['period' => 'week', 'anchor' => '2026-08-10'],
+        '2026-08-10',
+        ['2026-08-03', '2026-07-27', '2026-07-20', '2026-07-13', '2026-07-06', '2026-06-29'],
+    ],
+    'month' => [
+        ['period' => 'month', 'anchor' => '2026-08-01'],
+        '2026-08-10',
+        ['2026-07-10', '2026-06-10', '2026-05-10', '2026-04-10', '2026-03-10', '2026-02-10'],
+    ],
+    'quarter' => [
+        ['period' => 'quarter', 'anchor' => '2026-07-01'],
+        '2026-07-10',
+        ['2026-04-10', '2026-01-10', '2025-10-10', '2025-07-10', '2025-04-10', '2025-01-10'],
+    ],
+    'year' => [
+        ['period' => 'year', 'anchor' => '2026-01-01'],
+        '2026-01-10',
+        ['2025-01-10', '2024-01-10', '2023-01-10', '2022-01-10', '2021-01-10', '2020-01-10'],
+    ],
+    'custom' => [
+        ['period' => 'custom', 'date_from' => '2026-08-10', 'date_to' => '2026-08-12'],
+        '2026-08-10',
+        ['2026-08-07', '2026-08-04', '2026-08-01', '2026-07-29', '2026-07-26', '2026-07-23'],
+    ],
+]);
+
+test('Trends averages the middle two historical spending totals for its median', function (
+    array $previousAmounts,
+    string $expectedMedian,
+    string $expectedChange,
+) {
+    $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
+    $owner = User::factory()->create();
+
+    foreach ($previousAmounts as $index => $amount) {
+        $factory = Transaction::factory()->for($owner, 'owner')->pen();
+        ($amount < 0 ? $factory->refund() : $factory->spending())->create([
+            'occurred_on' => CarbonImmutable::parse('2026-07-10')->subMonthsNoOverflow($index)->toDateString(),
+            'amount_minor' => abs($amount),
+            'description' => 'Central Market',
+        ]);
+    }
+
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-10',
+        'amount_minor' => 16_000,
+        'description' => 'Central Market',
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('trends.index', ['currency' => 'PEN']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('findings.0.typical_total_minor', $expectedMedian)
+            ->where('findings.0.change_minor', $expectedChange)
+            ->where('findings.1.typical_total_minor', $expectedMedian)
+            ->where('findings.1.change_minor', $expectedChange));
+})->with([
+    'unordered middle values' => [[90_000, 10_000, 30_000, 1_000, 20_000, 2_000], '15000', '1000'],
+    'half a minor unit' => [[90_000, 10_001, 30_000, 1_000, 20_000, 2_000], '15000', '1000'],
+    'refund totals' => [[-90_000, -10_000, -30_000, -1_000, -20_000, -2_000], '-15000', '31000'],
+    'zero spending periods' => [[90_000, 10_000, 30_000], '5000', '11000'],
+    'large exact amounts' => [
+        [PHP_INT_MAX, PHP_INT_MAX - 5, PHP_INT_MAX - 1, PHP_INT_MAX - 4, PHP_INT_MAX - 2, PHP_INT_MAX - 3],
+        '9223372036854775804',
+        '-9223372036854759804',
+    ],
+]);
+
 test('Trends keeps currencies separate and selects USD through a persistent filter', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-22 15:00:00', config('app.timezone')));
     $owner = User::factory()->create();

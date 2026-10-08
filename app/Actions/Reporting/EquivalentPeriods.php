@@ -66,13 +66,20 @@ final readonly class EquivalentPeriods
     /** @param array<int, ExactInteger> $amounts */
     public function typicalAmount(array $amounts): ExactInteger
     {
-        $total = ExactInteger::from(0);
+        $previousAmounts = array_map(
+            fn (int $index): ExactInteger => $amounts[$index] ?? ExactInteger::from(0),
+            $this->comparisonIndexes(),
+        );
+        usort($previousAmounts, fn (ExactInteger $left, ExactInteger $right): int => $left->compare($right));
+        $middleIndex = intdiv($this->previousPeriodCount, 2);
 
-        foreach ($this->comparisonIndexes() as $index) {
-            $total = $total->add($amounts[$index] ?? ExactInteger::from(0));
+        if ($this->previousPeriodCount % 2 !== 0) {
+            return $previousAmounts[$middleIndex];
         }
 
-        return ExactInteger::from(bcdiv($total->value(), (string) $this->previousPeriodCount, 0));
+        return $previousAmounts[$middleIndex - 1]
+            ->add($previousAmounts[$middleIndex])
+            ->divide(ExactInteger::from(2));
     }
 
     /** @return array{CarbonImmutable, CarbonImmutable} */
