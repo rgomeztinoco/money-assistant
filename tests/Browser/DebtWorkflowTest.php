@@ -13,10 +13,10 @@ test('debt forms record decimal balances, manual funding, and signed adjustments
     $this->actingAs($owner);
     $page = visit('/debts')->resize(1280, 900)->screenshot(filename: 'debts-257-initial');
     $page->press('Add debt')->fill('#debt-name', 'Family loan')->fill('#debt-counterparty', 'Mother')->fill('#debt-opening', '100.01')->fill('#debt-opened_on', '2026-08-01')->press('Create debt')
-        ->assertSee('Remaining balance')->assertSee('S/ 100.01')->assertSee('Active')
-        ->press('Record operation')->select('#entry-kind', 'funding')->select('#entry-source', 'manual')->fill('#entry-amount', '20.02')->fill('#entry-date', '2026-08-02')->fill('#entry-detail', 'Additional borrowing')->screenshot(filename: 'debts-257-manual-form')->press('Save operation')
-        ->assertSee('S/ 120.03')->assertSee('Funding')
-        ->press('Record operation')->select('#entry-kind', 'adjustment')->fill('#entry-amount', '-0.03')->fill('#entry-date', '2026-08-03')->fill('#entry-detail', 'Corrected agreed balance')->press('Save operation')
+        ->assertSee('Remaining balance')->assertSee('S/ 100.01')->assertSee('Active')->assertMissing('[role="dialog"]')
+        ->click('header button:has-text("Record operation")')->assertVisible('#entry-kind')->select('#entry-kind', 'funding')->select('#entry-source', 'manual')->fill('#entry-amount', '20.02')->fill('#entry-date', '2026-08-02')->fill('#entry-detail', 'Additional borrowing')->screenshot(filename: 'debts-257-manual-form')->click('[role="dialog"] button[type="submit"]')
+        ->assertSee('S/ 120.03')->assertSee('Funding')->assertMissing('[role="dialog"]')->screenshot(filename: 'debts-257-funded')
+        ->click('header button:has-text("Record operation")')->assertVisible('#entry-kind')->screenshot(filename: 'debts-257-adjustment-open')->select('#entry-kind', 'adjustment')->assertSeeIn('[role="dialog"]', 'Reason')->screenshot(filename: 'debts-257-adjustment-selected')->fill('#entry-amount', '-0.03')->fill('#entry-date', '2026-08-03')->fill('#entry-detail', 'Corrected agreed balance')->screenshot(filename: 'debts-257-adjustment-form')->click('[role="dialog"] button[type="submit"]')
         ->assertSee('S/ 120.00')->assertSee('Corrected agreed balance')->assertNoJavaScriptErrors()
         ->screenshot(filename: 'debts-257-history');
 });
