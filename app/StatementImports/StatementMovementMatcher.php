@@ -8,6 +8,7 @@ use App\Models\User;
 use App\StatementMovementClassification;
 use App\StatementMovementMatchStatus;
 use App\StatementMovementReviewReason;
+use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -45,9 +46,11 @@ final class StatementMovementMatcher
         $matchedMovements = [];
 
         foreach ($preview->movements as $movement) {
-            $matchedMovements[] = $movement->withMatch(
-                $this->matchMovement($preview, $movement, $transactions),
-            );
+            $match = $this->matchMovement($preview, $movement, $transactions);
+            $matchedTransaction = $transactions->firstWhere('id', $match->transactionId);
+            $matchedMovements[] = $movement->withMatch($match,
+                $matchedTransaction?->kind === TransactionKind::Debt ? StatementMovementClassification::Debt : null);
+
         }
         $candidateClaimCounts = [];
 
@@ -129,20 +132,20 @@ final class StatementMovementMatcher
             $amountMatches = (string) $transaction->amount_minor === $movement->amountMinor;
             $currencyMatches = $transaction->currency === $movement->currency;
             $directionMatches = $transaction->direction === $movement->direction;
-            $kindMatches = $transactionKind === null || $transaction->kind === $transactionKind;
-            $transferPurposeMatches = $transferPurpose === null
+            $kindMatches = $transactionKind === null || $transaction->kind === $transactionKind || $transaction->kind === TransactionKind::Debt;
+            $transferPurposeMatches = $transaction->kind === TransactionKind::Debt || $transferPurpose === null
                 || $transaction->transfer_purpose === $transferPurpose;
             $dateMatches = $dateDifference <= self::DATE_PROXIMITY_DAYS;
             $isPlausible = $amountMatches
                 && $currencyMatches
-                && ($directionMatches || $isCardPayment)
+                && ($directionMatches || ($isCardPayment && $transaction->kind !== TransactionKind::Debt))
                 && $dateMatches
                 && $kindMatches
                 && $transferPurposeMatches;
             $conflictingFieldCount = collect([
                 $amountMatches,
                 $currencyMatches,
-                $directionMatches || $isCardPayment,
+                $directionMatches || ($isCardPayment && $transaction->kind !== TransactionKind::Debt),
                 $kindMatches && $transferPurposeMatches,
             ])->filter(fn (bool $matches): bool => ! $matches)->count();
             $hasIdentityConflict = $dateMatches
@@ -186,7 +189,7 @@ final class StatementMovementMatcher
                     'description_resemblance' => $descriptionResembles,
                     'kind' => $kindMatches,
                     'transfer_purpose' => $transferPurposeMatches,
-                    'card_payment_counterpart' => $isCardPayment && ! $directionMatches,
+                    'card_payment_counterpart' => $isCardPayment && $transaction->kind !== TransactionKind::Debt && ! $directionMatches,
                     'plausible' => $isPlausible,
                 ],
             ];

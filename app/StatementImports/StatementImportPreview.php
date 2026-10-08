@@ -292,6 +292,10 @@ final readonly class StatementImportPreview
                 instrumentLastFour: $instrumentLastFour,
             );
 
+            if ($classification === StatementMovementClassification::Debt && $resolution !== StatementMovementResolution::Linked) {
+                throw new StatementImportValidationException('Import this movement with its ordinary Kind, then explicitly allocate it to a debt.', 'invalid_debt_allocation', "movements.{$movementIndex}.classification");
+            }
+
             if ($resolution === StatementMovementResolution::Linked
                 && $transactionId !== null
                 && isset($linkedTransactionIds[$transactionId])) {

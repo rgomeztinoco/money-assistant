@@ -164,6 +164,8 @@ function transactionTaxonomy(transaction: LinkedTransaction): string {
         case 'spending':
         case 'refund':
             return transaction.category?.name ?? 'Uncategorized';
+        case 'debt':
+            return 'Debt principal';
         case 'income':
             return incomeSourceLabel(transaction.income_source);
         case 'transfer':

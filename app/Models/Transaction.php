@@ -112,6 +112,23 @@ class Transaction extends Model
         return $this->hasMany(SpendingNotificationReference::class);
     }
 
+    /** @return array{debt_id: int, debt_name: string, kind: string}|null */
+    public function debtAllocation(): ?array
+    {
+        if ($this->kind !== TransactionKind::Debt) {
+            return null;
+        }
+        $entry = $this->debtEntry;
+
+        return $entry === null ? null : ['debt_id' => $entry->debt_id, 'debt_name' => $entry->debt->name, 'kind' => $entry->kind->value];
+    }
+
+    /** @return HasOne<DebtEntry, $this> */
+    public function debtEntry(): HasOne
+    {
+        return $this->hasOne(DebtEntry::class);
+    }
+
     /** @return list<TransactionKind> */
     public function kindReviewReplacementOptions(): array
     {

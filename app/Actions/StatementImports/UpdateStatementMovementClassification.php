@@ -42,6 +42,10 @@ class UpdateStatementMovementClassification
                 throw $this->invalid('Choose a classification for this Statement Movement.');
             }
 
+            if (($transactionKind === TransactionKind::Debt) !== $transaction->debtEntry()->exists()) {
+                throw $this->invalid('Open this Transaction to explicitly allocate or unlink its debt before changing the classification.');
+            }
+
             if ($transactionKind !== TransactionKind::Spending
                 && $transaction->linkedRefunds()->whereNull('voided_at')->exists()) {
                 throw $this->invalid('Unlink active Refunds before changing this Statement Movement classification.');

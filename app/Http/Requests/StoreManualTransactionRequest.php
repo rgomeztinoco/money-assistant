@@ -49,7 +49,7 @@ class StoreManualTransactionRequest extends FormRequest
             'occurred_on' => ['required', 'date_format:Y-m-d'],
             ...$this->currencyAmountInputRules(),
             'currency' => ['required', Rule::enum(Currency::class)],
-            'kind' => ['required', Rule::enum(TransactionKind::class)],
+            'kind' => ['required', Rule::enum(TransactionKind::class)->except([TransactionKind::Debt])],
             'direction' => ['required', Rule::enum(MovementDirection::class)],
             'income_source' => [
                 Rule::requiredIf($this->input('kind') === TransactionKind::Income->value),

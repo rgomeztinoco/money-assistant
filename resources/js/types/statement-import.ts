@@ -9,6 +9,7 @@ export type StatementClassification =
     | 'refund'
     | 'fee'
     | 'tax'
+    | 'debt'
     | 'income'
     | 'transfer'
     | 'card_payment'

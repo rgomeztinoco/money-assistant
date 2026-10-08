@@ -5,6 +5,8 @@ use App\Http\Controllers\BreakdownTransactionClassificationController;
 use App\Http\Controllers\CategoryArchivalController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DataSourceController;
+use App\Http\Controllers\DebtController;
+use App\Http\Controllers\DebtEntryController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\InlineCategoryController;
 use App\Http\Controllers\MerchantRuleController;
@@ -24,6 +26,8 @@ Route::get('/', HomeController::class)
     ->name('home');
 
 Route::middleware(['auth'])->group(function () {
+    Route::post('debts/{debt}/entries', [DebtEntryController::class, 'store'])->name('debts.entries.store');
+    Route::resource('debts', DebtController::class)->only(['index', 'store', 'show', 'update']);
     Route::get('breakdown', BreakdownController::class)->name('breakdown.index');
     Route::get('trends', TrendsController::class)->name('trends.index');
     Route::get('data-sources/gmail', DataSourceController::class)->name('data_sources.gmail');

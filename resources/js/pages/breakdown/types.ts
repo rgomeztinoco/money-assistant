@@ -44,6 +44,11 @@ export type BreakdownDay = {
 
 type BreakdownTransactionBase = {
     id: number;
+    debt_allocation: {
+        debt_id: number;
+        debt_name: string;
+        kind: 'funding' | 'repayment';
+    } | null;
     occurred_on: string;
     amount_minor: string;
     currency: Currency;
@@ -88,6 +93,8 @@ export type BreakdownProps = {
             net_spending_minor: string;
             income_minor: string;
             moved_to_savings_minor: string;
+            debt_payments_made_minor: string;
+            debt_payments_received_minor: string;
         }
     >;
     categorization: Record<
