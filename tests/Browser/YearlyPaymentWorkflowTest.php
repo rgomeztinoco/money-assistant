@@ -3,8 +3,10 @@
 use App\Models\User;
 use App\Models\YearlyPayment;
 use App\Models\YearlyPaymentSetting;
+use Carbon\CarbonImmutable;
 
 test('yearly payment forms add edit pause resume and update the planning assumption', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-08 12:00:00', 'America/Lima'));
     $owner = User::factory()->create();
     $this->actingAs($owner);
 
@@ -14,6 +16,7 @@ test('yearly payment forms add edit pause resume and update the planning assumpt
         ->fill('#payment-name', 'Insurance')
         ->fill('#payment-amount', '2400.00')
         ->fill('#payment-cushion', '120.00')
+        ->fill('#payment-due', '2026-10-08')
         ->press('Add payment')
         ->assertSee('Yearly payment added.')
         ->assertSee('Insurance')
@@ -33,6 +36,14 @@ test('yearly payment forms add edit pause resume and update the planning assumpt
         ->assertSee('Manual assumption: 3.7500 PEN per USD')
         ->assertNoJavaScriptErrors()
         ->screenshot(filename: 'yearly-payments-desktop');
+
+    $page->click('Home')
+        ->assertSee('Yearly payments coming up')
+        ->assertSee('Medical estimate')
+        ->assertNoJavaScriptErrors()
+        ->screenshot(filename: 'yearly-payments-home')
+        ->click('Manage yearly payments')
+        ->assertSee('Active commitments');
 
     $this->assertDatabaseHas('yearly_payments', ['user_id' => $owner->id, 'name' => 'Medical estimate', 'amount_minor' => 120000, 'cushion_minor' => 12000, 'is_active' => true]);
     $this->assertDatabaseHas('yearly_payment_settings', ['user_id' => $owner->id, 'pen_per_usd' => '3.7500']);
