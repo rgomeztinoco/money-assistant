@@ -19,7 +19,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[Name('get_yearly_payment_plan')]
-#[Description('Read the owner complete yearly-payment plan, including paused commitments, exact annual and monthly targets, manual PEN per USD estimate, upcoming payments and calculation assumptions. These are planning targets, not money saved, paid bills, or money safe to spend. Dates do not affect targets or renew automatically. No records are changed.')]
+#[Description('Read the complete yearly-payment plan for the owner, including paused commitments, exact annual and monthly targets, manual PEN per USD estimate, upcoming payments and calculation assumptions. These are planning targets, not money saved, paid bills, or money safe to spend. Dates do not affect targets or renew automatically. No records are changed.')]
 #[IsReadOnly]
 #[IsDestructive(false)]
 #[IsIdempotent]
