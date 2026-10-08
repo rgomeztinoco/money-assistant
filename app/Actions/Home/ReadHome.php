@@ -19,7 +19,7 @@ use Illuminate\Support\Arr;
 /**
  * @phpstan-type AnalysisPeriod array{date_from: string, date_to: string}
  * @phpstan-type Coverage array{date_from: string, date_to: string, transaction_count: int}
- * @phpstan-type Summary array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}
+ * @phpstan-type Summary array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, debt_payments_made_minor: string, debt_payments_received_minor: string}
  * @phpstan-type PulseEvidence array{id: int, description: string, occurred_on: string, amount_minor: string, period: 'current'|'previous', absolute_amount: ExactInteger}
  * @phpstan-type PulseSignalBucket array{category: array{id: int|null, name: string}, amounts: array<int, ExactInteger>, transaction_counts: array<int, int>, evidence: list<PulseEvidence>}
  * @phpstan-type PulseSignal array{category: array{id: int|null, name: string}, current_total_minor: string, previous_total_minor: string, change_minor: string, current_transaction_count: int, previous_transaction_count: int, evidence: list<array{id: int, description: string, occurred_on: string, amount_minor: string, period: 'current'|'previous'}>}

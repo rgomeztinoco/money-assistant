@@ -45,10 +45,10 @@ final class ReadTrends
      *     currency: string,
      *     period: TrendPeriod,
      *     comparison_periods: list<TrendComparisonPeriod>,
-     *     summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}|null,
+     *     summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, debt_payments_made_minor: string, debt_payments_received_minor: string}|null,
      *     findings: list<TrendFinding>,
      *     monthly_context: list<array{month: string, date_from: string, date_to: string, total_minor: string|null}>,
-     *     secondary: array{currency: string, summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}|null, findings: list<TrendFinding>, monthly_context: list<array{month: string, date_from: string, date_to: string, total_minor: string|null}>}|null,
+     *     secondary: array{currency: string, summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, debt_payments_made_minor: string, debt_payments_received_minor: string}|null, findings: list<TrendFinding>, monthly_context: list<array{month: string, date_from: string, date_to: string, total_minor: string|null}>}|null,
      *     today: string
      * }
      */
@@ -123,7 +123,7 @@ final class ReadTrends
     }
 
     /**
-     * @return array{currency: string, summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}|null, findings: list<TrendFinding>, monthly_context: list<array{month: string, date_from: string, date_to: string, total_minor: string|null}>}
+     * @return array{currency: string, summary: array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, debt_payments_made_minor: string, debt_payments_received_minor: string}|null, findings: list<TrendFinding>, monthly_context: list<array{month: string, date_from: string, date_to: string, total_minor: string|null}>}
      */
     private function readCurrency(
         User $owner,

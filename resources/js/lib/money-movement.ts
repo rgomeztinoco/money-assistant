@@ -13,6 +13,7 @@ export const movementKindOptions: ReadonlyArray<{
     { value: 'refund', label: 'Refund or reimbursement' },
     { value: 'income', label: 'Income' },
     { value: 'transfer', label: 'Transfer' },
+    { value: 'debt', label: 'Debt' },
 ];
 
 export const movementDirectionOptions: ReadonlyArray<{
@@ -48,6 +49,7 @@ export function movementKindFromValue(value: string): TransactionKind {
         case 'refund':
         case 'income':
         case 'transfer':
+        case 'debt':
             return value;
         default:
             return 'spending';

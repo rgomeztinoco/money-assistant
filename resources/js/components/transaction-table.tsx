@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -29,7 +30,8 @@ export type TransactionTableRow = MoneyMovementDetails & {
     voided_at?: string | null;
 };
 
-export type TransactionAction = 'edit' | 'void' | 'restore' | 'rule' | 'split';
+export type TransactionAction =
+    'edit' | 'debt' | 'void' | 'restore' | 'rule' | 'split';
 
 export function TransactionTable<T extends TransactionTableRow>({
     transactions,
@@ -37,6 +39,7 @@ export function TransactionTable<T extends TransactionTableRow>({
     page,
     onPageChange,
     onAction,
+    supportsDebtAction = false,
     onBeforeOpen,
     renderCategory,
     rowTestId,
@@ -47,6 +50,7 @@ export function TransactionTable<T extends TransactionTableRow>({
     page: number;
     onPageChange: (page: number) => void;
     onAction: (transaction: T, action: TransactionAction) => void;
+    supportsDebtAction?: boolean;
     onBeforeOpen?: () => void;
     renderCategory?: (transaction: T) => ReactNode;
     rowTestId?: (transaction: T) => string;
@@ -203,6 +207,23 @@ export function TransactionTable<T extends TransactionTableRow>({
                                                     >
                                                         Edit
                                                     </DropdownMenuItem>
+                                                    {supportsDebtAction &&
+                                                        !transaction.voided_at && (
+                                                            <DropdownMenuGroup>
+                                                                <DropdownMenuItem
+                                                                    onSelect={() => {
+                                                                        onBeforeOpen?.();
+                                                                        onAction(
+                                                                            transaction,
+                                                                            'debt',
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    Record as
+                                                                    debt payment
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuGroup>
+                                                        )}
                                                     {!transaction.voided_at &&
                                                         (transaction.kind ===
                                                             'spending' ||

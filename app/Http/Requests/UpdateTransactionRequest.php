@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Currency;
+use App\DebtEntryKind;
 use App\ExactInteger;
 use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
 use App\IncomeSource;
@@ -81,6 +82,9 @@ class UpdateTransactionRequest extends FormRequest
                     ->whereNull('voided_at'),
             ],
             'remove_receipt_breakdown' => ['sometimes', 'boolean'],
+            'unlink_debt' => ['sometimes', 'boolean'],
+            'debt_id' => ['nullable', 'integer', Rule::exists('debts', 'id')->where('user_id', $this->user()->id)],
+            'debt_entry_kind' => ['nullable', Rule::enum(DebtEntryKind::class)->except([DebtEntryKind::Adjustment])],
         ];
     }
 

@@ -1,5 +1,5 @@
 import type { FormComponentRef, FormDataConvertible } from '@inertiajs/core';
-import { Form } from '@inertiajs/react';
+import { Form, usePage } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import {
     store,
@@ -19,6 +19,13 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Field,
+    FieldError,
+    FieldGroup,
+    FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -35,6 +42,7 @@ import {
     movementSupportsCategory,
     transferPurposeOptions,
 } from '@/lib/money-movement';
+import type { Debt } from '@/pages/debts/types';
 import type {
     Currency,
     IncomeSource,
@@ -45,6 +53,11 @@ import type {
 
 export type EditorTransaction = {
     id: number;
+    debt_allocation?: {
+        debt_id: number;
+        debt_name: string;
+        kind: 'funding' | 'repayment';
+    } | null;
     voided_at?: string | null;
     occurred_on: string;
     amount_minor: string;
@@ -75,6 +88,7 @@ function normalizedAmount(value: string): string | null {
 
 export function TransactionEditor({
     transaction,
+    initialKind,
     currency,
     today,
     categoryOptions,
@@ -82,16 +96,26 @@ export function TransactionEditor({
     onSaved,
 }: {
     transaction?: EditorTransaction;
+    initialKind?: TransactionKind;
     currency: Currency;
     today: string;
     categoryOptions: CategoryPickerOption[];
     onCancel: () => void;
     onSaved: () => void;
 }) {
+    const { debt_options = [] } = usePage<{
+        debt_options?: Pick<Debt, 'id' | 'name' | 'currency' | 'direction'>[];
+    }>().props;
+    const [debtId, setDebtId] = useState(
+        transaction?.debt_allocation?.debt_id.toString() ?? '',
+    );
+    const [debtEntryKind, setDebtEntryKind] = useState(
+        transaction?.debt_allocation?.kind ?? 'repayment',
+    );
     const form = useRef<FormComponentRef>(null);
     const splitRemovalConfirmed = useRef(false);
     const [kind, setKind] = useState<TransactionKind>(
-        transaction?.kind ?? 'spending',
+        initialKind ?? transaction?.kind ?? 'spending',
     );
     const [direction, setDirection] = useState<MovementDirection>(
         transaction?.direction ?? 'debit',
@@ -321,7 +345,14 @@ export function TransactionEditor({
                                     onChange={(event) =>
                                         changeKind(event.currentTarget.value)
                                     }
-                                    options={movementKindOptions}
+                                    options={
+                                        transaction
+                                            ? movementKindOptions
+                                            : movementKindOptions.filter(
+                                                  (option) =>
+                                                      option.value !== 'debt',
+                                              )
+                                    }
                                 />
                                 <InputError message={errors.kind} />
                             </div>
@@ -340,6 +371,112 @@ export function TransactionEditor({
                                 <InputError message={errors.occurred_on} />
                             </div>
 
+                            {kind === 'debt' && (
+                                <FieldGroup>
+                                    <Field
+                                        data-invalid={Boolean(errors.debt_id)}
+                                    >
+                                        <FieldLabel htmlFor="transaction-debt">
+                                            Debt
+                                        </FieldLabel>
+                                        <NativeSelect
+                                            id="transaction-debt"
+                                            aria-invalid={Boolean(
+                                                errors.debt_id,
+                                            )}
+                                            name="debt_id"
+                                            value={debtId}
+                                            onChange={(event) =>
+                                                setDebtId(event.target.value)
+                                            }
+                                            options={[
+                                                {
+                                                    value: '',
+                                                    label: 'Choose a debt',
+                                                },
+                                                ...debt_options.map((debt) => ({
+                                                    value: String(debt.id),
+                                                    label: `${debt.name} · ${debt.currency} · ${debt.direction === 'owed' ? 'I owe' : 'Owed to me'}`,
+                                                })),
+                                            ]}
+                                            required
+                                        />
+                                        <FieldError>
+                                            {errors.debt_id}
+                                        </FieldError>
+                                    </Field>
+                                    <Field
+                                        data-invalid={Boolean(
+                                            errors.debt_entry_kind,
+                                        )}
+                                    >
+                                        <FieldLabel htmlFor="transaction-debt-operation">
+                                            Debt operation
+                                        </FieldLabel>
+                                        <NativeSelect
+                                            id="transaction-debt-operation"
+                                            aria-invalid={Boolean(
+                                                errors.debt_entry_kind,
+                                            )}
+                                            name="debt_entry_kind"
+                                            value={debtEntryKind}
+                                            onChange={(event) =>
+                                                setDebtEntryKind(
+                                                    event.target.value as
+                                                        'funding' | 'repayment',
+                                                )
+                                            }
+                                            options={[
+                                                {
+                                                    value: 'repayment',
+                                                    label: 'Repayment or collection',
+                                                },
+                                                {
+                                                    value: 'funding',
+                                                    label: 'Additional borrowing or lending',
+                                                },
+                                            ]}
+                                        />
+                                        <FieldError>
+                                            {errors.debt_entry_kind}
+                                        </FieldError>
+                                    </Field>
+                                    <p className="type-meta">
+                                        The full posted amount counts as
+                                        principal. Keep the recorded movement
+                                        direction and currency.
+                                    </p>
+                                </FieldGroup>
+                            )}
+                            {transaction?.debt_allocation &&
+                                kind !== 'debt' && (
+                                    <Field
+                                        data-invalid={Boolean(
+                                            errors.unlink_debt,
+                                        )}
+                                    >
+                                        <Checkbox
+                                            id="transaction-unlink-debt"
+                                            name="unlink_debt"
+                                            value="1"
+                                            required
+                                            aria-invalid={Boolean(
+                                                errors.unlink_debt,
+                                            )}
+                                        />
+                                        <FieldLabel htmlFor="transaction-unlink-debt">
+                                            Unlink{' '}
+                                            {
+                                                transaction.debt_allocation
+                                                    .debt_name
+                                            }{' '}
+                                            and use the selected Kind
+                                        </FieldLabel>
+                                        <FieldError>
+                                            {errors.unlink_debt}
+                                        </FieldError>
+                                    </Field>
+                                )}
                             {kind === 'income' && (
                                 <div className="grid gap-2 sm:col-span-2">
                                     <Label htmlFor="transaction-income-source">

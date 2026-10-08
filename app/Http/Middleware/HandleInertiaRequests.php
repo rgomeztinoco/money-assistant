@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Actions\Debts\ReadDebts;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -37,6 +38,7 @@ class HandleInertiaRequests extends Middleware
     {
         return [
             ...parent::share($request),
+            'debt_options' => fn () => $request->user() === null ? [] : app(ReadDebts::class)->options($request->user()),
             'auth' => [
                 'user' => $request->user(),
             ],

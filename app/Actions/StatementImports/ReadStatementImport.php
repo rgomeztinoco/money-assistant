@@ -2,10 +2,13 @@
 
 namespace App\Actions\StatementImports;
 
+use App\DebtEntryKind;
 use App\ExactInteger;
 use App\Models\StatementImport;
 use App\Models\StatementMovement;
 use App\Models\User;
+use App\MovementDirection;
+use App\TransactionKind;
 
 final class ReadStatementImport
 {
@@ -46,8 +49,9 @@ final class ReadStatementImport
                         'match_evidence',
                     ])
                     ->with([
-                        'transaction:id,kind,income_source,transfer_purpose,voided_at,category_id',
+                        'transaction:id,amount_minor,currency,direction,kind,income_source,transfer_purpose,voided_at,category_id',
                         'transaction.category:id,name',
+                        'transaction.debtEntry',
                     ])
                     ->orderBy('position'),
             ])
@@ -110,6 +114,8 @@ final class ReadStatementImport
                 'savings_deposits_minor' => '0',
                 'savings_withdrawals_minor' => '0',
                 'net_savings_minor' => '0',
+                'debt_payments_made_minor' => '0',
+                'debt_payments_received_minor' => '0',
             ];
         }
 
@@ -117,6 +123,13 @@ final class ReadStatementImport
             $currency = $movement->currency->value;
             $amount = ExactInteger::from($movement->amount_minor);
             $key = $movement->classification->summaryKey($movement->direction);
+            if ($movement->transaction?->kind === TransactionKind::Debt) {
+                $amount = ExactInteger::from($movement->transaction->amount_minor);
+                $currency = $movement->transaction->currency->value;
+                $key = $movement->transaction->voided_at === null && $movement->transaction->debtEntry?->kind === DebtEntryKind::Repayment
+                    ? ($movement->transaction->direction === MovementDirection::Debit ? 'debt_payments_made_minor' : 'debt_payments_received_minor')
+                    : null;
+            }
 
             if ($key !== null) {
                 $summary[$currency][$key] = ExactInteger::from($summary[$currency][$key])

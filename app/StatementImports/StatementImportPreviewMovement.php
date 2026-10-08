@@ -26,7 +26,7 @@ final readonly class StatementImportPreviewMovement
         public ?StatementMovementMatch $match = null,
     ) {}
 
-    public function withMatch(StatementMovementMatch $match): self
+    public function withMatch(StatementMovementMatch $match, ?StatementMovementClassification $classification = null): self
     {
         return new self(
             sourceRowId: $this->sourceRowId,
@@ -36,8 +36,8 @@ final readonly class StatementImportPreviewMovement
             amountMinor: $this->amountMinor,
             currency: $this->currency,
             direction: $this->direction,
-            classification: $this->classification,
-            contributesToSpending: $this->contributesToSpending,
+            classification: $classification ?? $this->classification,
+            contributesToSpending: $classification?->contributesToSpending() ?? $this->contributesToSpending,
             canBeExcluded: $this->canBeExcluded,
             sourceMetadata: $this->sourceMetadata,
             match: $match,

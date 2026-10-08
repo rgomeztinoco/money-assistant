@@ -70,6 +70,7 @@ class ReadBreakdown
                 'original_spending_id',
             ])
             ->with([
+                'debtEntry.debt',
                 'category:id,parent_id,name',
                 'receiptBreakdown:id,transaction_id',
                 'receiptBreakdown.lineItems:id,line_item_id,receipt_breakdown_id,category_id,description,line_total_minor',
@@ -171,7 +172,7 @@ class ReadBreakdown
         };
     }
 
-    /** @return array<string, array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}> */
+    /** @return array<string, array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, debt_payments_made_minor: string, debt_payments_received_minor: string}> */
     private function summaries(User $owner, CarbonImmutable $dateFrom, CarbonImmutable $dateTo): array
     {
         return collect(Currency::cases())
@@ -550,6 +551,7 @@ class ReadBreakdown
             'direction' => $transaction->direction->value,
             'income_source' => $transaction->income_source?->value,
             'transfer_purpose' => $transaction->transfer_purpose?->value,
+            'debt_allocation' => $transaction->debtAllocation(),
             'description' => $transaction->description,
             'category' => $transaction->category === null
                 ? null

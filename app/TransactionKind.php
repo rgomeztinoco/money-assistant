@@ -8,6 +8,7 @@ enum TransactionKind: string
     case Refund = 'refund';
     case Income = 'income';
     case Transfer = 'transfer';
+    case Debt = 'debt';
 
     public function affectsNetSpending(): bool
     {
@@ -26,7 +27,7 @@ enum TransactionKind: string
         return match ($this) {
             self::Spending => $amount,
             self::Refund => ExactInteger::from(0)->subtract($amount),
-            self::Income, self::Transfer => ExactInteger::from(0),
+            self::Income, self::Transfer, self::Debt => ExactInteger::from(0),
         };
     }
 }

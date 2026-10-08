@@ -383,15 +383,17 @@ export function TransactionActionDialog({
     onClose: () => void;
 }) {
     const title =
-        action === 'edit'
-            ? `Edit ${transaction.description}`
-            : action === 'split'
-              ? `Split ${transaction.description} by Category`
-              : action === 'rule'
-                ? 'Create a Merchant Rule'
-                : action === 'restore'
-                  ? `Restore ${transaction.description}`
-                  : `Void ${transaction.description}`;
+        action === 'debt'
+            ? 'Record as debt payment'
+            : action === 'edit'
+              ? `Edit ${transaction.description}`
+              : action === 'split'
+                ? `Split ${transaction.description} by Category`
+                : action === 'rule'
+                  ? 'Create a Merchant Rule'
+                  : action === 'restore'
+                    ? `Restore ${transaction.description}`
+                    : `Void ${transaction.description}`;
 
     if (action === 'void' || action === 'restore') {
         return (
@@ -466,7 +468,7 @@ export function TransactionActionDialog({
                 <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:px-6">
                     <DialogTitle>{title}</DialogTitle>
                     <DialogDescription>
-                        {action === 'edit'
+                        {action === 'edit' || action === 'debt'
                             ? transaction.voided_at
                                 ? 'Voided Transaction. Update its recorded details.'
                                 : 'Update this confirmed movement.'
@@ -479,8 +481,9 @@ export function TransactionActionDialog({
                     className="min-h-0 overflow-y-auto p-4 sm:p-6"
                     data-test="transaction-dialog-scroll"
                 >
-                    {action === 'edit' && (
+                    {(action === 'edit' || action === 'debt') && (
                         <TransactionEditor
+                            initialKind={action === 'debt' ? 'debt' : undefined}
                             key={transaction.id}
                             transaction={transaction}
                             currency={transaction.currency}

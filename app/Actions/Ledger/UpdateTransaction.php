@@ -2,8 +2,10 @@
 
 namespace App\Actions\Ledger;
 
+use App\Actions\Debts\SyncDebtAllocation;
 use App\CategoryAssignmentProvenance;
 use App\Currency;
+use App\DebtEntryKind;
 use App\ExactInteger;
 use App\IncomeSource;
 use App\Models\Transaction;
@@ -11,6 +13,7 @@ use App\Models\User;
 use App\MovementDirection;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
+use App\StatementMovementClassification;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Carbon\CarbonImmutable;
@@ -19,6 +22,8 @@ use Illuminate\Support\Str;
 
 class UpdateTransaction
 {
+    public function __construct(private SyncDebtAllocation $syncDebtAllocation) {}
+
     public function handle(
         User $owner,
         Transaction $transaction,
@@ -35,8 +40,11 @@ class UpdateTransaction
         ?int $categoryId,
         ?int $originalSpendingId,
         bool $removeReceiptBreakdown,
+        ?int $debtId = null,
+        ?DebtEntryKind $debtEntryKind = null,
+        bool $unlinkDebt = false,
     ): Transaction {
-        return DB::transaction(function () use ($owner, $transaction, $occurredOn, $amountMinor, $currency, $kind, $direction, $description, $incomeSource, $transferPurpose, $instrumentLabel, $instrumentLastFour, $categoryId, $originalSpendingId, $removeReceiptBreakdown): Transaction {
+        return DB::transaction(function () use ($owner, $transaction, $occurredOn, $amountMinor, $currency, $kind, $direction, $description, $incomeSource, $transferPurpose, $instrumentLabel, $instrumentLastFour, $categoryId, $originalSpendingId, $removeReceiptBreakdown, $debtId, $debtEntryKind, $unlinkDebt): Transaction {
             $currentTransaction = Transaction::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->whereKey($transaction->getKey())
@@ -81,7 +89,22 @@ class UpdateTransaction
             $currentTransaction->refund_relationship_review_reasons = $this->refundReviewReasons(
                 $currentTransaction,
             );
+            $this->syncDebtAllocation->handle($owner, $currentTransaction, $debtId, $debtEntryKind, $unlinkDebt);
             $currentTransaction->save();
+            if ($kind === TransactionKind::Debt || $previousKind === TransactionKind::Debt) {
+                $classification = match ($kind) {
+                    TransactionKind::Debt => StatementMovementClassification::Debt,
+                    TransactionKind::Spending => StatementMovementClassification::Purchase,
+                    TransactionKind::Refund => StatementMovementClassification::Refund,
+                    TransactionKind::Income => StatementMovementClassification::Income,
+                    TransactionKind::Transfer => match ($transferPurpose) {
+                        TransferPurpose::Savings => StatementMovementClassification::Savings,
+                        TransferPurpose::CardPayment => StatementMovementClassification::CardPayment,
+                        default => StatementMovementClassification::Transfer,
+                    },
+                };
+                $currentTransaction->statementMovement()->update(['classification' => $classification]);
+            }
 
             if ((! $kind->supportsCategory()) || ($removeReceiptBreakdown && $amountChanged)) {
                 $currentTransaction->receiptBreakdown()->lockForUpdate()->first()?->delete();
