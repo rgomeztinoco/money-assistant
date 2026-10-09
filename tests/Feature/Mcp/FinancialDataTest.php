@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Categorization\SaveMerchantRule;
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
 use App\Models\LineItem;
@@ -161,16 +162,17 @@ test('fixed cursor pages preserve the snapshot and bind owner filters and sort o
     expect(array_column($repeated['transactions'], 'id'))->toBe([$records[0]->id, $added->id]);
 });
 
-test('tools advertise exactly the read-only financial contract and support legacy negotiation', function () {
+test('tools advertise financial schemas and mutation annotations and support legacy negotiation', function () {
     $owner = User::factory()->create();
     $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
     $tools = financialMcp($token, 'tools/list')->assertOk()->json('result.tools');
-    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'get_yearly_payment_plan']);
+    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'get_yearly_payment_plan', 'create_transaction']);
     foreach ($tools as $tool) {
+        $readOnly = $tool['name'] !== 'create_transaction';
         expect($tool['description'])->not->toBeEmpty()
             ->and($tool['inputSchema']['type'])->toBe('object')
             ->and($tool['outputSchema']['type'])->toBe('object')
-            ->and($tool['annotations'])->toEqual(['readOnlyHint' => true, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => false]);
+            ->and($tool['annotations'])->toEqual(['readOnlyHint' => $readOnly, 'destructiveHint' => false, 'idempotentHint' => $readOnly, 'openWorldHint' => false]);
     }
     foreach (['income_source', 'transfer_purpose', 'category_assignment_provenance'] as $field) {
         expect($tools[1]['outputSchema']['properties']['transaction']['properties'][$field]['enum'])->toContain(null);
@@ -182,10 +184,11 @@ test('tools advertise exactly the read-only financial contract and support legac
         'protocolVersion' => '2025-11-25', 'capabilities' => (object) [], 'clientInfo' => ['name' => 'legacy-test', 'version' => '1.0'],
     ]])->assertOk()->assertHeaderMissing('MCP-Session-Id')
         ->assertJsonPath('result.protocolVersion', '2025-11-25')
+        ->assertJsonPath('result.serverInfo.version', '2.0.0')
         ->assertJsonMissingPath('result.capabilities.resources')->assertJsonMissingPath('result.capabilities.prompts');
     Auth::forgetGuards();
     $this->withToken($token)->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list'])
-        ->assertOk()->assertHeaderMissing('MCP-Session-Id')->assertJsonCount(4, 'result.tools');
+        ->assertOk()->assertHeaderMissing('MCP-Session-Id')->assertJsonCount(5, 'result.tools');
     financialMcp($token, 'tools/list', [], ['Mcp-Method' => 'tools/call'])->assertBadRequest();
 });
 
@@ -456,4 +459,99 @@ test('MCP reports missing conversion assumptions and enforces bearer read access
         ->assertJsonPath('result.structuredContent.assumptions.planning_only', 'Planning targets do not represent money saved, bills paid, or money safe to spend today.');
     $tools = financialMcp($token, 'tools/list')->json('result.tools');
     expect($tools[3]['inputSchema']['properties'])->toBeEmpty();
+});
+
+test('an existing agent token creates confirmed Transactions and reads the saved financial representation', function (array $classification, string $direction) {
+    $owner = User::factory()->create();
+    $token = $owner->createToken('existing agent', ['financial-data:read'])->plainTextToken;
+    $this->travel(1)->days();
+    $saved = financialMcp($token, 'tools/call', ['name' => 'create_transaction', 'arguments' => [
+        'occurred_on' => '2026-10-07', 'amount_minor' => '9007199254740993', 'description' => 'Confirmed movement', ...$classification,
+    ]])->assertOk()->assertJsonPath('result.isError', false)->json('result.structuredContent.transaction');
+    expect($saved['amount_minor'])->toBe('9007199254740993')
+        ->and($saved['currency'])->toBe('PEN')->and($saved['direction'])->toBe($direction)
+        ->and($saved['kind'])->toBe($classification['kind'])->and($saved['confirmed_at'])->not->toBeNull();
+    financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $saved['id']]])
+        ->assertOk()->assertJsonPath('result.structuredContent.transaction', $saved);
+    financialMcp($token, 'tools/call', ['name' => 'list_transactions'])
+        ->assertOk()->assertJsonPath('result.structuredContent.transactions.0.id', $saved['id']);
+})->with([
+    [['kind' => 'spending'], 'debit'],
+    [['kind' => 'refund', 'original_spending_id' => null], 'credit'],
+    [['kind' => 'income', 'income_source' => 'salary'], 'credit'],
+    [['kind' => 'transfer', 'transfer_purpose' => 'savings', 'direction' => 'credit'], 'credit'],
+]);
+
+test('MCP creation rejects invalid amounts classifications dates and unsupported fields without recording a movement', function (array $changes) {
+    $owner = User::factory()->create();
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    financialMcp($token, 'tools/call', ['name' => 'create_transaction', 'arguments' => [
+        'occurred_on' => '2026-10-07', 'amount_minor' => '1000', 'kind' => 'spending', 'description' => 'Movement', ...$changes,
+    ]])->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent');
+    expect($owner->transactions()->count())->toBe(0);
+})->with([
+    [['amount_minor' => '0']], [['amount_minor' => '-1']], [['amount_minor' => '1.5']],
+    [['amount_minor' => '1e3']], [['amount_minor' => 1000]], [['amount_minor' => '9223372036854775808']],
+    [['occurred_on' => 'yesterday']], [['occurred_on' => '2026-02-30']], [['currency' => 'EUR']],
+    [['description' => '   ']], [['kind' => 'income']], [['kind' => 'income', 'income_source' => 'unknown']],
+    [['kind' => 'transfer', 'transfer_purpose' => 'savings']], [['kind' => 'transfer', 'direction' => 'debit']],
+    [['instrument_label' => 'private']], [['user_id' => 1]], [['amount' => '10.00']],
+    [['kind' => 'unsupported']], [['direction' => 'unknown']],
+]);
+
+test('MCP creation preserves exact supported maximum and explicit Currency and Direction', function () {
+    $owner = User::factory()->create();
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    financialMcp($token, 'tools/call', ['name' => 'create_transaction', 'arguments' => [
+        'occurred_on' => '2026-10-07', 'amount_minor' => '9223372036854775807', 'currency' => 'USD',
+        'kind' => 'spending', 'direction' => 'credit', 'description' => 'Exact maximum',
+    ]])->assertOk()->assertJsonPath('result.isError', false)
+        ->assertJsonPath('result.structuredContent.transaction.amount_minor', '9223372036854775807')
+        ->assertJsonPath('result.structuredContent.transaction.currency', 'USD')
+        ->assertJsonPath('result.structuredContent.transaction.direction', 'credit');
+});
+
+test('MCP creation distinguishes omitted and cleared Categories and validates owner assignment', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $foreign = Category::factory()->create();
+    $archived = Category::factory()->for($owner, 'owner')->create(['archived_at' => now()]);
+    app(SaveMerchantRule::class)->handle($owner, 'Corner Market', $category->id, null, null, true);
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    $create = fn (array $changes) => financialMcp($token, 'tools/call', ['name' => 'create_transaction', 'arguments' => [
+        'occurred_on' => '2026-10-07', 'amount_minor' => '1000', 'kind' => 'spending', 'description' => 'Corner Market', ...$changes,
+    ]]);
+    $create([])->assertOk()->assertJsonPath('result.structuredContent.transaction.category.id', $category->id)
+        ->assertJsonPath('result.structuredContent.transaction.category_assignment_provenance', 'merchant_rule');
+    $create(['category_id' => null])->assertOk()->assertJsonPath('result.structuredContent.transaction.category', null);
+    $create(['category_id' => $category->id])->assertOk()->assertJsonPath('result.structuredContent.transaction.category_assignment_provenance', 'owner');
+    foreach ([$foreign->id, $archived->id] as $id) {
+        $create(['category_id' => $id])->assertOk()->assertJsonPath('result.isError', true);
+    }
+    $create(['kind' => 'income', 'income_source' => 'salary', 'category_id' => $category->id])->assertOk()->assertJsonPath('result.isError', true);
+    expect($owner->transactions()->count())->toBe(3);
+});
+
+test('MCP Refund creation links atomically and returns the existing relationship review', function () {
+    $owner = User::factory()->create();
+    $spending = Transaction::factory()->for($owner, 'owner')->pen()->create(['amount_minor' => 500]);
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    $create = fn (int $originalId) => financialMcp($token, 'tools/call', ['name' => 'create_transaction', 'arguments' => [
+        'occurred_on' => '2026-10-07', 'amount_minor' => '1000', 'kind' => 'refund', 'description' => 'Reimbursement', 'original_spending_id' => $originalId,
+    ]]);
+    $refund = $create($spending->id)->assertOk()->assertJsonPath('result.isError', false)
+        ->assertJsonPath('result.structuredContent.transaction.original_spending.id', $spending->id)
+        ->assertJsonPath('result.structuredContent.transaction.review_state', 'outstanding')->json('result.structuredContent.transaction');
+    financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $spending->id]])
+        ->assertOk()->assertJsonPath('result.structuredContent.transaction.linked_refunds.0.id', $refund['id']);
+    foreach ([
+        Transaction::factory()->create(['currency' => 'PEN']),
+        Transaction::factory()->for($owner, 'owner')->usd()->create(),
+        Transaction::factory()->for($owner, 'owner')->pen()->create(['voided_at' => now()]),
+        Transaction::factory()->for($owner, 'owner')->income()->pen()->create(),
+    ] as $invalid) {
+        $before = $owner->transactions()->count();
+        $create($invalid->id)->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent');
+        expect($owner->transactions()->count())->toBe($before);
+    }
 });

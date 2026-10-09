@@ -15,6 +15,7 @@ use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 class RecordManualTransaction
@@ -58,6 +59,13 @@ class RecordManualTransaction
         };
 
         return DB::transaction(function () use ($owner, $occurredOn, $amountMinor, $currency, $kind, $direction, $description, $incomeSource, $transferPurpose, $provisionalFields, $instrumentLabel, $instrumentLastFour, $categoryId, $categorySpecified): Transaction {
+            if ($categoryId !== null && $kind->supportsCategory()) {
+                $category = $owner->categories()->whereKey($categoryId)->availableForAssignment()->lockForUpdate()->first();
+                if ($category === null) {
+                    throw ValidationException::withMessages(['category_id' => 'Choose an active Category owned by you.']);
+                }
+            }
+
             $transaction = Transaction::create([
                 'user_id' => $owner->getKey(),
                 'occurred_on' => $occurredOn,

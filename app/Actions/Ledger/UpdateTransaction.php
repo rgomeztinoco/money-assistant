@@ -16,6 +16,7 @@ use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class UpdateTransaction
 {
@@ -42,6 +43,8 @@ class UpdateTransaction
                 ->whereKey($transaction->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+            $this->validateClassification($owner, $currentTransaction, $kind, $currency, $originalSpendingId);
+
             $previousKind = $currentTransaction->kind;
             $previousOriginalSpendingId = $currentTransaction->original_spending_id;
             $amountChanged = $currentTransaction->amount_minor !== $amountMinor;
@@ -100,6 +103,44 @@ class UpdateTransaction
 
             return $currentTransaction->refresh();
         }, 3);
+    }
+
+    public function validateClassification(
+        User $owner,
+        Transaction $transaction,
+        TransactionKind $kind,
+        Currency $currency,
+        ?int $originalSpendingId,
+    ): void {
+        if ($originalSpendingId !== null) {
+            if ($kind !== TransactionKind::Refund) {
+                throw ValidationException::withMessages(['original_spending_id' => 'Only a Refund can link to an original spending.']);
+            }
+
+            $spending = Transaction::query()
+                ->whereBelongsTo($owner, 'owner')
+                ->whereKey($originalSpendingId)
+                ->where('kind', TransactionKind::Spending->value)
+                ->whereNull('voided_at')
+                ->lockForUpdate()
+                ->first();
+
+            if ($spending === null) {
+                throw ValidationException::withMessages(['original_spending_id' => 'Choose an active Spending Transaction owned by you.']);
+            }
+            if ($spending->is($transaction)) {
+                throw ValidationException::withMessages(['original_spending_id' => 'A Transaction cannot link to itself.']);
+            }
+            if ($spending->currency !== $currency) {
+                throw ValidationException::withMessages(['original_spending_id' => 'A Refund and its original spending must use the same currency.']);
+            }
+        }
+
+        $linkedRefunds = $transaction->linkedRefunds()->whereNull('voided_at')->lockForUpdate()->get();
+        if (($kind !== TransactionKind::Spending && $linkedRefunds->isNotEmpty())
+            || $linkedRefunds->contains(fn (Transaction $refund): bool => $refund->currency !== $currency)) {
+            throw ValidationException::withMessages(['kind' => 'This Spending has linked Refunds. Update or unlink those Refunds before changing its Kind or currency.']);
+        }
     }
 
     /** @return list<string> */
