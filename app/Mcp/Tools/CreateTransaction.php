@@ -80,11 +80,10 @@ class CreateTransaction extends Tool
                 categorySpecified: array_key_exists('category_id', $data),
             );
             if (isset($data['original_spending_id'])) {
-                $transaction = $edit->handle(
-                    $owner, $transaction, $transaction->occurred_on, $transaction->amount_minor,
-                    $transaction->currency, $transaction->kind, $transaction->direction, $transaction->description,
-                    $transaction->income_source, $transaction->transfer_purpose, null, null,
-                    $transaction->category_id, (int) $data['original_spending_id'], false,
+                $transaction = $edit->changeKind(
+                    $owner, $transaction->id, $transaction->kind,
+                    $transaction->income_source, $transaction->transfer_purpose,
+                    (int) $data['original_spending_id'], true,
                 );
             }
 
