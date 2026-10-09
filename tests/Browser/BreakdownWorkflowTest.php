@@ -751,7 +751,7 @@ test('the owner classifies edits records and splits Transactions inside Breakdow
     $household = Category::factory()->for($owner, 'owner')->create([
         'name' => 'Household',
     ]);
-    $today = now()->toDateString();
+    $today = now(config('app.reporting_timezone'))->toDateString();
     $current = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
         'occurred_on' => $today,
         'amount_minor' => 2_500,
@@ -1026,7 +1026,7 @@ test('a long Merchant Rule preview uses the capped dialog scroll', function () {
 test('the owner records a categorized Spending with the shared editor', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Groceries']);
-    $today = now()->toDateString();
+    $today = now(config('app.reporting_timezone'))->toDateString();
     $this->actingAs($owner);
 
     visit("/breakdown?currency=PEN&preset=custom&date_from={$today}&date_to={$today}")
