@@ -31,7 +31,7 @@ class TransactionCategoryController extends Controller
             'message' => isset($validated['category_id'])
                 ? __('Category assigned.')
                 : __('Transaction returned to Uncategorized.'),
-            ...(isset($validated['category_id']) ? ['action' => [
+            ...(isset($validated['category_id']) && $transaction->kind->supportsCategory() ? ['action' => [
                 'type' => 'create_merchant_rule',
                 'draft' => [
                     'source_transaction_id' => $transaction->id,

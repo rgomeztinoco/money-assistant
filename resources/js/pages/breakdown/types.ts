@@ -47,6 +47,8 @@ type BreakdownTransactionBase = {
     debt_allocation: {
         debt_id: number;
         debt_name: string;
+        principal_minor: string;
+        interest_minor: string;
         kind: 'funding' | 'repayment';
     } | null;
     occurred_on: string;

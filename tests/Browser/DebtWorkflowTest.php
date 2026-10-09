@@ -34,3 +34,16 @@ test('Transactions assigns a full imported payment and Breakdown can edit and ex
         ->click('[data-test="breakdown-transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')->select('#transaction-kind', 'spending')->check('#transaction-unlink-debt')->press('Save Transaction')->assertNoJavaScriptErrors();
     visit('/debts/'.$debt->id)->assertSee('S/ 100.00')->assertSee('No operations recorded');
 });
+
+test('owner confirms interest on an existing payment and plans full monthly repayments', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['name' => 'Bank loan', 'counterparty' => 'Bank', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 100000, 'opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create(['occurred_on' => '2026-08-05', 'amount_minor' => 20000, 'description' => 'Imported bank payment']);
+    $this->actingAs($owner);
+    $page = visit('/debts/'.$debt->id)->resize(1280, 900);
+    $page->press('Edit debt')->fill('#debt-target', '200.00')->click('[role="dialog"] button[type="submit"]')->assertMissing('[role="dialog"]')->assertSee('S/ 200.00 target')
+        ->click('header button:has-text("Record operation")')->assertVisible('#entry-kind')->select('#entry-kind', 'interest_charge')->fill('#entry-amount', '30.00')->fill('#entry-date', '2026-08-04')->fill('#entry-detail', 'Confirmed bank interest')->screenshot(filename: 'debts-258-charge-form')->click('[role="dialog"] button[type="submit"]')->assertMissing('[role="dialog"]')->assertSee('S/ 1,030.00')->assertSee('Interest charge');
+    $page->click('header button:has-text("Record operation")')->assertVisible('#entry-kind')->select('#debt-interest-charge', '1')->select('#entry-kind', 'funding')->select('#entry-kind', 'repayment')->assertSelected('#debt-interest-charge', '1')->screenshot(filename: 'debts-258-retained-interest-selector')->select('#debt-interest-charge', '0')->select('#entry-transaction', (string) $payment->id)->fill('#debt-principal', '169.99')->fill('#debt-interest', '30.00')->click('[role="dialog"] button[type="submit"]')->assertSee('Principal plus interest must equal the full posted amount.')
+        ->fill('#debt-principal', '170.00')->screenshot(filename: 'debts-258-payment-form')->click('[role="dialog"] button[type="submit"]')->assertMissing('[role="dialog"]')->assertSee('S/ 830.00')->assertSee('Principal S/ 170.00')->assertSee('Interest S/ 30.00')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-history');
+    visit('/?period=custom&date_from=2026-08-01&date_to=2026-08-31')->resize(1280, 900)->assertSee('Current outstanding balances.')->assertSee('Outgoing monthly target')->assertSee('S/ 830.00')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-home');
+});

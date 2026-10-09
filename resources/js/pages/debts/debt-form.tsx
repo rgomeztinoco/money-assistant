@@ -27,6 +27,7 @@ export function DebtForm({
     onSaved?: () => void;
 }) {
     const form = useForm({
+        monthly_target_minor: debt?.monthly_target_minor ?? '',
         name: debt?.name ?? '',
         counterparty: debt?.counterparty ?? '',
         direction: debt?.direction ?? 'owed',
@@ -36,6 +37,11 @@ export function DebtForm({
     });
     const [opening, setOpening] = useState(
         debt ? minorUnitsToCurrencyUnits(debt.opening_balance_minor) : '',
+    );
+    const [target, setTarget] = useState(
+        debt?.monthly_target_minor
+            ? minorUnitsToCurrencyUnits(debt.monthly_target_minor)
+            : '',
     );
     const field = (
         name: 'name' | 'counterparty' | 'opened_on',
@@ -71,9 +77,25 @@ export function DebtForm({
                     return;
                 }
 
+                const monthlyTarget =
+                    target === '' ? null : currencyUnitsToMinorUnits(target);
+
+                if (
+                    target !== '' &&
+                    (monthlyTarget === null || monthlyTarget <= 0n)
+                ) {
+                    form.setError(
+                        'monthly_target_minor',
+                        'Enter a positive target with up to two decimals, or leave it blank.',
+                    );
+
+                    return;
+                }
+
                 form.transform((data) => ({
                     ...data,
                     opening_balance_minor: balance.toString(),
+                    monthly_target_minor: monthlyTarget?.toString() ?? null,
                 }));
 
                 if (debt) {
@@ -153,6 +175,23 @@ export function DebtForm({
                     <FieldError>{form.errors.opening_balance_minor}</FieldError>
                 </Field>
                 {field('opened_on', 'Opening date', 'date')}
+                <Field data-invalid={Boolean(form.errors.monthly_target_minor)}>
+                    <FieldLabel htmlFor="debt-target">
+                        Monthly target in {form.data.currency}
+                    </FieldLabel>
+                    <Input
+                        id="debt-target"
+                        inputMode="decimal"
+                        value={target}
+                        onChange={(event) => setTarget(event.target.value)}
+                        aria-invalid={Boolean(form.errors.monthly_target_minor)}
+                    />
+                    <FieldDescription>
+                        Optional plan for full payments in each calendar month.
+                        It creates no scheduled payments.
+                    </FieldDescription>
+                    <FieldError>{form.errors.monthly_target_minor}</FieldError>
+                </Field>
                 <Button type="submit" disabled={form.processing}>
                     {debt ? 'Save debt' : 'Create debt'}
                 </Button>

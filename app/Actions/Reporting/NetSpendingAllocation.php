@@ -33,13 +33,16 @@ final class NetSpendingAllocation
     public function byCategory(Transaction $transaction, Collection $categoriesById): array
     {
         $allocations = [];
+        if (! $transaction->hasSpendingContribution()) {
+            return [];
+        }
         $lineItems = $transaction->receiptBreakdown?->lineItems;
 
         if ($lineItems === null || $lineItems->isEmpty()) {
             $this->add(
                 allocations: $allocations,
                 categoryId: $transaction->category_id,
-                amount: $transaction->kind->netSpendingAmount($transaction->amount_minor),
+                amount: $transaction->netSpendingAmount(),
                 categoriesById: $categoriesById,
             );
 

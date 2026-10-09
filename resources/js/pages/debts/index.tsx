@@ -106,6 +106,16 @@ export default function Debts({
                                             View history
                                         </Link>
                                     </Button>
+                                    <p className="type-meta">
+                                        {debt.target_month} payments{' '}
+                                        {formatMinorUnits(
+                                            debt.monthly_paid_minor,
+                                            debt.currency,
+                                        )}
+                                        {debt.monthly_target_minor
+                                            ? ` of ${formatMinorUnits(debt.monthly_target_minor, debt.currency)} target`
+                                            : ' · No target'}
+                                    </p>
                                 </CardContent>
                             </Card>
                         ))}

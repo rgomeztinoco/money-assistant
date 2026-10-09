@@ -51,7 +51,7 @@ final class ReadStatementImport
                     ->with([
                         'transaction:id,amount_minor,currency,direction,kind,income_source,transfer_purpose,voided_at,category_id',
                         'transaction.category:id,name',
-                        'transaction.debtEntry',
+                        'transaction.debtEntry.debt',
                     ])
                     ->orderBy('position'),
             ])
@@ -86,7 +86,8 @@ final class ReadStatementImport
                     'transaction' => $movement->transaction === null ? null : [
                         'id' => $movement->transaction->id,
                         'kind' => $movement->transaction->kind->value,
-                        'income_source' => $movement->transaction->income_source?->value,
+                        'debt_allocation' => $movement->transaction->debtAllocation(),
+                        'income_source' => $movement->transaction->effectiveIncomeSource()?->value,
                         'transfer_purpose' => $movement->transaction->transfer_purpose?->value,
                         'voided_at' => $movement->transaction->voided_at?->toIso8601String(),
                         'category' => $movement->transaction->category === null ? null : [
@@ -126,6 +127,10 @@ final class ReadStatementImport
             if ($movement->transaction?->kind === TransactionKind::Debt) {
                 $amount = ExactInteger::from($movement->transaction->amount_minor);
                 $currency = $movement->transaction->currency->value;
+                if ($movement->transaction->voided_at === null) {
+                    $summary[$currency]['spending_minor'] = ExactInteger::from($summary[$currency]['spending_minor'])->add($movement->transaction->netSpendingAmount())->value();
+                    $summary[$currency]['income_minor'] = ExactInteger::from($summary[$currency]['income_minor'])->add($movement->transaction->incomeAmount())->value();
+                }
                 $key = $movement->transaction->voided_at === null && $movement->transaction->debtEntry?->kind === DebtEntryKind::Repayment
                     ? ($movement->transaction->direction === MovementDirection::Debit ? 'debt_payments_made_minor' : 'debt_payments_received_minor')
                     : null;

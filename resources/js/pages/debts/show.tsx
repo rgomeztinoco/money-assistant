@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
+import type { CategoryPickerOption } from '@/components/category-picker';
 import { DateText } from '@/components/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,11 +41,13 @@ import type { Debt, DebtEntry, DebtTransactionOption } from './types';
 
 export default function DebtDetail({
     debt,
+    category_options,
     entries,
     transaction_options,
     today,
 }: {
     debt: Debt;
+    category_options: CategoryPickerOption[];
     entries: DebtEntry[];
     transaction_options: DebtTransactionOption[];
     today: string;
@@ -105,15 +108,32 @@ export default function DebtDetail({
                                 debt.currency,
                             )}
                         </p>
+                        <p className="type-meta">
+                            {debt.target_month} full payments{' '}
+                            {formatMinorUnits(
+                                debt.monthly_paid_minor,
+                                debt.currency,
+                            )}
+                            {debt.monthly_target_minor
+                                ? ` of ${formatMinorUnits(debt.monthly_target_minor, debt.currency)} target`
+                                : ' · No monthly target'}
+                        </p>
+                        {debt.status === 'settled' &&
+                            debt.monthly_target_minor && (
+                                <p className="type-meta">
+                                    Settled debts do not add an active monthly
+                                    commitment.
+                                </p>
+                            )}
                     </CardContent>
                 </Card>
                 <Card>
                     <CardHeader>
                         <CardTitle>History</CardTitle>
                         <CardDescription>
-                            Opening balances and non-cash adjustments create no
-                            Transaction. Voided payments remain in history and
-                            do not affect the balance.
+                            Opening balances, interest charges, and adjustments
+                            create no Transaction. Voided payments remain in
+                            history and do not affect the balance.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -152,7 +172,10 @@ export default function DebtDetail({
                                                     ? 'Payment'
                                                     : entry.kind === 'funding'
                                                       ? 'Funding'
-                                                      : 'Adjustment'}{' '}
+                                                      : entry.kind ===
+                                                          'interest_charge'
+                                                        ? 'Interest charge'
+                                                        : 'Adjustment'}{' '}
                                                 {entry.voided && (
                                                     <Badge variant="outline">
                                                         Voided
@@ -191,6 +214,21 @@ export default function DebtDetail({
                                                     entry.amount_minor,
                                                     debt.currency,
                                                 )}
+                                                {entry.kind === 'repayment' && (
+                                                    <p className="type-meta">
+                                                        Principal{' '}
+                                                        {formatMinorUnits(
+                                                            entry.principal_minor ??
+                                                                entry.amount_minor,
+                                                            debt.currency,
+                                                        )}{' '}
+                                                        · Interest{' '}
+                                                        {formatMinorUnits(
+                                                            entry.interest_minor,
+                                                            debt.currency,
+                                                        )}
+                                                    </p>
+                                                )}
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -228,6 +266,7 @@ export default function DebtDetail({
                     </DialogHeader>
                     <DebtEntryForm
                         debt={debt}
+                        categoryOptions={category_options}
                         today={today}
                         transactions={transaction_options}
                         onSaved={() => setRecording(false)}
