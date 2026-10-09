@@ -85,6 +85,7 @@ export function CategoryPicker({
     createParentId = null,
     createTopLevelOnly = false,
     ariaLabel,
+    'aria-invalid': ariaInvalid,
     required = false,
     disabled = false,
     className,
@@ -105,6 +106,7 @@ export function CategoryPicker({
     createParentId?: number | null;
     createTopLevelOnly?: boolean;
     ariaLabel?: string;
+    'aria-invalid'?: boolean;
     required?: boolean;
     disabled?: boolean;
     className?: string;
@@ -230,6 +232,7 @@ export function CategoryPicker({
                 required={required}
                 disabled={disabled}
                 aria-labelledby={`${id}-trigger`}
+                aria-invalid={ariaInvalid}
                 className="sr-only"
                 onChange={(event) => select(event.currentTarget.value)}
                 tabIndex={-1}
@@ -256,6 +259,7 @@ export function CategoryPicker({
                             aria-label={ariaLabel ?? emptyLabel}
                             aria-controls={`${id}-options`}
                             aria-expanded={open}
+                            aria-invalid={ariaInvalid}
                             disabled={disabled}
                             className={cn(
                                 'w-full justify-between font-normal',
