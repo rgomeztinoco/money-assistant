@@ -48,7 +48,7 @@ type BreakdownTransactionBase = {
     amount_minor: string;
     currency: Currency;
     description: string;
-    category: { id: number; name: string } | null;
+    category: { id: number; name: string; parent_id: number | null } | null;
     original_spending_id: number | null;
     merchant_match_count: number;
     instrument_label: string | null;
@@ -58,7 +58,7 @@ type BreakdownTransactionBase = {
     split: Array<{
         id: string;
         amount_minor: string;
-        category: { id: number; name: string } | null;
+        category: { id: number; name: string; parent_id: number | null } | null;
     }> | null;
 };
 
@@ -108,6 +108,8 @@ export type BreakdownProps = {
         selected: number | null;
     };
     category_groups: BreakdownCategoryGroup[];
+    category_groups_by_day: Record<string, BreakdownCategoryGroup[]>;
+    attention_transaction_ids: number[];
     chart_granularity: 'day' | 'week' | 'month';
     days: BreakdownDay[];
     merchants: Array<{
