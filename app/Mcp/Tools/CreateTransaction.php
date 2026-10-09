@@ -53,23 +53,13 @@ class CreateTransaction extends Tool
             'occurred_on' => ['required', 'date_format:Y-m-d'],
             'amount_minor' => ['required', new ExactMinorAmount],
             'currency' => ['required', Rule::enum(Currency::class)],
-            ...TransactionClassificationRules::fields($request->get('kind')),
+            ...TransactionClassificationRules::agentFields($request->get('kind')),
             'direction' => ['required', Rule::enum(MovementDirection::class)],
             'description' => ['required', 'string', 'max:255'],
             'category_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
-            'original_spending_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ];
         if (! in_array($request->get('kind'), ['spending', 'refund'], true)) {
             $rules['category_id'] = ['missing'];
-        }
-        if ($request->get('kind') !== 'refund') {
-            $rules['original_spending_id'] = ['missing'];
-        }
-        if ($request->get('kind') !== 'income') {
-            $rules['income_source'] = ['missing'];
-        }
-        if ($request->get('kind') !== 'transfer') {
-            $rules['transfer_purpose'] = ['missing'];
         }
         Validator::validate(['arguments' => $request->all()], ['arguments' => 'array:'.implode(',', array_keys($rules))]);
         $data = $request->validate($rules);
