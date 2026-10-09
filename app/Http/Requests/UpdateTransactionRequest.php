@@ -2,18 +2,19 @@
 
 namespace App\Http\Requests;
 
+use App\Actions\Ledger\UpdateTransaction;
 use App\Currency;
 use App\ExactInteger;
 use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
-use App\IncomeSource;
 use App\Models\Category;
 use App\Models\Transaction;
 use App\MovementDirection;
+use App\Rules\TransactionClassificationRules;
 use App\TransactionKind;
-use App\TransferPurpose;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
 
 class UpdateTransactionRequest extends FormRequest
@@ -51,18 +52,8 @@ class UpdateTransactionRequest extends FormRequest
             'occurred_on' => ['required', 'date_format:Y-m-d'],
             ...$this->currencyAmountInputRules(),
             'currency' => ['required', Rule::enum(Currency::class)],
-            'kind' => ['required', Rule::enum(TransactionKind::class)],
+            ...TransactionClassificationRules::fields($this->input('kind')),
             'direction' => ['required', Rule::enum(MovementDirection::class)],
-            'income_source' => [
-                Rule::requiredIf($this->input('kind') === TransactionKind::Income->value),
-                'nullable',
-                Rule::enum(IncomeSource::class),
-            ],
-            'transfer_purpose' => [
-                Rule::requiredIf($this->input('kind') === TransactionKind::Transfer->value),
-                'nullable',
-                Rule::enum(TransferPurpose::class),
-            ],
             'description' => ['required', 'string', 'max:255'],
             'instrument_label' => ['nullable', 'string', 'max:100'],
             'instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
@@ -111,34 +102,14 @@ class UpdateTransactionRequest extends FormRequest
                 }
             }
 
-            if ($kind !== TransactionKind::Refund && $originalSpendingId !== null) {
-                $validator->errors()->add('original_spending_id', 'Only a Refund can link to an original spending.');
-
-                return;
-            }
-
-            if ($originalSpendingId !== null) {
-                $spending = Transaction::query()->find($originalSpendingId);
-
-                if ($spending?->currency !== $currency) {
-                    $validator->errors()->add('original_spending_id', 'A Refund and its original spending must use the same currency.');
+            try {
+                app(UpdateTransaction::class)->validateClassification($this->user(), $transaction, $kind, $currency, $originalSpendingId);
+            } catch (ValidationException $exception) {
+                foreach ($exception->errors() as $field => $messages) {
+                    foreach ($messages as $message) {
+                        $validator->errors()->add($field, $message);
+                    }
                 }
-
-                if ($spending?->is($transaction)) {
-                    $validator->errors()->add('original_spending_id', 'A Transaction cannot link to itself.');
-                }
-            }
-
-            $hasActiveLinkedRefunds = $transaction->linkedRefunds()
-                ->whereNull('voided_at')
-                ->exists();
-            $hasLinkedRefundInAnotherCurrency = $transaction->linkedRefunds()
-                ->whereNull('voided_at')
-                ->where('currency', '<>', $currency->value)
-                ->exists();
-
-            if (($kind !== TransactionKind::Spending && $hasActiveLinkedRefunds) || $hasLinkedRefundInAnotherCurrency) {
-                $validator->errors()->add('kind', 'This Spending has linked Refunds. Update or unlink those Refunds before changing its Kind or currency.');
             }
 
             $receiptBreakdown = $transaction->receiptBreakdown()->first();

@@ -4,11 +4,10 @@ namespace App\Http\Requests;
 
 use App\Currency;
 use App\Http\Requests\Concerns\InteractsWithCurrencyAmountInput;
-use App\IncomeSource;
 use App\Models\Category;
 use App\MovementDirection;
+use App\Rules\TransactionClassificationRules;
 use App\TransactionKind;
-use App\TransferPurpose;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -49,18 +48,8 @@ class StoreManualTransactionRequest extends FormRequest
             'occurred_on' => ['required', 'date_format:Y-m-d'],
             ...$this->currencyAmountInputRules(),
             'currency' => ['required', Rule::enum(Currency::class)],
-            'kind' => ['required', Rule::enum(TransactionKind::class)],
+            ...TransactionClassificationRules::fields($this->input('kind')),
             'direction' => ['required', Rule::enum(MovementDirection::class)],
-            'income_source' => [
-                Rule::requiredIf($this->input('kind') === TransactionKind::Income->value),
-                'nullable',
-                Rule::enum(IncomeSource::class),
-            ],
-            'transfer_purpose' => [
-                Rule::requiredIf($this->input('kind') === TransactionKind::Transfer->value),
-                'nullable',
-                Rule::enum(TransferPurpose::class),
-            ],
             'description' => ['required', 'string', 'max:255'],
             'instrument_label' => ['nullable', 'string', 'max:100'],
             'instrument_last_four' => ['nullable', 'regex:/^[0-9]{4}$/'],
