@@ -11,10 +11,12 @@ use App\Models\User;
 use App\MovementDirection;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
+use App\Rules\TransactionClassificationRules;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -90,19 +92,68 @@ class UpdateTransaction
                 $currentTransaction->receiptBreakdown()->lockForUpdate()->first()?->delete();
             }
 
-            $affectedSpendingIds = array_filter([
-                $previousKind === TransactionKind::Spending ? $currentTransaction->id : null,
-                $previousOriginalSpendingId,
-                $currentTransaction->kind === TransactionKind::Spending ? $currentTransaction->id : null,
-                $currentTransaction->original_spending_id,
-            ]);
-
-            foreach (array_unique($affectedSpendingIds) as $spendingId) {
-                $this->refreshLinkedRefundReviewReasons($owner, $spendingId);
-            }
+            $this->refreshAffectedRefunds($owner, $currentTransaction, $previousKind, $previousOriginalSpendingId);
 
             return $currentTransaction->refresh();
         }, 3);
+    }
+
+    public function changeKind(
+        User $owner,
+        int $transactionId,
+        TransactionKind $kind,
+        ?IncomeSource $incomeSource,
+        ?TransferPurpose $transferPurpose,
+        ?int $originalSpendingId,
+        bool $originalSpendingSpecified,
+    ): Transaction {
+        return DB::transaction(function () use ($owner, $transactionId, $kind, $incomeSource, $transferPurpose, $originalSpendingId, $originalSpendingSpecified): Transaction {
+            $transaction = Transaction::query()->whereBelongsTo($owner, 'owner')->whereKey($transactionId)->lockForUpdate()->firstOrFail();
+            if ($transaction->voided_at !== null) {
+                throw ValidationException::withMessages(['transaction' => 'A Voided Transaction cannot change Kind.']);
+            }
+            Validator::validate([
+                'kind' => $kind->value, 'income_source' => $incomeSource?->value, 'transfer_purpose' => $transferPurpose?->value,
+            ], TransactionClassificationRules::fields($kind->value));
+            $this->validateClassification($owner, $transaction, $kind, $transaction->currency, $originalSpendingSpecified ? $originalSpendingId : null);
+            $previousKind = $transaction->kind;
+            $previousOriginalSpendingId = $transaction->original_spending_id;
+
+            $transaction->kind = $kind;
+            $transaction->income_source = $kind === TransactionKind::Income ? $incomeSource : null;
+            $transaction->transfer_purpose = $kind === TransactionKind::Transfer ? $transferPurpose : null;
+            $transaction->original_spending_id = $kind === TransactionKind::Refund
+                ? ($originalSpendingSpecified ? $originalSpendingId : ($previousKind === TransactionKind::Refund ? $previousOriginalSpendingId : null))
+                : null;
+            if ($previousKind !== $kind) {
+                $transaction->provisional_fields = array_values(array_diff($transaction->provisional_fields, [ReviewableTransactionField::Kind->value]));
+            }
+            if (! $kind->supportsCategory()) {
+                $transaction->category_id = null;
+                $transaction->category_assignment_provenance = null;
+                $transaction->merchant_rule_id = null;
+                $transaction->receiptBreakdown()->lockForUpdate()->first()?->delete();
+            }
+            $transaction->refund_relationship_review_reasons = $this->refundReviewReasons($transaction);
+            $transaction->save();
+            $this->refreshAffectedRefunds($owner, $transaction, $previousKind, $previousOriginalSpendingId);
+
+            return $transaction->refresh();
+        }, 3);
+    }
+
+    private function refreshAffectedRefunds(User $owner, Transaction $currentTransaction, TransactionKind $previousKind, ?int $previousOriginalSpendingId): void
+    {
+        $affectedSpendingIds = array_filter([
+            $previousKind === TransactionKind::Spending ? $currentTransaction->id : null,
+            $previousOriginalSpendingId,
+            $currentTransaction->kind === TransactionKind::Spending ? $currentTransaction->id : null,
+            $currentTransaction->original_spending_id,
+        ]);
+
+        foreach (array_unique($affectedSpendingIds) as $spendingId) {
+            $this->refreshLinkedRefundReviewReasons($owner, $spendingId);
+        }
     }
 
     public function validateClassification(
@@ -117,6 +168,10 @@ class UpdateTransaction
                 throw ValidationException::withMessages(['original_spending_id' => 'Only a Refund can link to an original spending.']);
             }
 
+            if ($originalSpendingId === $transaction->id) {
+                throw ValidationException::withMessages(['original_spending_id' => 'A Transaction cannot link to itself.']);
+            }
+
             $spending = Transaction::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->whereKey($originalSpendingId)
@@ -127,9 +182,6 @@ class UpdateTransaction
 
             if ($spending === null) {
                 throw ValidationException::withMessages(['original_spending_id' => 'Choose an active Spending Transaction owned by you.']);
-            }
-            if ($spending->is($transaction)) {
-                throw ValidationException::withMessages(['original_spending_id' => 'A Transaction cannot link to itself.']);
             }
             if ($spending->currency !== $currency) {
                 throw ValidationException::withMessages(['original_spending_id' => 'A Refund and its original spending must use the same currency.']);

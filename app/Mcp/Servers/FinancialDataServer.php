@@ -3,6 +3,7 @@
 namespace App\Mcp\Servers;
 
 use App\Mcp\Tools\AssignTransactionCategory;
+use App\Mcp\Tools\ChangeTransactionKind;
 use App\Mcp\Tools\CreateCategory;
 use App\Mcp\Tools\CreateTransaction;
 use App\Mcp\Tools\GetTransaction;
@@ -18,7 +19,7 @@ use Laravel\Mcp\Server\Attributes\Version;
 #[Version('2.0.0')]
 class FinancialDataServer extends Server
 {
-    protected array $tools = [ListTransactions::class, GetTransaction::class, ListCategories::class, GetYearlyPaymentPlan::class, CreateTransaction::class, CreateCategory::class, AssignTransactionCategory::class, SetTransactionCategorySplit::class];
+    protected array $tools = [ListTransactions::class, GetTransaction::class, ListCategories::class, GetYearlyPaymentPlan::class, CreateTransaction::class, CreateCategory::class, AssignTransactionCategory::class, SetTransactionCategorySplit::class, ChangeTransactionKind::class];
 
     protected array $capabilities = ['tools' => ['listChanged' => false]];
 
