@@ -39,18 +39,8 @@ class ChangeTransactionKind extends Tool
         assert($owner instanceof User);
         $rules = [
             'id' => ['required', 'integer', 'min:1'],
-            ...TransactionClassificationRules::fields($request->get('kind')),
-            'original_spending_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            ...TransactionClassificationRules::agentFields($request->get('kind')),
         ];
-        if ($request->get('kind') !== 'refund') {
-            $rules['original_spending_id'] = ['missing'];
-        }
-        if ($request->get('kind') !== 'income') {
-            $rules['income_source'] = ['missing'];
-        }
-        if ($request->get('kind') !== 'transfer') {
-            $rules['transfer_purpose'] = ['missing'];
-        }
         Validator::validate(['arguments' => $request->all()], ['arguments' => 'array:'.implode(',', array_keys($rules))]);
         $data = $request->validate($rules);
         $transaction = Transaction::query()->whereBelongsTo($owner, 'owner')->find((int) $data['id']);
