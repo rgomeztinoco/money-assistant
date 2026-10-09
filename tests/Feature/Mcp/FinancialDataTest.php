@@ -4,6 +4,7 @@ use App\Actions\Categorization\SaveMerchantRule;
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
 use App\Models\LineItem;
+use App\Models\MerchantRule;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
@@ -79,7 +80,7 @@ test('transaction tools expose a precise curated representation and enforce owne
         'description' => 'Market', 'confirmed_at' => '2026-09-19T12:00:00+00:00', 'updated_at' => '2026-09-19T12:00:00+00:00', 'voided_at' => null,
         'category' => ['id' => $category->id, 'name' => 'Food', 'parent_id' => null, 'archived_at' => null],
         'category_assignment_provenance' => 'owner', 'review_state' => 'clear',
-        'original_spending' => null, 'linked_refunds' => [],
+        'original_spending' => null, 'linked_refunds' => [], 'has_receipt_breakdown' => false,
         'category_allocations' => [['category' => ['id' => $category->id, 'name' => 'Food', 'parent_id' => null, 'archived_at' => null], 'amount_minor' => '9007199254740993']],
     ];
     $single = financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $transaction->id]])
@@ -166,13 +167,14 @@ test('tools advertise financial schemas and mutation annotations and support leg
     $owner = User::factory()->create();
     $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
     $tools = financialMcp($token, 'tools/list')->assertOk()->json('result.tools');
-    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'get_yearly_payment_plan', 'create_transaction']);
+    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'get_yearly_payment_plan', 'create_transaction', 'create_category', 'assign_transaction_category', 'set_transaction_category_split']);
     foreach ($tools as $tool) {
-        $readOnly = $tool['name'] !== 'create_transaction';
+        $readOnly = in_array($tool['name'], ['list_transactions', 'get_transaction', 'list_categories', 'get_yearly_payment_plan'], true);
+        $creates = in_array($tool['name'], ['create_transaction', 'create_category'], true);
         expect($tool['description'])->not->toBeEmpty()
             ->and($tool['inputSchema']['type'])->toBe('object')
             ->and($tool['outputSchema']['type'])->toBe('object')
-            ->and($tool['annotations'])->toEqual(['readOnlyHint' => $readOnly, 'destructiveHint' => false, 'idempotentHint' => $readOnly, 'openWorldHint' => false]);
+            ->and($tool['annotations'])->toEqual(['readOnlyHint' => $readOnly, 'destructiveHint' => ! $readOnly && ! $creates, 'idempotentHint' => ! $creates, 'openWorldHint' => false]);
     }
     foreach (['income_source', 'transfer_purpose', 'category_assignment_provenance'] as $field) {
         expect($tools[1]['outputSchema']['properties']['transaction']['properties'][$field]['enum'])->toContain(null);
@@ -188,7 +190,7 @@ test('tools advertise financial schemas and mutation annotations and support leg
         ->assertJsonMissingPath('result.capabilities.resources')->assertJsonMissingPath('result.capabilities.prompts');
     Auth::forgetGuards();
     $this->withToken($token)->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list'])
-        ->assertOk()->assertHeaderMissing('MCP-Session-Id')->assertJsonCount(5, 'result.tools');
+        ->assertOk()->assertHeaderMissing('MCP-Session-Id')->assertJsonCount(8, 'result.tools');
     financialMcp($token, 'tools/list', [], ['Mcp-Method' => 'tools/call'])->assertBadRequest();
 });
 
@@ -553,5 +555,168 @@ test('MCP Refund creation links atomically and returns the existing relationship
         $before = $owner->transactions()->count();
         $create($invalid->id)->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent');
         expect($owner->transactions()->count())->toBe($before);
+    }
+});
+
+test('MCP creates a normalized two-level Category and uses its stable identity for a Transaction', function () {
+    $owner = User::factory()->create();
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    $parent = financialMcp($token, 'tools/call', ['name' => 'create_category', 'arguments' => ['name' => '  Food  ']])
+        ->assertOk()->assertJsonPath('result.isError', false)->assertJsonPath('result.structuredContent.category.name', 'Food')
+        ->assertDontSee('user_id')->json('result.structuredContent.category');
+    $child = financialMcp($token, 'tools/call', ['name' => 'create_category', 'arguments' => ['name' => '  Eating   out ', 'parent_id' => $parent['id']]])
+        ->assertOk()->assertJsonPath('result.isError', false)->assertJsonPath('result.structuredContent.category.name', 'Eating out')
+        ->assertJsonPath('result.structuredContent.category.parent_id', $parent['id'])->json('result.structuredContent.category');
+    financialMcp($token, 'tools/call', ['name' => 'list_categories'])
+        ->assertOk()->assertJsonPath('result.structuredContent.categories.0.children.0.id', $child['id']);
+    financialMcp($token, 'tools/call', ['name' => 'create_transaction', 'arguments' => [
+        'occurred_on' => '2026-10-07', 'amount_minor' => '1000', 'kind' => 'spending', 'description' => 'Lunch', 'category_id' => $child['id'],
+    ]])->assertOk()->assertJsonPath('result.structuredContent.transaction.category.id', $child['id']);
+});
+
+test('MCP direct Category assignment replaces or clears fallback while preserving effective receipt allocations', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $replacement = Category::factory()->for($owner, 'owner')->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->create(['category_id' => $category->id, 'amount_minor' => 1000]);
+    $breakdown = ReceiptBreakdown::factory()->for($transaction)->create();
+    $item = LineItem::factory()->for($breakdown)->create(['category_id' => $category->id, 'line_total_minor' => 1000])->fresh();
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    foreach ([$replacement->id, null] as $id) {
+        financialMcp($token, 'tools/call', ['name' => 'assign_transaction_category', 'arguments' => ['id' => $transaction->id, 'category_id' => $id]])
+            ->assertOk()->assertJsonPath('result.isError', false)
+            ->assertJsonPath('result.structuredContent.transaction.category', $id === null ? null : ['id' => $replacement->id, 'name' => $replacement->name, 'parent_id' => null, 'archived_at' => null])
+            ->assertJsonPath('result.structuredContent.transaction.category_assignment_provenance', $id === null ? null : 'owner')
+            ->assertJsonPath('result.structuredContent.transaction.has_receipt_breakdown', true)
+            ->assertJsonPath('result.structuredContent.transaction.category_allocations.0.category.id', $category->id);
+    }
+    expect($item->fresh()->getAttributes())->toEqual($item->getAttributes());
+    expect(MerchantRule::query()->whereBelongsTo($owner, 'owner')->count())->toBe(0);
+});
+
+test('MCP category splits reconcile signed allocations and replace receipt detail without changing the movement', function () {
+    $owner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create();
+    $fees = Category::factory()->for($owner, 'owner')->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create(['amount_minor' => 1000, 'category_id' => $fees->id]);
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    $set = fn (array $allocations) => financialMcp($token, 'tools/call', ['name' => 'set_transaction_category_split', 'arguments' => ['id' => $transaction->id, 'allocations' => $allocations]]);
+    $set([['amount_minor' => '1000', 'category_id' => $food->id]])->assertOk()->assertJsonPath('result.isError', false)
+        ->assertJsonPath('result.structuredContent.transaction.has_receipt_breakdown', true)
+        ->assertJsonPath('result.structuredContent.transaction.category_allocations.0.category.id', $food->id);
+    $transaction->receiptBreakdown->lineItems()->first()->update(['description' => 'Private receipt detail', 'quantity' => '2', 'unit_price_minor' => 500]);
+    $saved = $set([
+        ['amount_minor' => '900', 'category_id' => $food->id],
+        ['amount_minor' => '-100', 'category_id' => $fees->id],
+        ['amount_minor' => '200', 'category_id' => null],
+    ])->assertOk()->assertJsonPath('result.isError', false)->assertDontSee('Private receipt detail')
+        ->assertJsonPath('result.structuredContent.transaction.category.id', $fees->id)
+        ->assertJsonPath('result.structuredContent.transaction.amount_minor', '1000')->json('result.structuredContent.transaction');
+    expect(array_column($saved['category_allocations'], 'amount_minor'))->toBe(['900', '-100', '200']);
+    expect($transaction->fresh()->amount_minor)->toBe(1000);
+    $items = $transaction->receiptBreakdown->lineItems()->get();
+    expect($items)->toHaveCount(3);
+    foreach ($items as $item) {
+        expect($item->quantity)->toBeNull()->and($item->unit_price_minor)->toBeNull()->and($item->description)->not->toBe('Private receipt detail');
+    }
+    financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $transaction->id]])
+        ->assertOk()->assertJsonPath('result.structuredContent.transaction', $saved);
+    $set([['amount_minor' => '999', 'category_id' => $food->id]])->assertOk()->assertJsonPath('result.isError', true);
+    financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $transaction->id]])
+        ->assertOk()->assertJsonPath('result.structuredContent.transaction', $saved);
+    expect($transaction->receiptBreakdown->lineItems()->get()->map->getAttributes()->all())->toEqual($items->map->getAttributes()->all());
+});
+
+test('MCP Category creation rejects conflicts invalid names and nonassignable parents without editing the taxonomy', function () {
+    $owner = User::factory()->create();
+    $parent = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $child = Category::factory()->for($owner, 'owner')->create(['parent_id' => $parent->id]);
+    $archived = Category::factory()->for($owner, 'owner')->create(['archived_at' => now()]);
+    $foreign = Category::factory()->create(['name' => 'Private parent']);
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    foreach ([['name' => '  fOoD  '], ['name' => '   '], ['name' => str_repeat('x', 256)],
+        ['name' => 'Child', 'parent_id' => $child->id], ['name' => 'Child', 'parent_id' => $archived->id],
+        ['name' => 'Child', 'parent_id' => $foreign->id], ['name' => 'New', 'archived_at' => now()->toIso8601String()],
+    ] as $arguments) {
+        financialMcp($token, 'tools/call', ['name' => 'create_category', 'arguments' => $arguments])
+            ->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent')->assertDontSee('Private parent');
+    }
+    expect($owner->categories()->count())->toBe(3);
+    financialMcp($token, 'tools/call', ['name' => 'create_category', 'arguments' => ['name' => 'Food', 'parent_id' => $parent->id]])
+        ->assertOk()->assertJsonPath('result.isError', false);
+    financialMcp($token, 'tools/call', ['name' => 'create_category', 'arguments' => ['name' => $archived->name]])
+        ->assertOk()->assertJsonPath('result.isError', false);
+});
+
+test('MCP direct Category assignment rejects missing Categories and foreign archived or incompatible records', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $foreign = Category::factory()->create();
+    $archived = Category::factory()->for($owner, 'owner')->create(['archived_at' => now()]);
+    $childOfArchived = Category::factory()->for($owner, 'owner')->create(['parent_id' => $archived->id]);
+    $transaction = Transaction::factory()->for($owner, 'owner')->create(['category_id' => $category->id]);
+    $foreignTransaction = Transaction::factory()->create(['description' => 'Private movement']);
+    $income = Transaction::factory()->for($owner, 'owner')->income()->create();
+    $transfer = Transaction::factory()->for($owner, 'owner')->transfer()->create();
+    $voided = Transaction::factory()->for($owner, 'owner')->create(['voided_at' => now()]);
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    foreach ([['id' => $transaction->id], ['id' => $transaction->id, 'category_id' => $foreign->id],
+        ['id' => $transaction->id, 'category_id' => $archived->id], ['id' => $transaction->id, 'category_id' => $childOfArchived->id],
+        ['id' => $foreignTransaction->id, 'category_id' => $category->id], ['id' => $income->id, 'category_id' => null],
+        ['id' => $transfer->id, 'category_id' => $category->id], ['id' => $voided->id, 'category_id' => $category->id],
+    ] as $arguments) {
+        financialMcp($token, 'tools/call', ['name' => 'assign_transaction_category', 'arguments' => $arguments])
+            ->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent')->assertDontSee('Private movement');
+    }
+    expect($transaction->fresh()->category_id)->toBe($category->id);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->create();
+    financialMcp($token, 'tools/call', ['name' => 'assign_transaction_category', 'arguments' => ['id' => $refund->id, 'category_id' => $category->id]])
+        ->assertOk()->assertJsonPath('result.structuredContent.transaction.category.id', $category->id);
+});
+
+test('MCP invalid split replacements preserve the current receipt and its detail', function (array $allocations) {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->create(['amount_minor' => 1000]);
+    $breakdown = ReceiptBreakdown::factory()->for($transaction)->create();
+    $item = LineItem::factory()->for($breakdown)->create(['description' => 'Original detail', 'line_total_minor' => 1000])->fresh();
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    financialMcp($token, 'tools/call', ['name' => 'set_transaction_category_split', 'arguments' => ['id' => $transaction->id, 'allocations' => $allocations]])
+        ->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent');
+    expect($item->fresh()->getAttributes())->toEqual($item->getAttributes());
+    expect($breakdown->lineItems()->count())->toBe(1);
+    expect($transaction->fresh()->amount_minor)->toBe(1000);
+})->with([
+    [[]], [[['amount_minor' => '0', 'category_id' => null]]], [[['amount_minor' => '1.5', 'category_id' => null]]],
+    [[['amount_minor' => '9007199254740992', 'category_id' => null]]], [[['amount_minor' => '-9007199254740992', 'category_id' => null]]],
+    [[['amount_minor' => '1000']]], [[['amount_minor' => 1000, 'category_id' => null]]],
+    [[['amount_minor' => '1000', 'category_id' => null, 'description' => 'Not accepted']]],
+    [array_fill(0, 201, ['amount_minor' => '1', 'category_id' => null])],
+]);
+
+test('MCP split replacement rejects foreign archived Categories and inactive or incompatible Transactions', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->create(['amount_minor' => 1000]);
+    $breakdown = ReceiptBreakdown::factory()->for($transaction)->create();
+    $item = LineItem::factory()->for($breakdown)->create(['line_total_minor' => 1000])->fresh();
+    $foreignCategory = Category::factory()->create();
+    $archived = Category::factory()->for($owner, 'owner')->create(['archived_at' => now()]);
+    $childOfArchived = Category::factory()->for($owner, 'owner')->create(['parent_id' => $archived->id]);
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    foreach ([$foreignCategory, $archived, $childOfArchived] as $category) {
+        financialMcp($token, 'tools/call', ['name' => 'set_transaction_category_split', 'arguments' => [
+            'id' => $transaction->id, 'allocations' => [['amount_minor' => '1000', 'category_id' => $category->id]],
+        ]])->assertOk()->assertJsonPath('result.isError', true);
+        expect($item->fresh()->getAttributes())->toEqual($item->getAttributes());
+    }
+    foreach ([
+        Transaction::factory()->create(['amount_minor' => 1000, 'description' => 'Private movement']),
+        Transaction::factory()->for($owner, 'owner')->income()->create(['amount_minor' => 1000]),
+        Transaction::factory()->for($owner, 'owner')->transfer()->create(['amount_minor' => 1000]),
+        Transaction::factory()->for($owner, 'owner')->create(['amount_minor' => 1000, 'voided_at' => now()]),
+    ] as $invalid) {
+        financialMcp($token, 'tools/call', ['name' => 'set_transaction_category_split', 'arguments' => [
+            'id' => $invalid->id, 'allocations' => [['amount_minor' => '1000', 'category_id' => null]],
+        ]])->assertOk()->assertJsonPath('result.isError', true)->assertDontSee('Private movement');
+        expect($invalid->receiptBreakdown()->exists())->toBeFalse();
     }
 });

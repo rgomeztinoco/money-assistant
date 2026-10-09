@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -17,6 +18,7 @@ final class CreateCategory
         ?int $parentId,
     ): Category {
         $name = Str::squish($name);
+        Validator::validate(['name' => $name], ['name' => ['required', 'string', 'max:255']]);
 
         try {
             return DB::transaction(function () use ($owner, $name, $parentId): Category {
