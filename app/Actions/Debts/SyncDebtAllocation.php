@@ -77,6 +77,9 @@ class SyncDebtAllocation
         }
         $entry ??= new DebtEntry(['transaction_id' => $transaction->id]);
         $entry->fill(['debt_id' => $debt->id, 'kind' => $kind, 'amount_minor' => $transaction->amount_minor, 'principal_minor' => $principal, 'interest_minor' => $interest, 'occurred_on' => $transaction->occurred_on]);
+        if ($entry->isDirty(['debt_id', 'kind', 'principal_minor', 'interest_minor'])) {
+            $transaction->updateTimestamps();
+        }
         $balanceChanged = ! $entry->exists || $entry->isDirty(['debt_id', 'kind', 'amount_minor']);
         $entry->save();
         if ($balanceChanged && $transaction->voided_at === null) {

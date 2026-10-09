@@ -3,6 +3,7 @@
 namespace App\Actions\Debts;
 
 use App\Models\Debt;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -28,6 +29,11 @@ class SaveDebt
             $debt->save();
             if ($balanceChanged) {
                 $debt->ensureNonNegativeBalance('opening_balance_minor');
+            }
+            if ($debt->wasChanged('name')) {
+                Transaction::query()->whereBelongsTo($owner, 'owner')
+                    ->whereIn('id', $debt->entries()->select('transaction_id'))
+                    ->update(['updated_at' => now()]);
             }
 
             return $debt;

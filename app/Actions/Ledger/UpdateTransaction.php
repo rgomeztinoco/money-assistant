@@ -98,8 +98,8 @@ class UpdateTransaction
             if ($kind === TransactionKind::Debt && $currentTransaction->hasSpendingContribution()) {
                 $currentTransaction->category_id = $categoryId;
                 $currentTransaction->category_assignment_provenance = $categoryId === null ? null : CategoryAssignmentProvenance::Owner;
-                $currentTransaction->save();
             }
+            $currentTransaction->save();
             if ($kind === TransactionKind::Debt || $previousKind === TransactionKind::Debt) {
                 $classification = match ($kind) {
                     TransactionKind::Debt => StatementMovementClassification::Debt,
