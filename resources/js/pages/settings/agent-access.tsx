@@ -192,7 +192,7 @@ export default function AgentAccess({ tokens, endpoint }: Props) {
                 <Heading
                     variant="small"
                     title="Agent access"
-                    description="Let your agents read Transactions and Categories. Each token has read-only access and stays active until you revoke it."
+                    description="Let your agents read financial data and record or classify Transactions and Categories. Each token can use every available tool and stays active until you revoke it."
                 />
                 <form
                     className="flex flex-col gap-3"
