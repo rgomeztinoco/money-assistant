@@ -196,9 +196,9 @@ test('reprocessing the same Gmail source preserves its reviewed debt payment and
     expect($gmail->messageCalls)->toHaveCount(1);
 });
 
-test('manual and newly confirmed interest charges leave one exact allocated posted repayment', function (bool $alreadyCharged) {
+test('manual and newly confirmed interest charges leave one exact allocated posted repayment', function (bool $alreadyCharged, string $direction) {
     $owner = User::factory()->create();
-    $this->actingAs($owner)->post('/debts', ['name' => 'Bank loan', 'counterparty' => 'Bank', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => '100000', 'opened_on' => '2026-08-01']);
+    $this->actingAs($owner)->post('/debts', ['name' => 'Bank loan', 'counterparty' => 'Bank', 'direction' => $direction, 'currency' => 'PEN', 'opening_balance_minor' => '100000', 'opened_on' => '2026-08-01']);
     $id = $this->get('/debts')->inertiaProps('debts.0.id');
     if ($alreadyCharged) {
         $this->post("/debts/{$id}/entries", ['kind' => 'interest_charge', 'occurred_on' => '2026-08-04', 'amount' => '30.00', 'reason' => 'Confirmed statement interest'])->assertSessionHasNoErrors();
@@ -207,11 +207,17 @@ test('manual and newly confirmed interest charges leave one exact allocated post
     $this->get("/debts/{$id}")->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', '83000')->has('entries', 2)->where('entries.0.principal_minor', '17000')->where('entries.0.interest_minor', '3000'));
     $paymentId = $this->get('/transactions')->inertiaProps('transactions.0.id');
     $this->get('/transactions')->assertInertia(fn (Assert $page) => $page->has('transactions', 1)->where('transactions.0.amount_minor', '20000')->where('transactions.0.debt_allocation.interest_minor', '3000'));
+    $query = '/breakdown?period=custom&date_from=2026-08-01&date_to=2026-08-31';
+    $effect = $direction === 'owed' ? 'net_spending_minor' : 'income_minor';
+    $paymentTotal = $direction === 'owed' ? 'debt_payments_made_minor' : 'debt_payments_received_minor';
+    $this->get($query)->assertInertia(fn (Assert $page) => $page->where('summary.PEN.'.$effect, '3000')->where('summary.PEN.'.$paymentTotal, '20000'));
     $this->post(route('transactions.void.store', $paymentId))->assertSessionHasNoErrors();
     $this->get("/debts/{$id}")->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', '103000')->has('entries', 2));
+    $this->get($query)->assertInertia(fn (Assert $page) => $page->where('summary.PEN.'.$effect, '0')->where('summary.PEN.'.$paymentTotal, '0'));
     $this->delete(route('transactions.void.destroy', $paymentId))->assertSessionHasNoErrors();
     $this->get("/debts/{$id}")->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', '83000')->has('entries', 2));
-})->with([true, false]);
+    $this->get($query)->assertInertia(fn (Assert $page) => $page->where('summary.PEN.'.$effect, '3000')->where('summary.PEN.'.$paymentTotal, '20000'));
+})->with([[true, 'owed'], [false, 'owed'], [true, 'receivable'], [false, 'receivable']]);
 
 test('paid and received interest agree across financial reads without including principal', function (string $direction, string $currency) {
     $owner = User::factory()->create();
@@ -219,6 +225,14 @@ test('paid and received interest agree across financial reads without including 
     $this->actingAs($owner)->post('/debts', ['name' => 'Loan', 'counterparty' => 'Bank', 'direction' => $direction, 'currency' => $currency, 'opening_balance_minor' => '100000', 'opened_on' => '2026-08-01']);
     $id = $this->get('/debts')->inertiaProps('debts.0.id');
     $this->post("/debts/{$id}/entries", ['kind' => 'repayment', 'occurred_on' => '2026-08-05', 'amount' => '200.00', 'description' => 'Bank repayment', 'principal_minor' => '17000', 'interest_minor' => '3000', 'interest_is_new' => true, 'category_id' => $direction === 'owed' ? $category->id : null])->assertSessionHasNoErrors();
+    if ($direction === 'owed') {
+        $payment = $this->get('/transactions')->inertiaProps('transactions.0.id');
+        foreach (['transactions.category.update', 'breakdown.transactions.classification.update'] as $route) {
+            $this->put(route($route, $payment), ['category_id' => $category->id])
+                ->assertSessionHasNoErrors()
+                ->assertInertiaFlashMissing('toast.action');
+        }
+    }
     $query = "currency={$currency}&period=custom&date_from=2026-08-01&date_to=2026-08-31";
     $spending = $direction === 'owed' ? '3000' : '0';
     $income = $direction === 'receivable' ? '3000' : '0';
@@ -248,9 +262,9 @@ test('monthly planning uses Lima calendar payments and excludes settled commitme
         $debts[$name] = collect($this->get('/debts')->inertiaProps('debts'))->firstWhere('name', $name)['id'];
     }
     foreach ([['Outgoing', '2026-08-31', '20000'], ['Outgoing', '2026-09-01', '30000'], ['Incoming', '2026-08-05', '5000'], ['Dollars', '2026-08-05', '2000'], ['Settled', '2026-08-05', '20000']] as [$name, $date, $amount]) {
-        $this->post('/debts/'.$debts[$name].'/entries', ['kind' => 'repayment', 'occurred_on' => $date, 'amount_minor' => $amount, 'description' => 'Monthly payment'])->assertSessionHasNoErrors();
+        $this->post('/debts/'.$debts[$name].'/entries', [...($name === 'Outgoing' && $date === '2026-08-31' ? ['principal_minor' => '17000', 'interest_minor' => '3000'] : []), 'kind' => 'repayment', 'occurred_on' => $date, 'amount_minor' => $amount, 'description' => 'Monthly payment'])->assertSessionHasNoErrors();
     }
-    $this->get('/debts/'.$debts['Outgoing'])->assertInertia(fn (Assert $page) => $page->where('debt.monthly_target_minor', '20000')->where('debt.monthly_paid_minor', '20000')->where('debt.target_month', '2026-08')->where('debt.balance_minor', '50000'));
+    $this->get('/debts/'.$debts['Outgoing'])->assertInertia(fn (Assert $page) => $page->where('debt.monthly_target_minor', '20000')->where('debt.monthly_paid_minor', '20000')->where('debt.target_month', '2026-08')->where('debt.balance_minor', '50000')->where('entries.1.principal_minor', '17000')->where('entries.1.interest_minor', '3000'));
     $this->get('/?period=custom&date_from=2026-07-01&date_to=2026-07-31')->assertInertia(fn (Assert $page) => $page
         ->where('debt_summary.target_month', '2026-08')->where('debt_summary.PEN.owed_minor', '50000')->where('debt_summary.PEN.receivable_minor', '45000')
         ->where('debt_summary.PEN.outgoing_target_minor', '20000')->where('debt_summary.PEN.incoming_target_minor', '10000')

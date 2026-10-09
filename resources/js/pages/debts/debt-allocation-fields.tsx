@@ -14,6 +14,7 @@ export function DebtAllocationFields({
     onInterest,
     errors,
     allowNewCharge,
+    newCharge,
     onNewCharge,
 }: {
     principal: string;
@@ -22,6 +23,7 @@ export function DebtAllocationFields({
     onInterest: (value: string) => void;
     errors: Record<string, string | undefined>;
     allowNewCharge: boolean;
+    newCharge?: boolean;
     onNewCharge?: (value: boolean) => void;
 }) {
     return (
@@ -78,7 +80,9 @@ export function DebtAllocationFields({
                     <NativeSelect
                         id="debt-interest-charge"
                         name="interest_is_new"
-                        defaultValue="0"
+                        {...(newCharge === undefined
+                            ? { defaultValue: '0' }
+                            : { value: newCharge ? '1' : '0' })}
                         onChange={(event) =>
                             onNewCharge?.(event.target.value === '1')
                         }

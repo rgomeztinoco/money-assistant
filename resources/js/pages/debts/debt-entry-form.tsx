@@ -336,6 +336,7 @@ export function DebtEntryForm({
                             form.setData('principal', value)
                         }
                         onInterest={(value) => form.setData('interest', value)}
+                        newCharge={form.data.interest_is_new}
                         onNewCharge={(value) =>
                             form.setData('interest_is_new', value)
                         }

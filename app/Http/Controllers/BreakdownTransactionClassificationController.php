@@ -34,7 +34,7 @@ class BreakdownTransactionClassificationController extends Controller
             'message' => $applyToMatching
                 ? trans_choice('{1} 1 matching Transaction updated; future exact matches will follow this Category.|[2,*] :count matching Transactions updated; future exact matches will follow this Category.', $updatedCount, ['count' => $updatedCount])
                 : __('Classification updated.'),
-            ...(! $applyToMatching && $categoryId !== null ? ['action' => [
+            ...(! $applyToMatching && $categoryId !== null && $transaction->kind->supportsCategory() ? ['action' => [
                 'type' => 'create_merchant_rule',
                 'draft' => [
                     'source_transaction_id' => $transaction->id,
