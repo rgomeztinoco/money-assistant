@@ -357,6 +357,7 @@ export function DebtEntryForm({
                                 name="category_id"
                                 options={categoryOptions}
                                 value={form.data.category_id}
+                                aria-invalid={Boolean(form.errors.category_id)}
                                 onValueChange={(value) =>
                                     form.setData('category_id', value)
                                 }
