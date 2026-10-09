@@ -37,6 +37,7 @@ use JsonException;
  *     category_assignment_provenance: string|null, original_spending: RelatedTransaction|null,
  *     linked_refunds: list<RelatedTransaction>,
  *     debt_allocation: array{debt_id: int, debt_name: string, kind: string, principal_minor: string, interest_minor: string}|null,
+ *     has_receipt_breakdown: bool,
  *     category_allocations: list<array{category: AgentCategory|null, amount_minor: string}>
  * }
  * @phpstan-type TransactionPage array{
@@ -201,6 +202,7 @@ class ReadAgentTransactions
             'category_assignment_provenance' => $transaction->hasSpendingContribution() ? $transaction->category_assignment_provenance?->value : null,
             'original_spending' => $transaction->originalSpending === null ? null : $this->related($transaction->originalSpending),
             'linked_refunds' => array_values($transaction->linkedRefunds->map(fn (Transaction $refund): array => $this->related($refund))->all()),
+            'has_receipt_breakdown' => $transaction->receiptBreakdown !== null,
             'category_allocations' => $projectedAllocations,
         ];
     }
