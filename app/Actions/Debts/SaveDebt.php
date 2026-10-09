@@ -3,6 +3,7 @@
 namespace App\Actions\Debts;
 
 use App\Models\Debt;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -24,6 +25,11 @@ class SaveDebt
                 }
             }
             $debt->fill([...$data, 'user_id' => $owner->id, 'name' => Str::squish($data['name']), 'counterparty' => Str::squish($data['counterparty'])])->save();
+            if ($debt->wasChanged('name')) {
+                Transaction::query()->whereBelongsTo($owner, 'owner')
+                    ->whereIn('id', $debt->entries()->select('transaction_id'))
+                    ->update(['updated_at' => now()]);
+            }
 
             return $debt;
         });

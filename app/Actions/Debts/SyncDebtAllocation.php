@@ -71,6 +71,10 @@ class SyncDebtAllocation
             DebtEntry::create(['debt_id' => $debt->id, 'kind' => DebtEntryKind::InterestCharge, 'amount_minor' => $interest, 'occurred_on' => $transaction->occurred_on, 'confirmed_with_transaction_id' => $transaction->id, 'reason' => 'Interest confirmed with payment']);
         }
         $entry ??= new DebtEntry(['transaction_id' => $transaction->id]);
-        $entry->fill(['debt_id' => $debt->id, 'kind' => $kind, 'amount_minor' => $transaction->amount_minor, 'principal_minor' => $principal, 'interest_minor' => $interest, 'occurred_on' => $transaction->occurred_on])->save();
+        $entry->fill(['debt_id' => $debt->id, 'kind' => $kind, 'amount_minor' => $transaction->amount_minor, 'principal_minor' => $principal, 'interest_minor' => $interest, 'occurred_on' => $transaction->occurred_on]);
+        if ($entry->isDirty(['debt_id', 'kind', 'principal_minor', 'interest_minor'])) {
+            $transaction->updateTimestamps();
+        }
+        $entry->save();
     }
 }
