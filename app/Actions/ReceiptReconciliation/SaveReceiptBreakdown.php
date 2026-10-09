@@ -85,7 +85,7 @@ final class SaveReceiptBreakdown
             $activeCategoryIds = Category::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->whereIn('id', $categoryIds)
-                ->whereNull('archived_at')
+                ->availableForAssignment()
                 ->lockForUpdate()
                 ->pluck('id')
                 ->sort()

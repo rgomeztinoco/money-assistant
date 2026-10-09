@@ -57,6 +57,7 @@ final class TransactionSchema
             'review_state' => $schema->string()->enum(['outstanding', 'clear'])->required(),
             'original_spending' => self::related($schema)->nullable()->required(),
             'linked_refunds' => $schema->array()->items(self::related($schema))->required(),
+            'has_receipt_breakdown' => $schema->boolean()->required(),
             'category_allocations' => $schema->array()->items($schema->object([
                 'category' => self::category($schema)->nullable()->required(),
                 'amount_minor' => $schema->string()->pattern('^-?[0-9]+$')->required(),
