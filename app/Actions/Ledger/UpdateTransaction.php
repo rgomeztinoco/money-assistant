@@ -79,8 +79,8 @@ class UpdateTransaction
                     ? Str::squish($instrumentLabel)
                     : null,
                 'instrument_last_four' => $instrumentLastFour,
-                'category_id' => $kind->supportsCategory() ? $categoryId : null,
-                'category_assignment_provenance' => ! $kind->supportsCategory() || $categoryId === null
+                'category_id' => $kind->supportsCategory() || $kind === TransactionKind::Debt ? $categoryId : null,
+                'category_assignment_provenance' => (! $kind->supportsCategory() && $kind !== TransactionKind::Debt) || $categoryId === null
                     ? null
                     : CategoryAssignmentProvenance::Owner,
                 'merchant_rule_id' => null,
@@ -95,9 +95,9 @@ class UpdateTransaction
             $currentTransaction->save();
             $this->syncDebtAllocation->handle($owner, $currentTransaction, $debtId, $debtEntryKind, $unlinkDebt, $debtPrincipalMinor, $debtInterestMinor, $debtInterestIsNew);
             $currentTransaction->unsetRelation('debtEntry');
-            if ($kind === TransactionKind::Debt && $currentTransaction->hasSpendingContribution()) {
-                $currentTransaction->category_id = $categoryId;
-                $currentTransaction->category_assignment_provenance = $categoryId === null ? null : CategoryAssignmentProvenance::Owner;
+            if ($kind === TransactionKind::Debt && ! $currentTransaction->hasSpendingContribution()) {
+                $currentTransaction->category_id = null;
+                $currentTransaction->category_assignment_provenance = null;
             }
             $currentTransaction->save();
             if ($kind === TransactionKind::Debt || $previousKind === TransactionKind::Debt) {

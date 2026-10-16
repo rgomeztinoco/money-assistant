@@ -25,7 +25,10 @@ class UpdateDebtEntry
             if ($date->lt($debt->opened_on)) {
                 throw ValidationException::withMessages(['occurred_on' => 'Choose a date on or after the opening date.']);
             }
-            if (in_array($entry->kind, [DebtEntryKind::Adjustment, DebtEntryKind::InterestCharge], true)) {
+            if ($entry->kind === DebtEntryKind::InterestCharge) {
+                throw ValidationException::withMessages(['kind' => 'Correct interest charges with a dated balance adjustment.']);
+            }
+            if ($entry->kind === DebtEntryKind::Adjustment) {
                 $entry->fill(['amount_minor' => $amount, 'occurred_on' => $date, 'reason' => Str::squish($reason ?? '')]);
                 $balanceChanged = $entry->isDirty('amount_minor');
                 $entry->save();

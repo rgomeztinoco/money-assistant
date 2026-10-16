@@ -3,9 +3,9 @@
 use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailMessage;
 use App\Jobs\ProcessGmailMessage;
+use App\Models\Category;
 use App\Models\Debt;
 use App\Models\DebtEntry;
-use App\Models\Category;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\Transaction;
@@ -15,6 +15,43 @@ use Illuminate\Http\UploadedFile;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Fakes\FakeGmail;
 use Tests\SyntheticPdf;
+
+test('editing an interest repayment preserves its allocation category and independent charge', function (string $direction) {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => $direction, 'currency' => 'PEN', 'opening_balance_minor' => 100000, 'opened_on' => '2026-08-01']);
+    $this->actingAs($owner)->post(route('debts.entries.store', $debt), ['kind' => 'repayment', 'occurred_on' => '2026-08-05', 'amount' => '200.00', 'description' => 'Bank payment', 'principal' => '170.00', 'interest' => '30.00', 'interest_is_new' => true, 'category_id' => $direction === 'owed' ? $category->id : null])->assertSessionHasNoErrors();
+    $payment = Transaction::query()->sole();
+    $entry = $payment->debtEntry()->firstOrFail();
+    $edit = ['kind' => 'repayment', 'occurred_on' => '2026-08-06', 'amount' => '250.00', 'description' => 'Corrected bank payment', 'principal' => '210.00', 'interest' => '40.00'];
+
+    $this->put(route('debts.entries.update', [$debt, $entry]), $edit)->assertSessionHasNoErrors();
+
+    $this->assertDatabaseCount('transactions', 1);
+    $this->assertDatabaseCount('debt_entries', 2);
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'transaction_id' => $payment->id, 'principal_minor' => 21000, 'interest_minor' => 4000]);
+    $this->assertDatabaseHas('debt_entries', ['kind' => 'interest_charge', 'amount_minor' => 3000]);
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'amount_minor' => 25000, 'category_id' => $direction === 'owed' ? $category->id : null]);
+    $this->get(route('debts.show', $debt))->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', '78000')->where('entries.0.category_id', $direction === 'owed' ? $category->id : null));
+    $this->get('/breakdown?period=custom&date_from=2026-08-01&date_to=2026-08-31')->assertInertia(fn (Assert $page) => $page->where('summary.PEN.'.($direction === 'owed' ? 'net_spending_minor' : 'income_minor'), '4000'));
+
+    $this->put(route('debts.entries.update', [$debt, $entry]), [...$edit, 'amount' => '1040.00', 'principal' => '1000.00'])->assertSessionHasErrors('amount_minor');
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'amount_minor' => 25000]);
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'amount_minor' => 25000, 'principal_minor' => 21000, 'interest_minor' => 4000]);
+})->with(['owed', 'receivable']);
+
+test('confirmed interest charges are preserved and corrected through dated adjustments', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['currency' => 'PEN', 'opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $this->actingAs($owner)->post(route('debts.entries.store', $debt), ['kind' => 'interest_charge', 'occurred_on' => '2026-08-05', 'amount' => '30.00', 'reason' => 'Confirmed charge'])->assertSessionHasNoErrors();
+    $charge = $debt->entries()->sole();
+
+    $this->put(route('debts.entries.update', [$debt, $charge]), ['kind' => 'interest_charge', 'occurred_on' => '2026-08-06', 'amount' => '20.00', 'reason' => 'Rewritten charge'])->assertSessionHasErrors('kind');
+    $this->assertDatabaseHas('debt_entries', ['id' => $charge->id, 'amount_minor' => 3000, 'reason' => 'Confirmed charge']);
+    $this->post(route('debts.entries.store', $debt), ['kind' => 'adjustment', 'occurred_on' => '2026-08-06', 'amount_minor' => '-1000', 'reason' => 'Correct confirmed charge'])->assertSessionHasNoErrors();
+    $this->get(route('debts.show', $debt))->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', '12000')->has('entries', 2));
+    $this->assertDatabaseCount('transactions', 0);
+});
 
 test('the owner starts a debt from the current balance without creating a cash movement', function () {
     $owner = User::factory()->create();

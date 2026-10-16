@@ -38,7 +38,11 @@ export function DebtEntryForm({
     const [source, setSource] = useState('existing');
     const form = useForm({
         kind: entry?.kind ?? ('repayment' as DebtEntry['kind']),
-        principal: entry ? minorUnitsToCurrencyUnits(entry.principal_minor ?? entry.amount_minor) : '',
+        principal: entry
+            ? minorUnitsToCurrencyUnits(
+                  entry.principal_minor ?? entry.amount_minor,
+              )
+            : '',
         interest: minorUnitsToCurrencyUnits(entry?.interest_minor ?? '0'),
         interest_is_new: false,
         category_id: entry?.category_id?.toString() ?? '',
@@ -211,8 +215,16 @@ export function DebtEntryForm({
                             invalid={Boolean(form.errors.transaction_id)}
                             value={form.data.transaction_id}
                             onSelect={(transaction) => {
-                                form.setData('transaction_id', String(transaction.id));
-                                form.setData('principal', minorUnitsToCurrencyUnits(transaction.amount_minor));
+                                form.setData(
+                                    'transaction_id',
+                                    String(transaction.id),
+                                );
+                                form.setData(
+                                    'principal',
+                                    minorUnitsToCurrencyUnits(
+                                        transaction.amount_minor,
+                                    ),
+                                );
                                 form.setData('interest', '0.00');
                             }}
                         />

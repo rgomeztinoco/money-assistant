@@ -300,6 +300,16 @@ export function TransactionEditor({
                                     onChange={(event) => {
                                         splitRemovalConfirmed.current = false;
                                         setAmount(event.currentTarget.value);
+
+                                        if (
+                                            (currencyUnitsToMinorUnits(
+                                                interest,
+                                            ) ?? 0n) === 0n
+                                        ) {
+                                            setPrincipal(
+                                                event.currentTarget.value,
+                                            );
+                                        }
                                     }}
                                     placeholder="12.50"
                                     className="h-12 text-2xl font-semibold tabular-nums"
@@ -491,7 +501,9 @@ export function TransactionEditor({
                                             onPrincipal={setPrincipal}
                                             onInterest={setInterest}
                                             errors={errors}
-                                            allowNewCharge={!transaction?.debt_allocation}
+                                            allowNewCharge={
+                                                !transaction?.debt_allocation
+                                            }
                                         />
                                     )}
                                     <InputError

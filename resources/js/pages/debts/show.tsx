@@ -33,9 +33,19 @@ import { DebtEntryForm } from './debt-entry-form';
 import { DebtForm } from './debt-form';
 import type { Debt, DebtEntry } from './types';
 
-type DebtDetailProps = { debt: Debt; entries: DebtEntry[]; category_options: CategoryPickerOption[]; today: string };
+type DebtDetailProps = {
+    debt: Debt;
+    entries: DebtEntry[];
+    category_options: CategoryPickerOption[];
+    today: string;
+};
 
-export default function DebtDetail({ debt, entries, category_options, today }: DebtDetailProps) {
+export default function DebtDetail({
+    debt,
+    entries,
+    category_options,
+    today,
+}: DebtDetailProps) {
     const [editing, setEditing] = useState(false);
     const [recording, setRecording] = useState(false);
     const [editingEntry, setEditingEntry] = useState<DebtEntry | null>(null);
@@ -99,9 +109,20 @@ export default function DebtDetail({ debt, entries, category_options, today }: D
                                 </p>
                             </div>
                             <div>
-                                <p className="type-meta text-muted-foreground">{debt.target_month} full payments</p>
-                                <p className="tabular-nums">{formatMinorUnits(debt.monthly_paid_minor, debt.currency)}</p>
-                                <p className="type-meta text-muted-foreground">{debt.monthly_target_minor ? `${formatMinorUnits(debt.monthly_target_minor, debt.currency)} target` : 'No monthly target'}</p>
+                                <p className="type-meta text-muted-foreground">
+                                    {debt.target_month} full payments
+                                </p>
+                                <p className="tabular-nums">
+                                    {formatMinorUnits(
+                                        debt.monthly_paid_minor,
+                                        debt.currency,
+                                    )}
+                                </p>
+                                <p className="type-meta text-muted-foreground">
+                                    {debt.monthly_target_minor
+                                        ? `${formatMinorUnits(debt.monthly_target_minor, debt.currency)} target`
+                                        : 'No monthly target'}
+                                </p>
                             </div>
                             <Badge variant="secondary">
                                 {debt.status === 'settled'
@@ -170,7 +191,10 @@ export default function DebtDetail({ debt, entries, category_options, today }: D
                                                         : entry.kind ===
                                                             'funding'
                                                           ? 'Funding'
-                                                          : entry.kind === 'interest_charge' ? 'Interest charge' : 'Adjustment'}{' '}
+                                                          : entry.kind ===
+                                                              'interest_charge'
+                                                            ? 'Interest charge'
+                                                            : 'Adjustment'}{' '}
                                                     {entry.voided && (
                                                         <Badge variant="outline">
                                                             Voided
@@ -217,26 +241,43 @@ export default function DebtDetail({ debt, entries, category_options, today }: D
                                                         entry.amount_minor,
                                                         debt.currency,
                                                     )}
-                                                    {entry.kind === 'repayment' && (
+                                                    {entry.kind ===
+                                                        'repayment' && (
                                                         <div className="type-meta text-muted-foreground">
-                                                            <p>Principal {formatMinorUnits(entry.principal_minor ?? entry.amount_minor, debt.currency)}</p>
-                                                            <p>Interest {formatMinorUnits(entry.interest_minor, debt.currency)}</p>
+                                                            <p>
+                                                                Principal{' '}
+                                                                {formatMinorUnits(
+                                                                    entry.principal_minor ??
+                                                                        entry.amount_minor,
+                                                                    debt.currency,
+                                                                )}
+                                                            </p>
+                                                            <p>
+                                                                Interest{' '}
+                                                                {formatMinorUnits(
+                                                                    entry.interest_minor,
+                                                                    debt.currency,
+                                                                )}
+                                                            </p>
                                                         </div>
                                                     )}
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        aria-label={`Edit ${entry.transaction_id === null ? entry.reason : entry.description}`}
-                                                        onClick={() =>
-                                                            setEditingEntry(
-                                                                entry,
-                                                            )
-                                                        }
-                                                    >
-                                                        Edit
-                                                    </Button>
+                                                    {entry.kind !==
+                                                        'interest_charge' && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            aria-label={`Edit ${entry.transaction_id === null ? entry.reason : entry.description}`}
+                                                            onClick={() =>
+                                                                setEditingEntry(
+                                                                    entry,
+                                                                )
+                                                            }
+                                                        >
+                                                            Edit
+                                                        </Button>
+                                                    )}
                                                 </TableCell>
                                             </TableRow>
                                         ))}

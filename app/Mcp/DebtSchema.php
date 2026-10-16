@@ -37,6 +37,8 @@ final class DebtSchema
             'occurred_on' => $schema->string()->required(),
             'reason' => $schema->string()->nullable()->required(),
             'transaction_id' => $schema->integer()->nullable()->required(),
+            'description' => $schema->string()->nullable()->required(),
+            'category_id' => $schema->integer()->nullable()->required(),
             'principal_minor' => $schema->string()->nullable()->required(),
             'interest_minor' => $schema->string()->pattern('^[0-9]+$')->required(),
             'voided' => $schema->boolean()->required(),

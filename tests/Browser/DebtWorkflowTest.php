@@ -75,7 +75,7 @@ test('Transactions assigns a full imported payment and Breakdown can edit and ex
     $page->click('[data-test="transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Record as debt payment")')->select('#transaction-debt', (string) $debt->id)->press('Save Transaction')->assertSee('Transaction updated.')->assertSee('Debt')->assertNoJavaScriptErrors();
     visit('/debts/'.$debt->id)->assertSee('S/ 74.99')->screenshot(filename: 'debts-257-repayment');
     $page = visit('/breakdown?period=custom&date_from=2026-08-01&date_to=2026-08-31');
-    $page->click('[data-test="breakdown-transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')->assertSelected('#transaction-debt', (string) $debt->id)->fill('#transaction-description', 'Corrected repayment description')->press('Save Transaction')->assertSee('Transaction updated.')->assertMissing('[role="dialog"]')
+    $page->click('[data-test="breakdown-transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')->assertSelected('#transaction-debt', (string) $debt->id)->fill('#transaction-amount', '30.02')->assertValue('#debt-principal', '30.02')->fill('#transaction-description', 'Corrected repayment description')->press('Save Transaction')->assertSee('Transaction updated.')->assertMissing('[role="dialog"]')
         ->click('[data-test="breakdown-transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')->select('#transaction-kind', 'spending')->check('#transaction-unlink-debt')->press('Save Transaction')->assertMissing('[role="dialog"]')->assertNoJavaScriptErrors();
     visit('/debts/'.$debt->id)->assertSee('S/ 100.00')->assertSee('No operations recorded');
 });
