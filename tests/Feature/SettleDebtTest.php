@@ -53,3 +53,14 @@ test('editing a debt from the index returns to the index', function () {
 
     $this->assertDatabaseHas('debts', ['id' => $debt->id, 'name' => 'Renamed debt']);
 });
+
+test('settlement rejects a balance larger than a single adjustment can store', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => PHP_INT_MAX]);
+    DebtEntry::factory()->for($debt)->create(['kind' => 'adjustment', 'amount_minor' => 1]);
+
+    $this->actingAs($owner)->post('/debts/'.$debt->id.'/settle')->assertSessionHasErrors('settlement');
+
+    $this->assertDatabaseCount('debt_entries', 1);
+    $this->assertDatabaseCount('transactions', 0);
+});

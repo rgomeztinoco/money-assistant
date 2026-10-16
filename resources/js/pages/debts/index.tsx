@@ -332,7 +332,9 @@ export default function Debts({
             <Dialog
                 open={editing !== null}
                 onOpenChange={(open) => {
-                    if (!open) setEditing(null);
+                    if (!open) {
+                        setEditing(null);
+                    }
                 }}
             >
                 <DialogContent className="max-h-[90svh] overflow-y-auto">
@@ -353,7 +355,9 @@ export default function Debts({
             <AlertDialog
                 open={settling !== null}
                 onOpenChange={(open) => {
-                    if (!open && !settlement.processing) setSettling(null);
+                    if (!open && !settlement.processing) {
+                        setSettling(null);
+                    }
                 }}
             >
                 <AlertDialogContent>
@@ -381,11 +385,13 @@ export default function Debts({
                             disabled={settlement.processing}
                             onClick={(event) => {
                                 event.preventDefault();
-                                if (settling)
+
+                                if (settling) {
                                     settlement.post(settle.url(settling.id), {
                                         preserveScroll: true,
                                         onSuccess: () => setSettling(null),
                                     });
+                                }
                             }}
                         >
                             Settle debt
