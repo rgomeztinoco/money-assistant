@@ -6,8 +6,11 @@ use App\Actions\Debts\ReadDebts;
 use App\Actions\Debts\SaveDebt;
 use App\Http\Requests\SaveDebtRequest;
 use App\Models\Debt;
+use App\MovementDirection;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -38,6 +41,19 @@ class DebtController extends Controller
     {
         abort_unless($debt->user_id === $request->user()->id, 404);
 
-        return Inertia::render('debts/show', ['debt' => $this->readDebts->debtData($debt), 'today' => now(config('app.reporting_timezone'))->toDateString(), 'entries' => $this->readDebts->entries($debt), 'transaction_options' => $this->readDebts->transactionOptions($request->user(), $debt)]);
+        return Inertia::render('debts/show', ['debt' => $this->readDebts->debtData($debt), 'today' => now(config('app.reporting_timezone'))->toDateString(), 'entries' => $this->readDebts->entries($debt)]);
+    }
+
+    public function transactions(Request $request, Debt $debt): JsonResponse
+    {
+        abort_unless($debt->user_id === $request->user()->id, 404);
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'direction' => ['required', Rule::enum(MovementDirection::class)],
+            'page' => ['sometimes', 'integer', 'min:1', 'max:1000000'],
+        ]);
+        $transactions = $this->readDebts->transactionOptions($request->user(), $debt, MovementDirection::from($validated['direction']), trim($validated['search'] ?? ''), (int) ($validated['page'] ?? 1));
+
+        return response()->json(['transactions' => array_slice($transactions, 0, 50), 'has_more' => count($transactions) > 50]);
     }
 }

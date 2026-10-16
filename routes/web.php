@@ -27,6 +27,8 @@ Route::get('/', HomeController::class)
 
 Route::middleware(['auth'])->group(function () {
     Route::post('debts/{debt}/entries', [DebtEntryController::class, 'store'])->name('debts.entries.store');
+    Route::put('debts/{debt}/entries/{entry}', [DebtEntryController::class, 'update'])->name('debts.entries.update');
+    Route::get('debts/{debt}/transactions', [DebtController::class, 'transactions'])->name('debts.transactions');
     Route::resource('debts', DebtController::class)->only(['index', 'store', 'show', 'update']);
     Route::get('breakdown', BreakdownController::class)->name('breakdown.index');
     Route::get('trends', TrendsController::class)->name('trends.index');

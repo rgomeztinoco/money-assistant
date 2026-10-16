@@ -3,6 +3,8 @@
 use App\Contracts\Gmail;
 use App\Integrations\Gmail\GmailMessage;
 use App\Jobs\ProcessGmailMessage;
+use App\Models\Debt;
+use App\Models\DebtEntry;
 use App\Models\GmailConnection;
 use App\Models\GmailMessageDiscovery;
 use App\Models\Transaction;
@@ -188,4 +190,74 @@ test('reprocessing the same Gmail source preserves its reviewed debt payment and
     $this->get('/transactions')->assertInertia(fn (Assert $page) => $page->has('transactions', 1)->where('transactions.0.kind', 'debt')->where('transactions.0.id', $paymentId));
     $this->get("/debts/{$debtId}")->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', $balance)->has('entries', 1)->where('entries.0.transaction_id', $paymentId));
     expect($gmail->messageCalls)->toHaveCount(1);
+});
+
+test('editing a posted debt operation preserves its identity and corrects balances and reporting', function (string $debtDirection, string $kind, string $movementDirection, string $balance) {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => $debtDirection, 'currency' => 'PEN', 'opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['occurred_on' => '2026-08-05', 'amount_minor' => 2501, 'direction' => $movementDirection, 'description' => 'Original movement', 'instrument_label' => 'Original source']);
+    $this->actingAs($owner)->post("/debts/{$debt->id}/entries", ['kind' => $kind, 'transaction_id' => $payment->id])->assertSessionHasNoErrors();
+    $entry = $payment->debtEntry()->firstOrFail();
+
+    $this->put("/debts/{$debt->id}/entries/{$entry->id}", ['kind' => $kind, 'occurred_on' => '2026-08-06', 'amount' => '30.02', 'description' => 'Corrected movement'])->assertSessionHasNoErrors()->assertRedirect(route('debts.show', $debt));
+
+    $this->assertDatabaseCount('transactions', 1);
+    $this->assertDatabaseCount('debt_entries', 1);
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'amount_minor' => 3002, 'direction' => $movementDirection, 'description' => 'Corrected movement', 'instrument_label' => 'Original source']);
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'transaction_id' => $payment->id, 'amount_minor' => 3002, 'occurred_on' => '2026-08-06']);
+    $this->get("/debts/{$debt->id}")->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', $balance)->where('entries.0.description', 'Corrected movement'));
+    $summaryKey = $debtDirection === 'owed' ? 'debt_payments_made_minor' : 'debt_payments_received_minor';
+    $this->get('/breakdown?period=custom&date_from=2026-08-01&date_to=2026-08-31')->assertInertia(fn (Assert $page) => $page->where('summary.PEN.'.$summaryKey, $kind === 'repayment' ? '3002' : '0')->where('summary.PEN.net_spending_minor', '0'));
+})->with([
+    'repayment made' => ['owed', 'repayment', 'debit', '6998'],
+    'payment collected' => ['receivable', 'repayment', 'credit', '6998'],
+    'additional borrowing' => ['owed', 'funding', 'credit', '13002'],
+    'additional lending' => ['receivable', 'funding', 'debit', '13002'],
+]);
+
+test('non-cash adjustments can be corrected without creating a Transaction', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['currency' => 'PEN', 'opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $entry = DebtEntry::factory()->for($debt)->create(['kind' => 'adjustment', 'transaction_id' => null, 'amount_minor' => -1000, 'occurred_on' => '2026-08-02', 'reason' => 'Forgiveness']);
+    $this->actingAs($owner)->put("/debts/{$debt->id}/entries/{$entry->id}", ['kind' => 'adjustment', 'occurred_on' => '2026-08-03', 'amount_minor' => '-2501', 'reason' => 'Corrected forgiveness'])->assertSessionHasNoErrors();
+
+    $this->get("/debts/{$debt->id}")->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', '7499')->where('entries.0.reason', 'Corrected forgiveness')->where('entries.0.occurred_on', '2026-08-03'));
+    $this->assertDatabaseCount('transactions', 0);
+});
+
+test('operation edits refuse foreign or mismatched debts and invalid corrections atomically', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['currency' => 'PEN', 'opened_on' => '2026-08-01']);
+    $otherDebt = Debt::factory()->for($owner, 'owner')->create();
+    $entry = DebtEntry::factory()->for($debt)->create(['kind' => 'adjustment', 'transaction_id' => null, 'amount_minor' => -100, 'occurred_on' => '2026-08-02', 'reason' => 'Original']);
+    $payload = ['kind' => 'adjustment', 'occurred_on' => '2026-08-03', 'amount_minor' => '-200', 'reason' => 'Correction'];
+    $this->put("/debts/{$debt->id}/entries/{$entry->id}", $payload)->assertRedirect(route('login'));
+    $this->actingAs(User::factory()->create())->put("/debts/{$debt->id}/entries/{$entry->id}", $payload)->assertForbidden();
+    $this->actingAs($owner)->put("/debts/{$otherDebt->id}/entries/{$entry->id}", $payload)->assertForbidden();
+    $this->put("/debts/{$debt->id}/entries/{$entry->id}", [...$payload, 'occurred_on' => '2026-07-31'])->assertSessionHasErrors(['occurred_on' => 'Choose a date on or after the opening date.']);
+    $this->put("/debts/{$debt->id}/entries/{$entry->id}", [...$payload, 'kind' => 'repayment'])->assertSessionHasErrors('kind');
+    $this->put("/debts/{$debt->id}/entries/{$entry->id}", [...$payload, 'transaction_id' => 1])->assertSessionHasErrors('transaction_id');
+    $this->put("/debts/{$debt->id}/entries/{$entry->id}", [...$payload, 'amount_minor' => '0'])->assertSessionHasErrors('amount_minor');
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'amount_minor' => -100, 'reason' => 'Original']);
+    $this->assertDatabaseCount('transactions', 0);
+});
+
+test('debt Transaction search finds older matches and pages through all compatible owned movements', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['currency' => 'PEN', 'opened_on' => '2026-01-01']);
+    $old = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create(['occurred_on' => '2026-01-02', 'description' => 'Historical family repayment']);
+    Transaction::factory()->count(101)->for($owner, 'owner')->spending()->pen()->create(['occurred_on' => '2026-08-01', 'description' => 'Recent payment']);
+    Transaction::factory()->spending()->pen()->create(['occurred_on' => '2026-08-01', 'description' => 'Historical family repayment']);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create(['description' => 'Historical family repayment']);
+    Transaction::factory()->for($owner, 'owner')->income()->pen()->create(['description' => 'Historical family repayment']);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create(['occurred_on' => '2025-12-31', 'description' => 'Historical family repayment']);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create(['occurred_on' => '2026-08-01', 'description' => 'Historical family repayment', 'voided_at' => now()]);
+    $this->get("/debts/{$debt->id}/transactions?direction=debit")->assertRedirect(route('login'));
+    $this->actingAs($owner)->getJson("/debts/{$debt->id}/transactions?direction=debit&search=Historical")->assertJsonCount(1, 'transactions')->assertJsonPath('transactions.0.id', $old->id)->assertJsonPath('has_more', false);
+    $this->getJson("/debts/{$debt->id}/transactions?direction=debit")->assertJsonCount(50, 'transactions')->assertJsonPath('has_more', true);
+    $this->getJson("/debts/{$debt->id}/transactions?direction=debit&page=3")->assertJsonCount(2, 'transactions')->assertJsonPath('transactions.1.id', $old->id)->assertJsonPath('has_more', false);
+    $this->getJson("/debts/{$debt->id}/transactions?direction=debit&search={$old->id}")->assertJsonPath('transactions.0.id', $old->id);
+    $this->getJson("/debts/{$debt->id}/transactions?direction=debit&search=9999999999999999999999999999")->assertJsonCount(0, 'transactions');
+    $this->getJson("/debts/{$debt->id}/transactions?direction=invalid")->assertJsonValidationErrors('direction');
+    $this->actingAs(User::factory()->create())->getJson("/debts/{$debt->id}/transactions?direction=debit")->assertNotFound();
 });

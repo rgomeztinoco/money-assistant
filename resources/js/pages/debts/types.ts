@@ -18,6 +18,7 @@ export type DebtEntry = {
     occurred_on: string;
     reason: string | null;
     transaction_id: number | null;
+    description: string | null;
     voided: boolean;
 };
 export type DebtTransactionOption = {

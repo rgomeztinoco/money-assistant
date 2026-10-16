@@ -12,39 +12,37 @@ import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import {
     currencyUnitsToMinorUnits,
-    formatMinorUnits,
+    minorUnitsToCurrencyUnits,
 } from '@/lib/format-minor-units';
-import { store } from '@/routes/debts/entries';
-import type { Debt, DebtEntry, DebtTransactionOption } from './types';
+import { store, update } from '@/routes/debts/entries';
+import { DebtTransactionPicker } from './debt-transaction-picker';
+import type { Debt, DebtEntry } from './types';
 
 export function DebtEntryForm({
     debt,
     today,
-    transactions,
+    entry,
     onSaved,
 }: {
     debt: Debt;
     today: string;
-    transactions: DebtTransactionOption[];
+    entry?: DebtEntry;
     onSaved: () => void;
 }) {
     const [source, setSource] = useState('existing');
     const form = useForm({
-        kind: 'repayment' as DebtEntry['kind'],
+        kind: entry?.kind ?? ('repayment' as DebtEntry['kind']),
         transaction_id: '',
-        occurred_on: today,
-        amount: '',
-        description: '',
-        reason: '',
+        occurred_on: entry?.occurred_on ?? today,
+        amount: entry ? minorUnitsToCurrencyUnits(entry.amount_minor) : '',
+        description: entry?.description ?? '',
+        reason: entry?.reason ?? '',
     });
     const adjustment = form.data.kind === 'adjustment';
     const direction =
         (debt.direction === 'owed') === (form.data.kind === 'funding')
             ? 'credit'
             : 'debit';
-    const candidates = transactions.filter(
-        (transaction) => transaction.direction === direction,
-    );
 
     return (
         <form
@@ -74,7 +72,7 @@ export function DebtEntryForm({
                               amount_minor: signedAmount?.toString(),
                               reason: data.reason,
                           }
-                        : source === 'existing'
+                        : !entry && source === 'existing'
                           ? {
                                 kind: data.kind,
                                 transaction_id: data.transaction_id,
@@ -86,10 +84,19 @@ export function DebtEntryForm({
                                 description: data.description,
                             },
                 );
-                form.post(store.url(debt.id), {
+                const options = {
                     preserveScroll: true,
                     onSuccess: onSaved,
-                });
+                };
+
+                if (entry) {
+                    form.put(
+                        update.url({ debt: debt.id, entry: entry.id }),
+                        options,
+                    );
+                } else {
+                    form.post(store.url(debt.id), options);
+                }
             }}
         >
             <FieldGroup>
@@ -99,6 +106,7 @@ export function DebtEntryForm({
                         id="entry-kind"
                         aria-invalid={Boolean(form.errors.kind)}
                         value={form.data.kind}
+                        disabled={Boolean(entry)}
                         onChange={(event) => {
                             form.setData(
                                 'kind',
@@ -129,7 +137,7 @@ export function DebtEntryForm({
                     />
                     <FieldError>{form.errors.kind}</FieldError>
                 </Field>
-                {!adjustment && (
+                {!adjustment && !entry && (
                     <Field>
                         <FieldLabel htmlFor="entry-source">
                             Payment record
@@ -149,42 +157,27 @@ export function DebtEntryForm({
                                 },
                             ]}
                         />
-                        <FieldDescription>
-                            {source === 'existing'
-                                ? 'The full posted amount counts as principal. The original Transaction and its sources are preserved.'
-                                : 'Use this when no Transaction exists for the movement.'}
-                        </FieldDescription>
                     </Field>
                 )}
-                {!adjustment && source === 'existing' ? (
+                {!adjustment && !entry && source === 'existing' ? (
                     <Field data-invalid={Boolean(form.errors.transaction_id)}>
                         <FieldLabel htmlFor="entry-transaction">
                             Transaction
                         </FieldLabel>
-                        <NativeSelect
-                            id="entry-transaction"
-                            aria-invalid={Boolean(form.errors.transaction_id)}
+                        <DebtTransactionPicker
+                            key={`${debt.id}:${direction}`}
+                            debtId={debt.id}
+                            direction={direction}
+                            invalid={Boolean(form.errors.transaction_id)}
                             value={form.data.transaction_id}
-                            required
-                            onChange={(event) =>
+                            onSelect={(transaction) =>
                                 form.setData(
                                     'transaction_id',
-                                    event.target.value,
+                                    String(transaction.id),
                                 )
                             }
-                            options={[
-                                { value: '', label: 'Choose a Transaction' },
-                                ...candidates.map((transaction) => ({
-                                    value: String(transaction.id),
-                                    label: `${transaction.occurred_on} · ${transaction.description} · ${formatMinorUnits(transaction.amount_minor, transaction.currency)}`,
-                                })),
-                            ]}
                         />
                         <FieldError>{form.errors.transaction_id}</FieldError>
-                        <FieldDescription>
-                            Recent compatible Transactions appear here. Older
-                            movements can be assigned from Transactions.
-                        </FieldDescription>
                     </Field>
                 ) : (
                     <>
@@ -282,7 +275,7 @@ export function DebtEntryForm({
                         <FieldError key={key}>{message}</FieldError>
                     ))}
                 <Button type="submit" disabled={form.processing}>
-                    Save operation
+                    {entry ? 'Save changes' : 'Save operation'}
                 </Button>
             </FieldGroup>
         </form>

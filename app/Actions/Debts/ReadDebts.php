@@ -6,6 +6,8 @@ use App\Models\Debt;
 use App\Models\DebtEntry;
 use App\Models\Transaction;
 use App\Models\User;
+use App\MovementDirection;
+use Illuminate\Database\Eloquent\Builder;
 
 /** @phpstan-type DebtData array{id: int, name: string, counterparty: string, direction: string, currency: string, opening_balance_minor: string, opened_on: string, balance_minor: string, status: string} */
 class ReadDebts
@@ -24,22 +26,33 @@ class ReadDebts
             ->map(fn (Debt $debt): array => $this->debtData($debt))->all());
     }
 
-    /** @return list<array{id: int, kind: string, amount_minor: string, occurred_on: string, reason: string|null, transaction_id: int|null, voided: bool}> */
+    /** @return list<array{id: int, kind: string, amount_minor: string, occurred_on: string, reason: string|null, transaction_id: int|null, description: string|null, voided: bool}> */
     public function entries(Debt $debt): array
     {
         return array_values($debt->entries()->with('transaction')->orderByDesc('occurred_on')->orderByDesc('id')->get()->map(fn (DebtEntry $entry): array => [
             'id' => $entry->id, 'kind' => $entry->kind->value, 'amount_minor' => (string) $entry->amount_minor,
             'occurred_on' => $entry->occurred_on->toDateString(), 'reason' => $entry->reason,
-            'transaction_id' => $entry->transaction_id, 'voided' => $entry->transaction?->voided_at !== null,
+            'transaction_id' => $entry->transaction_id, 'description' => $entry->transaction?->description, 'voided' => $entry->transaction?->voided_at !== null,
         ])->all());
     }
 
     /** @return list<array{id: int, occurred_on: string, amount_minor: string, currency: string, direction: string, description: string}> */
-    public function transactionOptions(User $owner, Debt $debt): array
+    public function transactionOptions(User $owner, Debt $debt, ?MovementDirection $direction = null, string $search = '', int $page = 1): array
     {
         return array_values(Transaction::query()->whereBelongsTo($owner, 'owner')
             ->where('currency', $debt->currency)->where('occurred_on', '>=', $debt->opened_on->toDateString())
-            ->whereNull('voided_at')->whereDoesntHave('debtEntry')->orderByDesc('occurred_on')->orderByDesc('id')->limit(100)->get()
+            ->whereNull('voided_at')->whereDoesntHave('debtEntry')
+            ->whereDoesntHave('linkedRefunds', fn (Builder $query): Builder => $query->whereNull('voided_at'))
+            ->when($direction, fn (Builder $query): Builder => $query->where('direction', $direction))
+            ->when($search !== '', fn (Builder $query): Builder => $query->where(function (Builder $query) use ($search): void {
+                if (ctype_digit($search) && filter_var($search, FILTER_VALIDATE_INT) !== false) {
+                    $query->where('id', $search);
+
+                    return;
+                }
+                $query->whereLike('description', '%'.$search.'%')->orWhereRaw('CAST(occurred_on AS TEXT) LIKE ?', ['%'.$search.'%']);
+            }))
+            ->orderByDesc('occurred_on')->orderByDesc('id')->offset(($page - 1) * 50)->limit(51)->get()
             ->map(fn (Transaction $transaction): array => ['id' => $transaction->id,
                 'occurred_on' => $transaction->occurred_on->toDateString(), 'amount_minor' => (string) $transaction->amount_minor,
                 'currency' => $transaction->currency->value, 'direction' => $transaction->direction->value, 'description' => $transaction->description])->all());
