@@ -1,4 +1,3 @@
-import { Link, router } from '@inertiajs/react';
 import {
     Bar,
     BarChart,
@@ -25,6 +24,7 @@ import {
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import type { Currency } from '@/types';
 import { selectionUrl } from './links';
+import { SelectionLink, visitSelection } from './selection-link';
 import type {
     BreakdownCategoryGroup,
     BreakdownDay,
@@ -175,7 +175,7 @@ export function CategoryBreakdown({
                                 key={key}
                                 className="col-span-2 grid min-w-0 grid-cols-subgrid border-b last:border-b-0"
                             >
-                                <Link
+                                <SelectionLink
                                     href={categoryUrl(selected ? null : key)}
                                     preserveScroll
                                     preserveState
@@ -198,7 +198,7 @@ export function CategoryBreakdown({
                                         category={key}
                                         percentageLabel="of total spending"
                                     />
-                                </Link>
+                                </SelectionLink>
                                 {expanded && group.children.length > 0 && (
                                     <ol
                                         className="col-span-2 grid min-w-0 grid-cols-subgrid gap-y-1 border-l pb-2 pl-3"
@@ -213,7 +213,7 @@ export function CategoryBreakdown({
                                                     key={child.key}
                                                     className="col-span-2 grid min-w-0 grid-cols-subgrid"
                                                 >
-                                                    <Link
+                                                    <SelectionLink
                                                         href={categoryUrl(
                                                             childSelected
                                                                 ? key
@@ -245,7 +245,7 @@ export function CategoryBreakdown({
                                                             category={child.key}
                                                             percentageLabel="of group"
                                                         />
-                                                    </Link>
+                                                    </SelectionLink>
                                                 </li>
                                             );
                                         })}
@@ -408,7 +408,7 @@ export function DailyChart({
         visibleValues.some((value) => value < 0);
 
     function filterDate(date: string) {
-        router.visit(
+        visitSelection(
             selectionUrl({
                 currencyFilter,
                 period,
@@ -419,7 +419,6 @@ export function DailyChart({
                 attention: filters.attention,
                 selected: null,
             }),
-            { preserveScroll: true },
         );
     }
 

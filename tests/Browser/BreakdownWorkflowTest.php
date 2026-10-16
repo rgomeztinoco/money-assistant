@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Factories\Sequence;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
+    $this->travelTo(now(config('app.reporting_timezone'))->startOfDay()->addHours(12));
 });
 
 test('Breakdown searches, filters, and pages loaded Transactions without data requests', function () {
@@ -110,7 +111,102 @@ test('Breakdown searches, filters, and pages loaded Transactions without data re
         ->assertNoJavaScriptErrors();
 });
 
-test('Category and day charts drill into the same supporting detail', function () {
+test('Breakdown clears loaded drilldowns and restores them through browser history', function () {
+    $owner = User::factory()->create();
+    $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
+    $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create(['name' => 'Dining']);
+    $transport = Category::factory()->for($owner, 'owner')->create(['name' => 'Transport']);
+    $today = now()->toDateString();
+    $yesterday = now()->subDay()->toDateString();
+    $purchase = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $yesterday,
+        'amount_minor' => 4_000,
+        'description' => 'CAFÉ, CENTRAL',
+        'category_id' => $transport->id,
+    ]);
+    $split = ReceiptBreakdown::factory()->for($purchase)->create();
+    LineItem::factory()->for($split)->create(['category_id' => $dining->id, 'line_total_minor' => 2_500]);
+    LineItem::factory()->for($split)->create(['category_id' => null, 'line_total_minor' => 1_500]);
+    $refund = Transaction::factory()->for($owner, 'owner')->refund()->pen()->create([
+        'occurred_on' => $today,
+        'amount_minor' => 500,
+        'description' => 'Café Central',
+        'category_id' => $dining->id,
+    ]);
+    $direct = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Market',
+        'amount_minor' => 1_000,
+        'category_id' => $food->id,
+    ]);
+    $bus = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => $today,
+        'description' => 'Bus pass',
+        'category_id' => $transport->id,
+    ]);
+    $income = Transaction::factory()->for($owner, 'owner')->income()->pen()->create(['occurred_on' => $today]);
+    $this->actingAs($owner);
+
+    $page = visit("/breakdown?currency=PEN&period=custom&date_from={$yesterday}&date_to={$today}&category={$food->id}&day={$yesterday}")
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertPresent('[data-test="breakdown-transaction-'.$purchase->id.'"]');
+
+    $page->script('window.__filterRequests = performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length');
+
+    $page
+        ->click('[aria-label="Remove day filter: '.$yesterday.'"]')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '3 matching Transactions')
+        ->click('[data-test="breakdown-category-direct:'.$food->id.'"]')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertPresent('[data-test="breakdown-transaction-'.$direct->id.'"]');
+
+    $page->script('history.back()');
+    $page
+        ->assertQueryStringHas('category', (string) $food->id)
+        ->assertQueryStringMissing('day')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '3 matching Transactions');
+
+    $page->script('history.forward()');
+    $page
+        ->assertQueryStringHas('category', 'direct:'.$food->id)
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->press('Clear filters')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '5 matching Transactions')
+        ->assertPresent('[data-test="breakdown-transaction-'.$bus->id.'"]')
+        ->click('[data-test="breakdown-tab-merchants"]')
+        ->assertSeeIn('[data-test="breakdown-merchant-Café Central"]', '2 transactions')
+        ->assertSeeIn('[data-test="breakdown-merchant-Café Central"]', 'S/ 35.00')
+        ->click('[data-test="breakdown-merchant-Café Central"]')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '2 matching Transactions')
+        ->assertPresent('[data-test="breakdown-transaction-'.$purchase->id.'"]')
+        ->assertPresent('[data-test="breakdown-transaction-'.$refund->id.'"]')
+        ->assertScript('performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length === window.__filterRequests')
+        ->assertNoJavaScriptErrors();
+
+    $page = visit("/breakdown?currency=PEN&period=custom&date_from={$yesterday}&date_to={$today}&category=uncategorized")
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertPresent('[data-test="breakdown-transaction-'.$purchase->id.'"]')
+        ->assertNotPresent('[data-test="breakdown-transaction-'.$income->id.'"]')
+        ->press('Clear filters')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '5 matching Transactions')
+        ->assertNoJavaScriptErrors();
+
+    visit("/breakdown?currency=PEN&period=custom&date_from={$yesterday}&date_to={$today}&focus=income")
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertPresent('[data-test="breakdown-transaction-'.$income->id.'"]')
+        ->press('Clear filters')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '5 matching Transactions')
+        ->assertNoJavaScriptErrors();
+
+    visit("/breakdown?currency=PEN&period=custom&date_from={$yesterday}&date_to={$today}&attention=1")
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertPresent('[data-test="breakdown-transaction-'.$purchase->id.'"]')
+        ->press('Clear filters')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '5 matching Transactions')
+        ->assertNoJavaScriptErrors();
+});
+
+test('Category day and merchant selections update the supporting detail without requests', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create([
         'name' => 'Food',
@@ -192,7 +288,13 @@ test('Category and day charts drill into the same supporting detail', function (
         ->click('[aria-label="Choose a custom date range"]')
         ->assertSee('Apply range')
         ->press('Apply range')
-        ->assertQueryStringHas('period', 'custom')
+        ->assertQueryStringHas('period', 'custom');
+
+    $page->script(<<<'JS'
+        window.__filterRequests = performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/breakdown')).length;
+        JS);
+
+    $page
         ->click('[data-test="breakdown-tab-categories"]')
         ->assertSee('Where the money went')
         ->assertScript(<<<JS
@@ -227,6 +329,7 @@ test('Category and day charts drill into the same supporting detail', function (
             JS)
         ->click('[data-test="breakdown-category-'.$food->id.'"]')
         ->assertQueryStringHas('category', (string) $food->id)
+        ->assertScript('performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length === window.__filterRequests')
         ->assertSee('Neighborhood market')
         ->assertSee('Corner cafe')
         ->assertDontSee('Bus pass')
@@ -265,6 +368,7 @@ test('Category and day charts drill into the same supporting detail', function (
         ->assertNotPresent('[aria-label="Search every merchant"]')
         ->click('[data-test="breakdown-merchant-Neighborhood market"]')
         ->assertQueryStringHas('merchant', 'Neighborhood market')
+        ->assertScript('performance.getEntriesByType("resource").filter((entry) => entry.name.includes("/breakdown")).length === window.__filterRequests')
         ->assertScript(<<<'JS'
             (() => {
                 const chart = document.querySelector('[data-slot="chart"]');

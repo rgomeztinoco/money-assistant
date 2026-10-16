@@ -222,7 +222,7 @@ test('Category bars use each currency total spending as their denominator', func
             ->where('category_groups.1.percentage.USD', '11.46'));
 });
 
-test('Category and day selections filter the same supporting Breakdown detail', function () {
+test('Category and day links load the full period and daily allocations for client filtering', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create([
@@ -276,16 +276,25 @@ test('Category and day selections filter the same supporting Breakdown detail', 
             ->where('days.9.date', '2026-07-10')
             ->where('days.9.net_spending_minor.PEN', '5000')
             ->where('days.10.date', '2026-07-11')
-            ->where('days.10.net_spending_minor.PEN', '4000')
+            ->where('days.10.net_spending_minor.PEN', '7000')
             ->where('days.30.date', '2026-07-31')
             ->where('categorization.PEN.transaction_count', 3)
             ->where('categorization.PEN.uncategorized_transaction_count', 1)
             ->where('categorization.PEN.uncategorized_amount_minor', '1500')
             ->where('categorization.PEN.uncategorized_percentage', '12.5')
-            ->has('transaction_days', 1)
+            ->has('transaction_days', 2)
+            ->has('transaction_days.0.transactions', 2)
             ->where('transaction_days.0.transactions.0.id', $splitTransaction->id)
             ->where('transaction_days.0.transactions.0.split.0.category.name', 'Dining')
-            ->has('merchants', 1)
+            ->where('transaction_days.0.transactions.0.split.0.category.parent_id', $food->id)
+            ->where('category_groups_by_day.2026-07-11.0.category.name', 'Transport')
+            ->where('category_groups_by_day.2026-07-11.0.amount_minor.PEN', '3000')
+            ->where('category_groups_by_day.2026-07-11.1.category.name', 'Food')
+            ->where('category_groups_by_day.2026-07-11.1.amount_minor.PEN', '2500')
+            ->where('category_groups_by_day.2026-07-11.2.category.name', 'Uncategorized')
+            ->where('category_groups_by_day.2026-07-11.2.amount_minor.PEN', '1500')
+            ->where('attention_transaction_ids', [$splitTransaction->id])
+            ->has('merchants', 3)
             ->where('merchants.0.name', 'Department store')
             ->where('merchants.0.amount_minor.PEN', '4000'));
 
@@ -297,13 +306,43 @@ test('Category and day selections filter the same supporting Breakdown detail', 
     ]))->assertInertia(fn (Assert $page) => $page
         ->where('category_groups.2.category.name', 'Uncategorized')
         ->where('category_groups.2.percentage.PEN', '12.5')
-        ->has('transaction_days', 1)
+        ->has('transaction_days', 2)
         ->where('transaction_days.0.transactions.0.id', $splitTransaction->id));
 
     expect($market->id)->not->toBe($cafe->id);
 });
 
-test('direct Category drilldown includes parent allocations and keeps currency shares separate', function () {
+test('client filter data stays within the owner currency period and active Transactions', function () {
+    $owner = User::factory()->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-15',
+        'category_id' => null,
+    ]);
+    Transaction::factory()->spending()->pen()->create(['occurred_on' => '2026-08-15']);
+    Transaction::factory()->for($owner, 'owner')->spending()->usd()->create(['occurred_on' => '2026-08-15']);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create(['occurred_on' => '2026-07-15']);
+    Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
+        'occurred_on' => '2026-08-16',
+        'voided_at' => now(),
+    ]);
+
+    $this->actingAs($owner)->get(route('breakdown.index', [
+        'currency' => 'PEN',
+        'period' => 'month',
+        'anchor' => '2026-08-15',
+        'merchant' => 'A merchant without matches',
+    ]))->assertInertia(fn (Assert $page) => $page
+        ->has('transaction_days', 1)
+        ->has('transaction_days.0.transactions', 1)
+        ->where('transaction_days.0.transactions.0.id', $transaction->id)
+        ->where('attention_transaction_ids', [$transaction->id])
+        ->has('category_groups_by_day', 1)
+        ->has('category_groups_by_day.2026-08-15', 1)
+        ->where('category_groups_by_day.2026-08-15.0.category.name', 'Uncategorized')
+        ->where('category_groups_by_day.2026-08-15.0.amount_minor.USD', '0'));
+});
+
+test('direct Category links retain all Transactions and keep currency shares separate', function () {
     $owner = User::factory()->create();
     $food = Category::factory()->for($owner, 'owner')->create(['name' => 'Food']);
     $dining = Category::factory()->for($owner, 'owner')->for($food, 'parent')->create(['name' => 'Dining']);
@@ -343,11 +382,11 @@ test('direct Category drilldown includes parent allocations and keeps currency s
         ->where('category_groups.0.direct_percentage.USD', '25')
         ->where('category_groups.0.children.0.percentage.USD', '75')
         ->has('transaction_days', 1)
-        ->has('transaction_days.0.transactions', 4)
-        ->where('transaction_days.0.transactions.0.id', $usdDirect->id)
-        ->where('transaction_days.0.transactions.1.id', $refund->id)
-        ->where('transaction_days.0.transactions.2.id', $split->id)
-        ->where('transaction_days.0.transactions.3.id', $direct->id));
+        ->has('transaction_days.0.transactions', 6)
+        ->where('transaction_days.0.transactions.1.id', $usdDirect->id)
+        ->where('transaction_days.0.transactions.2.id', $refund->id)
+        ->where('transaction_days.0.transactions.3.id', $split->id)
+        ->where('transaction_days.0.transactions.5.id', $direct->id));
 });
 
 test('Category options expose parent groups and zero-spend Categories stay out of the chart', function () {
@@ -400,7 +439,7 @@ test('Category options expose parent groups and zero-spend Categories stay out o
             ->where('income_source_options.0.used', true));
 });
 
-test('briefing and Trend links focus Breakdown on their exact supporting Transactions', function () {
+test('briefing and Trend links retain their filters and the complete period for client drilldown', function () {
     $owner = User::factory()->create();
     $category = Category::factory()->for($owner, 'owner')->create();
     $merchant = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create([
@@ -435,26 +474,27 @@ test('briefing and Trend links focus Breakdown on their exact supporting Transac
     $this->get(route('breakdown.index', [...$period, 'merchant' => 'café central']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.merchant', 'café central')
-            ->has('transaction_days', 1)
-            ->where('transaction_days.0.transactions.0.id', $merchant->id));
+            ->has('transaction_days', 5)
+            ->where('transaction_days.4.transactions.0.id', $merchant->id));
 
     $this->get(route('breakdown.index', [...$period, 'focus' => 'income']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.focus', 'income')
-            ->has('transaction_days', 1)
-            ->where('transaction_days.0.transactions.0.id', $income->id));
+            ->has('transaction_days', 5)
+            ->where('transaction_days.3.transactions.0.id', $income->id));
 
     $this->get(route('breakdown.index', [...$period, 'focus' => 'savings']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.focus', 'savings')
-            ->has('transaction_days', 1)
-            ->where('transaction_days.0.transactions.0.id', $savings->id));
+            ->has('transaction_days', 5)
+            ->where('transaction_days.2.transactions.0.id', $savings->id));
 
     $this->get(route('breakdown.index', [...$period, 'attention' => 1]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.attention', true)
-            ->has('transaction_days', 1)
-            ->where('transaction_days.0.transactions.0.id', $attention->id));
+            ->has('transaction_days', 5)
+            ->where('attention_transaction_ids', [$attention->id])
+            ->where('transaction_days.1.transactions.0.id', $attention->id));
 });
 
 test('the owner changes a Category once or confirms the exact merchant for history and future activity', function () {
