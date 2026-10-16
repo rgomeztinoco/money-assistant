@@ -208,3 +208,20 @@ test('owner confirms interest on an existing payment and plans full monthly repa
     visit('/?period=custom&date_from=2026-08-01&date_to=2026-08-31')->resize(1280, 900)->assertSeeIn('[data-test="home-debt-summary"]', 'S/ 830.00')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-home');
     visit('/debts')->resize(1280, 900)->assertSee('Monthly target')->assertSee('S/ 200.00')->assertSee('paid this month')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-targets-index');
 });
+
+test('Breakdown labels and summarizes each debt movement by its operation', function (string $debtDirection, string $operation, string $label, string $summaryKey) {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => $debtDirection, 'currency' => 'PEN', 'opening_balance_minor' => 200000, 'opened_on' => '2026-10-01']);
+    $this->actingAs($owner)->post('/debts/'.$debt->id.'/entries', ['kind' => $operation, 'occurred_on' => '2026-10-16', 'amount' => '1500.01', 'description' => 'Posted debt movement'])->assertSessionHasNoErrors();
+    $transactionId = $debt->entries()->sole()->transaction_id;
+
+    $page = visit('/breakdown?period=custom&date_from=2026-10-01&date_to=2026-10-31')->resize(1280, 900);
+    $page->assertSeeIn('tr:has([data-test="transaction-row-id-'.$transactionId.'"])', $label)
+        ->assertSeeIn('[data-test="'.$summaryKey.'-PEN"]', 'S/ 1,500.01')
+        ->assertScript('() => document.documentElement.scrollHeight <= window.innerHeight + 1')->assertNoJavaScriptErrors()->screenshot(filename: 'breakdown-debt-'.$label);
+})->with([
+    'borrowing' => ['owed', 'funding', 'Borrowing', 'borrowed'],
+    'lending' => ['receivable', 'funding', 'Lending', 'lent'],
+    'repayment' => ['owed', 'repayment', 'Repayment', 'payments-made'],
+    'collection' => ['receivable', 'repayment', 'Collection', 'payments-received'],
+]);

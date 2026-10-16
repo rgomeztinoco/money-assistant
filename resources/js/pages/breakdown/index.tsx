@@ -145,7 +145,7 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
 
     return (
         <section
-            className="grid content-start gap-4"
+            className="@container grid content-start gap-4"
             data-test="breakdown-summary"
         >
             <header className="flex items-start justify-between gap-4">
@@ -163,7 +163,7 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
             </header>
 
             <div
-                className={`grid divide-y border-y ${props.currency_filter === null ? 'sm:grid-cols-2 sm:divide-x sm:divide-y-0' : ''}`}
+                className={`grid divide-y border-y ${props.currency_filter === null ? '@xl:grid-cols-2 @xl:divide-x @xl:divide-y-0' : ''}`}
             >
                 {visibleCurrencies.map((currency) => (
                     <section
@@ -187,7 +187,7 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                                 </dd>
                             </dl>
                         </div>
-                        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 type-body">
+                        <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 type-body [&>dd]:whitespace-nowrap">
                             <dt className="text-muted-foreground">Income</dt>
                             <dd className="text-right font-medium tabular-nums">
                                 {formatMinorUnits(
@@ -206,7 +206,10 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                             <dt className="text-muted-foreground">
                                 Debt payments made
                             </dt>
-                            <dd className="text-right font-medium tabular-nums">
+                            <dd
+                                className="text-right font-medium tabular-nums"
+                                data-test={`payments-made-${currency}`}
+                            >
                                 {formatMinorUnits(
                                     props.summary[currency]
                                         .debt_payments_made_minor,
@@ -216,7 +219,10 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                             <dt className="text-muted-foreground">
                                 Debt payments received
                             </dt>
-                            <dd className="text-right font-medium tabular-nums">
+                            <dd
+                                className="text-right font-medium tabular-nums"
+                                data-test={`payments-received-${currency}`}
+                            >
                                 {formatMinorUnits(
                                     props.summary[currency]
                                         .debt_payments_received_minor,
