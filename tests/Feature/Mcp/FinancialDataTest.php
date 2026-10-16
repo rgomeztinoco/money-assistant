@@ -523,9 +523,9 @@ test('assistant category filters and review state classify only paid debt intere
 test('the yearly-payment MCP tool returns the same exact owner plan as the web without mutating records', function () {
     $this->travelTo(CarbonImmutable::parse('2026-10-09 02:00:00', 'UTC'));
     $owner = User::factory()->create();
-    $payment = YearlyPayment::factory()->for($owner, 'owner')->create(['name' => 'Insurance', 'amount_minor' => 240000, 'cushion_minor' => 120, 'expected_due_on' => '2026-10-08']);
+    $payment = YearlyPayment::factory()->for($owner, 'owner')->create(['name' => 'Insurance', 'amount_minor' => 240000, 'cushion_minor' => 120, 'due_month_day' => '10-08']);
     YearlyPayment::factory()->for($owner, 'owner')->create(['name' => 'Course', 'amount_minor' => 100, 'cushion_minor' => 1, 'currency' => 'USD']);
-    YearlyPayment::factory()->for($owner, 'owner')->paused()->create(['name' => 'Paused checkup', 'expected_due_on' => '2026-10-08']);
+    YearlyPayment::factory()->for($owner, 'owner')->paused()->create(['name' => 'Paused checkup', 'due_month_day' => '10-08']);
     YearlyPaymentSetting::factory()->for($owner, 'owner')->create(['pen_per_usd' => '3.7500']);
     $other = User::factory()->create();
     YearlyPayment::factory()->for($other, 'owner')->create(['name' => 'Private other plan']);
@@ -548,6 +548,8 @@ test('the yearly-payment MCP tool returns the same exact owner plan as the web w
         ->assertJsonPath('result.structuredContent.planning_rate', ['pen_per_usd' => '3.7500', 'direction' => 'PEN per USD', 'source' => 'manual'])
         ->assertJsonCount(1, 'result.structuredContent.upcoming_commitments')
         ->assertJsonPath('result.structuredContent.upcoming_commitments.0.id', $payment->id)
+        ->assertJsonPath('result.structuredContent.upcoming_commitments.0.due_month_day', '10-08')
+        ->assertJsonPath('result.structuredContent.upcoming_commitments.0.next_due_on', '2026-10-08')
         ->assertJsonPath('result.structuredContent.calculation_date', '2026-10-08')
         ->assertJsonPath('result.structuredContent.timezone', 'America/Lima')
         ->assertDontSee('Private other plan')->assertDontSee('user_id')
@@ -580,4 +582,5 @@ test('MCP reports missing conversion assumptions and enforces bearer read access
         ->assertJsonPath('result.structuredContent.assumptions.planning_only', 'Planning targets do not represent money saved, bills paid, or money safe to spend today.');
     $tools = financialMcp($token, 'tools/list')->json('result.tools');
     expect($tools[5]['inputSchema']['properties'])->toBeEmpty();
+    expect($tools[5]['outputSchema']['properties']['commitments']['items']['properties'])->toHaveKeys(['due_month_day', 'next_due_on'])->not->toHaveKey('expected_due_on');
 });
