@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Category;
 use App\Models\Debt;
 use App\Models\DebtEntry;
 use App\Models\Transaction;
@@ -7,6 +8,49 @@ use App\Models\User;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
+});
+
+test('Breakdown keeps paid interest in local Category and merchant filters', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Loan interest']);
+    $debt = Debt::factory()->for($owner, 'owner')->create();
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create([
+        'kind' => 'debt', 'direction' => 'debit', 'occurred_on' => '2026-08-05',
+        'amount_minor' => 20000, 'description' => 'Bank repayment', 'category_id' => $category->id,
+    ]);
+    DebtEntry::factory()->for($debt)->for($payment)->create([
+        'kind' => 'repayment', 'amount_minor' => 20000, 'principal_minor' => 17000,
+        'interest_minor' => 3000, 'occurred_on' => '2026-08-05',
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit('/breakdown?period=custom&date_from=2026-08-01&date_to=2026-08-31&focus=net_spending&category='.$category->id)->resize(1280, 900);
+    $page->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertPresent('[data-test="transaction-row-id-'.$payment->id.'"]')
+        ->click('[data-test="breakdown-tab-merchants"]')
+        ->assertSeeIn('[data-test="breakdown-merchant-Bank repayment"]', 'S/ 30.00')
+        ->click('[data-test="breakdown-merchant-Bank repayment"]')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertNoJavaScriptErrors();
+});
+
+test('Breakdown includes received interest in the Income focus', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => 'receivable']);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create([
+        'kind' => 'debt', 'direction' => 'credit', 'occurred_on' => '2026-08-05',
+        'amount_minor' => 20000, 'description' => 'Loan repayment received',
+    ]);
+    DebtEntry::factory()->for($debt)->for($payment)->create([
+        'kind' => 'repayment', 'amount_minor' => 20000, 'principal_minor' => 17000,
+        'interest_minor' => 3000, 'occurred_on' => '2026-08-05',
+    ]);
+    $this->actingAs($owner);
+
+    visit('/breakdown?period=custom&date_from=2026-08-01&date_to=2026-08-31&focus=income')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertPresent('[data-test="transaction-row-id-'.$payment->id.'"]')
+        ->assertNoJavaScriptErrors();
 });
 
 test('debt forms record decimal balances, manual funding, and signed adjustments', function () {

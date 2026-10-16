@@ -14,16 +14,40 @@ function normalizeMerchant(description: string): string {
         .trim();
 }
 
-function supportsCategory(transaction: BreakdownTransaction): boolean {
-    return transaction.kind === 'spending' || transaction.kind === 'refund';
+function hasSpendingContribution(transaction: BreakdownTransaction): boolean {
+    return (
+        transaction.kind === 'spending' ||
+        transaction.kind === 'refund' ||
+        netSpending(transaction) !== 0n
+    );
 }
 
 function netSpending(transaction: BreakdownTransaction): bigint {
+    if (transaction.kind === 'debt') {
+        return transaction.direction === 'debit' &&
+            transaction.debt_allocation?.kind === 'repayment'
+            ? BigInt(transaction.debt_allocation.interest_minor)
+            : 0n;
+    }
+
     return transaction.kind === 'spending'
         ? BigInt(transaction.amount_minor)
         : transaction.kind === 'refund'
           ? -BigInt(transaction.amount_minor)
           : 0n;
+}
+
+function income(transaction: BreakdownTransaction): bigint {
+    if (transaction.kind === 'debt') {
+        return transaction.direction === 'credit' &&
+            transaction.debt_allocation?.kind === 'repayment'
+            ? BigInt(transaction.debt_allocation.interest_minor)
+            : 0n;
+    }
+
+    return transaction.kind === 'income'
+        ? BigInt(transaction.amount_minor)
+        : 0n;
 }
 
 function matchesCategory(
@@ -34,7 +58,7 @@ function matchesCategory(
         return true;
     }
 
-    if (!supportsCategory(transaction)) {
+    if (!hasSpendingContribution(transaction)) {
         return false;
     }
 
@@ -62,8 +86,8 @@ function matchesFocus(
 ): boolean {
     return (
         focus === null ||
-        (focus === 'net_spending' && supportsCategory(transaction)) ||
-        (focus === 'income' && transaction.kind === 'income') ||
+        (focus === 'net_spending' && hasSpendingContribution(transaction)) ||
+        (focus === 'income' && income(transaction) > 0n) ||
         (focus === 'savings' &&
             transaction.kind === 'transfer' &&
             transaction.transfer_purpose === 'savings')
@@ -119,7 +143,7 @@ export function filterBreakdown(props: BreakdownProps): BreakdownProps {
     >();
 
     for (const transaction of merchantTransactions) {
-        if (!supportsCategory(transaction)) {
+        if (!hasSpendingContribution(transaction)) {
             continue;
         }
 
@@ -176,11 +200,7 @@ export function filterBreakdown(props: BreakdownProps): BreakdownProps {
                     ...day,
                     transactions: selected,
                     net_spending_minor: amounts(selected, netSpending),
-                    income_minor: amounts(selected, (transaction) =>
-                        transaction.kind === 'income'
-                            ? BigInt(transaction.amount_minor)
-                            : 0n,
-                    ),
+                    income_minor: amounts(selected, income),
                     moved_to_savings_minor: amounts(selected, (transaction) =>
                         transaction.kind === 'transfer' &&
                         transaction.transfer_purpose === 'savings'
