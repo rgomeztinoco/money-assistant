@@ -84,41 +84,13 @@ class ReadBreakdown
         $focusFilter = $filters['focus'] ?? null;
         $merchantFilter = $filters['merchant'] ?? null;
         $attentionFilter = (bool) ($filters['attention'] ?? false);
-        $attentionIds = $attentionFilter
-            ? Transaction::query()
-                ->whereBelongsTo($owner, 'owner')
-                ->when($currencyFilter !== null, fn ($query) => $query->where('currency', $currencyFilter))
-                ->whereNull('voided_at')
-                ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
-                ->whereRequiresReview()
-                ->pluck('id')
-            : collect();
-        $chartTransactions = $dayFilter === null
-            ? $transactions
-            : $transactions->where('occurred_on', CarbonImmutable::parse($dayFilter));
-        $dailyTransactions = $categoryFilter === null
-            ? $transactions
-            : $transactions->filter(fn (Transaction $transaction): bool => $this->matchesCategory(
-                $transaction,
-                $categoryFilter,
-                $categoriesById,
-            ));
-        $merchantTransactions = $transactions
-            ->when($dayFilter !== null, fn (Collection $transactions): Collection => $transactions
-                ->filter(fn (Transaction $transaction): bool => $transaction->occurred_on->toDateString() === $dayFilter))
-            ->when($categoryFilter !== null, fn (Collection $transactions): Collection => $transactions
-                ->filter(fn (Transaction $transaction): bool => $this->matchesCategory(
-                    $transaction,
-                    $categoryFilter,
-                    $categoriesById,
-                )))
-            ->when($focusFilter !== null, fn (Collection $transactions): Collection => $transactions
-                ->filter(fn (Transaction $transaction): bool => $this->matchesFocus($transaction, $focusFilter)))
-            ->when($attentionFilter, fn (Collection $transactions): Collection => $transactions->whereIn('id', $attentionIds));
-        $detailTransactions = $merchantTransactions
-            ->when($merchantFilter !== null, fn (Collection $transactions): Collection => $transactions
-                ->filter(fn (Transaction $transaction): bool => $this->merchantNormalizer->normalize($transaction->description)
-                    === $this->merchantNormalizer->normalize($merchantFilter)));
+        $attentionIds = Transaction::query()
+            ->whereBelongsTo($owner, 'owner')
+            ->when($currencyFilter !== null, fn ($query) => $query->where('currency', $currencyFilter))
+            ->whereNull('voided_at')
+            ->whereBetween('occurred_on', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->whereRequiresReview()
+            ->pluck('id');
         $coverageDates = $transactions->pluck('occurred_on');
         $merchantMatchCounts = $this->merchantMatchCounts($owner);
         $chartGranularity = $this->chartGranularity($periodUnit, $dateFrom, $dateTo);
@@ -144,31 +116,25 @@ class ReadBreakdown
                     ? (int) $filters['selected']
                     : null,
             ],
-            'category_groups' => $this->categoryGroupsByCurrency($chartTransactions, $categories, $categoriesById),
+            'category_groups' => $this->categoryGroupsByCurrency($transactions, $categories, $categoriesById),
+            'category_groups_by_day' => $transactions
+                ->groupBy(fn (Transaction $transaction): string => $transaction->occurred_on->toDateString())
+                ->map(fn (Collection $dayTransactions): array => $this->categoryGroupsByCurrency($dayTransactions, $categories, $categoriesById))
+                ->all(),
+            'attention_transaction_ids' => $attentionIds->all(),
             'chart_granularity' => $chartGranularity,
             'days' => $this->days(
-                $dailyTransactions,
+                $transactions,
                 $dateFrom,
                 $dateTo,
                 $chartGranularity,
             ),
-            'merchants' => $this->merchants($merchantTransactions),
-            'transaction_days' => $this->transactionDays($detailTransactions, $merchantMatchCounts),
+            'merchants' => $this->merchants($transactions),
+            'transaction_days' => $this->transactionDays($transactions, $merchantMatchCounts),
             'category_options' => $this->categoryOptions($categories),
             'income_source_options' => $this->incomeSourceOptions($owner),
             'today' => now(config('app.reporting_timezone'))->toDateString(),
         ];
-    }
-
-    private function matchesFocus(Transaction $transaction, string $focus): bool
-    {
-        return match ($focus) {
-            'net_spending' => in_array($transaction->kind, [TransactionKind::Spending, TransactionKind::Refund], true),
-            'income' => $transaction->kind === TransactionKind::Income,
-            'savings' => $transaction->kind === TransactionKind::Transfer
-                && $transaction->transfer_purpose === TransferPurpose::Savings,
-            default => false,
-        };
     }
 
     /** @return array<string, array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string}> */
@@ -553,7 +519,7 @@ class ReadBreakdown
             'description' => $transaction->description,
             'category' => $transaction->category === null
                 ? null
-                : ['id' => $transaction->category->id, 'name' => $transaction->category->name],
+                : ['id' => $transaction->category->id, 'name' => $transaction->category->name, 'parent_id' => $transaction->category->parent_id],
             'original_spending_id' => $transaction->original_spending_id,
             'merchant_match_count' => $merchantKey === null
                 ? 0
@@ -570,44 +536,10 @@ class ReadBreakdown
                         'amount_minor' => (string) $lineItem->line_total_minor,
                         'category' => $lineItem->category === null
                             ? null
-                            : ['id' => $lineItem->category->id, 'name' => $lineItem->category->name],
+                            : ['id' => $lineItem->category->id, 'name' => $lineItem->category->name, 'parent_id' => $lineItem->category->parent_id],
                     ])
                     ->all()),
         ];
-    }
-
-    /**
-     * @param  Collection<int, Category>  $categoriesById
-     */
-    private function matchesCategory(Transaction $transaction, string $categoryFilter, Collection $categoriesById): bool
-    {
-        if (! $transaction->kind->supportsCategory()) {
-            return false;
-        }
-
-        $lineItems = $transaction->receiptBreakdown?->lineItems;
-        $contributionCategoryIds = $lineItems === null || $lineItems->isEmpty()
-            ? [$transaction->category_id]
-            : $lineItems->pluck('category_id')->all();
-
-        if ($categoryFilter === 'uncategorized') {
-            return in_array(null, $contributionCategoryIds, true);
-        }
-
-        $directOnly = str_starts_with($categoryFilter, 'direct:');
-        $categoryId = (int) ($directOnly ? substr($categoryFilter, 7) : $categoryFilter);
-
-        foreach ($contributionCategoryIds as $contributionCategoryId) {
-            if ($contributionCategoryId === $categoryId) {
-                return true;
-            }
-
-            if (! $directOnly && $contributionCategoryId !== null && $categoriesById->get($contributionCategoryId)?->parent_id === $categoryId) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /** @return array<string, int> */

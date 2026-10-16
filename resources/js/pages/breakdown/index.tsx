@@ -1,4 +1,4 @@
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { CircleAlert, CircleCheck, Filter, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { CurrencyFilter } from '@/components/currency-filter';
@@ -25,8 +25,10 @@ import { index as breakdownIndex } from '@/routes/breakdown';
 import type { Currency, ReportingPeriodSelection } from '@/types';
 import { CategoryBreakdown, DailyChart } from './charts';
 import { pickerCategoryOptions } from './classification-select';
+import { filterBreakdown } from './filter-breakdown';
 import { selectionUrl } from './links';
 import { ManualTransactionDialog } from './manual-transaction-dialog';
+import { SelectionLink } from './selection-link';
 import type { BreakdownProps, CurrencyAmounts } from './types';
 
 const currencies = ['PEN', 'USD'] satisfies Currency[];
@@ -270,7 +272,7 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                         'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-y px-1 py-3';
 
                     return needsCategorization ? (
-                        <Link
+                        <SelectionLink
                             href={selectionUrl({
                                 currencyFilter: props.currency_filter,
                                 period: props.period,
@@ -286,7 +288,7 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                             data-test="breakdown-review-uncategorized"
                         >
                             {content}
-                        </Link>
+                        </SelectionLink>
                     ) : (
                         <div className={className}>{content}</div>
                     );
@@ -319,10 +321,10 @@ function RemovableFilter({
             variant="secondary"
             className="h-7 rounded-full px-2.5 type-meta"
         >
-            <Link href={href} preserveScroll aria-label={removeLabel}>
+            <SelectionLink href={href} preserveScroll aria-label={removeLabel}>
                 {label}
                 <X />
-            </Link>
+            </SelectionLink>
         </Button>
     );
 }
@@ -350,7 +352,7 @@ function MerchantRanking({ props }: { props: BreakdownProps }) {
 
                         return (
                             <li key={merchant.name}>
-                                <Link
+                                <SelectionLink
                                     href={selectionUrl({
                                         currencyFilter: props.currency_filter,
                                         period: props.period,
@@ -382,7 +384,7 @@ function MerchantRanking({ props }: { props: BreakdownProps }) {
                                         amounts={merchant.amount_minor}
                                         currencyFilter={props.currency_filter}
                                     />
-                                </Link>
+                                </SelectionLink>
                             </li>
                         );
                     })}
@@ -500,7 +502,8 @@ function useBreakdownTransactions(
     };
 }
 
-export default function BreakdownIndex(props: BreakdownProps) {
+export default function BreakdownIndex(pageProps: BreakdownProps) {
+    const props = filterBreakdown(pageProps);
     const [activeAction, setActiveAction] = useState<TransactionAction>('edit');
     const [closingAction, setClosingAction] = useState(false);
     const tableScroll = useRef<number | null>(null);
@@ -706,7 +709,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                     )}
                     {hasFilters && (
                         <Button asChild variant="ghost" size="sm">
-                            <Link
+                            <SelectionLink
                                 href={selectionUrl({
                                     currencyFilter: props.currency_filter,
                                     period: props.period,
@@ -719,7 +722,7 @@ export default function BreakdownIndex(props: BreakdownProps) {
                                 })}
                             >
                                 <Filter /> Clear filters
-                            </Link>
+                            </SelectionLink>
                         </Button>
                     )}
                     <div className="ml-auto">{transactionList.controls}</div>
