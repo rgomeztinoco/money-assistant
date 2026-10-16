@@ -1,5 +1,17 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
+import { MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
+import InputError from '@/components/input-error';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +22,13 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
     Empty,
     EmptyDescription,
@@ -28,7 +47,7 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatMinorUnits } from '@/lib/format-minor-units';
-import { index, show } from '@/routes/debts';
+import { index, settle, show } from '@/routes/debts';
 import { DebtForm } from './debt-form';
 import type { Debt } from './types';
 
@@ -40,6 +59,9 @@ export default function Debts({
     today: string;
 }) {
     const [creating, setCreating] = useState(false);
+    const [editing, setEditing] = useState<Debt | null>(null);
+    const [settling, setSettling] = useState<Debt | null>(null);
+    const settlement = useForm<{ settlement?: string }>({});
     const [status, setStatus] = useState('active');
     const [direction, setDirection] = useState('all');
     const [search, setSearch] = useState('');
@@ -218,6 +240,11 @@ export default function Debts({
                                             <TableHead className="w-36 text-right">
                                                 Balance
                                             </TableHead>
+                                            <TableHead className="w-12">
+                                                <span className="sr-only">
+                                                    Actions
+                                                </span>
+                                            </TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -251,6 +278,48 @@ export default function Debts({
                                                         debt.currency,
                                                     )}
                                                 </TableCell>
+                                                <TableCell className="text-right">
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger
+                                                            asChild
+                                                        >
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                aria-label={`Actions for ${debt.name}`}
+                                                            >
+                                                                <MoreHorizontal />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuGroup>
+                                                                <DropdownMenuItem
+                                                                    onSelect={() =>
+                                                                        setEditing(
+                                                                            debt,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Edit
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
+                                                                    disabled={
+                                                                        debt.status ===
+                                                                        'settled'
+                                                                    }
+                                                                    onSelect={() => {
+                                                                        settlement.clearErrors();
+                                                                        setSettling(
+                                                                            debt,
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    Settle debt
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuGroup>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -260,6 +329,70 @@ export default function Debts({
                     </Card>
                 </div>
             </div>
+            <Dialog
+                open={editing !== null}
+                onOpenChange={(open) => {
+                    if (!open) setEditing(null);
+                }}
+            >
+                <DialogContent className="max-h-[90svh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Edit debt</DialogTitle>
+                        <DialogDescription>{editing?.name}</DialogDescription>
+                    </DialogHeader>
+                    {editing && (
+                        <DebtForm
+                            key={editing.id}
+                            debt={editing}
+                            today={today}
+                            onSaved={() => setEditing(null)}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
+            <AlertDialog
+                open={settling !== null}
+                onOpenChange={(open) => {
+                    if (!open && !settlement.processing) setSettling(null);
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            Settle {settling?.name}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Clear the current balance of{' '}
+                            {settling &&
+                                formatMinorUnits(
+                                    settling.balance_minor,
+                                    settling.currency,
+                                )}{' '}
+                            with a non-cash adjustment. No payment will be
+                            recorded.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <InputError message={settlement.errors.settlement} />
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={settlement.processing}>
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            disabled={settlement.processing}
+                            onClick={(event) => {
+                                event.preventDefault();
+                                if (settling)
+                                    settlement.post(settle.url(settling.id), {
+                                        preserveScroll: true,
+                                        onSuccess: () => setSettling(null),
+                                    });
+                            }}
+                        >
+                            Settle debt
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
             <Dialog open={creating} onOpenChange={setCreating}>
                 <DialogContent className="max-h-[90svh] overflow-y-auto">
                     <DialogHeader>

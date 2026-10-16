@@ -26,6 +26,7 @@ Route::get('/', HomeController::class)
     ->name('home');
 
 Route::middleware(['auth'])->group(function () {
+    Route::post('debts/{debt}/settle', [DebtController::class, 'settle'])->name('debts.settle');
     Route::post('debts/{debt}/entries', [DebtEntryController::class, 'store'])->name('debts.entries.store');
     Route::put('debts/{debt}/entries/{entry}', [DebtEntryController::class, 'update'])->name('debts.entries.update');
     Route::get('debts/{debt}/transactions', [DebtController::class, 'transactions'])->name('debts.transactions');

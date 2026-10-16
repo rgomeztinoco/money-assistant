@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Debts\ReadDebts;
 use App\Actions\Debts\SaveDebt;
+use App\Actions\Debts\SettleDebt;
 use App\Http\Requests\SaveDebtRequest;
 use App\Models\Debt;
 use App\MovementDirection;
@@ -34,7 +35,14 @@ class DebtController extends Controller
     {
         $this->saveDebt->handle($request->user(), $debt, $request->debtData());
 
-        return to_route('debts.show', $debt);
+        return redirect()->back(fallback: route('debts.show', $debt));
+    }
+
+    public function settle(Request $request, Debt $debt, SettleDebt $settleDebt): RedirectResponse
+    {
+        $settleDebt->handle($request->user(), $debt);
+
+        return to_route('debts.index');
     }
 
     public function show(Request $request, Debt $debt): Response
