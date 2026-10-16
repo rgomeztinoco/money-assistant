@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -144,10 +145,16 @@ export default function Debts({
                                 <Tabs value={status} onValueChange={setStatus}>
                                     <TabsList>
                                         <TabsTrigger value="active">
-                                            Active ({counts.active})
+                                            Active
+                                            <Badge variant="secondary">
+                                                {counts.active}
+                                            </Badge>
                                         </TabsTrigger>
                                         <TabsTrigger value="settled">
-                                            Settled ({counts.settled})
+                                            Settled
+                                            <Badge variant="secondary">
+                                                {counts.settled}
+                                            </Badge>
                                         </TabsTrigger>
                                     </TabsList>
                                 </Tabs>
