@@ -14,7 +14,7 @@ use Carbon\CarbonImmutable;
 
 final class ReadPeriodSummary
 {
-    /** @return array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, debt_payments_made_minor: string, debt_payments_received_minor: string} */
+    /** @return array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, debt_payments_made_minor: string, debt_payments_received_minor: string, borrowed_minor: string, lent_minor: string} */
     public function handle(
         User $owner,
         Currency $currency,
@@ -26,6 +26,8 @@ final class ReadPeriodSummary
         $movedToSavings = ExactInteger::from(0);
         $paymentsMade = ExactInteger::from(0);
         $paymentsReceived = ExactInteger::from(0);
+        $borrowed = ExactInteger::from(0);
+        $lent = ExactInteger::from(0);
 
         $transactions = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
@@ -50,6 +52,14 @@ final class ReadPeriodSummary
                 }
             }
 
+            if ($transaction->kind === TransactionKind::Debt && $transaction->debtEntry?->kind === DebtEntryKind::Funding) {
+                if ($transaction->direction === MovementDirection::Credit) {
+                    $borrowed = $borrowed->add($amount);
+                } else {
+                    $lent = $lent->add($amount);
+                }
+            }
+
             if ($transaction->kind === TransactionKind::Income) {
                 $income = $income->add($amount);
             }
@@ -68,6 +78,8 @@ final class ReadPeriodSummary
             'moved_to_savings_minor' => $movedToSavings->value(),
             'debt_payments_made_minor' => $paymentsMade->value(),
             'debt_payments_received_minor' => $paymentsReceived->value(),
+            'borrowed_minor' => $borrowed->value(),
+            'lent_minor' => $lent->value(),
         ];
     }
 }

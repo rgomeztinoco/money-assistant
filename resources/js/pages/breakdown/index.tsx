@@ -223,6 +223,26 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                                     currency,
                                 )}
                             </dd>
+                            <dt className="text-muted-foreground">Borrowed</dt>
+                            <dd
+                                className="text-right font-medium tabular-nums"
+                                data-test={`borrowed-${currency}`}
+                            >
+                                {formatMinorUnits(
+                                    props.summary[currency].borrowed_minor,
+                                    currency,
+                                )}
+                            </dd>
+                            <dt className="text-muted-foreground">Lent</dt>
+                            <dd
+                                className="text-right font-medium tabular-nums"
+                                data-test={`lent-${currency}`}
+                            >
+                                {formatMinorUnits(
+                                    props.summary[currency].lent_minor,
+                                    currency,
+                                )}
+                            </dd>
                         </dl>
                     </section>
                 ))}

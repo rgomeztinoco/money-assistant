@@ -95,6 +95,8 @@ export type BreakdownProps = {
             moved_to_savings_minor: string;
             debt_payments_made_minor: string;
             debt_payments_received_minor: string;
+            borrowed_minor: string;
+            lent_minor: string;
         }
     >;
     categorization: Record<

@@ -138,7 +138,7 @@ class ReadBreakdown
         ];
     }
 
-    /** @return array<string, array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, debt_payments_made_minor: string, debt_payments_received_minor: string}> */
+    /** @return array<string, array{net_spending_minor: string, income_minor: string, moved_to_savings_minor: string, debt_payments_made_minor: string, debt_payments_received_minor: string, borrowed_minor: string, lent_minor: string}> */
     private function summaries(User $owner, CarbonImmutable $dateFrom, CarbonImmutable $dateTo): array
     {
         return collect(Currency::cases())
