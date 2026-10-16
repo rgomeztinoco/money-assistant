@@ -399,3 +399,41 @@ test('a backdated repayment is valid when the current balance remains nonnegativ
     expect($debt->fresh()->balance()->value())->toBe('0');
     $this->assertDatabaseHas('debt_entries', ['debt_id' => $debt->id, 'kind' => 'repayment', 'occurred_on' => '2026-08-02', 'amount_minor' => 10000]);
 });
+
+test('a linked payment on a negative debt allows detail edits but requires a complete balance repair', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['kind' => 'debt', 'direction' => 'debit', 'amount_minor' => 15000, 'occurred_on' => '2026-08-02']);
+    $entry = DebtEntry::factory()->for($debt)->for($payment)->create(['kind' => 'repayment', 'amount_minor' => 15000, 'occurred_on' => '2026-08-02']);
+    $details = ['kind' => 'debt', 'direction' => 'debit', 'currency' => 'PEN', 'amount_minor' => '15000', 'occurred_on' => '2026-08-03', 'description' => 'Clarified payment'];
+
+    $this->actingAs($owner)->put("/transactions/{$payment->id}", $details)->assertSessionHasNoErrors();
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'description' => 'Clarified payment', 'occurred_on' => '2026-08-03']);
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'occurred_on' => '2026-08-03']);
+    expect($debt->fresh()->balance()->value())->toBe('-5000');
+
+    $this->put("/transactions/{$payment->id}", [...$details, 'amount_minor' => '10001'])->assertSessionHasErrors('amount_minor');
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'amount_minor' => 15000]);
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'amount_minor' => 15000]);
+    $this->put("/transactions/{$payment->id}", [...$details, 'amount_minor' => '10000'])->assertSessionHasNoErrors();
+    expect($debt->fresh()->balance()->value())->toBe('0');
+});
+
+test('editing and unlinking a voided allocation leave an existing negative balance unchanged', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 0, 'opened_on' => '2026-08-01']);
+    DebtEntry::factory()->for($debt)->create(['amount_minor' => -100]);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['kind' => 'debt', 'direction' => 'debit', 'amount_minor' => 1000, 'occurred_on' => '2026-08-02', 'voided_at' => now()]);
+    $entry = DebtEntry::factory()->for($debt)->for($payment)->create(['kind' => 'repayment', 'amount_minor' => 1000, 'occurred_on' => '2026-08-02']);
+    $details = ['kind' => 'debt', 'direction' => 'debit', 'currency' => 'PEN', 'amount_minor' => '2000', 'occurred_on' => '2026-08-03', 'description' => 'Corrected voided payment'];
+
+    $this->actingAs($owner)->put("/transactions/{$payment->id}", $details)->assertSessionHasNoErrors();
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'amount_minor' => 2000, 'description' => 'Corrected voided payment']);
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'amount_minor' => 2000]);
+    expect($debt->fresh()->balance()->value())->toBe('-100');
+    $this->put("/transactions/{$payment->id}", [...$details, 'kind' => 'spending', 'unlink_debt' => true])->assertSessionHasNoErrors();
+    $this->assertDatabaseMissing('debt_entries', ['id' => $entry->id]);
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'kind' => 'spending', 'amount_minor' => 2000]);
+    expect($payment->fresh()->voided_at)->not->toBeNull();
+    expect($debt->fresh()->balance()->value())->toBe('-100');
+});

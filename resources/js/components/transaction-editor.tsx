@@ -118,23 +118,24 @@ export function TransactionEditor({
     const [direction, setDirection] = useState<MovementDirection>(
         transaction?.direction ?? 'debit',
     );
-    const debtDirection = transaction?.direction ?? direction;
+    const recordedDirection = transaction?.direction ?? direction;
     const selectedDebt = debt_options.find(
         (debt) => String(debt.id) === debtId,
     );
     const debtEntryKind = selectedDebt
-        ? (selectedDebt.direction === 'owed') === (debtDirection === 'credit')
+        ? (selectedDebt.direction === 'owed') ===
+          (recordedDirection === 'credit')
             ? 'funding'
             : 'repayment'
         : '';
     const debtOperationLabel = debtEntryKind
         ? {
               funding:
-                  debtDirection === 'credit'
+                  recordedDirection === 'credit'
                       ? 'Additional borrowing'
                       : 'Additional lending',
               repayment:
-                  debtDirection === 'credit' ? 'Collection' : 'Repayment',
+                  recordedDirection === 'credit' ? 'Collection' : 'Repayment',
           }[debtEntryKind]
         : null;
     const [amount, setAmount] = useState(
@@ -290,7 +291,7 @@ export function TransactionEditor({
                                         id="transaction-debt-direction"
                                         className="type-meta text-muted-foreground"
                                     >
-                                        {debtDirection === 'debit'
+                                        {recordedDirection === 'debit'
                                             ? 'Money out'
                                             : 'Money in'}
                                         {debtOperationLabel &&
@@ -338,7 +339,7 @@ export function TransactionEditor({
                                 <input
                                     type="hidden"
                                     name="direction"
-                                    value={debtDirection}
+                                    value={recordedDirection}
                                 />
                             ) : (
                                 <div className="grid gap-2">
