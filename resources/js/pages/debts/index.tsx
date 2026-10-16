@@ -234,11 +234,11 @@ export default function Debts({
                                     <TableHeader className="sticky top-0 bg-card">
                                         <TableRow>
                                             <TableHead>Debt</TableHead>
-                                            <TableHead className="w-28">
-                                                Direction
-                                            </TableHead>
                                             <TableHead className="w-36 text-right">
                                                 Balance
+                                            </TableHead>
+                                            <TableHead className="w-40 text-right">
+                                                Monthly target
                                             </TableHead>
                                             <TableHead className="w-12">
                                                 <span className="sr-only">
@@ -260,37 +260,45 @@ export default function Debts({
                                                     </Link>
                                                     <p
                                                         className="truncate type-meta text-muted-foreground"
-                                                        title={
-                                                            debt.counterparty
-                                                        }
+                                                        title={`${debt.direction === 'owed' ? 'I owe' : 'Owed to me'} · ${debt.counterparty}`}
                                                     >
+                                                        {debt.direction ===
+                                                        'owed'
+                                                            ? 'I owe'
+                                                            : 'Owed to me'}
+                                                        {' · '}
                                                         {debt.counterparty}
                                                     </p>
-                                                    {debt.monthly_target_minor && (
-                                                        <p className="truncate type-meta text-muted-foreground">
-                                                            {formatMinorUnits(
-                                                                debt.monthly_paid_minor,
-                                                                debt.currency,
-                                                            )}{' '}
-                                                            /{' '}
-                                                            {formatMinorUnits(
-                                                                debt.monthly_target_minor,
-                                                                debt.currency,
-                                                            )}{' '}
-                                                            this month
-                                                        </p>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {debt.direction === 'owed'
-                                                        ? 'I owe'
-                                                        : 'Owed to me'}
                                                 </TableCell>
                                                 <TableCell className="text-right tabular-nums">
                                                     {formatMinorUnits(
                                                         debt.balance_minor,
                                                         debt.currency,
                                                     )}
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums">
+                                                    {debt.monthly_target_minor ===
+                                                    null ? (
+                                                        <span className="text-muted-foreground">
+                                                            No target
+                                                        </span>
+                                                    ) : (
+                                                        formatMinorUnits(
+                                                            debt.monthly_target_minor,
+                                                            debt.currency,
+                                                        )
+                                                    )}
+                                                    <p className="type-meta text-muted-foreground">
+                                                        {formatMinorUnits(
+                                                            debt.monthly_paid_minor,
+                                                            debt.currency,
+                                                        )}{' '}
+                                                        {debt.direction ===
+                                                        'owed'
+                                                            ? 'paid'
+                                                            : 'collected'}{' '}
+                                                        this month
+                                                    </p>
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <DropdownMenu>

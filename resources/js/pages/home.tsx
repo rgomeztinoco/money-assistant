@@ -44,6 +44,7 @@ import { useReportView } from '@/hooks/use-report-view';
 import {
     formatContextualDate,
     formatDateRange,
+    formatCompactMonthYear,
     formatReportingPeriod,
 } from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
@@ -52,6 +53,7 @@ import {
     categoryBreakdownUrl,
     periodBreakdownUrl,
 } from '@/lib/transaction-filter-url';
+import { cn } from '@/lib/utils';
 import { home } from '@/routes';
 import { index as debtsIndex } from '@/routes/debts';
 import { create as createStatementImport } from '@/routes/statement_imports';
@@ -942,6 +944,100 @@ function HomeBriefing({
     );
 }
 
+function HomeDebtSummary({
+    summary,
+    currencyFilter,
+}: {
+    summary: HomeProps['debt_summary'];
+    currencyFilter: Currency | null;
+}) {
+    return (
+        <Card
+            className="min-w-0 shrink-0 gap-3 py-3 xl:flex-row xl:gap-6"
+            data-test="home-debt-summary"
+        >
+            <CardHeader className="gap-1 px-4 xl:w-48 xl:shrink-0">
+                <CardTitle>
+                    <Link
+                        href={debtsIndex.url()}
+                        className="inline-flex items-center gap-2 underline-offset-4 hover:underline"
+                    >
+                        Debts <ArrowRight className="size-3.5" />
+                    </Link>
+                </CardTitle>
+                <CardDescription>
+                    Monthly targets ·{' '}
+                    {formatCompactMonthYear(`${summary.target_month}-01`)}
+                </CardDescription>
+            </CardHeader>
+            <CardContent
+                className={cn(
+                    'grid min-w-0 flex-1 gap-4 px-4 xl:pl-0',
+                    !currencyFilter && 'sm:grid-cols-2',
+                )}
+            >
+                {(['PEN', 'USD'] as const)
+                    .filter(
+                        (currency) =>
+                            !currencyFilter || currencyFilter === currency,
+                    )
+                    .map((currency) => (
+                        <div
+                            key={currency}
+                            className="grid content-start gap-1.5"
+                        >
+                            <p className="type-meta font-medium">
+                                {currency} · Current balances
+                            </p>
+                            <dl className="grid grid-cols-2 gap-3">
+                                {(
+                                    [
+                                        [
+                                            'I owe',
+                                            'owed_minor',
+                                            'outgoing_target_minor',
+                                            'Outgoing monthly target',
+                                        ],
+                                        [
+                                            'Owed to me',
+                                            'receivable_minor',
+                                            'incoming_target_minor',
+                                            'Incoming monthly target',
+                                        ],
+                                    ] as const
+                                ).map(
+                                    ([label, balance, target, targetLabel]) => (
+                                        <div key={balance} className="min-w-0">
+                                            <dt className="type-meta text-muted-foreground">
+                                                {label}
+                                            </dt>
+                                            <dd className="font-medium tabular-nums">
+                                                {formatMinorUnits(
+                                                    summary[currency][balance],
+                                                    currency,
+                                                )}
+                                            </dd>
+                                            <dd
+                                                className="type-meta text-muted-foreground"
+                                                aria-label={`${targetLabel}: ${formatMinorUnits(summary[currency][target], currency)}`}
+                                            >
+                                                {formatMinorUnits(
+                                                    summary[currency][target],
+                                                    currency,
+                                                )}{' '}
+                                                / month
+                                            </dd>
+                                        </div>
+                                    ),
+                                )}
+                            </dl>
+                        </div>
+                    ))}
+            </CardContent>
+        </Card>
+    );
+}
+
 function EmptyHome({ currency }: { currency: Currency | null }) {
     return (
         <Card className="border-dashed">
@@ -1012,79 +1108,10 @@ export default function Home(props: HomeProps) {
 
             <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 md:p-6 xl:overflow-y-auto">
                 <HomeContextBar props={props} />
-                <Card>
-                    <CardHeader>
-                        <CardTitle>
-                            <Link href={debtsIndex.url()}>Debts</Link>
-                        </CardTitle>
-                        <CardDescription>
-                            Current outstanding balances. Monthly plan and full
-                            payments for {props.debt_summary.target_month}.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="grid gap-4 sm:grid-cols-2">
-                        {(['PEN', 'USD'] as const)
-                            .filter(
-                                (currency) =>
-                                    !props.currency_filter ||
-                                    props.currency_filter === currency,
-                            )
-                            .map((currency) => {
-                                const summary = props.debt_summary[currency];
-
-                                return (
-                                    <div
-                                        key={currency}
-                                        className="flex flex-col gap-2"
-                                    >
-                                        <p className="type-subtitle">
-                                            {currency}
-                                        </p>
-                                        <dl className="grid grid-cols-2 gap-2">
-                                            {(
-                                                [
-                                                    ['I owe', 'owed_minor'],
-                                                    [
-                                                        'Owed to me',
-                                                        'receivable_minor',
-                                                    ],
-                                                    [
-                                                        'Outgoing monthly target',
-                                                        'outgoing_target_minor',
-                                                    ],
-                                                    [
-                                                        'Incoming monthly target',
-                                                        'incoming_target_minor',
-                                                    ],
-                                                    [
-                                                        'Payments made this month',
-                                                        'payments_made_minor',
-                                                    ],
-                                                    [
-                                                        'Payments collected this month',
-                                                        'payments_received_minor',
-                                                    ],
-                                                ] as const
-                                            ).map(([label, key]) => (
-                                                <div key={key}>
-                                                    <dt className="type-meta">
-                                                        {label}
-                                                    </dt>
-                                                    <dd className="tabular-nums">
-                                                        {formatMinorUnits(
-                                                            summary[key],
-                                                            currency,
-                                                        )}
-                                                    </dd>
-                                                </div>
-                                            ))}
-                                        </dl>
-                                    </div>
-                                );
-                            })}
-                    </CardContent>
-                </Card>
-
+                <HomeDebtSummary
+                    summary={props.debt_summary}
+                    currencyFilter={props.currency_filter}
+                />
                 {briefings.length === 0 ? (
                     <EmptyHome currency={props.currency_filter} />
                 ) : (
