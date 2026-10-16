@@ -114,6 +114,7 @@ export function DebtTransactionPicker({
                             variant="outline"
                             role="combobox"
                             aria-label="Choose a Transaction"
+                            aria-describedby="entry-transaction-filters"
                             aria-controls="debt-transaction-options"
                             aria-expanded={open}
                             aria-invalid={invalid}
@@ -131,7 +132,7 @@ export function DebtTransactionPicker({
                 <PopoverContent
                     container={container}
                     align="start"
-                    className="max-h-(--available-height) w-[min(32rem,calc(100vw-2rem))] gap-0 overflow-hidden p-0"
+                    className="max-h-(--available-height) w-(--anchor-width) gap-0 overflow-hidden p-0"
                 >
                     <Command shouldFilter={false}>
                         <CommandInput
@@ -178,7 +179,7 @@ export function DebtTransactionPicker({
                             ) : (
                                 <>
                                     <CommandEmpty>
-                                        No compatible Transactions found.
+                                        No Transactions match these filters.
                                     </CommandEmpty>
                                     <CommandGroup>
                                         {result?.transactions.map(

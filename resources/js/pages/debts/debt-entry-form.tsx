@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
+import { formatFullDate } from '@/lib/date-presentation';
 import {
     currencyUnitsToMinorUnits,
     minorUnitsToCurrencyUnits,
@@ -164,6 +165,11 @@ export function DebtEntryForm({
                         <FieldLabel htmlFor="entry-transaction">
                             Transaction
                         </FieldLabel>
+                        <FieldDescription id="entry-transaction-filters">
+                            Unallocated {debt.currency} ·{' '}
+                            {direction === 'debit' ? 'Money out' : 'Money in'} ·
+                            From {formatFullDate(debt.opened_on)}
+                        </FieldDescription>
                         <DebtTransactionPicker
                             key={`${debt.id}:${direction}`}
                             debtId={debt.id}

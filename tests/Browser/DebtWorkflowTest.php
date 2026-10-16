@@ -123,3 +123,24 @@ test('the debt adjustment form explains the zero floor and accepts exact settlem
     $this->assertDatabaseCount('debt_entries', 1);
     $this->assertDatabaseHas('debt_entries', ['debt_id' => $debt->id, 'amount_minor' => -10000]);
 });
+
+test('the USD Transaction picker fits its trigger and stays usable inside the operation dialog', function (int $width, int $height) {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => 'receivable', 'currency' => 'USD', 'opening_balance_minor' => 0, 'opened_on' => '2026-03-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->spending()->usd()->create(['occurred_on' => '2026-09-26', 'description' => 'USD lending with a long description that must fit the available picker width', 'amount_minor' => 2500]);
+    Transaction::factory()->count(15)->for($owner, 'owner')->spending()->usd()->create(['occurred_on' => '2026-09-25', 'amount_minor' => 100]);
+    $this->actingAs($owner);
+
+    $page = visit('/debts/'.$debt->id)->resize($width, $height);
+    $page->click('header button:has-text("Record operation")')
+        ->assertSeeIn('#entry-transaction-filters', 'USD · Money in · From 1 Mar 2026')->click('#entry-transaction')->assertSee('No Transactions match these filters.')
+        ->keys('[aria-label="Search Transactions"]', 'Escape')->select('#entry-kind', 'funding')
+        ->assertSeeIn('#entry-transaction-filters', 'USD · Money out · From 1 Mar 2026')->click('#entry-transaction')
+        ->assertVisible('[data-test="debt-transaction-'.$payment->id.'"]')
+        ->assertScript('() => { const trigger = document.querySelector("#entry-transaction").getBoundingClientRect(); const popup = document.querySelector("[data-slot=popover-content]").getBoundingClientRect(); return Math.abs(trigger.width - popup.width) <= 1; }')
+        ->assertScript('() => { const dialog = document.querySelector("[role=dialog]").getBoundingClientRect(); const popup = document.querySelector("[data-slot=popover-content]").getBoundingClientRect(); return popup.left >= dialog.left && popup.right <= dialog.right && popup.top >= dialog.top && popup.bottom <= dialog.bottom; }')
+        ->fill('[aria-label="Search Transactions"]', 'USD lending')->click('[data-test="debt-transaction-'.$payment->id.'"]')
+        ->assertMissing('[data-slot="popover-content"]')->press('Save operation')->assertMissing('[role="dialog"]')->assertSee('$ 25.00')->assertNoJavaScriptErrors();
+
+    $this->assertDatabaseHas('debt_entries', ['debt_id' => $debt->id, 'transaction_id' => $payment->id, 'kind' => 'funding', 'amount_minor' => 2500]);
+})->with(['desktop' => [1280, 900], 'mobile' => [390, 844]]);
