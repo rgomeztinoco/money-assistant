@@ -28,6 +28,7 @@ class RecordDebtEntry
                     throw ValidationException::withMessages(['occurred_on' => 'Choose a date on or after the opening date.']);
                 }
                 DebtEntry::create(['debt_id' => $debt->id, 'kind' => $kind, 'amount_minor' => $amount, 'occurred_on' => $date, 'reason' => Str::squish($reason ?? '')]);
+                $debt->ensureNonNegativeBalance('amount_minor');
 
                 return;
             }

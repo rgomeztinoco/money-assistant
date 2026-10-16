@@ -2,6 +2,7 @@
 
 namespace App\Actions\Ledger;
 
+use App\Models\Debt;
 use App\Models\Transaction;
 use App\Models\User;
 use App\TransactionVoidOperation;
@@ -24,10 +25,15 @@ class ChangeTransactionVoidState
 
             $this->ensureOperationChangesState($currentTransaction, $operation);
 
+            $entry = $currentTransaction->debtEntry()->first();
+            $debt = $entry === null ? null : Debt::query()
+                ->whereBelongsTo($owner, 'owner')->whereKey($entry->debt_id)->lockForUpdate()->firstOrFail();
+
             $currentTransaction->voided_at = $operation === TransactionVoidOperation::Void
                 ? now()->toImmutable()
                 : null;
             $currentTransaction->save();
+            $debt?->ensureNonNegativeBalance('void_state');
 
             return $currentTransaction;
         }, 3);

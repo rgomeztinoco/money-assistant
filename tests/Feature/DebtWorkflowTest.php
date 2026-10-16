@@ -261,3 +261,141 @@ test('debt Transaction search finds older matches and pages through all compatib
     $this->getJson("/debts/{$debt->id}/transactions?direction=invalid")->assertJsonValidationErrors('direction');
     $this->actingAs(User::factory()->create())->getJson("/debts/{$debt->id}/transactions?direction=debit")->assertNotFound();
 });
+
+test('signed adjustments stop at zero without reversing the debt direction', function (string $direction) {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => $direction, 'opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $payload = ['kind' => 'adjustment', 'occurred_on' => '2026-08-02', 'amount_minor' => '-15000', 'reason' => 'Agreed correction'];
+
+    $this->actingAs($owner)->post("/debts/{$debt->id}/entries", $payload)->assertSessionHasErrors([
+        'amount_minor' => 'This change would leave the debt balance below zero. Record any amount owed in the other direction as a separate debt.',
+    ]);
+    $this->assertDatabaseCount('debt_entries', 0);
+    $this->post("/debts/{$debt->id}/entries", [...$payload, 'amount_minor' => '-10000'])->assertSessionHasNoErrors();
+    $this->get("/debts/{$debt->id}")->assertInertia(fn (Assert $page) => $page->where('debt.balance_minor', '0')->where('debt.status', 'settled')->where('debt.direction', $direction));
+    $this->assertDatabaseCount('transactions', 0);
+})->with(['owed', 'receivable']);
+
+test('manual overpayments roll back the operation and its cash movement', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+
+    $this->actingAs($owner)->post("/debts/{$debt->id}/entries", ['kind' => 'repayment', 'occurred_on' => '2026-08-02', 'amount' => '100.01', 'description' => 'Overpayment'])->assertSessionHasErrors('amount_minor');
+
+    $this->assertDatabaseCount('transactions', 0);
+    $this->assertDatabaseCount('debt_entries', 0);
+    expect($debt->fresh()->balance()->value())->toBe('10000');
+});
+
+test('allocating an existing overpayment preserves its original classification and source', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create(['occurred_on' => '2026-08-02', 'amount_minor' => 10001, 'instrument_label' => 'Original source']);
+
+    $this->actingAs($owner)->post("/debts/{$debt->id}/entries", ['kind' => 'repayment', 'transaction_id' => $payment->id])->assertSessionHasErrors('amount_minor');
+
+    $this->assertDatabaseCount('transactions', 1);
+    $this->assertDatabaseCount('debt_entries', 0);
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'kind' => 'spending', 'amount_minor' => 10001, 'instrument_label' => 'Original source']);
+});
+
+test('adjustment and opening balance edits cannot make the current balance negative', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $entry = DebtEntry::factory()->for($debt)->create(['amount_minor' => -2500, 'occurred_on' => '2026-08-02', 'reason' => 'Original correction']);
+    $this->actingAs($owner)->put("/debts/{$debt->id}/entries/{$entry->id}", ['kind' => 'adjustment', 'occurred_on' => '2026-08-03', 'amount_minor' => '-10001', 'reason' => 'Invalid correction'])->assertSessionHasErrors('amount_minor');
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'amount_minor' => -2500, 'reason' => 'Original correction', 'occurred_on' => '2026-08-02']);
+
+    $this->put("/debts/{$debt->id}", ['name' => 'Invalid rename', 'counterparty' => $debt->counterparty, 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => '2499', 'opened_on' => '2026-08-01'])->assertSessionHasErrors('opening_balance_minor');
+    $this->assertDatabaseHas('debts', ['id' => $debt->id, 'name' => $debt->name, 'opening_balance_minor' => 10000]);
+});
+
+test('payment corrections through either editor reject overpayment atomically', function (string $editor) {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['kind' => 'debt', 'direction' => 'debit', 'amount_minor' => 5000, 'occurred_on' => '2026-08-02', 'description' => 'Original payment']);
+    $entry = DebtEntry::factory()->for($debt)->for($payment)->create(['kind' => 'repayment', 'amount_minor' => 5000, 'occurred_on' => '2026-08-02']);
+    $path = $editor === 'transaction' ? "/transactions/{$payment->id}" : "/debts/{$debt->id}/entries/{$entry->id}";
+    $kind = $editor === 'transaction' ? 'debt' : 'repayment';
+
+    $this->actingAs($owner)->put($path, ['kind' => $kind, 'direction' => 'debit', 'currency' => 'PEN', 'amount_minor' => '10001', 'occurred_on' => '2026-08-03', 'description' => 'Invalid payment'])->assertSessionHasErrors('amount_minor');
+
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'amount_minor' => 5000, 'description' => 'Original payment', 'occurred_on' => '2026-08-02']);
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'amount_minor' => 5000, 'occurred_on' => '2026-08-02']);
+})->with(['transaction', 'debt operation']);
+
+test('voiding funding or restoring a repayment cannot make a debt negative', function (string $kind, string $method, bool $voided) {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 0]);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['kind' => 'debt', 'direction' => $kind === 'funding' ? 'credit' : 'debit', 'amount_minor' => 10000, 'voided_at' => $voided ? now() : null]);
+    DebtEntry::factory()->for($debt)->for($payment)->create(['kind' => $kind, 'amount_minor' => 10000]);
+    if ($kind === 'funding') {
+        DebtEntry::factory()->for($debt)->create(['amount_minor' => -10000]);
+    }
+
+    $this->actingAs($owner)->{$method}(route($voided ? 'transactions.void.destroy' : 'transactions.void.store', $payment))->assertSessionHasErrors('void_state');
+
+    expect($payment->fresh()->voided_at !== null)->toBe($voided);
+    expect($debt->fresh()->balance()->value())->toBe('0');
+})->with(['void funding' => ['funding', 'post', false], 'restore repayment' => ['repayment', 'delete', true]]);
+
+test('unlinking or reassigning funding protects the debt it leaves behind', function (string $operation) {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 0, 'opened_on' => '2026-08-01']);
+    $other = Debt::factory()->for($owner, 'owner')->create(['opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['kind' => 'debt', 'direction' => 'credit', 'amount_minor' => 10000, 'occurred_on' => '2026-08-02']);
+    $entry = DebtEntry::factory()->for($debt)->for($payment)->create(['kind' => 'funding', 'amount_minor' => 10000, 'occurred_on' => '2026-08-02']);
+    DebtEntry::factory()->for($debt)->create(['amount_minor' => -10000]);
+    $allocation = $operation === 'unlink'
+        ? ['kind' => 'income', 'income_source' => 'other', 'unlink_debt' => true]
+        : ['kind' => 'debt', 'debt_id' => $other->id, 'debt_entry_kind' => 'funding'];
+
+    $this->actingAs($owner)->put("/transactions/{$payment->id}", [...$allocation, 'direction' => 'credit', 'currency' => 'PEN', 'amount_minor' => '10000', 'occurred_on' => '2026-08-02', 'description' => 'Invalid move'])->assertSessionHasErrors($operation === 'unlink' ? 'unlink_debt' : 'debt_id');
+
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'debt_id' => $debt->id]);
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'kind' => 'debt', 'description' => $payment->description]);
+    expect($debt->fresh()->balance()->value())->toBe('0');
+    expect($other->fresh()->balance()->value())->toBe('10000');
+})->with(['unlink', 'reassign']);
+
+test('reassigning a repayment also protects the destination debt', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opened_on' => '2026-08-01']);
+    $other = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 100, 'opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['kind' => 'debt', 'direction' => 'debit', 'amount_minor' => 5000, 'occurred_on' => '2026-08-02']);
+    $entry = DebtEntry::factory()->for($debt)->for($payment)->create(['kind' => 'repayment', 'amount_minor' => 5000, 'occurred_on' => '2026-08-02']);
+
+    $this->actingAs($owner)->put("/transactions/{$payment->id}", ['kind' => 'debt', 'debt_id' => $other->id, 'debt_entry_kind' => 'repayment', 'direction' => 'debit', 'currency' => 'PEN', 'amount_minor' => '5000', 'occurred_on' => '2026-08-02', 'description' => $payment->description])->assertSessionHasErrors('amount_minor');
+
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'debt_id' => $debt->id]);
+    expect($debt->fresh()->balance()->value())->toBe('5000');
+    expect($other->fresh()->balance()->value())->toBe('100');
+});
+
+test('existing negative debts allow detail edits but balance corrections must fully resolve the deficit', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $entry = DebtEntry::factory()->for($debt)->create(['amount_minor' => -15000, 'occurred_on' => '2026-08-02']);
+    $details = ['name' => 'Renamed loan', 'counterparty' => $debt->counterparty, 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => '10000', 'opened_on' => '2026-08-01'];
+    $this->actingAs($owner)->put("/debts/{$debt->id}", $details)->assertSessionHasNoErrors();
+    $this->assertDatabaseHas('debts', ['id' => $debt->id, 'name' => 'Renamed loan']);
+    $this->put("/debts/{$debt->id}/entries/{$entry->id}", ['kind' => 'adjustment', 'amount_minor' => '-15000', 'occurred_on' => '2026-08-02', 'reason' => 'Clarified reason'])->assertSessionHasNoErrors();
+    $this->assertDatabaseHas('debt_entries', ['id' => $entry->id, 'reason' => 'Clarified reason']);
+
+    $this->put("/debts/{$debt->id}", [...$details, 'opening_balance_minor' => '14999'])->assertSessionHasErrors('opening_balance_minor');
+    $this->assertDatabaseHas('debts', ['id' => $debt->id, 'opening_balance_minor' => 10000]);
+    $this->put("/debts/{$debt->id}", [...$details, 'opening_balance_minor' => '15000'])->assertSessionHasNoErrors();
+    expect($debt->fresh()->balance()->value())->toBe('0');
+    $this->assertDatabaseCount('debt_entries', 1);
+});
+
+test('a backdated repayment is valid when the current balance remains nonnegative', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => 0, 'opened_on' => '2026-08-01']);
+    DebtEntry::factory()->for($debt)->create(['amount_minor' => 10000, 'occurred_on' => '2026-08-10']);
+
+    $this->actingAs($owner)->post("/debts/{$debt->id}/entries", ['kind' => 'repayment', 'occurred_on' => '2026-08-02', 'amount' => '100.00', 'description' => 'Backdated payment'])->assertSessionHasNoErrors();
+
+    expect($debt->fresh()->balance()->value())->toBe('0');
+    $this->assertDatabaseHas('debt_entries', ['debt_id' => $debt->id, 'kind' => 'repayment', 'occurred_on' => '2026-08-02', 'amount_minor' => 10000]);
+});

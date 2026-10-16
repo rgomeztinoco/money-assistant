@@ -82,3 +82,44 @@ test('debt summaries keep currencies separate while tables filter and scroll wit
         ->assertScript('() => { const table = document.querySelector(\'[data-test="debt-history"]\'); return table.scrollHeight > table.clientHeight; }')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-reviewed-history-scroll');
     $page->resize(390, 844)->assertSee('Family loan')->assertVisible('header button:has-text("Record operation")')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-reviewed-mobile');
 });
+
+test('the Transaction editor derives debt operations from the recorded money direction', function (string $direction, string $debtDirection, string $operation, string $label) {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => $debtDirection, 'currency' => 'PEN', 'opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $other = Debt::factory()->for($owner, 'owner')->create(['direction' => $debtDirection === 'owed' ? 'receivable' : 'owed', 'currency' => 'PEN', 'opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['kind' => $direction === 'debit' ? 'spending' : 'income', 'direction' => $direction, 'amount_minor' => 2500, 'occurred_on' => '2026-08-02']);
+    $this->actingAs($owner);
+
+    $page = visit('/transactions')->resize(1280, 900);
+    $page->click('[data-test="transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')
+        ->select('#transaction-kind', 'debt')->assertMissing('#transaction-direction')->assertMissing('#transaction-debt-operation')
+        ->select('#transaction-debt', (string) $other->id)->assertValue('input[name="debt_entry_kind"]', $operation === 'funding' ? 'repayment' : 'funding')
+        ->select('#transaction-debt', (string) $debt->id)->assertSeeIn('#transaction-debt-direction', $label)
+        ->assertValue('input[name="direction"]', $direction)->assertValue('input[name="debt_entry_kind"]', $operation)
+        ->press('Save Transaction')->assertSee('Transaction updated.')->assertMissing('[role="dialog"]')->assertNoJavaScriptErrors();
+
+    $this->assertDatabaseHas('transactions', ['id' => $payment->id, 'direction' => $direction, 'kind' => 'debt', 'amount_minor' => 2500]);
+    $this->assertDatabaseHas('debt_entries', ['transaction_id' => $payment->id, 'debt_id' => $debt->id, 'kind' => $operation]);
+})->with([
+    'repayment made' => ['debit', 'owed', 'repayment', 'Money out · Repayment'],
+    'collection' => ['credit', 'receivable', 'repayment', 'Money in · Collection'],
+    'borrowing' => ['credit', 'owed', 'funding', 'Money in · Additional borrowing'],
+    'lending' => ['debit', 'receivable', 'funding', 'Money out · Additional lending'],
+]);
+
+test('the debt adjustment form explains the zero floor and accepts exact settlement', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => 'receivable', 'currency' => 'PEN', 'opening_balance_minor' => 10000, 'opened_on' => '2026-08-01']);
+    $this->actingAs($owner);
+
+    $page = visit('/debts/'.$debt->id)->resize(1280, 900);
+    $page->click('header button:has-text("Record operation")')->select('#entry-kind', 'adjustment')
+        ->fill('#entry-amount', '-150')->fill('#entry-date', '2026-08-02')->fill('#entry-detail', 'Agreed correction')->press('Save operation')
+        ->assertSeeIn('[role="dialog"]', 'This change would leave the debt balance below zero.')
+        ->assertSee('S/ 100.00')->fill('#entry-amount', '-100')->press('Save operation')
+        ->assertMissing('[role="dialog"]')->assertSee('S/ 0.00')->assertSee('Settled')->assertNoJavaScriptErrors();
+
+    $this->assertDatabaseCount('transactions', 0);
+    $this->assertDatabaseCount('debt_entries', 1);
+    $this->assertDatabaseHas('debt_entries', ['debt_id' => $debt->id, 'amount_minor' => -10000]);
+});

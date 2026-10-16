@@ -89,8 +89,8 @@ class UpdateTransaction
             $currentTransaction->refund_relationship_review_reasons = $this->refundReviewReasons(
                 $currentTransaction,
             );
-            $this->syncDebtAllocation->handle($owner, $currentTransaction, $debtId, $debtEntryKind, $unlinkDebt);
             $currentTransaction->save();
+            $this->syncDebtAllocation->handle($owner, $currentTransaction, $debtId, $debtEntryKind, $unlinkDebt);
             if ($kind === TransactionKind::Debt || $previousKind === TransactionKind::Debt) {
                 $classification = match ($kind) {
                     TransactionKind::Debt => StatementMovementClassification::Debt,

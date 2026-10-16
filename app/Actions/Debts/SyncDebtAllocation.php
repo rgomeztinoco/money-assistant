@@ -15,11 +15,16 @@ class SyncDebtAllocation
     public function handle(User $owner, Transaction $transaction, ?int $debtId, ?DebtEntryKind $kind, bool $unlink): void
     {
         $entry = $transaction->debtEntry()->lockForUpdate()->first();
+        $previousDebt = $entry === null ? null : Debt::query()
+            ->whereBelongsTo($owner, 'owner')->whereKey($entry->debt_id)->lockForUpdate()->firstOrFail();
         if ($unlink) {
             if ($transaction->kind === TransactionKind::Debt) {
                 throw ValidationException::withMessages(['kind' => 'Choose the replacement Kind when unlinking a debt.']);
             }
             $entry?->delete();
+            if ($entry !== null && $transaction->voided_at === null) {
+                $previousDebt->ensureNonNegativeBalance('unlink_debt');
+            }
 
             return;
         }
@@ -52,6 +57,14 @@ class SyncDebtAllocation
             throw ValidationException::withMessages(['debt_id' => 'Unlink the active Refunds before allocating this Transaction.']);
         }
         $entry ??= new DebtEntry(['transaction_id' => $transaction->id]);
-        $entry->fill(['debt_id' => $debt->id, 'kind' => $kind, 'amount_minor' => $transaction->amount_minor, 'occurred_on' => $transaction->occurred_on])->save();
+        $entry->fill(['debt_id' => $debt->id, 'kind' => $kind, 'amount_minor' => $transaction->amount_minor, 'occurred_on' => $transaction->occurred_on]);
+        $balanceChanged = ! $entry->exists || $entry->isDirty(['debt_id', 'kind', 'amount_minor']);
+        $entry->save();
+        if ($balanceChanged && $transaction->voided_at === null) {
+            $debt->ensureNonNegativeBalance('amount_minor');
+            if ($previousDebt !== null && $previousDebt->id !== $debt->id) {
+                $previousDebt->ensureNonNegativeBalance('debt_id');
+            }
+        }
     }
 }

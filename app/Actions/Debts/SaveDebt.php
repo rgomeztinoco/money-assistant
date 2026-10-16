@@ -23,7 +23,12 @@ class SaveDebt
                     throw ValidationException::withMessages(['opened_on' => 'The opening date cannot be after debt history.']);
                 }
             }
-            $debt->fill([...$data, 'user_id' => $owner->id, 'name' => Str::squish($data['name']), 'counterparty' => Str::squish($data['counterparty'])])->save();
+            $debt->fill([...$data, 'user_id' => $owner->id, 'name' => Str::squish($data['name']), 'counterparty' => Str::squish($data['counterparty'])]);
+            $balanceChanged = $debt->isDirty('opening_balance_minor');
+            $debt->save();
+            if ($balanceChanged) {
+                $debt->ensureNonNegativeBalance('opening_balance_minor');
+            }
 
             return $debt;
         });

@@ -7,6 +7,7 @@ use App\Http\Requests\ChangeTransactionVoidStateRequest;
 use App\Models\Transaction;
 use App\TransactionVoidOperation;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use InvalidArgumentException;
 use Throwable;
@@ -44,6 +45,10 @@ class TransactionVoidController extends Controller
             );
         } catch (InvalidArgumentException $exception) {
             return $this->stateErrorResponse('void_state', $exception);
+        } catch (ValidationException $exception) {
+            Inertia::flash('transaction_state_error', $exception->getMessage());
+
+            throw $exception;
         }
 
         Inertia::flash('toast', [

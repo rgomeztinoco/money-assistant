@@ -42,6 +42,7 @@ import {
     movementSupportsCategory,
     transferPurposeOptions,
 } from '@/lib/money-movement';
+import { cn } from '@/lib/utils';
 import type { Debt } from '@/pages/debts/types';
 import type {
     Currency,
@@ -109,9 +110,6 @@ export function TransactionEditor({
     const [debtId, setDebtId] = useState(
         transaction?.debt_allocation?.debt_id.toString() ?? '',
     );
-    const [debtEntryKind, setDebtEntryKind] = useState(
-        transaction?.debt_allocation?.kind ?? 'repayment',
-    );
     const form = useRef<FormComponentRef>(null);
     const splitRemovalConfirmed = useRef(false);
     const [kind, setKind] = useState<TransactionKind>(
@@ -120,6 +118,25 @@ export function TransactionEditor({
     const [direction, setDirection] = useState<MovementDirection>(
         transaction?.direction ?? 'debit',
     );
+    const debtDirection = transaction?.direction ?? direction;
+    const selectedDebt = debt_options.find(
+        (debt) => String(debt.id) === debtId,
+    );
+    const debtEntryKind = selectedDebt
+        ? (selectedDebt.direction === 'owed') === (debtDirection === 'credit')
+            ? 'funding'
+            : 'repayment'
+        : '';
+    const debtOperationLabel = debtEntryKind
+        ? {
+              funding:
+                  debtDirection === 'credit'
+                      ? 'Additional borrowing'
+                      : 'Additional lending',
+              repayment:
+                  debtDirection === 'credit' ? 'Collection' : 'Repayment',
+          }[debtEntryKind]
+        : null;
     const [amount, setAmount] = useState(
         transaction ? minorUnitsToCurrencyUnits(transaction.amount_minor) : '',
     );
@@ -236,7 +253,14 @@ export function TransactionEditor({
                                 />
                             )}
 
-                        <div className="grid gap-3 rounded-xl border bg-muted/30 p-4 sm:grid-cols-[minmax(0,1fr)_7rem_9rem] sm:items-end">
+                        <div
+                            className={cn(
+                                'grid gap-3 rounded-xl border bg-muted/30 p-4 sm:items-end',
+                                kind === 'debt'
+                                    ? 'sm:grid-cols-[minmax(0,1fr)_7rem]'
+                                    : 'sm:grid-cols-[minmax(0,1fr)_7rem_9rem]',
+                            )}
+                        >
                             <div className="grid gap-2">
                                 <Label htmlFor="transaction-amount">
                                     Amount
@@ -255,7 +279,24 @@ export function TransactionEditor({
                                     }}
                                     placeholder="12.50"
                                     className="h-12 text-2xl font-semibold tabular-nums"
+                                    aria-describedby={
+                                        kind === 'debt'
+                                            ? 'transaction-debt-direction'
+                                            : undefined
+                                    }
                                 />
+                                {kind === 'debt' && (
+                                    <p
+                                        id="transaction-debt-direction"
+                                        className="type-meta text-muted-foreground"
+                                    >
+                                        {debtDirection === 'debit'
+                                            ? 'Money out'
+                                            : 'Money in'}
+                                        {debtOperationLabel &&
+                                            ` · ${debtOperationLabel}`}
+                                    </p>
+                                )}
                                 <InputError
                                     message={
                                         errors.amount ?? errors.amount_minor
@@ -293,29 +334,38 @@ export function TransactionEditor({
                                         </p>
                                     )}
                             </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="transaction-direction">
-                                    Movement Direction
-                                </Label>
-                                <NativeSelect
-                                    id="transaction-direction"
+                            {kind === 'debt' ? (
+                                <input
+                                    type="hidden"
                                     name="direction"
-                                    value={direction}
-                                    onChange={(event) => {
-                                        const value = event.currentTarget.value;
-
-                                        if (
-                                            value === 'debit' ||
-                                            value === 'credit'
-                                        ) {
-                                            setDirection(value);
-                                        }
-                                    }}
-                                    options={movementDirectionOptions}
-                                    className="h-12"
+                                    value={debtDirection}
                                 />
-                                <InputError message={errors.direction} />
-                            </div>
+                            ) : (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="transaction-direction">
+                                        Movement Direction
+                                    </Label>
+                                    <NativeSelect
+                                        id="transaction-direction"
+                                        name="direction"
+                                        value={direction}
+                                        onChange={(event) => {
+                                            const value =
+                                                event.currentTarget.value;
+
+                                            if (
+                                                value === 'debit' ||
+                                                value === 'credit'
+                                            ) {
+                                                setDirection(value);
+                                            }
+                                        }}
+                                        options={movementDirectionOptions}
+                                        className="h-12"
+                                    />
+                                    <InputError message={errors.direction} />
+                                </div>
+                            )}
                         </div>
 
                         <div className="grid gap-4 sm:grid-cols-2">
@@ -405,47 +455,17 @@ export function TransactionEditor({
                                             {errors.debt_id}
                                         </FieldError>
                                     </Field>
-                                    <Field
-                                        data-invalid={Boolean(
-                                            errors.debt_entry_kind,
-                                        )}
-                                    >
-                                        <FieldLabel htmlFor="transaction-debt-operation">
-                                            Debt operation
-                                        </FieldLabel>
-                                        <NativeSelect
-                                            id="transaction-debt-operation"
-                                            aria-invalid={Boolean(
-                                                errors.debt_entry_kind,
-                                            )}
-                                            name="debt_entry_kind"
-                                            value={debtEntryKind}
-                                            onChange={(event) =>
-                                                setDebtEntryKind(
-                                                    event.target.value as
-                                                        'funding' | 'repayment',
-                                                )
-                                            }
-                                            options={[
-                                                {
-                                                    value: 'repayment',
-                                                    label: 'Repayment or collection',
-                                                },
-                                                {
-                                                    value: 'funding',
-                                                    label: 'Additional borrowing or lending',
-                                                },
-                                            ]}
-                                        />
-                                        <FieldError>
-                                            {errors.debt_entry_kind}
-                                        </FieldError>
-                                    </Field>
-                                    <p className="type-meta">
-                                        The full posted amount counts as
-                                        principal. Keep the recorded movement
-                                        direction and currency.
-                                    </p>
+                                    <input
+                                        type="hidden"
+                                        name="debt_entry_kind"
+                                        value={debtEntryKind}
+                                    />
+                                    <InputError
+                                        message={
+                                            errors.debt_entry_kind ??
+                                            errors.direction
+                                        }
+                                    />
                                 </FieldGroup>
                             )}
                             {transaction?.debt_allocation &&

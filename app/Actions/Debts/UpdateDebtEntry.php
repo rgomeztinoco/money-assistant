@@ -26,7 +26,12 @@ class UpdateDebtEntry
                 throw ValidationException::withMessages(['occurred_on' => 'Choose a date on or after the opening date.']);
             }
             if ($entry->kind === DebtEntryKind::Adjustment) {
-                $entry->fill(['amount_minor' => $amount, 'occurred_on' => $date, 'reason' => Str::squish($reason ?? '')])->save();
+                $entry->fill(['amount_minor' => $amount, 'occurred_on' => $date, 'reason' => Str::squish($reason ?? '')]);
+                $balanceChanged = $entry->isDirty('amount_minor');
+                $entry->save();
+                if ($balanceChanged) {
+                    $debt->ensureNonNegativeBalance('amount_minor');
+                }
 
                 return;
             }

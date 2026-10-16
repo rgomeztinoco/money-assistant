@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Validation\ValidationException;
 
 /**
  * @property int $id
@@ -57,6 +58,17 @@ class Debt extends Model
         }
 
         return $balance;
+    }
+
+    public function ensureNonNegativeBalance(string $field): void
+    {
+        $this->load('entries.transaction');
+
+        if ($this->balance()->compare(ExactInteger::from(0)) < 0) {
+            throw ValidationException::withMessages([
+                $field => 'This change would leave the debt balance below zero. Record any amount owed in the other direction as a separate debt.',
+            ]);
+        }
     }
 
     /** @return array<string, string> */
