@@ -1,7 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     Dialog,
     DialogContent,
@@ -86,150 +86,171 @@ export default function Debts({
                     </div>
                     <Button onClick={() => setCreating(true)}>Add debt</Button>
                 </header>
-                <section
-                    aria-label="Debt balances"
-                    className="grid shrink-0 gap-4 border-y py-4 sm:grid-cols-2"
-                >
-                    {totals.map((total) => (
-                        <div
-                            key={total.currency}
-                            className="flex flex-col gap-2"
-                        >
-                            <h2 className="type-section-title">
-                                {total.currency}
-                            </h2>
-                            <dl className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <dt className="type-meta text-muted-foreground">
-                                        I owe
-                                    </dt>
-                                    <dd
-                                        className="type-section-title tabular-nums"
-                                        data-test={`owed-${total.currency}`}
-                                    >
-                                        {formatMinorUnits(
-                                            total.owed,
-                                            total.currency,
-                                        )}
-                                    </dd>
-                                </div>
-                                <div>
-                                    <dt className="type-meta text-muted-foreground">
-                                        Owed to me
-                                    </dt>
-                                    <dd
-                                        className="type-section-title tabular-nums"
-                                        data-test={`receivable-${total.currency}`}
-                                    >
-                                        {formatMinorUnits(
-                                            total.receivable,
-                                            total.currency,
-                                        )}
-                                    </dd>
-                                </div>
-                            </dl>
-                        </div>
-                    ))}
-                </section>
-                <div className="flex shrink-0 flex-wrap items-center gap-3">
-                    <Tabs value={status} onValueChange={setStatus}>
-                        <TabsList>
-                            <TabsTrigger value="active">
-                                Active ({counts.active})
-                            </TabsTrigger>
-                            <TabsTrigger value="settled">
-                                Settled ({counts.settled})
-                            </TabsTrigger>
-                        </TabsList>
-                    </Tabs>
-                    <Input
-                        aria-label="Search debts"
-                        placeholder="Search debts"
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                        className="w-full sm:ml-auto sm:w-60"
-                    />
-                    <NativeSelect
-                        className="sm:w-44"
-                        aria-label="Debt direction"
-                        value={direction}
-                        onChange={(event) => setDirection(event.target.value)}
-                        options={[
-                            { value: 'all', label: 'Both directions' },
-                            { value: 'owed', label: 'I owe' },
-                            { value: 'receivable', label: 'Owed to me' },
-                        ]}
-                    />
-                </div>
-                <div
-                    data-test="debt-list"
-                    className="min-h-0 flex-1 overflow-auto rounded-lg border [&>[data-slot=table-container]]:overflow-visible"
-                >
-                    {visible.length === 0 ? (
-                        <Empty>
-                            <EmptyHeader>
-                                <EmptyTitle>
-                                    {debts.length === 0
-                                        ? 'No debts recorded'
-                                        : 'No matching debts'}
-                                </EmptyTitle>
-                                <EmptyDescription>
-                                    {debts.length === 0
-                                        ? 'Add a debt with its current balance.'
-                                        : 'Try another search, direction, or tab.'}
-                                </EmptyDescription>
-                            </EmptyHeader>
-                        </Empty>
-                    ) : (
-                        <Table>
-                            <TableHeader className="sticky top-0 bg-background">
-                                <TableRow>
-                                    <TableHead>Debt</TableHead>
-                                    <TableHead>Person or institution</TableHead>
-                                    <TableHead>Direction</TableHead>
-                                    <TableHead className="text-right">
-                                        Remaining balance
-                                    </TableHead>
-                                    <TableHead>Status</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {visible.map((debt) => (
-                                    <TableRow key={debt.id}>
-                                        <TableCell>
-                                            <Link
-                                                className="font-medium underline-offset-4 hover:underline"
-                                                href={show.url(debt.id)}
+                <div className="grid min-h-0 min-w-0 flex-1 gap-5 xl:grid-cols-[minmax(16rem,0.35fr)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]">
+                    <Card
+                        className="min-w-0 self-start"
+                        aria-label="Debt balances"
+                    >
+                        <CardHeader>
+                            <CardTitle>Balances</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid gap-6 sm:grid-cols-2 xl:grid-cols-1">
+                            {totals.map((total) => (
+                                <div
+                                    key={total.currency}
+                                    className="flex flex-col gap-2"
+                                >
+                                    <h2 className="type-section-title">
+                                        {total.currency}
+                                    </h2>
+                                    <dl className="grid gap-3">
+                                        <div>
+                                            <dt className="type-meta text-muted-foreground">
+                                                I owe
+                                            </dt>
+                                            <dd
+                                                className="type-section-title tabular-nums"
+                                                data-test={`owed-${total.currency}`}
                                             >
-                                                {debt.name}
-                                            </Link>
-                                        </TableCell>
-                                        <TableCell>
-                                            {debt.counterparty}
-                                        </TableCell>
-                                        <TableCell>
-                                            {debt.direction === 'owed'
-                                                ? 'I owe'
-                                                : 'Owed to me'}
-                                        </TableCell>
-                                        <TableCell className="text-right tabular-nums">
-                                            {formatMinorUnits(
-                                                debt.balance_minor,
-                                                debt.currency,
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge variant="secondary">
-                                                {debt.status === 'settled'
-                                                    ? 'Settled'
-                                                    : 'Active'}
-                                            </Badge>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    )}
+                                                {formatMinorUnits(
+                                                    total.owed,
+                                                    total.currency,
+                                                )}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="type-meta text-muted-foreground">
+                                                Owed to me
+                                            </dt>
+                                            <dd
+                                                className="type-section-title tabular-nums"
+                                                data-test={`receivable-${total.currency}`}
+                                            >
+                                                {formatMinorUnits(
+                                                    total.receivable,
+                                                    total.currency,
+                                                )}
+                                            </dd>
+                                        </div>
+                                    </dl>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                    <Card className="min-h-0 min-w-0 gap-4 overflow-hidden">
+                        <CardHeader className="shrink-0 gap-4">
+                            <CardTitle>Your debts</CardTitle>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <Tabs value={status} onValueChange={setStatus}>
+                                    <TabsList>
+                                        <TabsTrigger value="active">
+                                            Active ({counts.active})
+                                        </TabsTrigger>
+                                        <TabsTrigger value="settled">
+                                            Settled ({counts.settled})
+                                        </TabsTrigger>
+                                    </TabsList>
+                                </Tabs>
+                                <Input
+                                    aria-label="Search debts"
+                                    placeholder="Search debts"
+                                    value={search}
+                                    onChange={(event) =>
+                                        setSearch(event.target.value)
+                                    }
+                                    className="min-w-0 flex-1 basis-40"
+                                />
+                                <NativeSelect
+                                    className="sm:w-44"
+                                    aria-label="Debt direction"
+                                    value={direction}
+                                    onChange={(event) =>
+                                        setDirection(event.target.value)
+                                    }
+                                    options={[
+                                        {
+                                            value: 'all',
+                                            label: 'Both directions',
+                                        },
+                                        { value: 'owed', label: 'I owe' },
+                                        {
+                                            value: 'receivable',
+                                            label: 'Owed to me',
+                                        },
+                                    ]}
+                                />
+                            </div>
+                        </CardHeader>
+                        <CardContent
+                            data-test="debt-list"
+                            className="min-h-0 flex-1 overflow-auto [&>[data-slot=table-container]]:overflow-visible"
+                        >
+                            {visible.length === 0 ? (
+                                <Empty>
+                                    <EmptyHeader>
+                                        <EmptyTitle>
+                                            {debts.length === 0
+                                                ? 'No debts recorded'
+                                                : 'No matching debts'}
+                                        </EmptyTitle>
+                                        <EmptyDescription>
+                                            {debts.length === 0
+                                                ? 'Add a debt with its current balance.'
+                                                : 'Try another search, direction, or tab.'}
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                </Empty>
+                            ) : (
+                                <Table className="min-w-[26rem] table-fixed">
+                                    <TableHeader className="sticky top-0 bg-card">
+                                        <TableRow>
+                                            <TableHead>Debt</TableHead>
+                                            <TableHead className="w-28">
+                                                Direction
+                                            </TableHead>
+                                            <TableHead className="w-36 text-right">
+                                                Balance
+                                            </TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {visible.map((debt) => (
+                                            <TableRow key={debt.id}>
+                                                <TableCell>
+                                                    <Link
+                                                        className="block truncate font-medium underline-offset-4 hover:underline"
+                                                        title={debt.name}
+                                                        href={show.url(debt.id)}
+                                                    >
+                                                        {debt.name}
+                                                    </Link>
+                                                    <p
+                                                        className="truncate type-meta text-muted-foreground"
+                                                        title={
+                                                            debt.counterparty
+                                                        }
+                                                    >
+                                                        {debt.counterparty}
+                                                    </p>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {debt.direction === 'owed'
+                                                        ? 'I owe'
+                                                        : 'Owed to me'}
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums">
+                                                    {formatMinorUnits(
+                                                        debt.balance_minor,
+                                                        debt.currency,
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </CardContent>
+                    </Card>
                 </div>
             </div>
             <Dialog open={creating} onOpenChange={setCreating}>

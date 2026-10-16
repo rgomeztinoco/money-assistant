@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { DateText } from '@/components/date-time';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     Dialog,
     DialogContent,
@@ -62,142 +63,176 @@ export default function DebtDetail({ debt, entries, today }: DebtDetailProps) {
                         </Button>
                     </div>
                 </header>
-                <section
-                    className="flex shrink-0 flex-wrap items-center justify-between gap-5 border-y py-4"
-                    aria-label="Debt balance"
-                >
-                    <div>
-                        <p className="type-meta text-muted-foreground">
-                            Remaining balance
-                        </p>
-                        <p className="type-page-title tabular-nums">
-                            {formatMinorUnits(
-                                debt.balance_minor,
-                                debt.currency,
-                            )}
-                        </p>
-                    </div>
-                    <div>
-                        <p className="type-meta text-muted-foreground">
-                            Opening balance
-                        </p>
-                        <p className="tabular-nums">
-                            {formatMinorUnits(
-                                debt.opening_balance_minor,
-                                debt.currency,
-                            )}
-                        </p>
-                        <p className="type-meta text-muted-foreground">
-                            <DateText value={debt.opened_on} />
-                        </p>
-                    </div>
-                    <Badge variant="secondary">
-                        {debt.status === 'settled' ? 'Settled' : 'Active'}
-                    </Badge>
-                </section>
-                <div className="flex shrink-0 items-center justify-between">
-                    <h2 className="type-section-title">History</h2>
-                    <span className="type-meta text-muted-foreground">
-                        {entries.length} operations
-                    </span>
-                </div>
-                <div
-                    data-test="debt-history"
-                    className="min-h-0 flex-1 overflow-auto rounded-lg border [&>[data-slot=table-container]]:overflow-visible"
-                >
-                    {entries.length === 0 ? (
-                        <Empty>
-                            <EmptyHeader>
-                                <EmptyTitle>No operations recorded</EmptyTitle>
-                                <EmptyDescription>
-                                    Record funding, a payment, or an adjustment.
-                                </EmptyDescription>
-                            </EmptyHeader>
-                        </Empty>
-                    ) : (
-                        <Table>
-                            <TableHeader className="sticky top-0 bg-background">
-                                <TableRow>
-                                    <TableHead>Date</TableHead>
-                                    <TableHead>Operation</TableHead>
-                                    <TableHead>Details</TableHead>
-                                    <TableHead className="text-right">
-                                        Amount
-                                    </TableHead>
-                                    <TableHead>
-                                        <span className="sr-only">Actions</span>
-                                    </TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {entries.map((entry) => (
-                                    <TableRow
-                                        key={entry.id}
-                                        data-test={`debt-entry-${entry.id}`}
-                                    >
-                                        <TableCell>
-                                            <DateText
-                                                value={entry.occurred_on}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            {entry.kind === 'repayment'
-                                                ? 'Payment'
-                                                : entry.kind === 'funding'
-                                                  ? 'Funding'
-                                                  : 'Adjustment'}{' '}
-                                            {entry.voided && (
-                                                <Badge variant="outline">
-                                                    Voided
-                                                </Badge>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            {entry.transaction_id === null ? (
-                                                entry.reason
-                                            ) : (
-                                                <Link
-                                                    className="underline underline-offset-4"
-                                                    href={transactionsIndex.url(
-                                                        {
-                                                            query: {
-                                                                selected:
-                                                                    entry.transaction_id,
-                                                                search: String(
-                                                                    entry.transaction_id,
-                                                                ),
-                                                            },
-                                                        },
-                                                    )}
-                                                >
-                                                    {entry.description ??
-                                                        `Transaction #${entry.transaction_id}`}
-                                                </Link>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-right tabular-nums">
-                                            {formatMinorUnits(
-                                                entry.amount_minor,
-                                                debt.currency,
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                aria-label={`Edit ${entry.kind === 'adjustment' ? entry.reason : entry.description}`}
-                                                onClick={() =>
-                                                    setEditingEntry(entry)
-                                                }
+                <div className="grid min-h-0 min-w-0 flex-1 gap-5 xl:grid-cols-[minmax(16rem,0.35fr)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]">
+                    <Card
+                        className="min-w-0 self-start"
+                        aria-label="Debt balance"
+                    >
+                        <CardHeader>
+                            <CardTitle>Balance</CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-6">
+                            <div>
+                                <p className="type-meta text-muted-foreground">
+                                    Remaining balance
+                                </p>
+                                <p className="type-page-title tabular-nums">
+                                    {formatMinorUnits(
+                                        debt.balance_minor,
+                                        debt.currency,
+                                    )}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="type-meta text-muted-foreground">
+                                    Opening balance
+                                </p>
+                                <p className="tabular-nums">
+                                    {formatMinorUnits(
+                                        debt.opening_balance_minor,
+                                        debt.currency,
+                                    )}
+                                </p>
+                                <p className="type-meta text-muted-foreground">
+                                    <DateText value={debt.opened_on} />
+                                </p>
+                            </div>
+                            <Badge variant="secondary">
+                                {debt.status === 'settled'
+                                    ? 'Settled'
+                                    : 'Active'}
+                            </Badge>
+                        </CardContent>
+                    </Card>
+                    <Card className="min-h-0 min-w-0 gap-4 overflow-hidden">
+                        <CardHeader className="shrink-0 flex-row items-center justify-between">
+                            <CardTitle>History</CardTitle>
+                            <span className="type-meta text-muted-foreground">
+                                {entries.length} operations
+                            </span>
+                        </CardHeader>
+                        <CardContent
+                            data-test="debt-history"
+                            className="min-h-0 flex-1 overflow-auto [&>[data-slot=table-container]]:overflow-visible"
+                        >
+                            {entries.length === 0 ? (
+                                <Empty>
+                                    <EmptyHeader>
+                                        <EmptyTitle>
+                                            No operations recorded
+                                        </EmptyTitle>
+                                        <EmptyDescription>
+                                            Record funding, a payment, or an
+                                            adjustment.
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                </Empty>
+                            ) : (
+                                <Table className="min-w-[32rem] table-fixed">
+                                    <TableHeader className="sticky top-0 bg-card">
+                                        <TableRow>
+                                            <TableHead className="w-28">
+                                                Date
+                                            </TableHead>
+                                            <TableHead>Operation</TableHead>
+                                            <TableHead className="w-32 text-right">
+                                                Amount
+                                            </TableHead>
+                                            <TableHead className="w-16">
+                                                <span className="sr-only">
+                                                    Actions
+                                                </span>
+                                            </TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {entries.map((entry) => (
+                                            <TableRow
+                                                key={entry.id}
+                                                data-test={`debt-entry-${entry.id}`}
                                             >
-                                                Edit
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    )}
+                                                <TableCell>
+                                                    <DateText
+                                                        value={
+                                                            entry.occurred_on
+                                                        }
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    {entry.kind === 'repayment'
+                                                        ? 'Payment'
+                                                        : entry.kind ===
+                                                            'funding'
+                                                          ? 'Funding'
+                                                          : 'Adjustment'}{' '}
+                                                    {entry.voided && (
+                                                        <Badge variant="outline">
+                                                            Voided
+                                                        </Badge>
+                                                    )}
+                                                    <div
+                                                        className="truncate type-meta text-muted-foreground"
+                                                        title={
+                                                            entry.reason ??
+                                                            entry.description ??
+                                                            undefined
+                                                        }
+                                                    >
+                                                        {entry.transaction_id ===
+                                                        null ? (
+                                                            entry.reason
+                                                        ) : (
+                                                            <Link
+                                                                className="underline underline-offset-4"
+                                                                title={
+                                                                    entry.description ??
+                                                                    `Transaction #${entry.transaction_id}`
+                                                                }
+                                                                href={transactionsIndex.url(
+                                                                    {
+                                                                        query: {
+                                                                            selected:
+                                                                                entry.transaction_id,
+                                                                            search: String(
+                                                                                entry.transaction_id,
+                                                                            ),
+                                                                        },
+                                                                    },
+                                                                )}
+                                                            >
+                                                                {entry.description ??
+                                                                    `Transaction #${entry.transaction_id}`}
+                                                            </Link>
+                                                        )}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums">
+                                                    {formatMinorUnits(
+                                                        entry.amount_minor,
+                                                        debt.currency,
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        aria-label={`Edit ${entry.kind === 'adjustment' ? entry.reason : entry.description}`}
+                                                        onClick={() =>
+                                                            setEditingEntry(
+                                                                entry,
+                                                            )
+                                                        }
+                                                    >
+                                                        Edit
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </CardContent>
+                    </Card>
                 </div>
             </div>
             <Dialog open={editing} onOpenChange={setEditing}>
