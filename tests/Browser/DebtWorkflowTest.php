@@ -109,15 +109,22 @@ test('debt operations search older Transactions and edit the same payment and ad
 
 test('debt summaries keep currencies separate while tables filter and scroll within the desktop workspace', function () {
     $owner = User::factory()->create();
-    $debt = Debt::factory()->for($owner, 'owner')->create(['name' => 'Family loan', 'counterparty' => 'Mother', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 10001, 'opened_on' => '2026-01-01']);
-    Debt::factory()->for($owner, 'owner')->create(['name' => 'USD receivable', 'direction' => 'receivable', 'currency' => 'USD', 'opening_balance_minor' => 2502]);
-    Debt::factory()->for($owner, 'owner')->create(['name' => 'Settled loan', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 0]);
+    $debt = Debt::factory()->for($owner, 'owner')->create(['name' => 'Family loan', 'counterparty' => 'Mother', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 10001, 'monthly_target_minor' => 2500, 'opened_on' => '2026-01-01']);
+    $receivable = Debt::factory()->for($owner, 'owner')->create(['name' => 'USD receivable', 'direction' => 'receivable', 'currency' => 'USD', 'opening_balance_minor' => 2502, 'monthly_target_minor' => 1000, 'opened_on' => '2026-01-01']);
+    Debt::factory()->for($owner, 'owner')->create(['name' => 'Settled loan', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 0, 'monthly_target_minor' => 9999]);
     Debt::factory()->count(30)->for($owner, 'owner')->create(['direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 1]);
     DebtEntry::factory()->count(40)->for($debt)->create(['kind' => 'adjustment', 'transaction_id' => null, 'amount_minor' => 1, 'occurred_on' => '2026-01-02']);
+    $today = now(config('app.reporting_timezone'))->toDateString();
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['kind' => 'debt', 'direction' => 'debit', 'occurred_on' => $today, 'amount_minor' => 1000]);
+    DebtEntry::factory()->for($debt)->for($payment)->create(['kind' => 'repayment', 'amount_minor' => 1000, 'principal_minor' => 1000, 'occurred_on' => $today]);
+    $collection = Transaction::factory()->for($owner, 'owner')->usd()->create(['kind' => 'debt', 'direction' => 'credit', 'occurred_on' => $today, 'amount_minor' => 400]);
+    DebtEntry::factory()->for($receivable)->for($collection, 'transaction')->create(['kind' => 'repayment', 'amount_minor' => 400, 'principal_minor' => 400, 'occurred_on' => $today]);
     $this->actingAs($owner);
 
     $page = visit('/debts')->resize(1440, 900);
-    $page->assertSeeIn('[data-test="owed-PEN"]', 'S/ 100.71')->assertSeeIn('[data-test="receivable-USD"]', '$ 25.02')->assertDontSee('Settled loan')
+    $page->assertSeeIn('[data-test="owed-PEN"]', 'S/ 90.71')->assertSeeIn('[data-test="receivable-USD"]', '$ 21.02')->assertDontSee('Settled loan')
+        ->assertSeeIn('[data-test="outgoingTarget-PEN"]', 'S/ 25.00')->assertSeeIn('[data-test="incomingTarget-USD"]', '$ 10.00')
+        ->assertSeeIn('[data-test="paid-PEN"]', 'S/ 10.00 paid')->assertSeeIn('[data-test="collected-USD"]', '$ 4.00 collected')
         ->assertScript('() => document.documentElement.scrollHeight <= window.innerHeight + 1')
         ->assertScript('() => { const table = document.querySelector(\'[data-test="debt-list"]\'); return table.scrollHeight > table.clientHeight; }')
         ->fill('[aria-label="Search debts"]', 'family')->assertSee('Family loan')->assertDontSee('USD receivable')->fill('[aria-label="Search debts"]', '')
@@ -198,6 +205,6 @@ test('owner confirms interest on an existing payment and plans full monthly repa
         ->click('header button:has-text("Record operation")')->assertVisible('#entry-kind')->select('#entry-kind', 'interest_charge')->fill('#entry-amount', '30.00')->fill('#entry-date', '2026-08-04')->fill('#entry-detail', 'Confirmed bank interest')->screenshot(filename: 'debts-258-charge-form')->click('[role="dialog"] button[type="submit"]')->assertMissing('[role="dialog"]')->assertSee('S/ 1,030.00')->assertSee('Interest charge');
     $page->click('header button:has-text("Record operation")')->assertVisible('#entry-kind')->select('#debt-interest-charge', '1')->select('#entry-kind', 'funding')->select('#entry-kind', 'repayment')->assertSelected('#debt-interest-charge', '1')->screenshot(filename: 'debts-258-retained-interest-selector')->select('#debt-interest-charge', '0')->click('#entry-transaction')->click('[data-test="debt-transaction-'.$payment->id.'"]')->fill('#debt-principal', '169.99')->fill('#debt-interest', '30.00')->click('[role="dialog"] button[type="submit"]')->assertSee('Principal plus interest must equal the full posted amount.')
         ->fill('#debt-principal', '170.00')->screenshot(filename: 'debts-258-payment-form')->click('[role="dialog"] button[type="submit"]')->assertMissing('[role="dialog"]')->assertSee('S/ 830.00')->assertSee('Principal S/ 170.00')->assertSee('Interest S/ 30.00')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-history');
-    visit('/?period=custom&date_from=2026-08-01&date_to=2026-08-31')->resize(1280, 900)->assertSee('Current balances')->assertSee('Monthly targets')->assertSee('S/ 830.00')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-home');
+    visit('/?period=custom&date_from=2026-08-01&date_to=2026-08-31')->resize(1280, 900)->assertSeeIn('[data-test="home-debt-summary"]', 'S/ 830.00')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-home');
     visit('/debts')->resize(1280, 900)->assertSee('Monthly target')->assertSee('S/ 200.00')->assertSee('paid this month')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-targets-index');
 });

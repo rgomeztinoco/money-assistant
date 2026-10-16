@@ -53,7 +53,6 @@ import {
     categoryBreakdownUrl,
     periodBreakdownUrl,
 } from '@/lib/transaction-filter-url';
-import { cn } from '@/lib/utils';
 import { home } from '@/routes';
 import { index as debtsIndex } from '@/routes/debts';
 import { create as createStatementImport } from '@/routes/statement_imports';
@@ -316,7 +315,7 @@ function SpendingComparisonChart({
     return (
         <ChartContainer
             config={chartConfig}
-            className="h-64 w-full max-w-full min-w-0 md:h-72"
+            className="h-64 w-full max-w-full min-w-0 md:h-72 xl:aspect-auto xl:h-auto xl:min-h-40 xl:flex-1"
             role="img"
             aria-label={
                 hasFutureDates
@@ -652,7 +651,7 @@ function CurrencySignalLane({ briefing }: { briefing: Briefing }) {
 
     return (
         <section
-            className="grid min-w-0 content-start gap-5 p-4 sm:p-6"
+            className="grid min-w-0 content-start gap-4 p-4"
             data-test={`home-${testSegment}-signals`}
         >
             <div
@@ -760,10 +759,10 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
 
     return (
         <Card
-            className="min-w-0 gap-0 overflow-hidden py-0"
+            className="min-h-0 min-w-0 gap-0 overflow-hidden py-0"
             data-test="home-signals-card"
         >
-            <CardHeader className="border-b p-4 sm:p-6">
+            <CardHeader className="shrink-0 border-b p-4">
                 <CardTitle>Behind the change</CardTitle>
                 <CardDescription>
                     Select a signal to see its Transactions.
@@ -797,7 +796,7 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
                     </Badge>
                 )}
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="min-h-0 flex-1 overflow-y-auto p-0">
                 {activeBriefing !== undefined && (
                     <CurrencySignalLane
                         key={activeBriefing.currency}
@@ -807,7 +806,7 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
             </CardContent>
             {briefings[0] !== undefined && (
                 <CardFooter
-                    className="grid items-start gap-2 border-t p-4 type-meta sm:p-6"
+                    className="grid shrink-0 items-start gap-2 border-t p-4 type-meta"
                     data-test="home-coverage-panel"
                 >
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -846,9 +845,13 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
 function HomeBriefing({
     briefings,
     today,
+    debtSummary,
+    currencyFilter,
 }: {
     briefings: Briefing[];
     today: string;
+    debtSummary: HomeProps['debt_summary'];
+    currencyFilter: Currency | null;
 }) {
     const primary = briefings[0];
     const pulse = primary?.pulse;
@@ -872,12 +875,12 @@ function HomeBriefing({
               : `${headlineSignal.category.name} is driving the change ${periodReference(primary.period)}.`;
 
     return (
-        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(36rem,1.2fr)_minmax(20rem,0.8fr)] xl:items-start">
+        <div className="grid min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(36rem,1.4fr)_minmax(20rem,0.8fr)] xl:grid-rows-[minmax(0,1fr)_auto]">
             <Card
-                className="min-w-0 gap-0 overflow-hidden py-0"
+                className="min-h-0 min-w-0 gap-0 overflow-hidden py-0 xl:row-span-2"
                 data-test="home-overview-card"
             >
-                <CardContent className="flex min-w-0 flex-col gap-6 p-4 sm:p-6">
+                <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 sm:p-6">
                     <section className="grid gap-3">
                         <div className="grid gap-2">
                             <p className="type-meta tracking-widest uppercase">
@@ -902,7 +905,7 @@ function HomeBriefing({
 
                     <SpendingSnapshot briefings={briefings} />
 
-                    <section className="flex min-w-0 flex-col gap-3">
+                    <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                                 <h3 className="type-section-title">
@@ -940,6 +943,10 @@ function HomeBriefing({
             </Card>
 
             <SignalPanel briefings={briefings} />
+            <HomeDebtSummary
+                summary={debtSummary}
+                currencyFilter={currencyFilter}
+            />
         </div>
     );
 }
@@ -953,10 +960,10 @@ function HomeDebtSummary({
 }) {
     return (
         <Card
-            className="min-w-0 shrink-0 gap-3 py-3 xl:flex-row xl:gap-6"
+            className="min-w-0 shrink-0 gap-3 py-4"
             data-test="home-debt-summary"
         >
-            <CardHeader className="gap-1 px-4 xl:w-48 xl:shrink-0">
+            <CardHeader className="flex-row items-center justify-between gap-2 px-4">
                 <CardTitle>
                     <Link
                         href={debtsIndex.url()}
@@ -966,16 +973,10 @@ function HomeDebtSummary({
                     </Link>
                 </CardTitle>
                 <CardDescription>
-                    Monthly targets ·{' '}
                     {formatCompactMonthYear(`${summary.target_month}-01`)}
                 </CardDescription>
             </CardHeader>
-            <CardContent
-                className={cn(
-                    'grid min-w-0 flex-1 gap-4 px-4 xl:pl-0',
-                    !currencyFilter && 'sm:grid-cols-2',
-                )}
-            >
+            <CardContent className="grid min-w-0 gap-3 px-4">
                 {(['PEN', 'USD'] as const)
                     .filter(
                         (currency) =>
@@ -984,11 +985,9 @@ function HomeDebtSummary({
                     .map((currency) => (
                         <div
                             key={currency}
-                            className="grid content-start gap-1.5"
+                            className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-3"
                         >
-                            <p className="type-meta font-medium">
-                                {currency} · Current balances
-                            </p>
+                            <p className="type-meta font-medium">{currency}</p>
                             <dl className="grid grid-cols-2 gap-3">
                                 {(
                                     [
@@ -1106,16 +1105,23 @@ export default function Home(props: HomeProps) {
         <>
             <Head title="Home" />
 
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 md:p-6 xl:overflow-y-auto">
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 md:p-6 xl:overflow-hidden">
                 <HomeContextBar props={props} />
-                <HomeDebtSummary
-                    summary={props.debt_summary}
-                    currencyFilter={props.currency_filter}
-                />
                 {briefings.length === 0 ? (
-                    <EmptyHome currency={props.currency_filter} />
+                    <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
+                        <EmptyHome currency={props.currency_filter} />
+                        <HomeDebtSummary
+                            summary={props.debt_summary}
+                            currencyFilter={props.currency_filter}
+                        />
+                    </div>
                 ) : (
-                    <HomeBriefing briefings={briefings} today={props.today} />
+                    <HomeBriefing
+                        briefings={briefings}
+                        today={props.today}
+                        debtSummary={props.debt_summary}
+                        currencyFilter={props.currency_filter}
+                    />
                 )}
             </main>
         </>
