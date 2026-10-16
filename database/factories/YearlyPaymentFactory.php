@@ -19,7 +19,7 @@ class YearlyPaymentFactory extends Factory
             'amount_minor' => 240000,
             'currency' => Currency::Pen,
             'cushion_minor' => 0,
-            'expected_due_on' => null,
+            'due_month_day' => null,
             'is_active' => true,
         ];
     }

@@ -3,12 +3,12 @@
 namespace App\Models;
 
 use App\Currency;
-use Carbon\CarbonImmutable;
 use Database\Factories\YearlyPaymentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
@@ -17,10 +17,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $amount_minor
  * @property Currency $currency
  * @property int $cushion_minor
- * @property CarbonImmutable|null $expected_due_on
+ * @property string|null $due_month_day
  * @property bool $is_active
  */
-#[Fillable(['user_id', 'name', 'amount_minor', 'currency', 'cushion_minor', 'expected_due_on', 'is_active'])]
+#[Fillable(['user_id', 'name', 'amount_minor', 'currency', 'cushion_minor', 'due_month_day', 'is_active'])]
 class YearlyPayment extends Model
 {
     /** @use HasFactory<YearlyPaymentFactory> */
@@ -32,6 +32,12 @@ class YearlyPayment extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
+    /** @return HasMany<Transaction, $this> */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -39,7 +45,6 @@ class YearlyPayment extends Model
             'amount_minor' => 'integer',
             'currency' => Currency::class,
             'cushion_minor' => 'integer',
-            'expected_due_on' => 'immutable_date',
             'is_active' => 'boolean',
         ];
     }

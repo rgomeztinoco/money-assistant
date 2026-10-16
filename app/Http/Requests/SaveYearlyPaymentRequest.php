@@ -29,11 +29,15 @@ class SaveYearlyPaymentRequest extends FormRequest
             'amount' => ['required', 'string', new CurrencyAmountRule($currency, mustBePositive: true)],
             'currency' => ['required', Rule::enum(Currency::class)],
             'cushion' => ['nullable', 'string', new CurrencyAmountRule($currency), 'regex:/^\d+(?:\.\d{1,2})?$/D'],
-            'expected_due_on' => ['nullable', 'date_format:Y-m-d'],
+            'due_month_day' => ['nullable', 'string', 'regex:/^\d{2}-\d{2}$/D', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (! is_string($value) || ! preg_match('/^(\d{2})-(\d{2})$/D', $value, $parts) || ! checkdate((int) $parts[1], (int) $parts[2], 2000)) {
+                    $fail('Enter a valid month and day (MM-DD).');
+                }
+            }],
         ];
     }
 
-    /** @return array{name: string, amount_minor: int, currency: string, cushion_minor: int, expected_due_on: string|null} */
+    /** @return array{name: string, amount_minor: int, currency: string, cushion_minor: int, due_month_day: string|null} */
     public function paymentAttributes(): array
     {
         $data = $this->validated();
@@ -44,13 +48,13 @@ class SaveYearlyPaymentRequest extends FormRequest
             'amount_minor' => CurrencyAmount::minorUnits($data['amount'], $currency),
             'currency' => $currency->value,
             'cushion_minor' => CurrencyAmount::minorUnits($data['cushion'] ?? '0', $currency),
-            'expected_due_on' => $data['expected_due_on'] ?? null,
+            'due_month_day' => $data['due_month_day'] ?? null,
         ];
     }
 
     /** @return array<string, string> */
     public function messages(): array
     {
-        return ['cushion.regex' => 'The cushion must be a nonnegative amount with at most two decimal places.'];
+        return ['due_month_day.regex' => 'Enter a valid month and day (MM-DD).', 'cushion.regex' => 'The cushion must be a nonnegative amount with at most two decimal places.'];
     }
 }

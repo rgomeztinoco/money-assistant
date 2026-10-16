@@ -22,7 +22,7 @@ class YearlyPaymentController extends Controller
         YearlyPayment::query()->create(['user_id' => $request->user()->getKey(), ...$request->paymentAttributes()]);
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Yearly payment added.']);
 
-        return to_route('yearly_payments.index');
+        return $this->redirectToWorkspace('yearly_payments.index');
     }
 
     public function update(SaveYearlyPaymentRequest $request, YearlyPayment $yearlyPayment): RedirectResponse
@@ -30,6 +30,6 @@ class YearlyPaymentController extends Controller
         $yearlyPayment->update($request->paymentAttributes());
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Yearly payment updated.']);
 
-        return to_route('yearly_payments.index');
+        return $this->redirectToWorkspace('yearly_payments.index');
     }
 }

@@ -14,6 +14,7 @@ import InputError from '@/components/input-error';
 import { TransactionEditor } from '@/components/transaction-editor';
 import type { EditorTransaction } from '@/components/transaction-editor';
 import type { TransactionAction } from '@/components/transaction-table';
+import { TransactionYearlyPaymentDialog } from '@/components/transaction-yearly-payment-dialog';
 import {
     AlertDialog,
     AlertDialogContent,
@@ -382,6 +383,15 @@ export function TransactionActionDialog({
     splitCategoryOptions: BreakdownProps['category_options'];
     onClose: () => void;
 }) {
+    if (action === 'yearly') {
+        return (
+            <TransactionYearlyPaymentDialog
+                transaction={transaction}
+                onClose={onClose}
+            />
+        );
+    }
+
     const title =
         action === 'debt'
             ? 'Record as debt payment'

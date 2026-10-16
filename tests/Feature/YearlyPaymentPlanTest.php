@@ -86,14 +86,14 @@ test('manual conversion keeps currencies separate and rounds the final annual es
 test('Home shows upcoming active payments in the reporting timezone independently of Transactions and historical filters', function () {
     $this->travelTo(CarbonImmutable::parse('2026-10-09 02:00:00', 'UTC'));
     $owner = User::factory()->create();
-    $today = YearlyPayment::factory()->for($owner, 'owner')->create(['expected_due_on' => '2026-10-08']);
-    $boundary = YearlyPayment::factory()->for($owner, 'owner')->create(['expected_due_on' => '2026-11-07']);
-    $sameDate = YearlyPayment::factory()->for($owner, 'owner')->create(['expected_due_on' => '2026-10-08']);
-    foreach (['2026-10-07', '2026-11-08', null, '2028-01-01'] as $due) {
-        YearlyPayment::factory()->for($owner, 'owner')->create(['expected_due_on' => $due]);
+    $today = YearlyPayment::factory()->for($owner, 'owner')->create(['due_month_day' => '10-08']);
+    $boundary = YearlyPayment::factory()->for($owner, 'owner')->create(['due_month_day' => '11-07']);
+    $sameDate = YearlyPayment::factory()->for($owner, 'owner')->create(['due_month_day' => '10-08']);
+    foreach (['10-07', '11-08', null, '01-01'] as $due) {
+        YearlyPayment::factory()->for($owner, 'owner')->create(['due_month_day' => $due]);
     }
-    YearlyPayment::factory()->for($owner, 'owner')->paused()->create(['expected_due_on' => '2026-10-08']);
-    YearlyPayment::factory()->create(['expected_due_on' => '2026-10-08']);
+    YearlyPayment::factory()->for($owner, 'owner')->paused()->create(['due_month_day' => '10-08']);
+    YearlyPayment::factory()->create(['due_month_day' => '10-08']);
 
     $this->actingAs($owner)->get(route('home', ['period' => 'month', 'anchor' => '2020-01-01', 'currency' => 'USD']))
         ->assertInertia(fn (Assert $page) => $page
@@ -111,7 +111,7 @@ test('Home shows upcoming active payments in the reporting timezone independentl
         ->where('plan.upcoming_commitments', [])
         ->where('plan.native_targets.0.annual_target_minor', '1680000')
         ->where('plan.native_targets.0.monthly_recommendation_minor', '140000'));
-    expect($today->fresh())->expected_due_on->toDateString()->toBe('2026-10-08')->is_active->toBeTrue();
+    expect($today->fresh())->due_month_day->toBe('10-08')->is_active->toBeTrue();
 });
 
 test('empty and all-paused plans have zero targets without requiring an exchange rate', function (bool $paused) {
@@ -154,8 +154,8 @@ test('invalid yearly payment inputs return useful feedback without saving', func
     'invalid cushion' => ['cushion', 'abc', 'The amount must use currency units with at most two decimal places.'],
     'overprecision cushion' => ['cushion', '0.001', 'The amount must use currency units with at most two decimal places.'],
     'float cushion' => ['cushion', 0.01, 'The cushion field must be a string.'],
-    'invalid date' => ['expected_due_on', 'next year', 'The expected due on field must match the format Y-m-d.'],
-    'impossible date' => ['expected_due_on', '2026-02-30', 'The expected due on field must match the format Y-m-d.'],
+    'invalid date' => ['due_month_day', 'next year', 'Enter a valid month and day (MM-DD).'],
+    'impossible date' => ['due_month_day', '02-30', 'Enter a valid month and day (MM-DD).'],
 ]);
 
 test('invalid manual rates cannot change the saved assumption', function (mixed $value) {
@@ -201,11 +201,11 @@ test('planning changes including due dates never alter confirmed Transactions or
     $before = Transaction::query()->get()->toArray();
     $payment = YearlyPayment::factory()->for($owner, 'owner')->create();
 
-    $this->actingAs($owner)->put(route('yearly_payments.update', $payment), ['name' => 'Insurance', 'amount' => '2400', 'currency' => 'PEN', 'expected_due_on' => '2026-10-08'])->assertRedirect();
+    $this->actingAs($owner)->put(route('yearly_payments.update', $payment), ['name' => 'Insurance', 'amount' => '2400', 'currency' => 'PEN', 'due_month_day' => '10-08'])->assertRedirect();
     $this->put(route('yearly_payments.state.update', $payment), ['is_active' => false])->assertRedirect();
     $this->put(route('yearly_payments.state.update', $payment), ['is_active' => true])->assertRedirect();
     $this->put(route('yearly_payments.planning_rate.update'), ['pen_per_usd' => '3.75'])->assertRedirect();
-    $this->put(route('yearly_payments.update', $payment), ['name' => 'Insurance', 'amount' => '2400', 'currency' => 'PEN', 'expected_due_on' => '2028-01-01'])->assertRedirect();
+    $this->put(route('yearly_payments.update', $payment), ['name' => 'Insurance', 'amount' => '2400', 'currency' => 'PEN', 'due_month_day' => '01-01'])->assertRedirect();
     $this->post(route('yearly_payments.store'), ['name' => 'Course', 'amount' => '120', 'currency' => 'USD'])->assertRedirect();
     $this->get(route('home'))->assertInertia(fn (Assert $page) => $page
         ->where('primary.summary', ['net_spending_minor' => '1000', 'income_minor' => '5000', 'moved_to_savings_minor' => '2000'])

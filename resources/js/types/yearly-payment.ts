@@ -7,7 +7,8 @@ export type YearlyPayment = {
     currency: Currency;
     cushion_minor: string;
     target_minor: string;
-    expected_due_on: string | null;
+    due_month_day: string | null;
+    next_due_on: string | null;
     is_active: boolean;
 };
 

@@ -1156,7 +1156,7 @@ export default function Home(props: HomeProps) {
                                                 <p className="text-sm text-muted-foreground">
                                                     <DateText
                                                         value={
-                                                            payment.expected_due_on!
+                                                            payment.next_due_on!
                                                         }
                                                     />
                                                 </p>
