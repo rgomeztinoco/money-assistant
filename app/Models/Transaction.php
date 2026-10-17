@@ -37,6 +37,7 @@ use Illuminate\Support\Carbon;
  * @property CarbonImmutable $confirmed_at
  * @property list<string> $provisional_fields
  * @property CarbonImmutable|null $voided_at
+ * @property int|null $yearly_payment_id
  * @property int|null $original_spending_id
  * @property list<string> $refund_relationship_review_reasons
  * @property int|null $category_id
@@ -63,6 +64,7 @@ use Illuminate\Support\Carbon;
     'confirmed_at',
     'provisional_fields',
     'voided_at',
+    'yearly_payment_id',
     'original_spending_id',
     'refund_relationship_review_reasons',
     'category_id',
@@ -204,6 +206,12 @@ class Transaction extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /** @return BelongsTo<YearlyPayment, $this> */
+    public function yearlyPayment(): BelongsTo
+    {
+        return $this->belongsTo(YearlyPayment::class);
     }
 
     /** @return BelongsTo<MerchantRule, $this> */

@@ -56,11 +56,13 @@ import {
 import { home } from '@/routes';
 import { index as debtsIndex } from '@/routes/debts';
 import { create as createStatementImport } from '@/routes/statement_imports';
+import { index as yearlyPaymentsIndex } from '@/routes/yearly_payments';
 import type {
     Currency,
     ReportingPeriod,
     ReportingPeriodSelection,
 } from '@/types';
+import type { YearlyPaymentPlan } from '@/types/yearly-payment';
 
 type Period = ReportingPeriod;
 
@@ -131,6 +133,7 @@ type HomeProps = {
         PEN: DebtSummaryAmounts;
         USD: DebtSummaryAmounts;
     };
+    yearly_payment_plan: YearlyPaymentPlan;
     currency_filter: Currency | null;
     period: Period;
     primary: Briefing | null;
@@ -847,11 +850,13 @@ function HomeBriefing({
     today,
     debtSummary,
     currencyFilter,
+    yearlyPlan,
 }: {
     briefings: Briefing[];
     today: string;
     debtSummary: HomeProps['debt_summary'];
     currencyFilter: Currency | null;
+    yearlyPlan: YearlyPaymentPlan;
 }) {
     const primary = briefings[0];
     const pulse = primary?.pulse;
@@ -875,9 +880,9 @@ function HomeBriefing({
               : `${headlineSignal.category.name} is driving the change ${periodReference(primary.period)}.`;
 
     return (
-        <div className="grid min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(36rem,1.4fr)_minmax(20rem,0.8fr)] xl:grid-rows-[minmax(0,1fr)_auto]">
+        <div className="grid min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(36rem,1.4fr)_minmax(20rem,0.8fr)] xl:grid-rows-[minmax(0,1fr)_auto_auto]">
             <Card
-                className="min-h-0 min-w-0 gap-0 overflow-hidden py-0 xl:row-span-2"
+                className="min-h-0 min-w-0 gap-0 overflow-hidden py-0 xl:row-span-3"
                 data-test="home-overview-card"
             >
                 <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 sm:p-6">
@@ -947,6 +952,7 @@ function HomeBriefing({
                 summary={debtSummary}
                 currencyFilter={currencyFilter}
             />
+            <HomeYearlyPayments plan={yearlyPlan} />
         </div>
     );
 }
@@ -1063,6 +1069,52 @@ function EmptyHome({ currency }: { currency: Currency | null }) {
     );
 }
 
+function HomeYearlyPayments({ plan }: { plan: YearlyPaymentPlan }) {
+    return (
+        <Card className="min-w-0 gap-3 py-4" data-test="home-yearly-payments">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 px-4">
+                <CardTitle>Yearly payments coming up</CardTitle>
+                <Button variant="ghost" size="sm" asChild>
+                    <Link href={yearlyPaymentsIndex()}>
+                        Manage yearly payments
+                    </Link>
+                </Button>
+            </CardHeader>
+            <CardContent className="px-4">
+                {plan.upcoming_commitments.length === 0 ? (
+                    <p className="type-meta text-muted-foreground">
+                        Nothing due in the next 30 days.
+                    </p>
+                ) : (
+                    <ul className="flex max-h-28 flex-col gap-2 overflow-y-auto">
+                        {plan.upcoming_commitments.map((payment) => (
+                            <li
+                                key={payment.id}
+                                className="flex min-w-0 items-center justify-between gap-3 text-sm"
+                            >
+                                <div className="min-w-0">
+                                    <p className="truncate">{payment.name}</p>
+                                    <p className="type-meta text-muted-foreground">
+                                        <DateText
+                                            value={payment.next_due_on!}
+                                        />
+                                    </p>
+                                </div>
+                                <span className="shrink-0 tabular-nums">
+                                    {formatMinorUnits(
+                                        payment.target_minor,
+                                        payment.currency,
+                                    )}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
 function HomeContextBar({ props }: { props: HomeProps }) {
     return (
         <div className="shrink-0" data-test="home-context-bar">
@@ -1110,10 +1162,15 @@ export default function Home(props: HomeProps) {
                 {briefings.length === 0 ? (
                     <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
                         <EmptyHome currency={props.currency_filter} />
-                        <HomeDebtSummary
-                            summary={props.debt_summary}
-                            currencyFilter={props.currency_filter}
-                        />
+                        <div className="flex min-w-0 flex-col gap-4">
+                            <HomeDebtSummary
+                                summary={props.debt_summary}
+                                currencyFilter={props.currency_filter}
+                            />
+                            <HomeYearlyPayments
+                                plan={props.yearly_payment_plan}
+                            />
+                        </div>
                     </div>
                 ) : (
                     <HomeBriefing
@@ -1121,6 +1178,7 @@ export default function Home(props: HomeProps) {
                         today={props.today}
                         debtSummary={props.debt_summary}
                         currencyFilter={props.currency_filter}
+                        yearlyPlan={props.yearly_payment_plan}
                     />
                 )}
             </main>

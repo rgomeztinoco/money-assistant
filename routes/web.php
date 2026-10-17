@@ -10,6 +10,7 @@ use App\Http\Controllers\DebtEntryController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\InlineCategoryController;
 use App\Http\Controllers\MerchantRuleController;
+use App\Http\Controllers\PlanningExchangeRateController;
 use App\Http\Controllers\ReceiptBreakdownController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\StatementImportController;
@@ -18,7 +19,10 @@ use App\Http\Controllers\StatementMovementClassificationController;
 use App\Http\Controllers\TransactionCategoryController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionVoidController;
+use App\Http\Controllers\TransactionYearlyPaymentController;
 use App\Http\Controllers\TrendsController;
+use App\Http\Controllers\YearlyPaymentController;
+use App\Http\Controllers\YearlyPaymentStateController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', HomeController::class)
@@ -31,6 +35,11 @@ Route::middleware(['auth'])->group(function () {
     Route::put('debts/{debt}/entries/{entry}', [DebtEntryController::class, 'update'])->name('debts.entries.update');
     Route::get('debts/{debt}/transactions', [DebtController::class, 'transactions'])->name('debts.transactions');
     Route::resource('debts', DebtController::class)->only(['index', 'store', 'show', 'update']);
+    Route::put('yearly-payments/planning-rate', [PlanningExchangeRateController::class, 'update'])->name('yearly_payments.planning_rate.update');
+    Route::put('yearly-payments/{yearly_payment}/state', [YearlyPaymentStateController::class, 'update'])->name('yearly_payments.state.update');
+    Route::resource('yearly-payments', YearlyPaymentController::class)
+        ->only(['index', 'store', 'update'])
+        ->names(['index' => 'yearly_payments.index', 'store' => 'yearly_payments.store', 'update' => 'yearly_payments.update']);
     Route::get('breakdown', BreakdownController::class)->name('breakdown.index');
     Route::get('trends', TrendsController::class)->name('trends.index');
     Route::get('data-sources/gmail', DataSourceController::class)->name('data_sources.gmail');
@@ -38,6 +47,8 @@ Route::middleware(['auth'])->group(function () {
         'breakdown/transactions/{transaction}/classification',
         [BreakdownTransactionClassificationController::class, 'update'],
     )->name('breakdown.transactions.classification.update');
+    Route::get('transactions/{transaction}/yearly-payment', [TransactionYearlyPaymentController::class, 'show'])->name('transactions.yearly_payment.show');
+    Route::post('transactions/{transaction}/yearly-payment', [TransactionYearlyPaymentController::class, 'store'])->name('transactions.yearly_payment.store');
     Route::resource('transactions', TransactionController::class)
         ->only(['index', 'store', 'update']);
     Route::resource('statement-imports', StatementImportController::class)

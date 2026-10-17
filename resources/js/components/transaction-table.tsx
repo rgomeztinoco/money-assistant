@@ -31,7 +31,7 @@ export type TransactionTableRow = MoneyMovementDetails & {
 };
 
 export type TransactionAction =
-    'edit' | 'debt' | 'void' | 'restore' | 'rule' | 'split';
+    'edit' | 'debt' | 'void' | 'restore' | 'rule' | 'split' | 'yearly';
 
 export function TransactionTable<T extends TransactionTableRow>({
     transactions,
@@ -223,6 +223,22 @@ export function TransactionTable<T extends TransactionTableRow>({
                                                                     debt payment
                                                                 </DropdownMenuItem>
                                                             </DropdownMenuGroup>
+                                                        )}
+                                                    {!transaction.voided_at &&
+                                                        transaction.kind ===
+                                                            'spending' && (
+                                                            <DropdownMenuItem
+                                                                onSelect={() => {
+                                                                    onBeforeOpen?.();
+                                                                    onAction(
+                                                                        transaction,
+                                                                        'yearly',
+                                                                    );
+                                                                }}
+                                                            >
+                                                                Mark as yearly
+                                                                payment
+                                                            </DropdownMenuItem>
                                                         )}
                                                     {!transaction.voided_at &&
                                                         (transaction.kind ===
