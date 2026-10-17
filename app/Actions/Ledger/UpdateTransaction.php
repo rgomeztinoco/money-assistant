@@ -13,8 +13,8 @@ use App\Models\User;
 use App\MovementDirection;
 use App\RefundRelationshipReviewReason;
 use App\ReviewableTransactionField;
-use App\StatementMovementClassification;
 use App\Rules\TransactionClassificationRules;
+use App\StatementMovementClassification;
 use App\TransactionKind;
 use App\TransferPurpose;
 use Carbon\CarbonImmutable;
@@ -143,6 +143,9 @@ class UpdateTransaction
             $transaction = Transaction::query()->whereBelongsTo($owner, 'owner')->whereKey($transactionId)->lockForUpdate()->firstOrFail();
             if ($transaction->voided_at !== null) {
                 throw ValidationException::withMessages(['transaction' => 'A Voided Transaction cannot change Kind.']);
+            }
+            if ($transaction->kind === TransactionKind::Debt || $kind === TransactionKind::Debt) {
+                throw ValidationException::withMessages(['kind' => 'Change Debt Transactions in the app so their debt allocation stays consistent.']);
             }
             Validator::validate([
                 'kind' => $kind->value, 'income_source' => $incomeSource?->value, 'transfer_purpose' => $transferPurpose?->value,

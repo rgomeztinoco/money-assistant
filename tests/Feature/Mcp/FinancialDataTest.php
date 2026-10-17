@@ -1,8 +1,11 @@
 <?php
 
 use App\Actions\Categorization\SaveMerchantRule;
+use App\Actions\Ledger\UpdateTransaction;
 use App\CategoryAssignmentProvenance;
 use App\Models\Category;
+use App\Models\Debt;
+use App\Models\DebtEntry;
 use App\Models\LineItem;
 use App\Models\MerchantRule;
 use App\Models\ReceiptBreakdown;
@@ -10,10 +13,12 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\YearlyPayment;
 use App\Models\YearlyPaymentSetting;
+use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 
 function financialMcp(?string $token, string $method, array $params = [], array $headers = []): TestResponse
@@ -943,7 +948,7 @@ test('MCP classification rejects unsupported movement edits and missing or irrel
         ->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent');
     expect($transaction->fresh()->getAttributes())->toEqual($transaction->getAttributes());
 })->with([
-    [['kind' => 'income']], [['kind' => 'transfer']], [['kind' => 'unsupported']],
+    [['kind' => 'income']], [['kind' => 'transfer']], [['kind' => 'unsupported']], [['kind' => 'debt']],
     [['kind' => 'income', 'income_source' => 'unknown']], [['kind' => 'transfer', 'transfer_purpose' => 'unknown']],
     [['kind' => 'spending', 'income_source' => 'salary']], [['kind' => 'spending', 'original_spending_id' => null]],
     [['kind' => 'spending', 'amount_minor' => '1']], [['kind' => 'spending', 'currency' => 'USD']],
@@ -951,6 +956,63 @@ test('MCP classification rejects unsupported movement edits and missing or irrel
     [['kind' => 'spending', 'direction' => 'credit']], [['kind' => 'spending', 'instrument_label' => 'Changed']],
     [['kind' => 'spending', 'instrument_last_four' => '1234']], [['kind' => 'spending', 'category_id' => null]],
 ]);
+
+test('MCP classification preserves allocated Debt payments and their interest Categories on rejected changes', function (array $classification) {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create([
+        'kind' => 'debt', 'direction' => 'debit', 'occurred_on' => '2026-08-05',
+        'amount_minor' => 2000, 'category_id' => $category->id, 'category_assignment_provenance' => 'owner',
+    ])->fresh();
+    $entry = DebtEntry::factory()->for($debt)->for($payment)->create([
+        'kind' => 'repayment', 'occurred_on' => '2026-08-05', 'amount_minor' => 2000, 'principal_minor' => 1700, 'interest_minor' => 300,
+    ])->fresh();
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+    $before = financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $payment->id]])
+        ->assertOk()->json('result.structuredContent.transaction');
+
+    financialMcp($token, 'tools/call', ['name' => 'change_transaction_kind', 'arguments' => ['id' => $payment->id, ...$classification]])
+        ->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent');
+
+    expect($payment->fresh()->getAttributes())->toEqual($payment->getAttributes());
+    expect($entry->fresh()->getAttributes())->toEqual($entry->getAttributes());
+    expect($debt->fresh()->balance()->value())->toBe('8000');
+    financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $payment->id]])
+        ->assertOk()->assertJsonPath('result.structuredContent.transaction', $before);
+})->with([
+    'Spending' => [['kind' => 'spending']],
+    'Refund' => [['kind' => 'refund']],
+    'Income' => [['kind' => 'income', 'income_source' => 'other']],
+    'Transfer' => [['kind' => 'transfer', 'transfer_purpose' => 'internal']],
+    'unchanged Debt' => [['kind' => 'debt']],
+]);
+
+test('the narrow classification action rejects Debt as either the current or target Kind', function (string $currentKind, TransactionKind $targetKind) {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create();
+    $transaction = Transaction::factory()->for($owner, 'owner')->pen()->create([
+        'kind' => $currentKind, 'category_id' => $category->id, 'category_assignment_provenance' => 'owner',
+    ])->fresh();
+
+    expect(fn () => app(UpdateTransaction::class)->changeKind($owner, $transaction->id, $targetKind, null, null, null, false))
+        ->toThrow(ValidationException::class, 'Change Debt Transactions in the app so their debt allocation stays consistent.');
+
+    expect($transaction->fresh()->getAttributes())->toEqual($transaction->getAttributes());
+})->with([
+    'unchanged Debt retains its Category' => ['debt', TransactionKind::Debt],
+    'Spending cannot become unallocated Debt' => ['spending', TransactionKind::Debt],
+]);
+
+test('MCP classification advertises only supported target Kinds', function () {
+    $owner = User::factory()->create();
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+
+    $tools = financialMcp($token, 'tools/list')->assertOk()->json('result.tools');
+
+    $classification = collect($tools)->firstWhere('name', 'change_transaction_kind');
+    expect($classification['inputSchema']['properties']['kind']['enum'])->toBe(['spending', 'refund', 'income', 'transfer']);
+});
 
 test('MCP classification rejects invalid Refund relationships and blocked conversions without changing either movement', function () {
     $owner = User::factory()->create();

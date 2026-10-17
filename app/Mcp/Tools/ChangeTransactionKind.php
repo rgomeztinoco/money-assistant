@@ -26,7 +26,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[Name('change_transaction_kind')]
-#[Description('Change only the Kind and applicable classification of an active owner Transaction. Income requires income_source; Transfer requires transfer_purpose. The current Kind may be submitted to update its details or link a Refund. An omitted original_spending_id preserves an existing Refund link; explicit null clears it. Preserve the recorded movement and compatible Categories and Receipt Breakdowns. Converting to Income or Transfer removes Categories and the entire Receipt Breakdown; explain those effects and establish owner intent first. Active linked Refunds block converting their original Spending. Never modify related Refunds to bypass that block.')]
+#[Description('Change only the Kind and applicable classification of an active owner Transaction. Debt Transactions must be edited in the app to preserve their allocations. Income requires income_source; Transfer requires transfer_purpose. The current Kind may be submitted to update its details or link a Refund. An omitted original_spending_id preserves an existing Refund link; explicit null clears it. Preserve the recorded movement and compatible Categories and Receipt Breakdowns. Converting to Income or Transfer removes Categories and the entire Receipt Breakdown; explain those effects and establish owner intent first. Active linked Refunds block converting their original Spending. Never modify related Refunds to bypass that block.')]
 #[IsReadOnly(false)]
 #[IsDestructive]
 #[IsIdempotent]
@@ -63,7 +63,7 @@ class ChangeTransactionKind extends Tool
     {
         return [
             'id' => $schema->integer()->min(1)->required(),
-            'kind' => $schema->string()->enum(TransactionKind::class)->required(),
+            'kind' => $schema->string()->enum(array_column(TransactionClassificationRules::agentKinds(), 'value'))->required(),
             'income_source' => $schema->string()->enum(IncomeSource::class),
             'transfer_purpose' => $schema->string()->enum(TransferPurpose::class),
             'original_spending_id' => $schema->integer()->min(1)->nullable(),
