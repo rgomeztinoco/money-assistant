@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
     Field,
+    FieldContent,
     FieldError,
     FieldGroup,
     FieldLabel,
@@ -517,6 +518,7 @@ export function TransactionEditor({
                             {transaction?.debt_allocation &&
                                 kind !== 'debt' && (
                                     <Field
+                                        orientation="horizontal"
                                         data-invalid={Boolean(
                                             errors.unlink_debt,
                                         )}
@@ -530,17 +532,19 @@ export function TransactionEditor({
                                                 errors.unlink_debt,
                                             )}
                                         />
-                                        <FieldLabel htmlFor="transaction-unlink-debt">
-                                            Unlink{' '}
-                                            {
-                                                transaction.debt_allocation
-                                                    .debt_name
-                                            }{' '}
-                                            and use the selected Kind
-                                        </FieldLabel>
-                                        <FieldError>
-                                            {errors.unlink_debt}
-                                        </FieldError>
+                                        <FieldContent>
+                                            <FieldLabel htmlFor="transaction-unlink-debt">
+                                                Unlink{' '}
+                                                {
+                                                    transaction.debt_allocation
+                                                        .debt_name
+                                                }{' '}
+                                                and use the selected Kind
+                                            </FieldLabel>
+                                            <FieldError>
+                                                {errors.unlink_debt}
+                                            </FieldError>
+                                        </FieldContent>
                                     </Field>
                                 )}
                             {kind === 'income' && (
