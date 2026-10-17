@@ -626,6 +626,21 @@ test('MCP creation rejects invalid amounts classifications dates and unsupported
     [['kind' => 'unsupported']], [['direction' => 'unknown']],
 ]);
 
+test('MCP rejects Debt creation without recording an unallocated movement', function () {
+    $owner = User::factory()->create();
+    $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;
+
+    financialMcp($token, 'tools/call', ['name' => 'create_transaction', 'arguments' => [
+        'occurred_on' => '2026-10-07', 'amount_minor' => '10000', 'kind' => 'debt', 'description' => 'Loan repayment',
+    ]])->assertOk()->assertJsonPath('result.isError', true)->assertJsonMissingPath('result.structuredContent');
+
+    $this->assertDatabaseCount('transactions', 0);
+    $this->assertDatabaseCount('debt_entries', 0);
+    $tools = financialMcp($token, 'tools/list')->assertOk()->json('result.tools');
+    $creation = collect($tools)->firstWhere('name', 'create_transaction');
+    expect($creation['inputSchema']['properties']['kind']['enum'])->toBe(['spending', 'refund', 'income', 'transfer']);
+});
+
 test('MCP creation preserves exact supported maximum and explicit Currency and Direction', function () {
     $owner = User::factory()->create();
     $token = $owner->createToken('agent', ['financial-data:read'])->plainTextToken;

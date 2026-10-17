@@ -9,6 +9,12 @@ use Illuminate\Validation\Rule;
 
 final class TransactionClassificationRules
 {
+    /** @return list<TransactionKind> */
+    public static function agentKinds(): array
+    {
+        return [TransactionKind::Spending, TransactionKind::Refund, TransactionKind::Income, TransactionKind::Transfer];
+    }
+
     /** @return array<string, array<mixed>> */
     public static function fields(mixed $kind): array
     {
@@ -30,6 +36,7 @@ final class TransactionClassificationRules
     {
         $rules = [
             ...self::fields($kind),
+            'kind' => ['required', Rule::enum(TransactionKind::class)->only(self::agentKinds())],
             'original_spending_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ];
         foreach ([

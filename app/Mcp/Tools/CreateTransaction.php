@@ -101,7 +101,7 @@ class CreateTransaction extends Tool
             'occurred_on' => $schema->string()->pattern('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')->required(),
             'amount_minor' => $schema->string()->pattern('^[0-9]+$')->description('Positive minor units, maximum '.PHP_INT_MAX.'.')->required(),
             'currency' => $schema->string()->enum(Currency::class)->default('PEN'),
-            'kind' => $schema->string()->enum(TransactionKind::class)->required(),
+            'kind' => $schema->string()->enum(array_column(TransactionClassificationRules::agentKinds(), 'value'))->required(),
             'description' => $schema->string()->max(255)->required(),
             'direction' => $schema->string()->enum(MovementDirection::class),
             'income_source' => $schema->string()->enum(IncomeSource::class),
