@@ -1,4 +1,5 @@
 import { Form } from '@inertiajs/react';
+import { useState } from 'react';
 import { store as linkPayment } from '@/actions/App/Http/Controllers/TransactionYearlyPaymentController';
 import {
     store,
@@ -7,13 +8,35 @@ import {
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import {
+    Field,
+    FieldGroup,
+    FieldLabel,
+    FieldSet,
+    FieldLegend,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { minorUnitsToCurrencyUnits } from '@/lib/format-minor-units';
 import type { Currency } from '@/types';
 import type { YearlyPayment } from '@/types/yearly-payment';
+
+const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+];
+const daysPerMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 export function PaymentEditor({
     payment,
@@ -30,6 +53,13 @@ export function PaymentEditor({
         occurred_on: string;
     };
 }) {
+    const initialDueDate = payment
+        ? (payment.due_month_day ?? '')
+        : (transaction?.occurred_on.slice(5) ?? '');
+    const [dueMonth, setDueMonth] = useState(initialDueDate.slice(0, 2));
+    const [dueDay, setDueDay] = useState(initialDueDate.slice(3, 5));
+    const dayCount = daysPerMonth[Number(dueMonth) - 1] ?? 0;
+
     return (
         <Form
             {...(payment
@@ -126,27 +156,105 @@ export function PaymentEditor({
 
                         <InputError message={errors.cushion} />
                     </Field>
-                    <Field data-invalid={!!errors.due_month_day}>
-                        <FieldLabel htmlFor="payment-due">
-                            Due month/day (optional)
-                        </FieldLabel>
-                        <Input
+                    <FieldSet>
+                        <FieldLegend variant="label">
+                            Yearly due date (optional)
+                        </FieldLegend>
+                        <input
                             id="payment-due"
+                            type="hidden"
                             name="due_month_day"
-                            type="text"
-                            placeholder="MM-DD"
-                            pattern="[0-9]{2}-[0-9]{2}"
-                            maxLength={5}
-                            defaultValue={
-                                payment?.due_month_day ??
-                                transaction?.occurred_on.slice(5) ??
-                                ''
+                            value={
+                                dueMonth && dueDay
+                                    ? `${dueMonth}-${dueDay}`
+                                    : ''
                             }
-                            aria-invalid={!!errors.due_month_day}
                         />
+                        <FieldGroup className="grid grid-cols-[minmax(0,1fr)_6rem] gap-4">
+                            <Field data-invalid={!!errors.due_month_day}>
+                                <FieldLabel htmlFor="payment-due-month">
+                                    Month
+                                </FieldLabel>
+                                <NativeSelect
+                                    id="payment-due-month"
+                                    value={dueMonth}
+                                    onChange={(event) => {
+                                        const nextMonth = event.target.value;
+                                        setDueMonth(nextMonth);
 
-                        <InputError message={errors.due_month_day} />
-                    </Field>
+                                        if (
+                                            !nextMonth ||
+                                            Number(dueDay) >
+                                                daysPerMonth[
+                                                    Number(nextMonth) - 1
+                                                ]
+                                        ) {
+                                            setDueDay('');
+                                        }
+                                    }}
+                                    options={[
+                                        { value: '', label: 'No due date' },
+                                        ...months.map((label, index) => ({
+                                            value: String(index + 1).padStart(
+                                                2,
+                                                '0',
+                                            ),
+                                            label,
+                                        })),
+                                    ]}
+                                    aria-invalid={!!errors.due_month_day}
+                                    aria-describedby={
+                                        errors.due_month_day
+                                            ? 'payment-due-error'
+                                            : undefined
+                                    }
+                                />
+                            </Field>
+                            <Field
+                                data-invalid={!!errors.due_month_day}
+                                data-disabled={!dueMonth}
+                            >
+                                <FieldLabel htmlFor="payment-due-day">
+                                    Day
+                                </FieldLabel>
+                                <NativeSelect
+                                    id="payment-due-day"
+                                    value={dueDay}
+                                    onChange={(event) =>
+                                        setDueDay(event.target.value)
+                                    }
+                                    disabled={!dueMonth}
+                                    required={!!dueMonth}
+                                    options={[
+                                        {
+                                            value: '',
+                                            label: 'Day',
+                                            disabled: true,
+                                        },
+                                        ...Array.from(
+                                            { length: dayCount },
+                                            (_, index) => ({
+                                                value: String(
+                                                    index + 1,
+                                                ).padStart(2, '0'),
+                                                label: String(index + 1),
+                                            }),
+                                        ),
+                                    ]}
+                                    aria-invalid={!!errors.due_month_day}
+                                    aria-describedby={
+                                        errors.due_month_day
+                                            ? 'payment-due-error'
+                                            : undefined
+                                    }
+                                />
+                            </Field>
+                        </FieldGroup>
+                        <InputError
+                            id="payment-due-error"
+                            message={errors.due_month_day}
+                        />
+                    </FieldSet>
                     <InputError message={errors.yearly_payment_id} />
                     <DialogFooter>
                         <Button type="submit" disabled={processing}>

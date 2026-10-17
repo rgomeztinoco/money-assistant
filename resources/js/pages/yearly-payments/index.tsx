@@ -130,14 +130,17 @@ function PaymentList({
                                       )
                                     : '—'}
                             </TableCell>
-                            <TableCell className="text-right tabular-nums">
+                            <TableCell
+                                data-test="yearly-payment-target"
+                                className="text-right wrap-anywhere whitespace-normal tabular-nums"
+                            >
                                 {formatMinorUnits(
                                     payment.target_minor,
                                     payment.currency,
                                 )}
                                 {BigInt(payment.cushion_minor) > 0n && (
                                     <p className="type-meta text-muted-foreground">
-                                        {`${formatMinorUnits(payment.amount_minor, payment.currency)} + ${formatMinorUnits(payment.cushion_minor, payment.currency)} cushion`}
+                                        {`Includes ${formatMinorUnits(payment.cushion_minor, payment.currency)} cushion`}
                                     </p>
                                 )}
                             </TableCell>

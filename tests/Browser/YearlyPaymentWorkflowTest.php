@@ -18,7 +18,8 @@ test('yearly payment forms add edit pause resume and update the planning assumpt
         ->fill('#payment-name', 'Insurance')
         ->fill('#payment-amount', '2400.00')
         ->fill('#payment-cushion', '120.00')
-        ->fill('#payment-due', '10-08')
+        ->select('#payment-due-month', '10')
+        ->select('#payment-due-day', '08')
         ->press('Add payment')
         ->assertSee('Yearly payment added.')
         ->assertNotPresent('[role="dialog"]')
@@ -62,17 +63,25 @@ test('yearly payment forms add edit pause resume and update the planning assumpt
 
 test('the mobile planner opens the editor and keeps exact values when validation fails', function () {
     $owner = User::factory()->create();
-    YearlyPayment::factory()->for($owner, 'owner')->create(['name' => 'Annual insurance', 'amount_minor' => 9007199254740993]);
+    YearlyPayment::factory()->for($owner, 'owner')->create(['name' => 'Annual insurance', 'amount_minor' => 9007199254740993, 'cushion_minor' => 9007199254740993]);
     YearlyPaymentSetting::factory()->for($owner, 'owner')->create(['pen_per_usd' => '3.7500']);
     $this->actingAs($owner);
 
     $page = visit('/yearly-payments')->on()->mobile();
-    $page->assertSee('S/ 90,071,992,547,409.93')
+    $page->assertSee('S/ 180,143,985,094,819.86')
+        ->assertScript(<<<'JS'
+            (() => {
+                const target = document.querySelector('[data-test="yearly-payment-target"]');
+                return target.scrollWidth <= target.clientWidth + 1
+                    && target.getBoundingClientRect().right <= target.nextElementSibling.getBoundingClientRect().left + 1;
+            })()
+            JS)
         ->screenshot(filename: 'yearly-payments-mobile-layout')
         ->click('[aria-label="Edit Annual insurance"]')
         ->assertValue('#payment-amount', '90071992547409.93')
         ->fill('#payment-amount', '1')
-        ->fill('#payment-due', '10-09')
+        ->select('#payment-due-month', '10')
+        ->select('#payment-due-day', '09')
         ->press('Save payment')
         ->assertSee('Yearly payment updated.')
         ->assertNotPresent('[role="dialog"]')
@@ -102,10 +111,12 @@ test('Spending creates or links yearly payments without leaving the filtered wor
         ->assertValue('#payment-name', 'Insurance first')
         ->assertValue('#payment-amount', '123.45')
         ->assertValue('#payment-currency', 'USD')
-        ->assertValue('#payment-due', '10-01')
+        ->assertValue('#payment-due-month', '10')
+        ->assertValue('#payment-due-day', '01')
         ->fill('#payment-name', 'Annual insurance')
         ->fill('#payment-amount', '150.00')
-        ->fill('#payment-due', '11-05')
+        ->select('#payment-due-month', '11')
+        ->select('#payment-due-day', '05')
         ->press('Add payment')
         ->assertSee('Yearly payment linked.')
         ->assertPathIs('/'.$workspace)
@@ -165,4 +176,46 @@ test('desktop planner keeps its controls visible while the commitment table scro
         ->assertSee('Paused insurance')
         ->assertNotPresent('[aria-label^="Pause "]')
         ->assertNoJavaScriptErrors();
+});
+
+test('recurring due dates offer valid days support leap day and can be cleared', function () {
+    $owner = User::factory()->create();
+    $this->actingAs($owner);
+
+    $page = visit('/yearly-payments')->on()->mobile()->click('Add yearly payment');
+    $page->fill('#payment-name', 'Annual renewal')
+        ->fill('#payment-amount', '120.00')
+        ->select('#payment-due-month', '01')
+        ->select('#payment-due-day', '31')
+        ->select('#payment-due-month', '04')
+        ->assertValue('#payment-due-day', '')
+        ->assertNotPresent('#payment-due-day option[value="31"]')
+        ->press('Add payment')
+        ->assertPresent('[role="dialog"]')
+        ->assertScript('document.querySelector("#payment-due-day").validity.valueMissing');
+
+    $this->assertDatabaseCount('yearly_payments', 0);
+
+    $page->select('#payment-due-month', '02')
+        ->assertNotPresent('#payment-due-day option[value="30"]')
+        ->select('#payment-due-day', '29')
+        ->assertNoJavaScriptErrors()
+        ->screenshot(filename: 'yearly-payments-due-date-mobile')
+        ->press('Add payment')
+        ->assertSee('Yearly payment added.')
+        ->assertNotPresent('[role="dialog"]');
+
+    $this->assertDatabaseHas('yearly_payments', ['user_id' => $owner->id, 'name' => 'Annual renewal', 'due_month_day' => '02-29']);
+
+    $page->click('[aria-label="Edit Annual renewal"]')
+        ->assertValue('#payment-due-month', '02')
+        ->assertValue('#payment-due-day', '29')
+        ->select('#payment-due-month', '')
+        ->assertScript('document.querySelector("#payment-due-day").disabled')
+        ->press('Save payment')
+        ->assertSee('Yearly payment updated.')
+        ->assertNotPresent('[role="dialog"]')
+        ->assertNoJavaScriptErrors();
+
+    $this->assertDatabaseHas('yearly_payments', ['user_id' => $owner->id, 'name' => 'Annual renewal', 'due_month_day' => null]);
 });
