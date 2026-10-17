@@ -20,6 +20,7 @@ test('yearly payment forms add edit pause resume and update the planning assumpt
         ->fill('#payment-due', '10-08')
         ->press('Add payment')
         ->assertSee('Yearly payment added.')
+        ->assertNotPresent('[role="dialog"]')
         ->assertSee('Insurance')
         ->click('[aria-label="Edit Insurance"]')
         ->fill('#payment-name', 'Medical estimate')
