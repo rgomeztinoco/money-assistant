@@ -34,10 +34,12 @@ test('yearly payment forms add edit pause resume and update the planning assumpt
         ->click('[aria-label="Resume Medical estimate"]')
         ->assertSee('Yearly payment resumed.')
         ->click('[role="tab"]:has-text("Active")')
+        ->click('[aria-label="Edit planning rate"]')
         ->fill('#planning-rate', '3.7500')
         ->press('Save planning rate')
         ->assertSee('Planning exchange rate updated.')
-        ->assertSee('Manual assumption: 3.7500 PEN per USD')
+        ->assertNotPresent('[role="dialog"]')
+        ->assertSee('1 USD = S/ 3.7500')
         ->assertNoJavaScriptErrors()
         ->screenshot(filename: 'yearly-payments-desktop');
 
@@ -47,7 +49,7 @@ test('yearly payment forms add edit pause resume and update the planning assumpt
         ->assertNoJavaScriptErrors()
         ->screenshot(filename: 'yearly-payments-home')
         ->click('Manage yearly payments')
-        ->assertSeeIn('[role="tab"][aria-selected="true"]', '1');
+        ->assertSeeIn('[role="tab"][aria-selected="true"]:has-text("Active")', '1');
 
     $this->assertDatabaseHas('yearly_payments', ['user_id' => $owner->id, 'name' => 'Medical estimate', 'amount_minor' => 120000, 'cushion_minor' => 12000, 'is_active' => true]);
     $this->assertDatabaseHas('yearly_payment_settings', ['user_id' => $owner->id, 'pen_per_usd' => '3.7500']);
@@ -61,12 +63,15 @@ test('the mobile planner opens the editor and keeps exact values when validation
 
     $page = visit('/yearly-payments')->on()->mobile();
     $page->assertSee('S/ 90,071,992,547,409.93')
+        ->screenshot(filename: 'yearly-payments-mobile-layout')
         ->click('[aria-label="Edit Annual insurance"]')
         ->assertValue('#payment-amount', '90071992547409.93')
         ->fill('#payment-amount', '1')
         ->fill('#payment-due', '10-09')
         ->press('Save payment')
         ->assertSee('Yearly payment updated.')
+        ->assertNotPresent('[role="dialog"]')
+        ->click('[aria-label="Edit planning rate"]')
         ->fill('#planning-rate', 'bad rate')
         ->press('Save planning rate')
         ->assertSee('Enter a positive decimal planning rate in PEN per USD.')
@@ -134,21 +139,22 @@ test('desktop planner keeps its controls visible while the commitment table scro
     YearlyPayment::factory()->for($owner, 'owner')->paused()->create(['name' => 'Paused insurance']);
     $this->actingAs($owner);
 
-    visit('/yearly-payments')->resize(1440, 900)
-        ->assertSeeIn('[role="tab"][aria-selected="true"]', '40')
+    visit('/yearly-payments')->resize(1280, 800)
+        ->assertSeeIn('[role="tab"][aria-selected="true"]:has-text("Active")', '40')
         ->assertDontSee('Paused insurance')
         ->assertScript(<<<'JS'
             (() => {
                 const scroller = document.querySelector('[data-test="yearly-payments-scroll"]');
                 const add = [...document.querySelectorAll('button')].find(button => button.textContent.includes('Add yearly payment'));
                 const before = add.getBoundingClientRect().top;
-                const tabs = document.querySelector('[role="tablist"]');
+                const tabs = [...document.querySelectorAll('[role="tablist"]')].find(tabs => tabs.textContent.includes('Active'));
                 scroller.scrollTop = 1000;
                 return scroller.scrollTop > 0 && Math.abs(add.getBoundingClientRect().top - before) < 1
                     && tabs.getBoundingClientRect().bottom <= scroller.getBoundingClientRect().top
                     && document.documentElement.scrollHeight <= window.innerHeight + 2;
             })()
             JS)
+        ->screenshot(filename: 'yearly-payments-full-desktop')
         ->click('[role="tab"]:has-text("Paused")')
         ->assertSee('Paused insurance')
         ->assertNotPresent('[aria-label^="Pause "]')
