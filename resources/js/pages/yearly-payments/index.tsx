@@ -273,7 +273,7 @@ function AnnualCosts({ payments }: { payments: YearlyPayment[] }) {
                             config={costChartConfig}
                             className="aspect-auto w-full"
                             style={{
-                                height: Math.max(76, largest.length * 40 + 12),
+                                height: Math.max(64, largest.length * 44 + 12),
                             }}
                             aria-label={`Largest annual costs in ${currency}`}
                         >
@@ -325,7 +325,7 @@ function AnnualCosts({ payments }: { payments: YearlyPayment[] }) {
                                     dataKey="relative"
                                     fill="var(--color-relative)"
                                     radius={4}
-                                    maxBarSize={24}
+                                    maxBarSize={16}
                                     minPointSize={2}
                                     isAnimationActive={false}
                                 >
@@ -345,40 +345,24 @@ function AnnualCosts({ payments }: { payments: YearlyPayment[] }) {
 
                                             const x = Number(viewBox.x);
                                             const y = Number(viewBox.y);
-                                            const width = Number(viewBox.width);
-                                            const height = Number(
-                                                viewBox.height,
-                                            );
-                                            const inside = width >= 96;
-                                            const labelWidth = inside
-                                                ? width - 16
-                                                : parentViewBox &&
-                                                    'width' in parentViewBox
-                                                  ? Number(parentViewBox.width)
-                                                  : 140;
+                                            const labelWidth =
+                                                parentViewBox &&
+                                                'width' in parentViewBox
+                                                    ? Number(
+                                                          parentViewBox.width,
+                                                      )
+                                                    : 140;
 
                                             return (
                                                 <Text
-                                                    x={x + (inside ? 8 : 0)}
-                                                    y={
-                                                        inside
-                                                            ? y + height / 2
-                                                            : y - 4
-                                                    }
-                                                    verticalAnchor={
-                                                        inside
-                                                            ? 'middle'
-                                                            : 'end'
-                                                    }
+                                                    x={x}
+                                                    y={y - 6}
+                                                    verticalAnchor="end"
                                                     width={labelWidth}
                                                     maxLines={1}
                                                     breakAll
-                                                    style={{
-                                                        fontSize: 12,
-                                                        fill: inside
-                                                            ? 'var(--background)'
-                                                            : 'var(--foreground)',
-                                                    }}
+                                                    className="fill-foreground"
+                                                    fontSize={12}
                                                 >
                                                     {String(value ?? '')}
                                                 </Text>
