@@ -208,7 +208,15 @@ test('planning changes including due dates never alter confirmed Transactions or
     $this->put(route('yearly_payments.update', $payment), ['name' => 'Insurance', 'amount' => '2400', 'currency' => 'PEN', 'due_month_day' => '01-01'])->assertRedirect();
     $this->post(route('yearly_payments.store'), ['name' => 'Course', 'amount' => '120', 'currency' => 'USD'])->assertRedirect();
     $this->get(route('home'))->assertInertia(fn (Assert $page) => $page
-        ->where('primary.summary', ['net_spending_minor' => '1000', 'income_minor' => '5000', 'moved_to_savings_minor' => '2000'])
+        ->where('primary.summary', [
+            'net_spending_minor' => '1000',
+            'income_minor' => '5000',
+            'moved_to_savings_minor' => '2000',
+            'debt_payments_made_minor' => '0',
+            'debt_payments_received_minor' => '0',
+            'borrowed_minor' => '0',
+            'lent_minor' => '0',
+        ])
         ->where('yearly_payment_plan.native_targets.0.annual_target_minor', '240000')
         ->where('yearly_payment_plan.native_targets.0.monthly_recommendation_minor', '20000')
         ->where('yearly_payment_plan.upcoming_commitments', []));
