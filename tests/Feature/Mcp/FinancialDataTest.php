@@ -6,10 +6,13 @@ use App\Models\LineItem;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Models\YearlyPayment;
+use App\Models\YearlyPaymentSetting;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Inertia\Testing\AssertableInertia;
 
 function financialMcp(?string $token, string $method, array $params = [], array $headers = []): TestResponse
 {
@@ -162,7 +165,7 @@ test('tools advertise exactly the read-only financial contract and support legac
     $owner = User::factory()->create();
     $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
     $tools = financialMcp($token, 'tools/list')->assertOk()->json('result.tools');
-    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'list_debts', 'get_debt']);
+    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'list_debts', 'get_debt', 'get_yearly_payment_plan']);
     foreach ($tools as $tool) {
         expect($tool['description'])->not->toBeEmpty()
             ->and($tool['inputSchema']['type'])->toBe('object')
@@ -182,7 +185,7 @@ test('tools advertise exactly the read-only financial contract and support legac
         ->assertJsonMissingPath('result.capabilities.resources')->assertJsonMissingPath('result.capabilities.prompts');
     Auth::forgetGuards();
     $this->withToken($token)->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list'])
-        ->assertOk()->assertHeaderMissing('MCP-Session-Id')->assertJsonCount(5, 'result.tools');
+        ->assertOk()->assertHeaderMissing('MCP-Session-Id')->assertJsonCount(6, 'result.tools');
     financialMcp($token, 'tools/list', [], ['Mcp-Method' => 'tools/call'])->assertBadRequest();
 });
 
@@ -413,7 +416,7 @@ test('assistant debt reads expose exact allocations targets and independent hist
     financialMcp($otherToken, 'tools/call', ['name' => 'get_debt', 'arguments' => ['id' => $debt]])->assertOk()->assertJsonPath('result.isError', true)->assertJsonPath('result.content.0.text', 'Debt not found.');
     financialMcp($otherToken, 'tools/call', ['name' => 'list_debts'])->assertOk()->assertJsonCount(0, 'result.structuredContent.debts');
     $tools = financialMcp($token, 'tools/list')->assertOk()->json('result.tools');
-    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'list_debts', 'get_debt']);
+    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'list_debts', 'get_debt', 'get_yearly_payment_plan']);
     foreach ($tools as $tool) {
         expect($tool['annotations']['readOnlyHint'])->toBeTrue();
     }
@@ -515,4 +518,69 @@ test('assistant category filters and review state classify only paid debt intere
     financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['category_id' => $category->id]])->assertOk()->assertJsonCount(1, 'result.structuredContent.transactions')->assertJsonPath('result.structuredContent.transactions.0.category_allocations.0.amount_minor', '3000');
     $this->actingAs($owner)->put("/transactions/{$payment}", ['kind' => 'debt', 'direction' => 'debit', 'currency' => 'PEN', 'occurred_on' => '2026-08-05', 'amount' => '200.00', 'description' => 'Uncategorized interest', 'category_id' => null])->assertSessionHasNoErrors();
     financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $payment]])->assertOk()->assertJsonPath('result.structuredContent.transaction.review_state', 'outstanding')->assertJsonPath('result.structuredContent.transaction.category_allocations.0.amount_minor', '3000');
+});
+
+test('the yearly-payment MCP tool returns the same exact owner plan as the web without mutating records', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-09 02:00:00', 'UTC'));
+    $owner = User::factory()->create();
+    $payment = YearlyPayment::factory()->for($owner, 'owner')->create(['name' => 'Insurance', 'amount_minor' => 240000, 'cushion_minor' => 120, 'due_month_day' => '10-08']);
+    YearlyPayment::factory()->for($owner, 'owner')->create(['name' => 'Course', 'amount_minor' => 100, 'cushion_minor' => 1, 'currency' => 'USD']);
+    YearlyPayment::factory()->for($owner, 'owner')->paused()->create(['name' => 'Paused checkup', 'due_month_day' => '10-08']);
+    YearlyPaymentSetting::factory()->for($owner, 'owner')->create(['pen_per_usd' => '3.7500']);
+    $other = User::factory()->create();
+    YearlyPayment::factory()->for($other, 'owner')->create(['name' => 'Private other plan']);
+    YearlyPaymentSetting::factory()->for($other, 'owner')->create(['pen_per_usd' => '999']);
+    $before = YearlyPayment::query()->get()->toArray();
+    $settings = YearlyPaymentSetting::query()->get()->toArray();
+    $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
+
+    $data = financialMcp($token, 'tools/call', ['name' => 'get_yearly_payment_plan', 'arguments' => (object) []])
+        ->assertOk()->assertJsonPath('result.isError', false)
+        ->assertJsonCount(3, 'result.structuredContent.commitments')
+        ->assertJsonPath('result.structuredContent.commitments.0.target_minor', '240120')
+        ->assertJsonPath('result.structuredContent.commitments.2.is_active', false)
+        ->assertJsonPath('result.structuredContent.native_targets.0.annual_target_minor', '240120')
+        ->assertJsonPath('result.structuredContent.native_targets.0.monthly_recommendation_minor', '20010')
+        ->assertJsonPath('result.structuredContent.native_targets.1.annual_target_minor', '101')
+        ->assertJsonPath('result.structuredContent.combined_estimate.currency', 'PEN')
+        ->assertJsonPath('result.structuredContent.combined_estimate.annual_target_minor', '240499')
+        ->assertJsonPath('result.structuredContent.combined_estimate.monthly_recommendation_minor', '20042')
+        ->assertJsonPath('result.structuredContent.planning_rate', ['pen_per_usd' => '3.7500', 'direction' => 'PEN per USD', 'source' => 'manual'])
+        ->assertJsonCount(1, 'result.structuredContent.upcoming_commitments')
+        ->assertJsonPath('result.structuredContent.upcoming_commitments.0.id', $payment->id)
+        ->assertJsonPath('result.structuredContent.upcoming_commitments.0.due_month_day', '10-08')
+        ->assertJsonPath('result.structuredContent.upcoming_commitments.0.next_due_on', '2026-10-08')
+        ->assertJsonPath('result.structuredContent.calculation_date', '2026-10-08')
+        ->assertJsonPath('result.structuredContent.timezone', 'America/Lima')
+        ->assertDontSee('Private other plan')->assertDontSee('user_id')
+        ->json('result.structuredContent');
+    $this->actingAs($owner)->get(route('yearly_payments.index'))->assertInertia(fn (AssertableInertia $page) => $page->where('plan', $data));
+    financialMcp($token, 'tools/call', ['name' => 'get_yearly_payment_plan'])->assertJsonPath('result.structuredContent', $data);
+
+    expect(YearlyPayment::query()->get()->toArray())->toBe($before);
+    expect(YearlyPaymentSetting::query()->get()->toArray())->toBe($settings);
+    $this->assertDatabaseCount('transactions', 0);
+});
+
+test('MCP reports missing conversion assumptions and enforces bearer read access for the planner', function () {
+    $owner = User::factory()->create();
+    YearlyPayment::factory()->for($owner, 'owner')->create(['currency' => 'USD', 'amount_minor' => 9007199254740993]);
+    $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
+    $denied = $owner->createToken('writer', ['financial-data:write'])->plainTextToken;
+
+    financialMcp(null, 'tools/call', ['name' => 'get_yearly_payment_plan'])->assertUnauthorized();
+    financialMcp($denied, 'tools/call', ['name' => 'get_yearly_payment_plan'])->assertForbidden();
+    financialMcp($token, 'tools/call', ['name' => 'get_yearly_payment_plan'])
+        ->assertOk()
+        ->assertJsonPath('result.structuredContent.native_targets.1.annual_target_minor', '9007199254740993')
+        ->assertJsonPath('result.structuredContent.combined_estimate', [
+            'status' => 'unavailable', 'currency' => 'PEN', 'annual_target_minor' => null,
+            'monthly_recommendation_minor' => null, 'unavailable_reason' => 'Enter a planning exchange rate in PEN per USD to include USD commitments.',
+        ])
+        ->assertJsonPath('result.structuredContent.planning_rate.pen_per_usd', null)
+        ->assertJsonPath('result.structuredContent.assumptions.monthly_rounding', 'Divide the aggregate annual target by 12 and round upward to the next minor unit.')
+        ->assertJsonPath('result.structuredContent.assumptions.planning_only', 'Planning targets do not represent money saved, bills paid, or money safe to spend today.');
+    $tools = financialMcp($token, 'tools/list')->json('result.tools');
+    expect($tools[5]['inputSchema']['properties'])->toBeEmpty();
+    expect($tools[5]['outputSchema']['properties']['commitments']['items']['properties'])->toHaveKeys(['due_month_day', 'next_due_on'])->not->toHaveKey('expected_due_on');
 });
