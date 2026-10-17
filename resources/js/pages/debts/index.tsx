@@ -46,6 +46,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { formatCompactMonthYear } from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
 import { index, settle, show } from '@/routes/debts';
 import { DebtForm } from './debt-form';
@@ -77,24 +78,35 @@ export default function Debts({
                 .toLocaleLowerCase()
                 .includes(search.toLocaleLowerCase()),
     );
-    const totals = (['PEN', 'USD'] as const).map((currency) => ({
-        currency,
-        owed: debts
-            .filter(
-                (debt) =>
-                    debt.currency === currency && debt.direction === 'owed',
-            )
-            .reduce((sum, debt) => sum + BigInt(debt.balance_minor), 0n)
-            .toString(),
-        receivable: debts
-            .filter(
-                (debt) =>
-                    debt.currency === currency &&
-                    debt.direction === 'receivable',
-            )
-            .reduce((sum, debt) => sum + BigInt(debt.balance_minor), 0n)
-            .toString(),
-    }));
+    const totals = (['PEN', 'USD'] as const).map((currency) => {
+        const amounts = {
+            owed: 0n,
+            receivable: 0n,
+            outgoingTarget: 0n,
+            incomingTarget: 0n,
+            paid: 0n,
+            collected: 0n,
+        };
+
+        debts
+            .filter((debt) => debt.currency === currency)
+            .forEach((debt) => {
+                const owed = debt.direction === 'owed';
+                amounts[owed ? 'owed' : 'receivable'] += BigInt(
+                    debt.balance_minor,
+                );
+                amounts[owed ? 'paid' : 'collected'] += BigInt(
+                    debt.monthly_paid_minor,
+                );
+
+                if (debt.status === 'active') {
+                    amounts[owed ? 'outgoingTarget' : 'incomingTarget'] +=
+                        BigInt(debt.monthly_target_minor ?? '0');
+                }
+            });
+
+        return { currency, ...amounts };
+    });
 
     return (
         <>
@@ -110,56 +122,139 @@ export default function Debts({
                     <Button onClick={() => setCreating(true)}>Add debt</Button>
                 </header>
                 <div className="grid min-h-0 min-w-0 flex-1 gap-5 xl:grid-cols-[minmax(16rem,0.35fr)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]">
-                    <Card
-                        className="min-w-0 self-start"
-                        aria-label="Debt balances"
-                    >
-                        <CardHeader>
-                            <CardTitle>Balances</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid gap-6 sm:grid-cols-2 xl:grid-cols-1">
-                            {totals.map((total) => (
-                                <div
-                                    key={total.currency}
-                                    className="flex flex-col gap-2"
-                                >
-                                    <h2 className="type-section-title">
-                                        {total.currency}
-                                    </h2>
-                                    <dl className="grid gap-3">
-                                        <div>
-                                            <dt className="type-meta text-muted-foreground">
-                                                I owe
-                                            </dt>
-                                            <dd
-                                                className="type-section-title tabular-nums"
-                                                data-test={`owed-${total.currency}`}
-                                            >
-                                                {formatMinorUnits(
-                                                    total.owed,
-                                                    total.currency,
-                                                )}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt className="type-meta text-muted-foreground">
-                                                Owed to me
-                                            </dt>
-                                            <dd
-                                                className="type-section-title tabular-nums"
-                                                data-test={`receivable-${total.currency}`}
-                                            >
-                                                {formatMinorUnits(
-                                                    total.receivable,
-                                                    total.currency,
-                                                )}
-                                            </dd>
-                                        </div>
-                                    </dl>
-                                </div>
-                            ))}
-                        </CardContent>
-                    </Card>
+                    <div className="flex min-h-0 min-w-0 flex-col gap-5 xl:overflow-y-auto">
+                        <Card
+                            className="shrink-0 gap-4"
+                            aria-label="Monthly debt plan"
+                        >
+                            <CardHeader className="gap-1">
+                                <CardTitle>Monthly plan</CardTitle>
+                                <p className="type-meta text-muted-foreground">
+                                    {formatCompactMonthYear(today)}
+                                </p>
+                            </CardHeader>
+                            <CardContent className="grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
+                                {totals.map((total) => (
+                                    <section
+                                        key={total.currency}
+                                        className="grid gap-2"
+                                    >
+                                        <h2 className="type-meta font-medium">
+                                            {total.currency}
+                                        </h2>
+                                        <dl className="grid grid-cols-2 gap-3">
+                                            {(
+                                                [
+                                                    [
+                                                        'Planned out',
+                                                        'outgoingTarget',
+                                                        'paid',
+                                                        'paid',
+                                                    ],
+                                                    [
+                                                        'Planned in',
+                                                        'incomingTarget',
+                                                        'collected',
+                                                        'collected',
+                                                    ],
+                                                ] as const
+                                            ).map(
+                                                ([
+                                                    label,
+                                                    target,
+                                                    payment,
+                                                    paymentLabel,
+                                                ]) => (
+                                                    <div
+                                                        key={target}
+                                                        className="min-w-0"
+                                                    >
+                                                        <dt className="type-meta text-muted-foreground">
+                                                            {label}
+                                                        </dt>
+                                                        <dd
+                                                            className="type-section-title tabular-nums"
+                                                            data-test={`${target}-${total.currency}`}
+                                                        >
+                                                            {formatMinorUnits(
+                                                                total[
+                                                                    target
+                                                                ].toString(),
+                                                                total.currency,
+                                                            )}
+                                                        </dd>
+                                                        <dd
+                                                            className="type-meta text-muted-foreground"
+                                                            data-test={`${payment}-${total.currency}`}
+                                                        >
+                                                            {formatMinorUnits(
+                                                                total[
+                                                                    payment
+                                                                ].toString(),
+                                                                total.currency,
+                                                            )}{' '}
+                                                            {paymentLabel}
+                                                        </dd>
+                                                    </div>
+                                                ),
+                                            )}
+                                        </dl>
+                                    </section>
+                                ))}
+                            </CardContent>
+                        </Card>
+                        <Card
+                            className="shrink-0 gap-4"
+                            aria-label="Debt balances"
+                        >
+                            <CardHeader>
+                                <CardTitle>Balances</CardTitle>
+                            </CardHeader>
+                            <CardContent className="grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
+                                {totals.map((total) => (
+                                    <section
+                                        key={total.currency}
+                                        className="grid gap-2"
+                                    >
+                                        <h2 className="type-meta font-medium">
+                                            {total.currency}
+                                        </h2>
+                                        <dl className="grid grid-cols-2 gap-3">
+                                            {(
+                                                [
+                                                    ['I owe', 'owed'],
+                                                    [
+                                                        'Owed to me',
+                                                        'receivable',
+                                                    ],
+                                                ] as const
+                                            ).map(([label, balance]) => (
+                                                <div
+                                                    key={balance}
+                                                    className="min-w-0"
+                                                >
+                                                    <dt className="type-meta text-muted-foreground">
+                                                        {label}
+                                                    </dt>
+                                                    <dd
+                                                        className="font-medium tabular-nums"
+                                                        data-test={`${balance}-${total.currency}`}
+                                                    >
+                                                        {formatMinorUnits(
+                                                            total[
+                                                                balance
+                                                            ].toString(),
+                                                            total.currency,
+                                                        )}
+                                                    </dd>
+                                                </div>
+                                            ))}
+                                        </dl>
+                                    </section>
+                                ))}
+                            </CardContent>
+                        </Card>
+                    </div>
                     <Card className="min-h-0 min-w-0 gap-4 overflow-hidden">
                         <CardHeader className="shrink-0 gap-4">
                             <CardTitle>Your debts</CardTitle>
@@ -234,11 +329,11 @@ export default function Debts({
                                     <TableHeader className="sticky top-0 bg-card">
                                         <TableRow>
                                             <TableHead>Debt</TableHead>
-                                            <TableHead className="w-28">
-                                                Direction
-                                            </TableHead>
                                             <TableHead className="w-36 text-right">
                                                 Balance
+                                            </TableHead>
+                                            <TableHead className="w-40 text-right">
+                                                Monthly target
                                             </TableHead>
                                             <TableHead className="w-12">
                                                 <span className="sr-only">
@@ -260,23 +355,45 @@ export default function Debts({
                                                     </Link>
                                                     <p
                                                         className="truncate type-meta text-muted-foreground"
-                                                        title={
-                                                            debt.counterparty
-                                                        }
+                                                        title={`${debt.direction === 'owed' ? 'I owe' : 'Owed to me'} · ${debt.counterparty}`}
                                                     >
+                                                        {debt.direction ===
+                                                        'owed'
+                                                            ? 'I owe'
+                                                            : 'Owed to me'}
+                                                        {' · '}
                                                         {debt.counterparty}
                                                     </p>
-                                                </TableCell>
-                                                <TableCell>
-                                                    {debt.direction === 'owed'
-                                                        ? 'I owe'
-                                                        : 'Owed to me'}
                                                 </TableCell>
                                                 <TableCell className="text-right tabular-nums">
                                                     {formatMinorUnits(
                                                         debt.balance_minor,
                                                         debt.currency,
                                                     )}
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums">
+                                                    {debt.monthly_target_minor ===
+                                                    null ? (
+                                                        <span className="text-muted-foreground">
+                                                            No target
+                                                        </span>
+                                                    ) : (
+                                                        formatMinorUnits(
+                                                            debt.monthly_target_minor,
+                                                            debt.currency,
+                                                        )
+                                                    )}
+                                                    <p className="type-meta text-muted-foreground">
+                                                        {formatMinorUnits(
+                                                            debt.monthly_paid_minor,
+                                                            debt.currency,
+                                                        )}{' '}
+                                                        {debt.direction ===
+                                                        'owed'
+                                                            ? 'paid'
+                                                            : 'collected'}{' '}
+                                                        this month
+                                                    </p>
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <DropdownMenu>

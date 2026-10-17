@@ -44,6 +44,7 @@ import { useReportView } from '@/hooks/use-report-view';
 import {
     formatContextualDate,
     formatDateRange,
+    formatCompactMonthYear,
     formatReportingPeriod,
 } from '@/lib/date-presentation';
 import { formatMinorUnits } from '@/lib/format-minor-units';
@@ -53,6 +54,7 @@ import {
     periodBreakdownUrl,
 } from '@/lib/transaction-filter-url';
 import { home } from '@/routes';
+import { index as debtsIndex } from '@/routes/debts';
 import { create as createStatementImport } from '@/routes/statement_imports';
 import type {
     Currency,
@@ -115,7 +117,20 @@ type Briefing = {
     input_request: { transaction_count: number } | null;
 };
 
+type DebtSummaryAmounts = {
+    owed_minor: string;
+    receivable_minor: string;
+    outgoing_target_minor: string;
+    incoming_target_minor: string;
+    payments_made_minor: string;
+    payments_received_minor: string;
+};
 type HomeProps = {
+    debt_summary: {
+        target_month: string;
+        PEN: DebtSummaryAmounts;
+        USD: DebtSummaryAmounts;
+    };
     currency_filter: Currency | null;
     period: Period;
     primary: Briefing | null;
@@ -300,7 +315,7 @@ function SpendingComparisonChart({
     return (
         <ChartContainer
             config={chartConfig}
-            className="h-64 w-full max-w-full min-w-0 md:h-72"
+            className="h-64 w-full max-w-full min-w-0 md:h-72 xl:aspect-auto xl:h-auto xl:min-h-40 xl:flex-1"
             role="img"
             aria-label={
                 hasFutureDates
@@ -408,53 +423,76 @@ function SpendingComparisonChart({
 
 function SpendingSnapshot({ briefings }: { briefings: Briefing[] }) {
     return (
-        <dl className="grid grid-cols-1 divide-y border-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            {summaryItems.map((item, index) => {
-                const Icon = item.icon;
+        <div className="flex flex-col gap-3">
+            <dl className="grid grid-cols-1 divide-y border-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                {summaryItems.map((item, index) => {
+                    const Icon = item.icon;
 
-                return (
-                    <div
-                        key={item.label}
-                        className="grid gap-1 px-4 py-4 first:pl-0 last:pr-0"
-                    >
-                        <dt className="flex items-center gap-2 type-meta">
-                            <Icon className="size-3.5" />
-                            {item.label}
-                        </dt>
-                        <dd className="flex flex-wrap items-baseline gap-x-1 text-xl font-semibold tracking-tight tabular-nums">
-                            {briefings.map((briefing, briefingIndex) => (
-                                <span key={briefing.currency}>
-                                    {briefingIndex > 0 && (
-                                        <span className="mr-1 text-muted-foreground">
-                                            +
-                                        </span>
-                                    )}
-                                    <Link
-                                        href={periodBreakdownUrl({
-                                            currency: briefing.currency,
-                                            period: briefing.period,
-                                            focus: item.focus,
-                                        })}
-                                        data-test={
-                                            index === 0 && briefingIndex === 0
-                                                ? 'home-net-spending'
-                                                : `home-${briefing.currency.toLowerCase()}-${item.focus.replaceAll('_', '-')}`
-                                        }
-                                        className="rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-                                    >
-                                        {formatMinorUnits(
-                                            briefing.summary[item.value],
-                                            briefing.currency,
+                    return (
+                        <div
+                            key={item.label}
+                            className="grid gap-1 px-4 py-4 first:pl-0 last:pr-0"
+                        >
+                            <dt className="flex items-center gap-2 type-meta">
+                                <Icon className="size-3.5" />
+                                {item.label}
+                            </dt>
+                            <dd className="flex flex-wrap items-baseline gap-x-1 text-xl font-semibold tracking-tight tabular-nums">
+                                {briefings.map((briefing, briefingIndex) => (
+                                    <span key={briefing.currency}>
+                                        {briefingIndex > 0 && (
+                                            <span className="mr-1 text-muted-foreground">
+                                                +
+                                            </span>
                                         )}
-                                    </Link>
-                                </span>
-                            ))}
-                        </dd>
-                        <dd className="type-meta">{item.note}</dd>
-                    </div>
-                );
-            })}
-        </dl>
+                                        <Link
+                                            href={periodBreakdownUrl({
+                                                currency: briefing.currency,
+                                                period: briefing.period,
+                                                focus: item.focus,
+                                            })}
+                                            data-test={
+                                                index === 0 &&
+                                                briefingIndex === 0
+                                                    ? 'home-net-spending'
+                                                    : `home-${briefing.currency.toLowerCase()}-${item.focus.replaceAll('_', '-')}`
+                                            }
+                                            className="rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                        >
+                                            {formatMinorUnits(
+                                                briefing.summary[item.value],
+                                                briefing.currency,
+                                            )}
+                                        </Link>
+                                    </span>
+                                ))}
+                            </dd>
+                            <dd className="type-meta">{item.note}</dd>
+                        </div>
+                    );
+                })}
+            </dl>
+            <div
+                className="flex flex-wrap gap-4"
+                data-test="home-period-debt-payments"
+            >
+                {briefings.map((briefing) => (
+                    <p key={briefing.currency} className="type-meta">
+                        {briefing.currency} debt payments in selected period ·
+                        Made{' '}
+                        {formatMinorUnits(
+                            briefing.summary.debt_payments_made_minor,
+                            briefing.currency,
+                        )}{' '}
+                        · Collected{' '}
+                        {formatMinorUnits(
+                            briefing.summary.debt_payments_received_minor,
+                            briefing.currency,
+                        )}
+                    </p>
+                ))}
+            </div>
+        </div>
     );
 }
 
@@ -613,7 +651,7 @@ function CurrencySignalLane({ briefing }: { briefing: Briefing }) {
 
     return (
         <section
-            className="grid min-w-0 content-start gap-5 p-4 sm:p-6"
+            className="grid min-w-0 content-start gap-4 p-4"
             data-test={`home-${testSegment}-signals`}
         >
             <div
@@ -721,10 +759,10 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
 
     return (
         <Card
-            className="min-w-0 gap-0 overflow-hidden py-0"
+            className="min-h-0 min-w-0 gap-0 overflow-hidden py-0"
             data-test="home-signals-card"
         >
-            <CardHeader className="border-b p-4 sm:p-6">
+            <CardHeader className="shrink-0 border-b p-4">
                 <CardTitle>Behind the change</CardTitle>
                 <CardDescription>
                     Select a signal to see its Transactions.
@@ -758,7 +796,7 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
                     </Badge>
                 )}
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="min-h-0 flex-1 overflow-y-auto p-0">
                 {activeBriefing !== undefined && (
                     <CurrencySignalLane
                         key={activeBriefing.currency}
@@ -768,7 +806,7 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
             </CardContent>
             {briefings[0] !== undefined && (
                 <CardFooter
-                    className="grid items-start gap-2 border-t p-4 type-meta sm:p-6"
+                    className="grid shrink-0 items-start gap-2 border-t p-4 type-meta"
                     data-test="home-coverage-panel"
                 >
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -807,9 +845,13 @@ function SignalPanel({ briefings }: { briefings: Briefing[] }) {
 function HomeBriefing({
     briefings,
     today,
+    debtSummary,
+    currencyFilter,
 }: {
     briefings: Briefing[];
     today: string;
+    debtSummary: HomeProps['debt_summary'];
+    currencyFilter: Currency | null;
 }) {
     const primary = briefings[0];
     const pulse = primary?.pulse;
@@ -833,12 +875,12 @@ function HomeBriefing({
               : `${headlineSignal.category.name} is driving the change ${periodReference(primary.period)}.`;
 
     return (
-        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(36rem,1.2fr)_minmax(20rem,0.8fr)] xl:items-start">
+        <div className="grid min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(36rem,1.4fr)_minmax(20rem,0.8fr)] xl:grid-rows-[minmax(0,1fr)_auto]">
             <Card
-                className="min-w-0 gap-0 overflow-hidden py-0"
+                className="min-h-0 min-w-0 gap-0 overflow-hidden py-0 xl:row-span-2"
                 data-test="home-overview-card"
             >
-                <CardContent className="flex min-w-0 flex-col gap-6 p-4 sm:p-6">
+                <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 sm:p-6">
                     <section className="grid gap-3">
                         <div className="grid gap-2">
                             <p className="type-meta tracking-widest uppercase">
@@ -863,7 +905,7 @@ function HomeBriefing({
 
                     <SpendingSnapshot briefings={briefings} />
 
-                    <section className="flex min-w-0 flex-col gap-3">
+                    <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                                 <h3 className="type-section-title">
@@ -901,7 +943,97 @@ function HomeBriefing({
             </Card>
 
             <SignalPanel briefings={briefings} />
+            <HomeDebtSummary
+                summary={debtSummary}
+                currencyFilter={currencyFilter}
+            />
         </div>
+    );
+}
+
+function HomeDebtSummary({
+    summary,
+    currencyFilter,
+}: {
+    summary: HomeProps['debt_summary'];
+    currencyFilter: Currency | null;
+}) {
+    return (
+        <Card
+            className="min-w-0 shrink-0 gap-3 py-4"
+            data-test="home-debt-summary"
+        >
+            <CardHeader className="flex-row items-center justify-between gap-2 px-4">
+                <CardTitle>
+                    <Link
+                        href={debtsIndex.url()}
+                        className="inline-flex items-center gap-2 underline-offset-4 hover:underline"
+                    >
+                        Debts <ArrowRight className="size-3.5" />
+                    </Link>
+                </CardTitle>
+                <CardDescription>
+                    {formatCompactMonthYear(`${summary.target_month}-01`)}
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="grid min-w-0 gap-3 px-4">
+                {(['PEN', 'USD'] as const)
+                    .filter(
+                        (currency) =>
+                            !currencyFilter || currencyFilter === currency,
+                    )
+                    .map((currency) => (
+                        <div
+                            key={currency}
+                            className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-3"
+                        >
+                            <p className="type-meta font-medium">{currency}</p>
+                            <dl className="grid grid-cols-2 gap-3">
+                                {(
+                                    [
+                                        [
+                                            'I owe',
+                                            'owed_minor',
+                                            'outgoing_target_minor',
+                                            'Outgoing monthly target',
+                                        ],
+                                        [
+                                            'Owed to me',
+                                            'receivable_minor',
+                                            'incoming_target_minor',
+                                            'Incoming monthly target',
+                                        ],
+                                    ] as const
+                                ).map(
+                                    ([label, balance, target, targetLabel]) => (
+                                        <div key={balance} className="min-w-0">
+                                            <dt className="type-meta text-muted-foreground">
+                                                {label}
+                                            </dt>
+                                            <dd className="font-medium tabular-nums">
+                                                {formatMinorUnits(
+                                                    summary[currency][balance],
+                                                    currency,
+                                                )}
+                                            </dd>
+                                            <dd
+                                                className="type-meta text-muted-foreground"
+                                                aria-label={`${targetLabel}: ${formatMinorUnits(summary[currency][target], currency)}`}
+                                            >
+                                                {formatMinorUnits(
+                                                    summary[currency][target],
+                                                    currency,
+                                                )}{' '}
+                                                / month
+                                            </dd>
+                                        </div>
+                                    ),
+                                )}
+                            </dl>
+                        </div>
+                    ))}
+            </CardContent>
+        </Card>
     );
 }
 
@@ -973,13 +1105,23 @@ export default function Home(props: HomeProps) {
         <>
             <Head title="Home" />
 
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 md:p-6 xl:overflow-y-auto">
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 md:p-6 xl:overflow-hidden">
                 <HomeContextBar props={props} />
-
                 {briefings.length === 0 ? (
-                    <EmptyHome currency={props.currency_filter} />
+                    <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
+                        <EmptyHome currency={props.currency_filter} />
+                        <HomeDebtSummary
+                            summary={props.debt_summary}
+                            currencyFilter={props.currency_filter}
+                        />
+                    </div>
                 ) : (
-                    <HomeBriefing briefings={briefings} today={props.today} />
+                    <HomeBriefing
+                        briefings={briefings}
+                        today={props.today}
+                        debtSummary={props.debt_summary}
+                        currencyFilter={props.currency_filter}
+                    />
                 )}
             </main>
         </>

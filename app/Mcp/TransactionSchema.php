@@ -48,6 +48,13 @@ final class TransactionSchema
     {
         return $schema->object([
             ...self::relatedProperties($schema),
+            'debt_allocation' => $schema->object([
+                'debt_id' => $schema->integer()->required(),
+                'debt_name' => $schema->string()->required(),
+                'kind' => $schema->string()->enum(['funding', 'repayment'])->required(),
+                'principal_minor' => $schema->string()->pattern('^[0-9]+$')->required(),
+                'interest_minor' => $schema->string()->pattern('^[0-9]+$')->required(),
+            ])->withoutAdditionalProperties()->nullable()->required(),
             'income_source' => $schema->string()->enum([...array_column(IncomeSource::cases(), 'value'), null])->nullable()->required(),
             'transfer_purpose' => $schema->string()->enum([...array_column(TransferPurpose::cases(), 'value'), null])->nullable()->required(),
             'confirmed_at' => $schema->string()->required(),

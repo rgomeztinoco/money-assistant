@@ -5,6 +5,7 @@ namespace App\Actions\ReceiptReconciliation;
 use App\ExactInteger;
 use App\Models\ReceiptBreakdown;
 use App\Models\Transaction;
+use App\TransactionKind;
 
 /**
  * @phpstan-type ReceiptLineItemData array{id: string, description: string, quantity: string|null, unit_price_minor: string|null, line_total_minor: string, category: array{id: int, name: string}|null}
@@ -15,6 +16,9 @@ final class ReadReceiptBreakdownState
     /** @return array<int|string, ExactInteger> */
     public function categoryAllocations(Transaction $transaction): array
     {
+        if ($transaction->kind === TransactionKind::Debt && $transaction->hasSpendingContribution()) {
+            return [$transaction->category_id ?? 'uncategorized' => $transaction->netSpendingAmount()];
+        }
         if (! $transaction->kind->supportsCategory()) {
             return [];
         }

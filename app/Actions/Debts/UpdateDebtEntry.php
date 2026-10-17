@@ -17,13 +17,16 @@ class UpdateDebtEntry
 {
     public function __construct(private UpdateTransaction $updateTransaction) {}
 
-    public function handle(User $owner, Debt $debt, DebtEntry $entry, CarbonImmutable $date, int $amount, ?string $description, ?string $reason): void
+    public function handle(User $owner, Debt $debt, DebtEntry $entry, CarbonImmutable $date, int $amount, ?string $description, ?string $reason, ?int $principal = null, ?int $interest = null, ?int $categoryId = null): void
     {
-        DB::transaction(function () use ($owner, $debt, $entry, $date, $amount, $description, $reason): void {
+        DB::transaction(function () use ($owner, $debt, $entry, $date, $amount, $description, $reason, $principal, $interest, $categoryId): void {
             $debt = Debt::query()->whereBelongsTo($owner, 'owner')->whereKey($debt->id)->lockForUpdate()->firstOrFail();
             $entry = $debt->entries()->whereKey($entry->id)->lockForUpdate()->firstOrFail();
             if ($date->lt($debt->opened_on)) {
                 throw ValidationException::withMessages(['occurred_on' => 'Choose a date on or after the opening date.']);
+            }
+            if ($entry->kind === DebtEntryKind::InterestCharge) {
+                throw ValidationException::withMessages(['kind' => 'Correct interest charges with a dated balance adjustment.']);
             }
             if ($entry->kind === DebtEntryKind::Adjustment) {
                 $entry->fill(['amount_minor' => $amount, 'occurred_on' => $date, 'reason' => Str::squish($reason ?? '')]);
@@ -42,8 +45,8 @@ class UpdateDebtEntry
                 currency: $transaction->currency, kind: TransactionKind::Debt, direction: $transaction->direction,
                 description: $description ?? $transaction->description, incomeSource: null, transferPurpose: null,
                 instrumentLabel: $transaction->instrument_label, instrumentLastFour: $transaction->instrument_last_four,
-                categoryId: null, originalSpendingId: null, removeReceiptBreakdown: false,
-                debtId: $debt->id, debtEntryKind: $entry->kind,
+                categoryId: $categoryId, originalSpendingId: null, removeReceiptBreakdown: false,
+                debtId: $debt->id, debtEntryKind: $entry->kind, debtPrincipalMinor: $principal, debtInterestMinor: $interest,
             );
         }, 3);
     }

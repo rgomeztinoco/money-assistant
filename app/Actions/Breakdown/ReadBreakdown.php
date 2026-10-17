@@ -160,13 +160,13 @@ class ReadBreakdown
         foreach (Currency::cases() as $currency) {
             $currencyTransactions = $transactions
                 ->where('currency', $currency)
-                ->filter(fn (Transaction $transaction): bool => $transaction->kind->supportsCategory());
+                ->filter(fn (Transaction $transaction): bool => $transaction->hasSpendingContribution());
             $totalAmount = ExactInteger::from(0);
             $uncategorizedAmount = ExactInteger::from(0);
             $uncategorizedTransactionCount = 0;
 
             foreach ($currencyTransactions as $transaction) {
-                $totalAmount = $totalAmount->add($this->absolute($transaction->amount_minor));
+                $totalAmount = $totalAmount->add($this->absolute($transaction->netSpendingAmount()->value()));
                 $allocation = $this->netSpendingAllocation->byCategory($transaction, $categoriesById);
                 $uncategorizedAllocation = $allocation['uncategorized'] ?? ExactInteger::from(0);
 
@@ -201,7 +201,7 @@ class ReadBreakdown
         $amounts = [];
 
         foreach ($transactions as $transaction) {
-            if (! $transaction->kind->supportsCategory()) {
+            if (! $transaction->hasSpendingContribution()) {
                 continue;
             }
 
@@ -211,10 +211,10 @@ class ReadBreakdown
         }
 
         $totalSpending = $transactions
-            ->where('kind', TransactionKind::Spending)
+            ->filter(fn (Transaction $transaction): bool => $transaction->kind === TransactionKind::Spending || ($transaction->kind === TransactionKind::Debt && $transaction->hasSpendingContribution()))
             ->reduce(
                 fn (ExactInteger $total, Transaction $transaction): ExactInteger => $total->add(
-                    ExactInteger::from($transaction->amount_minor),
+                    $transaction->netSpendingAmount(),
                 ),
                 ExactInteger::from(0),
             );
@@ -358,7 +358,7 @@ class ReadBreakdown
             foreach ($dayTransactions as $transaction) {
                 $currency = $transaction->currency->value;
                 $netSpending[$currency] = $netSpending[$currency]->add(
-                    $transaction->kind->netSpendingAmount($transaction->amount_minor),
+                    $transaction->netSpendingAmount(),
                 );
             }
 
@@ -426,7 +426,7 @@ class ReadBreakdown
         $merchants = [];
 
         foreach ($transactions as $transaction) {
-            if (! $transaction->kind->supportsCategory()) {
+            if (! $transaction->hasSpendingContribution()) {
                 continue;
             }
 
@@ -438,7 +438,7 @@ class ReadBreakdown
             ];
             $currency = $transaction->currency->value;
             $merchants[$merchantKey]['amount'][$currency] = $merchants[$merchantKey]['amount'][$currency]->add(
-                $transaction->kind->netSpendingAmount($transaction->amount_minor),
+                $transaction->netSpendingAmount(),
             );
             $merchants[$merchantKey]['transaction_count']++;
         }
@@ -471,11 +471,9 @@ class ReadBreakdown
                 foreach ($dayTransactions as $transaction) {
                     $amount = ExactInteger::from($transaction->amount_minor);
                     $currency = $transaction->currency->value;
-                    $netSpending[$currency] = $netSpending[$currency]->add($transaction->kind->netSpendingAmount($transaction->amount_minor));
+                    $netSpending[$currency] = $netSpending[$currency]->add($transaction->netSpendingAmount());
 
-                    if ($transaction->kind === TransactionKind::Income) {
-                        $income[$currency] = $income[$currency]->add($amount);
-                    }
+                    $income[$currency] = $income[$currency]->add($transaction->incomeAmount());
 
                     if ($transaction->kind === TransactionKind::Transfer && $transaction->transfer_purpose === TransferPurpose::Savings) {
                         $movedToSavings[$currency] = $transaction->direction === MovementDirection::Credit
@@ -515,7 +513,7 @@ class ReadBreakdown
             'currency' => $transaction->currency->value,
             'kind' => $transaction->kind->value,
             'direction' => $transaction->direction->value,
-            'income_source' => $transaction->income_source?->value,
+            'income_source' => $transaction->effectiveIncomeSource()?->value,
             'transfer_purpose' => $transaction->transfer_purpose?->value,
             'debt_allocation' => $transaction->debtAllocation(),
             'description' => $transaction->description,
@@ -604,6 +602,9 @@ class ReadBreakdown
             ->pluck('income_source')
             ->map(fn (IncomeSource $source): string => $source->value)
             ->all();
+        if (Transaction::query()->whereBelongsTo($owner, 'owner')->where('kind', TransactionKind::Debt)->where('direction', MovementDirection::Credit)->whereNull('voided_at')->whereHas('debtEntry', fn ($query) => $query->where('kind', 'repayment')->where('interest_minor', '>', 0))->exists()) {
+            $usedSources[] = IncomeSource::InterestReceived->value;
+        }
         $usedOptions = [];
         $unusedOptions = [];
 

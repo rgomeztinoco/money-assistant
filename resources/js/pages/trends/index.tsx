@@ -59,6 +59,20 @@ function PeriodSummary({
                               currency,
                           )}
                 </dd>
+                {summary && (
+                    <dd className="type-meta">
+                        Debt payments in selected period · Made{' '}
+                        {formatMinorUnits(
+                            summary.debt_payments_made_minor,
+                            currency,
+                        )}{' '}
+                        · Collected{' '}
+                        {formatMinorUnits(
+                            summary.debt_payments_received_minor,
+                            currency,
+                        )}
+                    </dd>
+                )}
             </dl>
             <Button asChild size="icon" variant="ghost">
                 <Link

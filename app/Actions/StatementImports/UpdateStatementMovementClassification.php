@@ -111,6 +111,10 @@ class UpdateStatementMovementClassification
                 ->value('id');
         }
 
+        if ($classification === StatementMovementClassification::Debt && $previousClassification === StatementMovementClassification::Debt && $transaction->hasSpendingContribution()) {
+            return $transaction->category_id;
+        }
+
         if (! $classification->contributesToSpending()) {
             return null;
         }

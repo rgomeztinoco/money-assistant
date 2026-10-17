@@ -75,7 +75,7 @@ test('transaction tools expose a precise curated representation and enforce owne
         'description' => 'Market', 'confirmed_at' => '2026-09-19T12:00:00+00:00', 'updated_at' => '2026-09-19T12:00:00+00:00', 'voided_at' => null,
         'category' => ['id' => $category->id, 'name' => 'Food', 'parent_id' => null, 'archived_at' => null],
         'category_assignment_provenance' => 'owner', 'review_state' => 'clear',
-        'original_spending' => null, 'linked_refunds' => [],
+        'original_spending' => null, 'linked_refunds' => [], 'debt_allocation' => null,
         'category_allocations' => [['category' => ['id' => $category->id, 'name' => 'Food', 'parent_id' => null, 'archived_at' => null], 'amount_minor' => '9007199254740993']],
     ];
     $single = financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $transaction->id]])
@@ -162,7 +162,7 @@ test('tools advertise exactly the read-only financial contract and support legac
     $owner = User::factory()->create();
     $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
     $tools = financialMcp($token, 'tools/list')->assertOk()->json('result.tools');
-    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories']);
+    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'list_debts', 'get_debt']);
     foreach ($tools as $tool) {
         expect($tool['description'])->not->toBeEmpty()
             ->and($tool['inputSchema']['type'])->toBe('object')
@@ -182,7 +182,7 @@ test('tools advertise exactly the read-only financial contract and support legac
         ->assertJsonMissingPath('result.capabilities.resources')->assertJsonMissingPath('result.capabilities.prompts');
     Auth::forgetGuards();
     $this->withToken($token)->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list'])
-        ->assertOk()->assertHeaderMissing('MCP-Session-Id')->assertJsonCount(3, 'result.tools');
+        ->assertOk()->assertHeaderMissing('MCP-Session-Id')->assertJsonCount(5, 'result.tools');
     financialMcp($token, 'tools/list', [], ['Mcp-Method' => 'tools/call'])->assertBadRequest();
 });
 
@@ -391,4 +391,128 @@ test('incremental filters preserve a fractional second lower bound', function ()
         ->assertOk()->assertJsonPath('result.isError', false)
         ->assertJsonCount(1, 'result.structuredContent.transactions')
         ->assertJsonPath('result.structuredContent.transactions.0.id', $included->id);
+});
+
+test('assistant debt reads expose exact allocations targets and independent history only to their owner', function () {
+    $owner = User::factory()->create();
+    $this->actingAs($owner)->post('/debts', ['name' => 'Bank loan', 'counterparty' => 'Bank', 'direction' => 'receivable', 'currency' => 'USD', 'opening_balance_minor' => '9007199254740993', 'opened_on' => '2026-08-01', 'monthly_target_minor' => '20000'])->assertSessionHasNoErrors();
+    $debt = $this->get('/debts')->inertiaProps('debts.0.id');
+    $this->post("/debts/{$debt}/entries", ['kind' => 'repayment', 'occurred_on' => '2026-08-05', 'amount' => '200.00', 'description' => 'Collection', 'principal' => '170.00', 'interest' => '30.00', 'interest_is_new' => true])->assertSessionHasNoErrors();
+    $payment = $this->get('/transactions')->inertiaProps('transactions.0.id');
+    $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
+    $otherToken = User::factory()->create()->createToken('other reader', ['financial-data:read'])->plainTextToken;
+    financialMcp($token, 'tools/call', ['name' => 'list_debts'])->assertOk()->assertJsonPath('result.isError', false)
+        ->assertJsonCount(1, 'result.structuredContent.debts')->assertJsonPath('result.structuredContent.debts.0.balance_minor', '9007199254723993')->assertJsonPath('result.structuredContent.debts.0.monthly_target_minor', '20000')->assertDontSee('user_id');
+    financialMcp($token, 'tools/call', ['name' => 'get_debt', 'arguments' => ['id' => $debt]])->assertOk()->assertJsonPath('result.isError', false)
+        ->assertJsonPath('result.structuredContent.debt.opening_balance_minor', '9007199254740993')->assertJsonCount(2, 'result.structuredContent.entries')
+        ->assertJsonPath('result.structuredContent.entries.0.principal_minor', '17000')->assertJsonPath('result.structuredContent.entries.0.interest_minor', '3000')
+        ->assertJsonPath('result.structuredContent.entries.1.kind', 'interest_charge')->assertJsonPath('result.structuredContent.entries.1.transaction_id', null)->assertDontSee('instrument_label')->assertDontSee('message_id');
+    financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $payment]])->assertOk()
+        ->assertJsonPath('result.structuredContent.transaction.amount_minor', '20000')->assertJsonPath('result.structuredContent.transaction.income_source', 'interest_received')
+        ->assertJsonPath('result.structuredContent.transaction.debt_allocation', ['debt_id' => $debt, 'debt_name' => 'Bank loan', 'kind' => 'repayment', 'principal_minor' => '17000', 'interest_minor' => '3000']);
+    financialMcp($otherToken, 'tools/call', ['name' => 'get_debt', 'arguments' => ['id' => $debt]])->assertOk()->assertJsonPath('result.isError', true)->assertJsonPath('result.content.0.text', 'Debt not found.');
+    financialMcp($otherToken, 'tools/call', ['name' => 'list_debts'])->assertOk()->assertJsonCount(0, 'result.structuredContent.debts');
+    $tools = financialMcp($token, 'tools/list')->assertOk()->json('result.tools');
+    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'list_debts', 'get_debt']);
+    foreach ($tools as $tool) {
+        expect($tool['annotations']['readOnlyHint'])->toBeTrue();
+    }
+    $denied = $owner->createToken('denied', ['other:read'])->plainTextToken;
+    financialMcp($denied, 'tools/call', ['name' => 'get_debt', 'arguments' => ['id' => $debt]])->assertForbidden();
+});
+
+test('incremental readers receive allocation-only corrections and reassignments without duplicating payments or charges', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-20T12:00:00Z'));
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Interest']);
+    $this->actingAs($owner);
+    foreach (['Bank loan', 'Family loan'] as $name) {
+        $this->post('/debts', ['name' => $name, 'counterparty' => 'Lender', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => '100000', 'opened_on' => '2026-08-01'])->assertSessionHasNoErrors();
+    }
+    $debts = collect($this->get('/debts')->inertiaProps('debts'))->keyBy('name');
+    $bank = $debts['Bank loan']['id'];
+    $family = $debts['Family loan']['id'];
+    $this->post("/debts/{$bank}/entries", ['kind' => 'repayment', 'occurred_on' => '2026-08-05', 'amount' => '200.00', 'description' => 'Payment', 'principal_minor' => '17000', 'interest_minor' => '3000', 'interest_is_new' => true, 'category_id' => $category->id])->assertSessionHasNoErrors();
+    $payment = $this->get('/transactions')->inertiaProps('transactions.0.id');
+    $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
+    $edit = ['kind' => 'debt', 'direction' => 'debit', 'currency' => 'PEN', 'occurred_on' => '2026-08-05', 'amount_minor' => '20000', 'description' => 'Payment', 'category_id' => $category->id, 'principal_minor' => '16000', 'interest_minor' => '4000'];
+
+    foreach ([[$bank, 'Bank loan'], [$family, 'Family loan']] as [$debt, $name]) {
+        $this->travel(1)->seconds();
+        $checkpoint = financialMcp($token, 'tools/call', ['name' => 'list_transactions'])
+            ->assertOk()->assertJsonCount(1, 'result.structuredContent.transactions')->json('result.structuredContent.checkpoint');
+        $this->travel(1)->seconds();
+        $this->actingAs($owner)->put("/transactions/{$payment}", [...$edit, 'debt_id' => $debt])->assertSessionHasNoErrors();
+        financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['updated_since' => $checkpoint]])
+            ->assertOk()->assertJsonPath('result.isError', false)->assertJsonCount(1, 'result.structuredContent.transactions')
+            ->assertJsonPath('result.structuredContent.transactions.0.id', $payment)
+            ->assertJsonPath('result.structuredContent.transactions.0.amount_minor', '20000')
+            ->assertJsonPath('result.structuredContent.transactions.0.category_allocations.0.amount_minor', '4000')
+            ->assertJsonPath('result.structuredContent.transactions.0.debt_allocation', ['debt_id' => $debt, 'debt_name' => $name, 'kind' => 'repayment', 'principal_minor' => '16000', 'interest_minor' => '4000']);
+    }
+
+    $this->travel(1)->seconds();
+    $checkpoint = financialMcp($token, 'tools/call', ['name' => 'list_transactions'])->assertOk()->json('result.structuredContent.checkpoint');
+    $this->travel(1)->seconds();
+    $this->actingAs($owner)->put("/transactions/{$payment}", [...$edit, 'debt_id' => $family])->assertSessionHasNoErrors();
+    financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['updated_since' => $checkpoint]])
+        ->assertOk()->assertJsonCount(0, 'result.structuredContent.transactions');
+    financialMcp($token, 'tools/call', ['name' => 'get_debt', 'arguments' => ['id' => $bank]])
+        ->assertOk()->assertJsonCount(1, 'result.structuredContent.entries')->assertJsonPath('result.structuredContent.debt.balance_minor', '103000')
+        ->assertJsonPath('result.structuredContent.entries.0.kind', 'interest_charge')->assertJsonPath('result.structuredContent.entries.0.amount_minor', '3000');
+    financialMcp($token, 'tools/call', ['name' => 'get_debt', 'arguments' => ['id' => $family]])
+        ->assertOk()->assertJsonCount(1, 'result.structuredContent.entries')->assertJsonPath('result.structuredContent.debt.balance_minor', '80000');
+});
+
+test('incremental readers receive renamed debts on every linked payment but ignore unrelated debt edits', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-20T12:00:00Z'));
+    $owner = User::factory()->create();
+    $debtData = ['name' => 'Bank loan', 'counterparty' => 'Bank', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => '100000', 'opened_on' => '2026-08-01'];
+    $this->actingAs($owner)->post('/debts', $debtData)->assertSessionHasNoErrors();
+    $debt = $this->get('/debts')->inertiaProps('debts.0.id');
+    foreach (['First payment', 'Second payment'] as $description) {
+        $this->post("/debts/{$debt}/entries", ['kind' => 'repayment', 'occurred_on' => '2026-08-05', 'amount' => '200.00', 'description' => $description, 'principal_minor' => '17000', 'interest_minor' => '3000'])->assertSessionHasNoErrors();
+    }
+    $payments = collect($this->get('/transactions')->inertiaProps('transactions'))->pluck('id')->sort()->values()->all();
+    $this->post(route('transactions.void.store', $payments[1]))->assertSessionHasNoErrors();
+    Transaction::factory()->for($owner, 'owner')->create();
+    $other = User::factory()->create();
+    Transaction::factory()->for($other, 'owner')->create();
+    $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
+    $otherToken = $other->createToken('other reader', ['financial-data:read'])->plainTextToken;
+    $this->travel(1)->seconds();
+    $checkpoint = financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['void_state' => 'all']])
+        ->assertOk()->assertJsonCount(3, 'result.structuredContent.transactions')->json('result.structuredContent.checkpoint');
+    $this->travel(1)->seconds();
+    $this->actingAs($owner)->put("/debts/{$debt}", [...$debtData, 'name' => 'Renamed loan'])->assertSessionHasNoErrors();
+    $rows = financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['void_state' => 'all', 'updated_since' => $checkpoint]])
+        ->assertOk()->assertJsonPath('result.isError', false)->json('result.structuredContent.transactions');
+    expect(array_column($rows, 'id'))->toBe($payments);
+    foreach ($rows as $row) {
+        expect($row['amount_minor'])->toBe('20000')
+            ->and($row['debt_allocation'])->toBe(['debt_id' => $debt, 'debt_name' => 'Renamed loan', 'kind' => 'repayment', 'principal_minor' => '17000', 'interest_minor' => '3000']);
+    }
+    financialMcp($otherToken, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['void_state' => 'all', 'updated_since' => $checkpoint]])
+        ->assertOk()->assertJsonCount(0, 'result.structuredContent.transactions');
+
+    $this->travel(1)->seconds();
+    $checkpoint = financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['void_state' => 'all']])
+        ->assertOk()->json('result.structuredContent.checkpoint');
+    $this->travel(1)->seconds();
+    $this->actingAs($owner)->put("/debts/{$debt}", [...$debtData, 'name' => ' Renamed  loan ', 'monthly_target_minor' => '20000'])->assertSessionHasNoErrors();
+    financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['void_state' => 'all', 'updated_since' => $checkpoint]])
+        ->assertOk()->assertJsonCount(0, 'result.structuredContent.transactions');
+});
+
+test('assistant category filters and review state classify only paid debt interest', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Interest']);
+    $this->actingAs($owner)->post('/debts', ['name' => 'Bank loan', 'counterparty' => 'Bank', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => '100000', 'opened_on' => '2026-08-01']);
+    $debt = $this->get('/debts')->inertiaProps('debts.0.id');
+    $this->post("/debts/{$debt}/entries", ['kind' => 'repayment', 'occurred_on' => '2026-08-05', 'amount' => '200.00', 'description' => 'Paid interest', 'principal' => '170.00', 'interest' => '30.00', 'category_id' => $category->id])->assertSessionHasNoErrors();
+    $payment = $this->get('/transactions')->inertiaProps('transactions.0.id');
+    $token = $owner->createToken('reader', ['financial-data:read'])->plainTextToken;
+    financialMcp($token, 'tools/call', ['name' => 'list_transactions', 'arguments' => ['category_id' => $category->id]])->assertOk()->assertJsonCount(1, 'result.structuredContent.transactions')->assertJsonPath('result.structuredContent.transactions.0.category_allocations.0.amount_minor', '3000');
+    $this->actingAs($owner)->put("/transactions/{$payment}", ['kind' => 'debt', 'direction' => 'debit', 'currency' => 'PEN', 'occurred_on' => '2026-08-05', 'amount' => '200.00', 'description' => 'Uncategorized interest', 'category_id' => null])->assertSessionHasNoErrors();
+    financialMcp($token, 'tools/call', ['name' => 'get_transaction', 'arguments' => ['id' => $payment]])->assertOk()->assertJsonPath('result.structuredContent.transaction.review_state', 'outstanding')->assertJsonPath('result.structuredContent.transaction.category_allocations.0.amount_minor', '3000');
 });

@@ -36,7 +36,7 @@ class ReadTransactions
                 'kind', 'direction', 'income_source', 'transfer_purpose',
                 'description', 'category_id', 'voided_at',
             ])
-            ->with(['category:id,name', 'receiptBreakdown:id,transaction_id']);
+            ->with(['debtEntry.debt', 'category:id,name', 'receiptBreakdown:id,transaction_id']);
         $searchId = preg_match('/^#?([1-9][0-9]*)$/D', $filters['search'], $matches) === 1
             ? filter_var($matches[1], FILTER_VALIDATE_INT)
             : false;
@@ -84,8 +84,9 @@ class ReadTransactions
                 'currency' => $transaction->currency->value,
                 'kind' => $transaction->kind->value,
                 'direction' => $transaction->direction->value,
-                'income_source' => $transaction->income_source?->value,
+                'income_source' => $transaction->effectiveIncomeSource()?->value,
                 'transfer_purpose' => $transaction->transfer_purpose?->value,
+                'debt_allocation' => $transaction->debtAllocation(),
                 'description' => $transaction->description,
                 'voided_at' => $transaction->voided_at?->toIso8601String(),
                 'has_split' => $transaction->receiptBreakdown !== null,

@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\CategoryAssignmentProvenance;
 use App\Currency;
+use App\DebtEntryKind;
+use App\ExactInteger;
 use App\IncomeSource;
 use App\MovementDirection;
 use App\TransactionKind;
@@ -112,7 +114,7 @@ class Transaction extends Model
         return $this->hasMany(SpendingNotificationReference::class);
     }
 
-    /** @return array{debt_id: int, debt_name: string, kind: string}|null */
+    /** @return array{debt_id: int, debt_name: string, kind: string, principal_minor: string, interest_minor: string}|null */
     public function debtAllocation(): ?array
     {
         if ($this->kind !== TransactionKind::Debt) {
@@ -120,7 +122,38 @@ class Transaction extends Model
         }
         $entry = $this->debtEntry;
 
-        return $entry === null ? null : ['debt_id' => $entry->debt_id, 'debt_name' => $entry->debt->name, 'kind' => $entry->kind->value];
+        return $entry === null ? null : ['debt_id' => $entry->debt_id, 'debt_name' => $entry->debt->name, 'kind' => $entry->kind->value, 'principal_minor' => (string) $entry->principal_minor, 'interest_minor' => (string) $entry->interest_minor];
+    }
+
+    public function netSpendingAmount(): ExactInteger
+    {
+        if ($this->kind === TransactionKind::Debt) {
+            return $this->direction === MovementDirection::Debit && $this->debtEntry?->kind === DebtEntryKind::Repayment
+                ? ExactInteger::from($this->debtEntry->interest_minor) : ExactInteger::from(0);
+        }
+
+        return $this->kind->netSpendingAmount($this->amount_minor);
+    }
+
+    public function incomeAmount(): ExactInteger
+    {
+        if ($this->kind === TransactionKind::Debt) {
+            return $this->direction === MovementDirection::Credit && $this->debtEntry?->kind === DebtEntryKind::Repayment
+                ? ExactInteger::from($this->debtEntry->interest_minor) : ExactInteger::from(0);
+        }
+
+        return ExactInteger::from($this->kind === TransactionKind::Income ? $this->amount_minor : 0);
+    }
+
+    public function hasSpendingContribution(): bool
+    {
+        return $this->kind->supportsCategory() || $this->netSpendingAmount()->compare(ExactInteger::from(0)) !== 0;
+    }
+
+    public function effectiveIncomeSource(): ?IncomeSource
+    {
+        return $this->kind === TransactionKind::Debt && $this->incomeAmount()->compare(ExactInteger::from(0)) === 1
+            ? IncomeSource::InterestReceived : $this->income_source;
     }
 
     /** @return HasOne<DebtEntry, $this> */
@@ -179,6 +212,18 @@ class Transaction extends Model
         return $this->belongsTo(MerchantRule::class);
     }
 
+    /** @param Builder<Transaction> $query
+     * @return Builder<Transaction>
+     */
+    public function scopeWhereHasSpendingContribution(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+                ->orWhere(fn (Builder $query) => $query->where('kind', TransactionKind::Debt)->where('direction', MovementDirection::Debit)
+                    ->whereHas('debtEntry', fn (Builder $query) => $query->where('kind', DebtEntryKind::Repayment)->where('interest_minor', '>', 0)));
+        });
+    }
+
     /**
      * @param  Builder<Transaction>  $query
      * @return Builder<Transaction>
@@ -186,7 +231,7 @@ class Transaction extends Model
     public function scopeWhereCategoryRequiresReview(Builder $query): Builder
     {
         return $query
-            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+            ->whereHasSpendingContribution()
             ->whereNull('category_id')
             ->whereDoesntHave('receiptBreakdown', fn (Builder $query) => $query
                 ->whereHas('lineItems'));

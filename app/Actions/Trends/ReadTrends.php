@@ -12,7 +12,6 @@ use App\MerchantNormalizer;
 use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
-use App\TransactionKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Arr;
 
@@ -191,13 +190,14 @@ final class ReadTrends
             ->whereBelongsTo($owner, 'owner')
             ->where('currency', $currency)
             ->whereNull('voided_at')
-            ->whereIn('kind', [TransactionKind::Spending, TransactionKind::Refund])
+            ->whereHasSpendingContribution()
             ->whereBetween('occurred_on', [
                 Arr::last($periods)[0]->toDateString(),
                 $periods[0][1]->toDateString(),
             ])
-            ->select(['id', 'occurred_on', 'amount_minor', 'kind', 'category_id', 'description'])
+            ->select(['id', 'occurred_on', 'amount_minor', 'direction', 'kind', 'category_id', 'description'])
             ->with([
+                'debtEntry',
                 'receiptBreakdown:id,transaction_id',
                 'receiptBreakdown.lineItems:id,receipt_breakdown_id,category_id,line_total_minor',
             ])
@@ -242,7 +242,7 @@ final class ReadTrends
                 ...$this->recordEvidence(
                     $merchantBuckets[$merchantKey],
                     $periodIndex,
-                    $transaction->kind->netSpendingAmount($transaction->amount_minor),
+                    $transaction->netSpendingAmount(),
                     $transaction,
                 ),
             ];
@@ -398,8 +398,8 @@ final class ReadTrends
             ->where('currency', $currency)
             ->whereNull('voided_at')
             ->whereBetween('occurred_on', [$dateFrom->toDateString(), $contextDateTo->toDateString()])
-            ->select(['id', 'occurred_on', 'amount_minor', 'kind'])
-            ->cursor();
+            ->with('debtEntry')->select(['id', 'occurred_on', 'amount_minor', 'direction', 'kind'])
+            ->lazy(500);
 
         foreach ($transactions as $transaction) {
             $monthKey = $transaction->occurred_on->format('Y-m');
@@ -407,7 +407,7 @@ final class ReadTrends
             $months[$monthKey] = [
                 'transaction_count' => $monthData['transaction_count'] + 1,
                 'amount' => $monthData['amount']->add(
-                    $transaction->kind->netSpendingAmount($transaction->amount_minor),
+                    $transaction->netSpendingAmount(),
                 ),
             ];
         }

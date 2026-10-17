@@ -13,6 +13,14 @@ import type { TransactionAction } from '@/components/transaction-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useReportView } from '@/hooks/use-report-view';
 import { formatReportingPeriod } from '@/lib/date-presentation';
@@ -162,91 +170,66 @@ function BreakdownSummary({ props }: { props: BreakdownProps }) {
                 </span>
             </header>
 
-            <div
-                className={`grid divide-y border-y ${props.currency_filter === null ? 'sm:grid-cols-2 sm:divide-x sm:divide-y-0' : ''}`}
-            >
-                {visibleCurrencies.map((currency) => (
-                    <section
-                        key={currency}
-                        className="grid gap-4 px-1 py-4 sm:px-4"
-                    >
-                        <div className="grid gap-1">
-                            <span className="type-meta tracking-wider">
+            <Table className="table-fixed type-meta">
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="h-8 w-2/5">
+                            <span className="sr-only">Summary</span>
+                        </TableHead>
+                        {visibleCurrencies.map((currency) => (
+                            <TableHead
+                                key={currency}
+                                className="h-8 text-right"
+                            >
                                 {currency}
-                            </span>
-                            <dl>
-                                <dt className="type-body text-muted-foreground">
-                                    Net spending
-                                </dt>
-                                <dd className="text-2xl font-semibold tracking-tight tabular-nums">
+                            </TableHead>
+                        ))}
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {(
+                        [
+                            [
+                                'Net spending',
+                                'net_spending_minor',
+                                'net-spending',
+                            ],
+                            ['Income', 'income_minor', 'income'],
+                            ['Savings', 'moved_to_savings_minor', 'savings'],
+                            [
+                                'Repaid',
+                                'debt_payments_made_minor',
+                                'payments-made',
+                            ],
+                            [
+                                'Collected',
+                                'debt_payments_received_minor',
+                                'payments-received',
+                            ],
+                            ['Borrowed', 'borrowed_minor', 'borrowed'],
+                            ['Lent', 'lent_minor', 'lent'],
+                        ] as const
+                    ).map(([label, key, testId]) => (
+                        <TableRow key={key}>
+                            <TableCell className="px-1 py-1 whitespace-normal text-muted-foreground">
+                                {label}
+                            </TableCell>
+                            {visibleCurrencies.map((currency) => (
+                                <TableCell
+                                    key={currency}
+                                    className="px-1 py-1 text-right font-medium whitespace-nowrap tabular-nums"
+                                    data-test={`${testId}-${currency}`}
+                                >
                                     {formatMinorUnits(
-                                        props.summary[currency]
-                                            .net_spending_minor,
+                                        props.summary[currency][key],
                                         currency,
                                     )}
-                                </dd>
-                            </dl>
-                        </div>
-                        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 type-body">
-                            <dt className="text-muted-foreground">Income</dt>
-                            <dd className="text-right font-medium tabular-nums">
-                                {formatMinorUnits(
-                                    props.summary[currency].income_minor,
-                                    currency,
-                                )}
-                            </dd>
-                            <dt className="text-muted-foreground">Savings</dt>
-                            <dd className="text-right font-medium tabular-nums">
-                                {formatMinorUnits(
-                                    props.summary[currency]
-                                        .moved_to_savings_minor,
-                                    currency,
-                                )}
-                            </dd>
-                            <dt className="text-muted-foreground">
-                                Debt payments made
-                            </dt>
-                            <dd className="text-right font-medium tabular-nums">
-                                {formatMinorUnits(
-                                    props.summary[currency]
-                                        .debt_payments_made_minor,
-                                    currency,
-                                )}
-                            </dd>
-                            <dt className="text-muted-foreground">
-                                Debt payments received
-                            </dt>
-                            <dd className="text-right font-medium tabular-nums">
-                                {formatMinorUnits(
-                                    props.summary[currency]
-                                        .debt_payments_received_minor,
-                                    currency,
-                                )}
-                            </dd>
-                            <dt className="text-muted-foreground">Borrowed</dt>
-                            <dd
-                                className="text-right font-medium tabular-nums"
-                                data-test={`borrowed-${currency}`}
-                            >
-                                {formatMinorUnits(
-                                    props.summary[currency].borrowed_minor,
-                                    currency,
-                                )}
-                            </dd>
-                            <dt className="text-muted-foreground">Lent</dt>
-                            <dd
-                                className="text-right font-medium tabular-nums"
-                                data-test={`lent-${currency}`}
-                            >
-                                {formatMinorUnits(
-                                    props.summary[currency].lent_minor,
-                                    currency,
-                                )}
-                            </dd>
-                        </dl>
-                    </section>
-                ))}
-            </div>
+                                </TableCell>
+                            ))}
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
 
             <section className="grid gap-3">
                 <div className="flex items-start justify-between gap-3">

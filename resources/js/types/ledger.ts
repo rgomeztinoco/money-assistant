@@ -3,14 +3,24 @@ export type TransactionKind =
     'spending' | 'refund' | 'income' | 'transfer' | 'debt';
 export type MovementDirection = 'debit' | 'credit';
 export type IncomeSource =
-    'salary' | 'independent_work' | 'investments' | 'other';
+    | 'salary'
+    | 'independent_work'
+    | 'investments'
+    | 'interest_received'
+    | 'other';
 export type TransferPurpose = 'savings' | 'card_payment' | 'internal';
 
 export type MoneyMovementDetails =
     | {
-          kind: 'spending' | 'refund' | 'debt';
+          kind: 'spending' | 'refund';
           direction: MovementDirection;
           income_source: null;
+          transfer_purpose: null;
+      }
+    | {
+          kind: 'debt';
+          direction: MovementDirection;
+          income_source: 'interest_received' | null;
           transfer_purpose: null;
       }
     | {
@@ -113,6 +123,8 @@ type SelectedTransactionBase = {
     debt_allocation: {
         debt_id: number;
         debt_name: string;
+        principal_minor: string;
+        interest_minor: string;
         kind: 'funding' | 'repayment';
     } | null;
 };

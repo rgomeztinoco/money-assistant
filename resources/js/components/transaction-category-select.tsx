@@ -12,6 +12,7 @@ type CategorizedTransaction = MoneyMovementDetails & {
     currency: Currency;
     category: { id: number; name: string } | null;
     has_split?: boolean;
+    debt_allocation?: { kind: 'funding' | 'repayment' } | null;
 };
 
 export function TransactionCategorySelect({
@@ -56,6 +57,26 @@ export function TransactionCategorySelect({
 
     if (transaction.has_split) {
         return <span className="text-muted-foreground">Category split</span>;
+    }
+
+    if (transaction.kind === 'debt') {
+        const operation = transaction.debt_allocation?.kind;
+        const label =
+            operation === 'funding'
+                ? transaction.direction === 'credit'
+                    ? 'Borrowing'
+                    : 'Lending'
+                : operation === 'repayment'
+                  ? transaction.direction === 'debit'
+                      ? 'Repayment'
+                      : 'Collection'
+                  : 'Debt';
+
+        return (
+            <span className="text-muted-foreground">
+                {transaction.category?.name ?? label}
+            </span>
+        );
     }
 
     if (transaction.kind === 'income') {

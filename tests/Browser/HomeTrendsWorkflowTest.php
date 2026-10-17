@@ -110,12 +110,13 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
                 const signals = document.querySelector('[data-test="home-signals-card"]');
                 const chart = document.querySelector('[data-test="home-spending-chart"]');
                 const coverage = document.querySelector('[data-test="home-coverage-panel"]');
+                const debts = document.querySelector('[data-test="home-debt-summary"]');
                 const usdList = document.querySelector('[data-test="home-usd-signal-list"]');
                 const usdEvidence = document.querySelector('[data-test="home-usd-signal-evidence"]');
 
                 if (
                     overview === null || signals === null
-                    || chart === null || coverage === null
+                    || chart === null || coverage === null || debts === null
                     || usdList === null || usdEvidence === null
                 ) {
                     return false;
@@ -128,7 +129,13 @@ test('Home keeps the Pulse focused and every claim drills into Breakdown', funct
                 const usdListBounds = usdList.getBoundingClientRect();
                 const usdEvidenceBounds = usdEvidence.getBoundingClientRect();
 
-                return Math.abs(overviewBounds.top - signalsBounds.top) < 2
+                const debtBounds = debts.getBoundingClientRect();
+
+                return document.documentElement.scrollHeight <= window.innerHeight + 1
+                    && debtBounds.top >= signalsBounds.bottom
+                    && debtBounds.bottom <= window.innerHeight + 1
+                    && overviewBounds.height > debtBounds.height
+                    && Math.abs(overviewBounds.top - signalsBounds.top) < 2
                     && signalsBounds.left > overviewBounds.right
                     && usdEvidenceBounds.top > usdListBounds.bottom
                     && overviewBounds.bottom - chartBounds.bottom < 40

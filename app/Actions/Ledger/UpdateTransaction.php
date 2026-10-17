@@ -43,8 +43,11 @@ class UpdateTransaction
         ?int $debtId = null,
         ?DebtEntryKind $debtEntryKind = null,
         bool $unlinkDebt = false,
+        ?int $debtPrincipalMinor = null,
+        ?int $debtInterestMinor = null,
+        bool $debtInterestIsNew = false,
     ): Transaction {
-        return DB::transaction(function () use ($owner, $transaction, $occurredOn, $amountMinor, $currency, $kind, $direction, $description, $incomeSource, $transferPurpose, $instrumentLabel, $instrumentLastFour, $categoryId, $originalSpendingId, $removeReceiptBreakdown, $debtId, $debtEntryKind, $unlinkDebt): Transaction {
+        return DB::transaction(function () use ($owner, $transaction, $occurredOn, $amountMinor, $currency, $kind, $direction, $description, $incomeSource, $transferPurpose, $instrumentLabel, $instrumentLastFour, $categoryId, $originalSpendingId, $removeReceiptBreakdown, $debtId, $debtEntryKind, $unlinkDebt, $debtPrincipalMinor, $debtInterestMinor, $debtInterestIsNew): Transaction {
             $currentTransaction = Transaction::query()
                 ->whereBelongsTo($owner, 'owner')
                 ->whereKey($transaction->getKey())
@@ -76,8 +79,8 @@ class UpdateTransaction
                     ? Str::squish($instrumentLabel)
                     : null,
                 'instrument_last_four' => $instrumentLastFour,
-                'category_id' => $kind->supportsCategory() ? $categoryId : null,
-                'category_assignment_provenance' => ! $kind->supportsCategory() || $categoryId === null
+                'category_id' => $kind->supportsCategory() || $kind === TransactionKind::Debt ? $categoryId : null,
+                'category_assignment_provenance' => (! $kind->supportsCategory() && $kind !== TransactionKind::Debt) || $categoryId === null
                     ? null
                     : CategoryAssignmentProvenance::Owner,
                 'merchant_rule_id' => null,
@@ -90,7 +93,13 @@ class UpdateTransaction
                 $currentTransaction,
             );
             $currentTransaction->save();
-            $this->syncDebtAllocation->handle($owner, $currentTransaction, $debtId, $debtEntryKind, $unlinkDebt);
+            $this->syncDebtAllocation->handle($owner, $currentTransaction, $debtId, $debtEntryKind, $unlinkDebt, $debtPrincipalMinor, $debtInterestMinor, $debtInterestIsNew);
+            $currentTransaction->unsetRelation('debtEntry');
+            if ($kind === TransactionKind::Debt && ! $currentTransaction->hasSpendingContribution()) {
+                $currentTransaction->category_id = null;
+                $currentTransaction->category_assignment_provenance = null;
+            }
+            $currentTransaction->save();
             if ($kind === TransactionKind::Debt || $previousKind === TransactionKind::Debt) {
                 $classification = match ($kind) {
                     TransactionKind::Debt => StatementMovementClassification::Debt,

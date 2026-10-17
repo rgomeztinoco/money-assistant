@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Category;
 use App\Models\Debt;
 use App\Models\DebtEntry;
 use App\Models\Transaction;
@@ -7,6 +8,49 @@ use App\Models\User;
 
 beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
+});
+
+test('Breakdown keeps paid interest in local Category and merchant filters', function () {
+    $owner = User::factory()->create();
+    $category = Category::factory()->for($owner, 'owner')->create(['name' => 'Loan interest']);
+    $debt = Debt::factory()->for($owner, 'owner')->create();
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create([
+        'kind' => 'debt', 'direction' => 'debit', 'occurred_on' => '2026-08-05',
+        'amount_minor' => 20000, 'description' => 'Bank repayment', 'category_id' => $category->id,
+    ]);
+    DebtEntry::factory()->for($debt)->for($payment)->create([
+        'kind' => 'repayment', 'amount_minor' => 20000, 'principal_minor' => 17000,
+        'interest_minor' => 3000, 'occurred_on' => '2026-08-05',
+    ]);
+    $this->actingAs($owner);
+
+    $page = visit('/breakdown?period=custom&date_from=2026-08-01&date_to=2026-08-31&focus=net_spending&category='.$category->id)->resize(1280, 900);
+    $page->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertPresent('[data-test="transaction-row-id-'.$payment->id.'"]')
+        ->click('[data-test="breakdown-tab-merchants"]')
+        ->assertSeeIn('[data-test="breakdown-merchant-Bank repayment"]', 'S/ 30.00')
+        ->click('[data-test="breakdown-merchant-Bank repayment"]')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertNoJavaScriptErrors();
+});
+
+test('Breakdown includes received interest in the Income focus', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => 'receivable']);
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create([
+        'kind' => 'debt', 'direction' => 'credit', 'occurred_on' => '2026-08-05',
+        'amount_minor' => 20000, 'description' => 'Loan repayment received',
+    ]);
+    DebtEntry::factory()->for($debt)->for($payment)->create([
+        'kind' => 'repayment', 'amount_minor' => 20000, 'principal_minor' => 17000,
+        'interest_minor' => 3000, 'occurred_on' => '2026-08-05',
+    ]);
+    $this->actingAs($owner);
+
+    visit('/breakdown?period=custom&date_from=2026-08-01&date_to=2026-08-31&focus=income')
+        ->assertSeeIn('[data-test="transaction-matching-count"]', '1 matching Transaction')
+        ->assertPresent('[data-test="transaction-row-id-'.$payment->id.'"]')
+        ->assertNoJavaScriptErrors();
 });
 
 test('debt forms record decimal balances, manual funding, and signed adjustments', function () {
@@ -31,7 +75,7 @@ test('Transactions assigns a full imported payment and Breakdown can edit and ex
     $page->click('[data-test="transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Record as debt payment")')->select('#transaction-debt', (string) $debt->id)->press('Save Transaction')->assertSee('Transaction updated.')->assertSee('Debt')->assertNoJavaScriptErrors();
     visit('/debts/'.$debt->id)->assertSee('S/ 74.99')->screenshot(filename: 'debts-257-repayment');
     $page = visit('/breakdown?period=custom&date_from=2026-08-01&date_to=2026-08-31');
-    $page->click('[data-test="breakdown-transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')->assertSelected('#transaction-debt', (string) $debt->id)->fill('#transaction-description', 'Corrected repayment description')->press('Save Transaction')->assertSee('Transaction updated.')->assertMissing('[role="dialog"]')
+    $page->click('[data-test="breakdown-transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')->assertSelected('#transaction-debt', (string) $debt->id)->fill('#transaction-amount', '30.02')->assertValue('#debt-principal', '30.02')->fill('#transaction-description', 'Corrected repayment description')->press('Save Transaction')->assertSee('Transaction updated.')->assertMissing('[role="dialog"]')
         ->click('[data-test="breakdown-transaction-'.$payment->id.'"]')->click('[data-slot="dropdown-menu-item"]:has-text("Edit")')->select('#transaction-kind', 'spending')->check('#transaction-unlink-debt')->press('Save Transaction')->assertMissing('[role="dialog"]')->assertNoJavaScriptErrors();
     visit('/debts/'.$debt->id)->assertSee('S/ 100.00')->assertSee('No operations recorded');
 });
@@ -65,15 +109,22 @@ test('debt operations search older Transactions and edit the same payment and ad
 
 test('debt summaries keep currencies separate while tables filter and scroll within the desktop workspace', function () {
     $owner = User::factory()->create();
-    $debt = Debt::factory()->for($owner, 'owner')->create(['name' => 'Family loan', 'counterparty' => 'Mother', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 10001, 'opened_on' => '2026-01-01']);
-    Debt::factory()->for($owner, 'owner')->create(['name' => 'USD receivable', 'direction' => 'receivable', 'currency' => 'USD', 'opening_balance_minor' => 2502]);
-    Debt::factory()->for($owner, 'owner')->create(['name' => 'Settled loan', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 0]);
+    $debt = Debt::factory()->for($owner, 'owner')->create(['name' => 'Family loan', 'counterparty' => 'Mother', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 10001, 'monthly_target_minor' => 2500, 'opened_on' => '2026-01-01']);
+    $receivable = Debt::factory()->for($owner, 'owner')->create(['name' => 'USD receivable', 'direction' => 'receivable', 'currency' => 'USD', 'opening_balance_minor' => 2502, 'monthly_target_minor' => 1000, 'opened_on' => '2026-01-01']);
+    Debt::factory()->for($owner, 'owner')->create(['name' => 'Settled loan', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 0, 'monthly_target_minor' => 9999]);
     Debt::factory()->count(30)->for($owner, 'owner')->create(['direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 1]);
     DebtEntry::factory()->count(40)->for($debt)->create(['kind' => 'adjustment', 'transaction_id' => null, 'amount_minor' => 1, 'occurred_on' => '2026-01-02']);
+    $today = now(config('app.reporting_timezone'))->toDateString();
+    $payment = Transaction::factory()->for($owner, 'owner')->pen()->create(['kind' => 'debt', 'direction' => 'debit', 'occurred_on' => $today, 'amount_minor' => 1000]);
+    DebtEntry::factory()->for($debt)->for($payment)->create(['kind' => 'repayment', 'amount_minor' => 1000, 'principal_minor' => 1000, 'occurred_on' => $today]);
+    $collection = Transaction::factory()->for($owner, 'owner')->usd()->create(['kind' => 'debt', 'direction' => 'credit', 'occurred_on' => $today, 'amount_minor' => 400]);
+    DebtEntry::factory()->for($receivable)->for($collection, 'transaction')->create(['kind' => 'repayment', 'amount_minor' => 400, 'principal_minor' => 400, 'occurred_on' => $today]);
     $this->actingAs($owner);
 
     $page = visit('/debts')->resize(1440, 900);
-    $page->assertSeeIn('[data-test="owed-PEN"]', 'S/ 100.71')->assertSeeIn('[data-test="receivable-USD"]', '$ 25.02')->assertDontSee('Settled loan')
+    $page->assertSeeIn('[data-test="owed-PEN"]', 'S/ 90.71')->assertSeeIn('[data-test="receivable-USD"]', '$ 21.02')->assertDontSee('Settled loan')
+        ->assertSeeIn('[data-test="outgoingTarget-PEN"]', 'S/ 25.00')->assertSeeIn('[data-test="incomingTarget-USD"]', '$ 10.00')
+        ->assertSeeIn('[data-test="paid-PEN"]', 'S/ 10.00 paid')->assertSeeIn('[data-test="collected-USD"]', '$ 4.00 collected')
         ->assertScript('() => document.documentElement.scrollHeight <= window.innerHeight + 1')
         ->assertScript('() => { const table = document.querySelector(\'[data-test="debt-list"]\'); return table.scrollHeight > table.clientHeight; }')
         ->fill('[aria-label="Search debts"]', 'family')->assertSee('Family loan')->assertDontSee('USD receivable')->fill('[aria-label="Search debts"]', '')
@@ -144,3 +195,33 @@ test('the USD Transaction picker fits its trigger and stays usable inside the op
 
     $this->assertDatabaseHas('debt_entries', ['debt_id' => $debt->id, 'transaction_id' => $payment->id, 'kind' => 'funding', 'amount_minor' => 2500]);
 })->with(['desktop' => [1280, 900], 'mobile' => [390, 844]]);
+test('owner confirms interest on an existing payment and plans full monthly repayments', function () {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['name' => 'Bank loan', 'counterparty' => 'Bank', 'direction' => 'owed', 'currency' => 'PEN', 'opening_balance_minor' => 100000, 'opened_on' => '2026-08-01']);
+    $payment = Transaction::factory()->for($owner, 'owner')->spending()->pen()->create(['occurred_on' => '2026-08-05', 'amount_minor' => 20000, 'description' => 'Imported bank payment']);
+    $this->actingAs($owner);
+    $page = visit('/debts/'.$debt->id)->resize(1280, 900);
+    $page->press('Edit debt')->fill('#debt-target', '200.00')->click('[role="dialog"] button[type="submit"]')->assertMissing('[role="dialog"]')->assertSee('S/ 200.00 target')
+        ->click('header button:has-text("Record operation")')->assertVisible('#entry-kind')->select('#entry-kind', 'interest_charge')->fill('#entry-amount', '30.00')->fill('#entry-date', '2026-08-04')->fill('#entry-detail', 'Confirmed bank interest')->screenshot(filename: 'debts-258-charge-form')->click('[role="dialog"] button[type="submit"]')->assertMissing('[role="dialog"]')->assertSee('S/ 1,030.00')->assertSee('Interest charge');
+    $page->click('header button:has-text("Record operation")')->assertVisible('#entry-kind')->select('#debt-interest-charge', '1')->select('#entry-kind', 'funding')->select('#entry-kind', 'repayment')->assertSelected('#debt-interest-charge', '1')->screenshot(filename: 'debts-258-retained-interest-selector')->select('#debt-interest-charge', '0')->click('#entry-transaction')->click('[data-test="debt-transaction-'.$payment->id.'"]')->fill('#debt-principal', '169.99')->fill('#debt-interest', '30.00')->click('[role="dialog"] button[type="submit"]')->assertSee('Principal plus interest must equal the full posted amount.')
+        ->fill('#debt-principal', '170.00')->screenshot(filename: 'debts-258-payment-form')->click('[role="dialog"] button[type="submit"]')->assertMissing('[role="dialog"]')->assertSee('S/ 830.00')->assertSee('Principal S/ 170.00')->assertSee('Interest S/ 30.00')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-history');
+    visit('/?period=custom&date_from=2026-08-01&date_to=2026-08-31')->resize(1280, 900)->assertSeeIn('[data-test="home-debt-summary"]', 'S/ 830.00')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-home');
+    visit('/debts')->resize(1280, 900)->assertSee('Monthly target')->assertSee('S/ 200.00')->assertSee('paid this month')->assertNoJavaScriptErrors()->screenshot(filename: 'debts-258-targets-index');
+});
+
+test('Breakdown labels and summarizes each debt movement by its operation', function (string $debtDirection, string $operation, string $label, string $summaryKey) {
+    $owner = User::factory()->create();
+    $debt = Debt::factory()->for($owner, 'owner')->create(['direction' => $debtDirection, 'currency' => 'PEN', 'opening_balance_minor' => 200000, 'opened_on' => '2026-10-01']);
+    $this->actingAs($owner)->post('/debts/'.$debt->id.'/entries', ['kind' => $operation, 'occurred_on' => '2026-10-16', 'amount' => '1500.01', 'description' => 'Posted debt movement'])->assertSessionHasNoErrors();
+    $transactionId = $debt->entries()->sole()->transaction_id;
+
+    $page = visit('/breakdown?period=custom&date_from=2026-10-01&date_to=2026-10-31')->resize(1280, 900);
+    $page->assertSeeIn('tr:has([data-test="transaction-row-id-'.$transactionId.'"])', $label)
+        ->assertSeeIn('[data-test="'.$summaryKey.'-PEN"]', 'S/ 1,500.01')
+        ->assertScript('() => document.documentElement.scrollHeight <= window.innerHeight + 1')->assertNoJavaScriptErrors()->screenshot(filename: 'breakdown-debt-'.$label);
+})->with([
+    'borrowing' => ['owed', 'funding', 'Borrowing', 'borrowed'],
+    'lending' => ['receivable', 'funding', 'Lending', 'lent'],
+    'repayment' => ['owed', 'repayment', 'Repayment', 'payments-made'],
+    'collection' => ['receivable', 'repayment', 'Collection', 'payments-received'],
+]);
