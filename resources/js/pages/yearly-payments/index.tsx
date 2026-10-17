@@ -6,7 +6,15 @@ import {
     SlidersHorizontal,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Bar, BarChart, XAxis, YAxis } from 'recharts';
+import {
+    Bar,
+    BarChart,
+    CartesianGrid,
+    LabelList,
+    Text,
+    XAxis,
+    YAxis,
+} from 'recharts';
 import { update as saveRate } from '@/actions/App/Http/Controllers/PlanningExchangeRateController';
 import { update as changeState } from '@/actions/App/Http/Controllers/YearlyPaymentStateController';
 import InputError from '@/components/input-error';
@@ -212,7 +220,7 @@ function PaymentList({
 }
 
 const costChartConfig = {
-    relative: { label: 'Yearly target', color: 'var(--chart-1)' },
+    relative: { label: 'Yearly target', color: 'var(--chart-2)' },
 };
 
 function AnnualCosts({ payments }: { payments: YearlyPayment[] }) {
@@ -235,9 +243,14 @@ function AnnualCosts({ payments }: { payments: YearlyPayment[] }) {
     const maximum = BigInt(largest[0]?.target_minor ?? '1') || 1n;
     const data = largest.map((payment) => ({
         id: String(payment.id),
+        name: payment.name,
+        amount: formatMinorUnits(payment.target_minor, currency),
         relative:
             Number((BigInt(payment.target_minor) * 10000n) / maximum) / 100,
     }));
+
+    const amountLabelWidth =
+        Math.max(0, ...data.map((payment) => payment.amount.length)) * 7 + 12;
 
     return (
         <Card className="order-3 min-w-0 gap-3 xl:order-none">
@@ -260,7 +273,7 @@ function AnnualCosts({ payments }: { payments: YearlyPayment[] }) {
                             config={costChartConfig}
                             className="aspect-auto w-full"
                             style={{
-                                height: Math.max(64, largest.length * 40),
+                                height: Math.max(76, largest.length * 40 + 12),
                             }}
                             aria-label={`Largest annual costs in ${currency}`}
                         >
@@ -268,29 +281,18 @@ function AnnualCosts({ payments }: { payments: YearlyPayment[] }) {
                                 accessibilityLayer
                                 data={data}
                                 layout="vertical"
-                                margin={{ left: 0, right: 8 }}
+                                margin={{
+                                    left: 0,
+                                    right: amountLabelWidth,
+                                    top: 12,
+                                    bottom: 0,
+                                }}
                             >
                                 <XAxis type="number" hide domain={[0, 100]} />
-                                <YAxis
-                                    type="category"
-                                    dataKey="id"
-                                    axisLine={false}
-                                    tickLine={false}
-                                    width={110}
-                                    tickFormatter={(id) => {
-                                        const name =
-                                            largest.find(
-                                                (payment) =>
-                                                    String(payment.id) ===
-                                                    String(id),
-                                            )?.name ?? '';
-
-                                        return name.length > 16
-                                            ? `${name.slice(0, 15)}…`
-                                            : name;
-                                    }}
-                                />
+                                <CartesianGrid horizontal={false} />
+                                <YAxis type="category" dataKey="id" hide />
                                 <ChartTooltip
+                                    cursor={false}
                                     content={(props) => {
                                         const payment = largest.find(
                                             (payment) =>
@@ -324,8 +326,73 @@ function AnnualCosts({ payments }: { payments: YearlyPayment[] }) {
                                     fill="var(--color-relative)"
                                     radius={4}
                                     maxBarSize={24}
+                                    minPointSize={2}
                                     isAnimationActive={false}
-                                />
+                                >
+                                    <LabelList
+                                        dataKey="name"
+                                        content={({
+                                            viewBox,
+                                            parentViewBox,
+                                            value,
+                                        }) => {
+                                            if (
+                                                !viewBox ||
+                                                !('width' in viewBox)
+                                            ) {
+                                                return null;
+                                            }
+
+                                            const x = Number(viewBox.x);
+                                            const y = Number(viewBox.y);
+                                            const width = Number(viewBox.width);
+                                            const height = Number(
+                                                viewBox.height,
+                                            );
+                                            const inside = width >= 96;
+                                            const labelWidth = inside
+                                                ? width - 16
+                                                : parentViewBox &&
+                                                    'width' in parentViewBox
+                                                  ? Number(parentViewBox.width)
+                                                  : 140;
+
+                                            return (
+                                                <Text
+                                                    x={x + (inside ? 8 : 0)}
+                                                    y={
+                                                        inside
+                                                            ? y + height / 2
+                                                            : y - 4
+                                                    }
+                                                    verticalAnchor={
+                                                        inside
+                                                            ? 'middle'
+                                                            : 'end'
+                                                    }
+                                                    width={labelWidth}
+                                                    maxLines={1}
+                                                    breakAll
+                                                    style={{
+                                                        fontSize: 12,
+                                                        fill: inside
+                                                            ? 'var(--background)'
+                                                            : 'var(--foreground)',
+                                                    }}
+                                                >
+                                                    {String(value ?? '')}
+                                                </Text>
+                                            );
+                                        }}
+                                    />
+                                    <LabelList
+                                        dataKey="amount"
+                                        position="right"
+                                        offset={8}
+                                        className="fill-foreground"
+                                        fontSize={12}
+                                    />
+                                </Bar>
                             </BarChart>
                         </ChartContainer>
                         <ul className="sr-only">

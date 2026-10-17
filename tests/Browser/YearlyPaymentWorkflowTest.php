@@ -152,7 +152,7 @@ test('Spending creates or links yearly payments without leaving the filtered wor
 test('desktop planner keeps its controls visible while the commitment table scrolls', function () {
     $owner = User::factory()->create(['email' => 'test@example.com']);
     $this->seed(YearlyPaymentSeeder::class);
-    YearlyPayment::factory()->count(30)->for($owner, 'owner')->create();
+    YearlyPayment::factory()->count(30)->for($owner, 'owner')->create(['amount_minor' => 250]);
     YearlyPayment::factory()->for($owner, 'owner')->paused()->create(['name' => 'Paused insurance']);
     $this->actingAs($owner);
 
@@ -172,6 +172,9 @@ test('desktop planner keeps its controls visible while the commitment table scro
                     && document.documentElement.scrollHeight <= window.innerHeight + 2;
             })()
             JS)
+        ->click('[aria-label="Annual costs currency"] [role="tab"]:has-text("USD")')
+        ->assertSeeIn('[aria-label="Largest annual costs in USD"]', '$ 329.00')
+        ->screenshot(filename: 'yearly-payments-costs-usd')
         ->click('[role="tab"]:has-text("Paused")')
         ->assertSee('Paused insurance')
         ->assertNotPresent('[aria-label^="Pause "]')
