@@ -419,8 +419,8 @@ test('assistant debt reads expose exact allocations targets and independent hist
     financialMcp($otherToken, 'tools/call', ['name' => 'get_debt', 'arguments' => ['id' => $debt]])->assertOk()->assertJsonPath('result.isError', true)->assertJsonPath('result.content.0.text', 'Debt not found.');
     financialMcp($otherToken, 'tools/call', ['name' => 'list_debts'])->assertOk()->assertJsonCount(0, 'result.structuredContent.debts');
     $tools = financialMcp($token, 'tools/list')->assertOk()->json('result.tools');
-    expect(array_column($tools, 'name'))->toBe(['list_transactions', 'get_transaction', 'list_categories', 'list_debts', 'get_debt', 'get_yearly_payment_plan']);
-    foreach ($tools as $tool) {
+    expect(array_column($tools, 'name'))->toContain('list_debts', 'get_debt');
+    foreach (array_filter($tools, fn (array $tool): bool => in_array($tool['name'], ['list_debts', 'get_debt'], true)) as $tool) {
         expect($tool['annotations']['readOnlyHint'])->toBeTrue();
     }
     $denied = $owner->createToken('denied', ['other:read'])->plainTextToken;

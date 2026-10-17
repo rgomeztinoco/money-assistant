@@ -2,8 +2,8 @@
 
 namespace App\Mcp\Servers;
 
-use App\Mcp\Tools\GetDebt;
 use App\Mcp\Tools\CreateTransaction;
+use App\Mcp\Tools\GetDebt;
 use App\Mcp\Tools\GetTransaction;
 use App\Mcp\Tools\GetYearlyPaymentPlan;
 use App\Mcp\Tools\ListCategories;
