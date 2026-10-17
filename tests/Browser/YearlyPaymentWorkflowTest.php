@@ -5,6 +5,7 @@ use App\Models\User;
 use App\Models\YearlyPayment;
 use App\Models\YearlyPaymentSetting;
 use Carbon\CarbonImmutable;
+use Database\Seeders\YearlyPaymentSeeder;
 
 test('yearly payment forms add edit pause resume and update the planning assumption', function () {
     $this->travelTo(CarbonImmutable::parse('2026-10-08 12:00:00', 'America/Lima'));
@@ -22,15 +23,19 @@ test('yearly payment forms add edit pause resume and update the planning assumpt
         ->assertSee('Yearly payment added.')
         ->assertNotPresent('[role="dialog"]')
         ->assertSee('Insurance')
-        ->click('[aria-label="Edit Insurance"]')
+        ->click('[aria-label="Actions for Insurance"]')
+        ->click('[role="menuitem"]:has-text("Edit")')
         ->fill('#payment-name', 'Medical estimate')
         ->fill('#payment-amount', '1200.00')
         ->press('Save payment')
         ->assertSee('Yearly payment updated.')
+        ->assertNotPresent('[role="dialog"]')
+        ->click('[aria-label="Actions for Medical estimate"]')
         ->click('[aria-label="Pause Medical estimate"]')
         ->assertSee('Yearly payment paused.')
         ->assertSee('No active commitments')
         ->click('[role="tab"]:has-text("Paused")')
+        ->click('[aria-label="Actions for Medical estimate"]')
         ->click('[aria-label="Resume Medical estimate"]')
         ->assertSee('Yearly payment resumed.')
         ->click('[role="tab"]:has-text("Active")')
@@ -134,14 +139,16 @@ test('Spending creates or links yearly payments without leaving the filtered wor
 })->with(['transactions', 'breakdown']);
 
 test('desktop planner keeps its controls visible while the commitment table scrolls', function () {
-    $owner = User::factory()->create();
-    YearlyPayment::factory()->count(40)->for($owner, 'owner')->create();
+    $owner = User::factory()->create(['email' => 'test@example.com']);
+    $this->seed(YearlyPaymentSeeder::class);
+    YearlyPayment::factory()->count(30)->for($owner, 'owner')->create();
     YearlyPayment::factory()->for($owner, 'owner')->paused()->create(['name' => 'Paused insurance']);
     $this->actingAs($owner);
 
     visit('/yearly-payments')->resize(1280, 800)
         ->assertSeeIn('[role="tab"][aria-selected="true"]:has-text("Active")', '40')
         ->assertDontSee('Paused insurance')
+        ->screenshot(filename: 'yearly-payments-full-desktop')
         ->assertScript(<<<'JS'
             (() => {
                 const scroller = document.querySelector('[data-test="yearly-payments-scroll"]');
@@ -154,7 +161,6 @@ test('desktop planner keeps its controls visible while the commitment table scro
                     && document.documentElement.scrollHeight <= window.innerHeight + 2;
             })()
             JS)
-        ->screenshot(filename: 'yearly-payments-full-desktop')
         ->click('[role="tab"]:has-text("Paused")')
         ->assertSee('Paused insurance')
         ->assertNotPresent('[aria-label^="Pause "]')

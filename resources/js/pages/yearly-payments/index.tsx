@@ -1,7 +1,7 @@
 import { Form, Head } from '@inertiajs/react';
 import {
     CalendarDays,
-    PencilLine,
+    MoreHorizontal,
     Plus,
     SlidersHorizontal,
 } from 'lucide-react';
@@ -27,6 +27,13 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
     Empty,
     EmptyHeader,
     EmptyDescription,
@@ -37,6 +44,7 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import {
+    Table,
     TableBody,
     TableCell,
     TableHead,
@@ -85,18 +93,18 @@ function PaymentList({
 
     return (
         <div
-            className="min-h-0 flex-1 overflow-auto"
+            className="min-h-0 flex-1 overflow-auto [&>[data-slot=table-container]]:overflow-visible"
             data-test="yearly-payments-scroll"
         >
-            <table className="w-full caption-bottom text-sm">
-                <TableHeader className="sticky top-0 bg-background">
+            <Table className="min-w-[30rem] table-fixed">
+                <TableHeader className="sticky top-0 bg-card">
                     <TableRow>
                         <TableHead>Commitment</TableHead>
-                        <TableHead>Due</TableHead>
-                        <TableHead className="text-right">
+                        <TableHead className="w-20">Due</TableHead>
+                        <TableHead className="w-44 text-right">
                             Yearly target
                         </TableHead>
-                        <TableHead>
+                        <TableHead className="w-12">
                             <span className="sr-only">Actions</span>
                         </TableHead>
                     </TableRow>
@@ -104,8 +112,16 @@ function PaymentList({
                 <TableBody>
                     {payments.map((payment) => (
                         <TableRow key={payment.id}>
-                            <TableCell className="max-w-60 font-medium break-words whitespace-normal">
-                                {payment.name}
+                            <TableCell>
+                                <button
+                                    type="button"
+                                    className="block max-w-full truncate text-left font-medium underline-offset-4 hover:underline"
+                                    title={payment.name}
+                                    aria-label={`Edit ${payment.name}`}
+                                    onClick={() => onEdit(payment)}
+                                >
+                                    {payment.name}
+                                </button>
                             </TableCell>
                             <TableCell className="text-muted-foreground">
                                 {payment.due_month_day
@@ -125,53 +141,69 @@ function PaymentList({
                                     </p>
                                 )}
                             </TableCell>
-                            <TableCell>
-                                <div className="flex items-center justify-end gap-1">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => onEdit(payment)}
-                                        aria-label={`Edit ${payment.name}`}
-                                    >
-                                        <PencilLine />
-                                    </Button>
-                                    <Form
-                                        {...changeState.form(payment.id)}
-                                        options={{
-                                            preserveScroll: true,
-                                            preserveState: true,
-                                        }}
-                                    >
-                                        {({ processing }) => (
-                                            <>
-                                                <input
-                                                    type="hidden"
-                                                    name="is_active"
-                                                    value={active ? '0' : '1'}
-                                                />
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    disabled={processing}
-                                                    type="submit"
-                                                    aria-label={`${active ? 'Pause' : 'Resume'} ${payment.name}`}
-                                                >
-                                                    {processing && (
-                                                        <Spinner data-icon="inline-start" />
-                                                    )}
-                                                    {active
-                                                        ? 'Pause'
-                                                        : 'Resume'}
-                                                </Button>
-                                            </>
-                                        )}
-                                    </Form>
-                                </div>
+                            <TableCell className="text-right">
+                                <Form
+                                    {...changeState.form(payment.id)}
+                                    options={{
+                                        preserveScroll: true,
+                                        preserveState: true,
+                                    }}
+                                >
+                                    {({ processing, submit }) => (
+                                        <>
+                                            <input
+                                                type="hidden"
+                                                name="is_active"
+                                                value={active ? '0' : '1'}
+                                            />
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        aria-label={`Actions for ${payment.name}`}
+                                                        disabled={processing}
+                                                    >
+                                                        {processing ? (
+                                                            <Spinner />
+                                                        ) : (
+                                                            <MoreHorizontal />
+                                                        )}
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuGroup>
+                                                        <DropdownMenuItem
+                                                            onSelect={() =>
+                                                                onEdit(payment)
+                                                            }
+                                                        >
+                                                            Edit
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            onSelect={() =>
+                                                                submit()
+                                                            }
+                                                            disabled={
+                                                                processing
+                                                            }
+                                                            aria-label={`${active ? 'Pause' : 'Resume'} ${payment.name}`}
+                                                        >
+                                                            {active
+                                                                ? 'Pause'
+                                                                : 'Resume'}
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuGroup>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </>
+                                    )}
+                                </Form>
                             </TableCell>
                         </TableRow>
                     ))}
                 </TableBody>
-            </table>
+            </Table>
         </div>
     );
 }
