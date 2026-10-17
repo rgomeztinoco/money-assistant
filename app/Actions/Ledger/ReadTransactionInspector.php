@@ -57,6 +57,7 @@ class ReadTransactionInspector
      *     source_reference_count: int,
      *     source_references: list<array{id: int, processing_outcome: string, created_at: string|null}>,
      *     receipt_breakdown: ReceiptBreakdownData|null,
+     *     debt_allocation: array{debt_id: int, debt_name: string, kind: string}|null,
      * }|null
      */
     public function handle(User $owner, ?int $transactionId): ?array
@@ -68,6 +69,7 @@ class ReadTransactionInspector
         $transaction = Transaction::query()
             ->whereBelongsTo($owner, 'owner')
             ->with([
+                'debtEntry.debt',
                 'category:id,name',
                 'originalSpending:id,occurred_on,amount_minor,currency,kind,description,category_id',
                 'originalSpending.category:id,name',
@@ -150,6 +152,7 @@ class ReadTransactionInspector
                 ])
                 ->all()),
             'receipt_breakdown' => $receiptBreakdown,
+            'debt_allocation' => $transaction->debtAllocation(),
         ];
     }
 

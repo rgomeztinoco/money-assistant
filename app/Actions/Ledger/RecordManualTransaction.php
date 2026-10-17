@@ -53,7 +53,7 @@ class RecordManualTransaction
         }
 
         $direction ??= match ($kind) {
-            TransactionKind::Spending, TransactionKind::Transfer => MovementDirection::Debit,
+            TransactionKind::Spending, TransactionKind::Transfer, TransactionKind::Debt => MovementDirection::Debit,
             TransactionKind::Refund, TransactionKind::Income => MovementDirection::Credit,
         };
 

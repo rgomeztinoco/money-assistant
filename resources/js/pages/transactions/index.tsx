@@ -32,6 +32,7 @@ function editorTransaction(
 ): EditorTransaction {
     return {
         id: transaction.id,
+        debt_allocation: transaction.debt_allocation,
         voided_at: transaction.voided_at,
         occurred_on: transaction.occurred_on,
         amount_minor: transaction.amount_minor,
@@ -232,6 +233,7 @@ export default function TransactionsIndex({
                             </p>
                         )}
                         <TransactionTable
+                            supportsDebtAction
                             transactions={transactions}
                             total={pagination.total}
                             page={pagination.current_page}

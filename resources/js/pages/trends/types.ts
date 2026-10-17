@@ -11,6 +11,8 @@ export type Summary = {
     net_spending_minor: string;
     income_minor: string;
     moved_to_savings_minor: string;
+    debt_payments_made_minor: string;
+    debt_payments_received_minor: string;
 };
 
 type FindingBase = {

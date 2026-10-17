@@ -1,5 +1,5 @@
 import type { FormComponentRef, FormDataConvertible } from '@inertiajs/core';
-import { Form } from '@inertiajs/react';
+import { Form, usePage } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import {
     store,
@@ -19,6 +19,13 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Field,
+    FieldError,
+    FieldGroup,
+    FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -35,6 +42,8 @@ import {
     movementSupportsCategory,
     transferPurposeOptions,
 } from '@/lib/money-movement';
+import { cn } from '@/lib/utils';
+import type { Debt } from '@/pages/debts/types';
 import type {
     Currency,
     IncomeSource,
@@ -45,6 +54,11 @@ import type {
 
 export type EditorTransaction = {
     id: number;
+    debt_allocation?: {
+        debt_id: number;
+        debt_name: string;
+        kind: 'funding' | 'repayment';
+    } | null;
     voided_at?: string | null;
     occurred_on: string;
     amount_minor: string;
@@ -75,6 +89,7 @@ function normalizedAmount(value: string): string | null {
 
 export function TransactionEditor({
     transaction,
+    initialKind,
     currency,
     today,
     categoryOptions,
@@ -82,20 +97,47 @@ export function TransactionEditor({
     onSaved,
 }: {
     transaction?: EditorTransaction;
+    initialKind?: TransactionKind;
     currency: Currency;
     today: string;
     categoryOptions: CategoryPickerOption[];
     onCancel: () => void;
     onSaved: () => void;
 }) {
+    const { debt_options = [] } = usePage<{
+        debt_options?: Pick<Debt, 'id' | 'name' | 'currency' | 'direction'>[];
+    }>().props;
+    const [debtId, setDebtId] = useState(
+        transaction?.debt_allocation?.debt_id.toString() ?? '',
+    );
     const form = useRef<FormComponentRef>(null);
     const splitRemovalConfirmed = useRef(false);
     const [kind, setKind] = useState<TransactionKind>(
-        transaction?.kind ?? 'spending',
+        initialKind ?? transaction?.kind ?? 'spending',
     );
     const [direction, setDirection] = useState<MovementDirection>(
         transaction?.direction ?? 'debit',
     );
+    const recordedDirection = transaction?.direction ?? direction;
+    const selectedDebt = debt_options.find(
+        (debt) => String(debt.id) === debtId,
+    );
+    const debtEntryKind = selectedDebt
+        ? (selectedDebt.direction === 'owed') ===
+          (recordedDirection === 'credit')
+            ? 'funding'
+            : 'repayment'
+        : '';
+    const debtOperationLabel = debtEntryKind
+        ? {
+              funding:
+                  recordedDirection === 'credit'
+                      ? 'Additional borrowing'
+                      : 'Additional lending',
+              repayment:
+                  recordedDirection === 'credit' ? 'Collection' : 'Repayment',
+          }[debtEntryKind]
+        : null;
     const [amount, setAmount] = useState(
         transaction ? minorUnitsToCurrencyUnits(transaction.amount_minor) : '',
     );
@@ -212,7 +254,14 @@ export function TransactionEditor({
                                 />
                             )}
 
-                        <div className="grid gap-3 rounded-xl border bg-muted/30 p-4 sm:grid-cols-[minmax(0,1fr)_7rem_9rem] sm:items-end">
+                        <div
+                            className={cn(
+                                'grid gap-3 rounded-xl border bg-muted/30 p-4 sm:items-end',
+                                kind === 'debt'
+                                    ? 'sm:grid-cols-[minmax(0,1fr)_7rem]'
+                                    : 'sm:grid-cols-[minmax(0,1fr)_7rem_9rem]',
+                            )}
+                        >
                             <div className="grid gap-2">
                                 <Label htmlFor="transaction-amount">
                                     Amount
@@ -231,7 +280,24 @@ export function TransactionEditor({
                                     }}
                                     placeholder="12.50"
                                     className="h-12 text-2xl font-semibold tabular-nums"
+                                    aria-describedby={
+                                        kind === 'debt'
+                                            ? 'transaction-debt-direction'
+                                            : undefined
+                                    }
                                 />
+                                {kind === 'debt' && (
+                                    <p
+                                        id="transaction-debt-direction"
+                                        className="type-meta text-muted-foreground"
+                                    >
+                                        {recordedDirection === 'debit'
+                                            ? 'Money out'
+                                            : 'Money in'}
+                                        {debtOperationLabel &&
+                                            ` · ${debtOperationLabel}`}
+                                    </p>
+                                )}
                                 <InputError
                                     message={
                                         errors.amount ?? errors.amount_minor
@@ -269,29 +335,38 @@ export function TransactionEditor({
                                         </p>
                                     )}
                             </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="transaction-direction">
-                                    Movement Direction
-                                </Label>
-                                <NativeSelect
-                                    id="transaction-direction"
+                            {kind === 'debt' ? (
+                                <input
+                                    type="hidden"
                                     name="direction"
-                                    value={direction}
-                                    onChange={(event) => {
-                                        const value = event.currentTarget.value;
-
-                                        if (
-                                            value === 'debit' ||
-                                            value === 'credit'
-                                        ) {
-                                            setDirection(value);
-                                        }
-                                    }}
-                                    options={movementDirectionOptions}
-                                    className="h-12"
+                                    value={recordedDirection}
                                 />
-                                <InputError message={errors.direction} />
-                            </div>
+                            ) : (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="transaction-direction">
+                                        Movement Direction
+                                    </Label>
+                                    <NativeSelect
+                                        id="transaction-direction"
+                                        name="direction"
+                                        value={direction}
+                                        onChange={(event) => {
+                                            const value =
+                                                event.currentTarget.value;
+
+                                            if (
+                                                value === 'debit' ||
+                                                value === 'credit'
+                                            ) {
+                                                setDirection(value);
+                                            }
+                                        }}
+                                        options={movementDirectionOptions}
+                                        className="h-12"
+                                    />
+                                    <InputError message={errors.direction} />
+                                </div>
+                            )}
                         </div>
 
                         <div className="grid gap-4 sm:grid-cols-2">
@@ -321,7 +396,14 @@ export function TransactionEditor({
                                     onChange={(event) =>
                                         changeKind(event.currentTarget.value)
                                     }
-                                    options={movementKindOptions}
+                                    options={
+                                        transaction
+                                            ? movementKindOptions
+                                            : movementKindOptions.filter(
+                                                  (option) =>
+                                                      option.value !== 'debt',
+                                              )
+                                    }
                                 />
                                 <InputError message={errors.kind} />
                             </div>
@@ -340,6 +422,82 @@ export function TransactionEditor({
                                 <InputError message={errors.occurred_on} />
                             </div>
 
+                            {kind === 'debt' && (
+                                <FieldGroup>
+                                    <Field
+                                        data-invalid={Boolean(errors.debt_id)}
+                                    >
+                                        <FieldLabel htmlFor="transaction-debt">
+                                            Debt
+                                        </FieldLabel>
+                                        <NativeSelect
+                                            id="transaction-debt"
+                                            aria-invalid={Boolean(
+                                                errors.debt_id,
+                                            )}
+                                            name="debt_id"
+                                            value={debtId}
+                                            onChange={(event) =>
+                                                setDebtId(event.target.value)
+                                            }
+                                            options={[
+                                                {
+                                                    value: '',
+                                                    label: 'Choose a debt',
+                                                },
+                                                ...debt_options.map((debt) => ({
+                                                    value: String(debt.id),
+                                                    label: `${debt.name} · ${debt.currency} · ${debt.direction === 'owed' ? 'I owe' : 'Owed to me'}`,
+                                                })),
+                                            ]}
+                                            required
+                                        />
+                                        <FieldError>
+                                            {errors.debt_id}
+                                        </FieldError>
+                                    </Field>
+                                    <input
+                                        type="hidden"
+                                        name="debt_entry_kind"
+                                        value={debtEntryKind}
+                                    />
+                                    <InputError
+                                        message={
+                                            errors.debt_entry_kind ??
+                                            errors.direction
+                                        }
+                                    />
+                                </FieldGroup>
+                            )}
+                            {transaction?.debt_allocation &&
+                                kind !== 'debt' && (
+                                    <Field
+                                        data-invalid={Boolean(
+                                            errors.unlink_debt,
+                                        )}
+                                    >
+                                        <Checkbox
+                                            id="transaction-unlink-debt"
+                                            name="unlink_debt"
+                                            value="1"
+                                            required
+                                            aria-invalid={Boolean(
+                                                errors.unlink_debt,
+                                            )}
+                                        />
+                                        <FieldLabel htmlFor="transaction-unlink-debt">
+                                            Unlink{' '}
+                                            {
+                                                transaction.debt_allocation
+                                                    .debt_name
+                                            }{' '}
+                                            and use the selected Kind
+                                        </FieldLabel>
+                                        <FieldError>
+                                            {errors.unlink_debt}
+                                        </FieldError>
+                                    </Field>
+                                )}
                             {kind === 'income' && (
                                 <div className="grid gap-2 sm:col-span-2">
                                     <Label htmlFor="transaction-income-source">

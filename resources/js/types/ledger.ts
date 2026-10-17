@@ -1,5 +1,6 @@
 export type Currency = 'USD' | 'PEN';
-export type TransactionKind = 'spending' | 'refund' | 'income' | 'transfer';
+export type TransactionKind =
+    'spending' | 'refund' | 'income' | 'transfer' | 'debt';
 export type MovementDirection = 'debit' | 'credit';
 export type IncomeSource =
     'salary' | 'independent_work' | 'investments' | 'other';
@@ -7,7 +8,7 @@ export type TransferPurpose = 'savings' | 'card_payment' | 'internal';
 
 export type MoneyMovementDetails =
     | {
-          kind: 'spending' | 'refund';
+          kind: 'spending' | 'refund' | 'debt';
           direction: MovementDirection;
           income_source: null;
           transfer_purpose: null;
@@ -109,6 +110,11 @@ type SelectedTransactionBase = {
         created_at: string | null;
     }>;
     receipt_breakdown: ReceiptBreakdown | null;
+    debt_allocation: {
+        debt_id: number;
+        debt_name: string;
+        kind: 'funding' | 'repayment';
+    } | null;
 };
 
 export type SelectedTransaction = SelectedTransactionBase &
