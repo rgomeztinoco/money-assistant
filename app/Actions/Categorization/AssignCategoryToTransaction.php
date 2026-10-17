@@ -19,12 +19,15 @@ final class AssignCategoryToTransaction
                 ->whereKey($transactionId)
                 ->lockForUpdate()
                 ->firstOrFail();
+            if ($transaction->voided_at !== null) {
+                throw ValidationException::withMessages(['transaction' => 'A Voided Transaction cannot be categorized.']);
+            }
             $category = $categoryId === null
                 ? null
                 : Category::query()
                     ->whereBelongsTo($owner, 'owner')
                     ->whereKey($categoryId)
-                    ->whereNull('archived_at')
+                    ->availableForAssignment()
                     ->lockForUpdate()
                     ->first();
 
