@@ -90,16 +90,7 @@ function PaymentList({
                                     payment.currency,
                                 )}
                                 <p className="type-meta text-muted-foreground">
-                                    {formatMinorUnits(
-                                        payment.amount_minor,
-                                        payment.currency,
-                                    )}{' '}
-                                    +{' '}
-                                    {formatMinorUnits(
-                                        payment.cushion_minor,
-                                        payment.currency,
-                                    )}{' '}
-                                    cushion
+                                    {`${formatMinorUnits(payment.amount_minor, payment.currency)} + ${formatMinorUnits(payment.cushion_minor, payment.currency)} cushion`}
                                 </p>
                             </TableCell>
                             <TableCell className="whitespace-nowrap">

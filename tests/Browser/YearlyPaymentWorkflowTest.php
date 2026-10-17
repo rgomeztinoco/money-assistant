@@ -46,7 +46,7 @@ test('yearly payment forms add edit pause resume and update the planning assumpt
         ->assertNoJavaScriptErrors()
         ->screenshot(filename: 'yearly-payments-home')
         ->click('Manage yearly payments')
-        ->assertSeeIn('[role="tab"][data-state="active"]', '1');
+        ->assertSeeIn('[role="tab"][aria-selected="true"]', '1');
 
     $this->assertDatabaseHas('yearly_payments', ['user_id' => $owner->id, 'name' => 'Medical estimate', 'amount_minor' => 120000, 'cushion_minor' => 12000, 'is_active' => true]);
     $this->assertDatabaseHas('yearly_payment_settings', ['user_id' => $owner->id, 'pen_per_usd' => '3.7500']);
@@ -134,7 +134,7 @@ test('desktop planner keeps its controls visible while the commitment table scro
     $this->actingAs($owner);
 
     visit('/yearly-payments')->resize(1440, 900)
-        ->assertSeeIn('[role="tab"][data-state="active"]', '40')
+        ->assertSeeIn('[role="tab"][aria-selected="true"]', '40')
         ->assertDontSee('Paused insurance')
         ->assertScript(<<<'JS'
             (() => {

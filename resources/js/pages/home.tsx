@@ -1072,7 +1072,7 @@ function EmptyHome({ currency }: { currency: Currency | null }) {
 function HomeYearlyPayments({ plan }: { plan: YearlyPaymentPlan }) {
     return (
         <Card className="min-w-0 gap-3 py-4" data-test="home-yearly-payments">
-            <CardHeader className="flex flex-wrap items-center justify-between gap-2 px-4">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 px-4">
                 <CardTitle>Yearly payments coming up</CardTitle>
                 <Button variant="ghost" size="sm" asChild>
                     <Link href={yearlyPaymentsIndex()}>
