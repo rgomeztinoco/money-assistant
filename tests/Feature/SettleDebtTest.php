@@ -55,11 +55,12 @@ test('editing a debt from the index returns to the index', function () {
 });
 
 test('settlement rejects a balance larger than a single adjustment can store', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-17 03:00:00', 'UTC'));
     $owner = User::factory()->create();
-    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => PHP_INT_MAX]);
+    $debt = Debt::factory()->for($owner, 'owner')->create(['opening_balance_minor' => PHP_INT_MAX, 'opened_on' => '2026-10-16']);
     DebtEntry::factory()->for($debt)->create(['kind' => 'adjustment', 'amount_minor' => 1]);
 
-    $this->actingAs($owner)->post('/debts/'.$debt->id.'/settle')->assertSessionHasErrors('settlement');
+    $this->actingAs($owner)->post('/debts/'.$debt->id.'/settle')->assertSessionHasErrors(['settlement' => 'This balance is too large for one adjustment. Reduce it with smaller adjustments first.']);
 
     $this->assertDatabaseCount('debt_entries', 1);
     $this->assertDatabaseCount('transactions', 0);
