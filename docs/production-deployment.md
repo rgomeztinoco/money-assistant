@@ -18,6 +18,20 @@ Deployment support lives in `production/`:
 
 Host security updates use Ubuntu's `unattended-upgrades`; this repository no longer maintains a separate security policy checker or vulnerability ledger. Existing host update settings remain installed.
 
+## PHP security updates
+
+The application image pins FrankenPHP 1.13.3 with PHP 8.5.12, which fixes CVE-2026-109618 and CVE-2026-109619. Session upload progress is disabled in the image following the PHP advisory for CVE-2026-115560. These runtime fixes take effect in production after merging and releasing the new image with the release command below.
+
+Sail installs PHP 8.5 from its package repository at build time. After installing the updated Composer dependencies, rebuild and recreate the development application container to pick up patched PHP packages:
+
+```bash
+vendor/bin/sail build --no-cache laravel.test
+vendor/bin/sail up -d --no-deps laravel.test
+vendor/bin/sail php -v
+```
+
+Verify that Sail reports PHP 8.5.12 or newer. Updating Composer packages or restarting an existing container does not update its PHP runtime.
+
 ## Release
 
 After the change has merged, release it from the development checkout with one command:
