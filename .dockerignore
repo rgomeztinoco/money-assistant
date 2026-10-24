@@ -4,6 +4,7 @@
 .env.*
 .phpunit.cache
 .phpunit.result.cache
+bootstrap/cache/*.php
 node_modules
 .pnpm-store
 public/build
