@@ -13,6 +13,8 @@ use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\NetworkTimeoutException;
+use GuzzleHttp\Exception\ResponseTimeoutException;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use Illuminate\Support\Str;
@@ -375,6 +377,8 @@ final class GoogleGmail implements Gmail
                 }
 
                 return $exception instanceof ConnectException
+                    || $exception instanceof NetworkTimeoutException
+                    || $exception instanceof ResponseTimeoutException
                     || ($response !== null && ($response->getStatusCode() === 429 || $response->getStatusCode() >= 500));
             },
             delay: static fn (int $retries): int => $retries === 1 ? 200 : 1000,

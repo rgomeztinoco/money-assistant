@@ -7,9 +7,12 @@ use App\Integrations\Gmail\GmailRequestFailed;
 use App\Integrations\Gmail\GoogleGmail;
 use Carbon\CarbonImmutable;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\NetworkTimeoutException;
+use GuzzleHttp\Exception\ResponseTimeoutException;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
+use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Http;
 use Psr\Http\Message\RequestInterface;
@@ -559,3 +562,47 @@ function gmailBase64Url(string $value): string
 {
     return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
 }
+
+test('the default Gmail transport retries timeouts at most twice', function (bool $headersReceived, int $failures) {
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+    );
+    $httpClient = (new ReflectionMethod(GoogleGmail::class, 'defaultHttpClient'))->invoke($gmail);
+    $request = new Request('GET', 'https://gmail.googleapis.com/gmail/v1/users/me/profile');
+    $timeout = $headersReceived
+        ? new ResponseTimeoutException('Response timed out', $request, new Response(200))
+        : new NetworkTimeoutException('Request timed out', $request);
+    $mockHandler = new MockHandler([
+        ...array_fill(0, $failures, $timeout),
+        new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'emailAddress' => 'receipts@example.test',
+            'historyId' => '123456',
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+    $httpClient->getConfig('handler')->setHandler(static function (RequestInterface $request, array $options) use ($mockHandler) {
+        unset($options['delay']);
+
+        return $mockHandler($request, $options);
+    });
+    $gmail = new GoogleGmail(
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+        redirectUri: 'https://money.example.test/settings/connections/gmail/callback',
+        httpClient: $httpClient,
+    );
+
+    if ($failures < 3) {
+        expect($gmail->profile('access-token')->accountIdentity)->toBe('receipts@example.test');
+    } else {
+        expect(fn () => $gmail->profile('access-token'))->toThrow(GmailRequestFailed::class);
+    }
+
+    expect($mockHandler->count())->toBe($failures < 3 ? 0 : 1);
+})->with([
+    'before response headers, then success' => [false, 1],
+    'after response headers, then success' => [true, 1],
+    'before response headers, retries exhausted' => [false, 3],
+    'after response headers, retries exhausted' => [true, 3],
+]);
