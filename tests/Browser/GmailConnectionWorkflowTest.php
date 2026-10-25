@@ -200,6 +200,7 @@ test('the email list scrolls inside the viewport-height review card', function (
         ]);
     }
 
+    app()->instance(Gmail::class, new FakeGmail);
     $this->actingAs($connection->owner);
 
     visit(route('data_sources.gmail'))
