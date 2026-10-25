@@ -266,7 +266,7 @@ test('passkey confirmation opens agent access and permits several token mutation
     recoverAccessWithPassword($page, $owner);
     $page->assertPathIs('/');
     markBrowserSessionAsPasswordConfirmed($owner);
-    $page->script('window.location.assign("/settings/security")');
+    $page->navigate('/settings/security');
     $page->press('Add passkey')->type('Passkey name', 'Agent access passkey')
         ->press('Register passkey')->assertSee('Agent access passkey');
     $this->travel(31)->minutes();
