@@ -180,7 +180,7 @@ class ReadAgentTransactions
         $projectedAllocations = [];
 
         foreach ($allocations as $id => $amount) {
-            $projectedAllocations[] = ['category' => $this->category($categories->get($id)), 'amount_minor' => $amount->value()];
+            $projectedAllocations[] = ['category' => $this->category(is_int($id) ? $categories->get($id) : null), 'amount_minor' => $amount->value()];
         }
 
         return [

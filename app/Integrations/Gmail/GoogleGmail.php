@@ -5,6 +5,7 @@ namespace App\Integrations\Gmail;
 use App\Contracts\Gmail;
 use App\Exceptions\GmailResponseInvalid;
 use Carbon\CarbonImmutable;
+use Closure;
 use Google\Client;
 use Google\Service\Exception as GoogleServiceException;
 use Google\Service\Gmail as GmailService;
@@ -12,7 +13,8 @@ use Google\Service\Gmail\MessagePart;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\ClientException;
-use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\NetworkException;
+use GuzzleHttp\Exception\ResponseTimeoutException;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use Illuminate\Support\Str;
@@ -28,6 +30,7 @@ final class GoogleGmail implements Gmail
         private string $clientSecret,
         private string $redirectUri,
         private ?ClientInterface $httpClient = null,
+        private ?Closure $httpHandler = null,
     ) {}
 
     public function authorizationUrl(string $state, ?string $loginHint = null): string
@@ -362,7 +365,7 @@ final class GoogleGmail implements Gmail
 
     private function defaultHttpClient(): ClientInterface
     {
-        $handlerStack = HandlerStack::create();
+        $handlerStack = HandlerStack::create($this->httpHandler);
         $handlerStack->push(Middleware::retry(
             decider: static function (
                 int $retries,
@@ -374,7 +377,8 @@ final class GoogleGmail implements Gmail
                     return false;
                 }
 
-                return $exception instanceof ConnectException
+                return $exception instanceof NetworkException
+                    || $exception instanceof ResponseTimeoutException
                     || ($response !== null && ($response->getStatusCode() === 429 || $response->getStatusCode() >= 500));
             },
             delay: static fn (int $retries): int => $retries === 1 ? 200 : 1000,

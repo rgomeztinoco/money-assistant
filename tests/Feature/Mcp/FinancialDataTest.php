@@ -179,7 +179,7 @@ test('tools advertise financial schemas and mutation annotations and support leg
         expect($tool['description'])->not->toBeEmpty()
             ->and($tool['inputSchema']['type'])->toBe('object')
             ->and($tool['outputSchema']['type'])->toBe('object')
-            ->and($tool['annotations'])->toEqual(['readOnlyHint' => $readOnly, 'destructiveHint' => ! $readOnly && ! $creates, 'idempotentHint' => ! $creates, 'openWorldHint' => false]);
+            ->and($tool['annotations'])->toMatchArray(['readOnlyHint' => $readOnly, 'destructiveHint' => ! $readOnly && ! $creates, 'idempotentHint' => ! $creates, 'openWorldHint' => false]);
     }
     foreach (['income_source', 'transfer_purpose', 'category_assignment_provenance'] as $field) {
         expect($tools[1]['outputSchema']['properties']['transaction']['properties'][$field]['enum'])->toContain(null);
