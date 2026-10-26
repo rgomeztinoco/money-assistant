@@ -26,6 +26,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\Support\ConcurrentStatementImportConfirmation;
 use Tests\SyntheticPdf;
 
@@ -1006,16 +1008,21 @@ test('PDF extraction invokes the configured PHP CLI binary', function () {
     );
 });
 
-test('PDF extraction is terminated at the configured processing time limit', function () {
-    config([
-        'statement-imports.processing_timeout_seconds' => 1,
-        'statement-imports.max_extracted_bytes' => 8 * 1024 * 1024,
-    ]);
-    $largeSelectablePdf = SyntheticPdf::fromText(str_repeat("line\n", 200000));
+test('PDF extraction timeouts fail closed using the configured processing limit', function () {
+    config(['statement-imports.processing_timeout_seconds' => 1]);
+
+    Process::fake(function (PendingProcess $process): never {
+        expect($process->timeout)->toBe(1);
+
+        throw new ProcessTimedOutException(
+            new SymfonyProcess((array) $process->command, timeout: $process->timeout),
+            ProcessTimedOutException::TYPE_GENERAL,
+        );
+    });
 
     expect(fn () => app(StatementImportWorkflow::class)->preview(
         new User,
-        UploadedFile::fake()->createWithContent('statement.pdf', $largeSelectablePdf),
+        UploadedFile::fake()->createWithContent('statement.pdf', SyntheticPdf::fromText(interbankStatementText())),
     ))
         ->toThrow(fn (StatementImportValidationException $exception) => expect($exception->errorCode)->toBe('processing_limit'));
 });
