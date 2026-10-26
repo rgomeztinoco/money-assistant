@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM dunglas/frankenphp:1.12.0-php8.5-trixie@sha256:7b54e661c5be17c5ace0efeec6b41f612509ea75028c0b72269f9ba8491431da AS php-base
+FROM dunglas/frankenphp:1.13.3-php8.5-trixie@sha256:73053ec45f0ad33c8e6f71f60ec3a11133899eecc73d7aa577b6d3a1ff5649c2 AS php-base
 
 RUN install-php-extensions \
         bcmath \
@@ -10,6 +10,7 @@ RUN install-php-extensions \
         pdo_pgsql \
         zip \
     && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    && echo 'session.upload_progress.enabled=0' > "$PHP_INI_DIR/conf.d/zz-security.ini" \
     && setcap -r /usr/local/bin/frankenphp
 
 FROM composer:2.9.5@sha256:698d3801b2a622ace460c4743c781282fcbcb733a4cbf8b31c44731e846585e8 AS composer
