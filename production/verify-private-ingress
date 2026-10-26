@@ -103,7 +103,19 @@ if [ -z "$tailnet_ips" ]; then
     fail 'the host has no tailnet IP address'
 fi
 
-printf '%s\n' "$listeners" | awk -v tailnet_ips="$tailnet_ips" '
+private_preview=false
+if printf '%s' "$serve_status" | jq -e '
+    .TCP["8080"].HTTPS == true
+    and ([
+        (.Web // {} | to_entries[])
+        | select(.key | endswith(":8080"))
+        | .value.Handlers
+    ] == [{"/": {"Proxy": "http://127.0.0.1:8080"}}])
+' >/dev/null; then
+    private_preview=true
+fi
+
+printf '%s\n' "$listeners" | awk -v tailnet_ips="$tailnet_ips" -v private_preview="$private_preview" '
     BEGIN {
         allowed["127.0.0.1:80"] = 1
         allowed["127.0.0.1:443"] = 1
@@ -122,9 +134,20 @@ printf '%s\n' "$listeners" | awk -v tailnet_ips="$tailnet_ips" '
             allowed["[" addresses[address_index] "]:443"] = 1
             allowed[addresses[address_index] ":8443"] = 1
             allowed["[" addresses[address_index] "]:8443"] = 1
+            if (private_preview == "true") {
+                allowed[addresses[address_index] ":8080"] = 1
+                allowed["[" addresses[address_index] "]:8080"] = 1
+            }
         }
     }
-    $4 ~ /:(80|443|5432|8080|8443)$/ && !($4 in allowed) { exit 1 }
+    {
+        endpoint = $4
+        sub(/%tailscale0:/, ":", endpoint)
+        if (endpoint ~ /:(80|443|5432|8080|8443)$/ && !(endpoint in allowed)) {
+            print "Unapproved application listener: " $4 > "/dev/stderr"
+            exit 1
+        }
+    }
 ' || fail 'an application listener is reachable outside its approved private interface'
 
 curl \

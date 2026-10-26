@@ -180,6 +180,19 @@ if (str_contains($filter, 'AllowFunnel')) {
     exit(count(array_filter($allowFunnel)) === 0 ? 0 : 1);
 }
 
+if (str_contains($filter, '.TCP["8080"]')) {
+    $handlers = [];
+
+    foreach ($input['Web'] ?? [] as $hostPort => $route) {
+        if (str_ends_with($hostPort, ':8080')) {
+            $handlers[] = $route['Handlers'];
+        }
+    }
+
+    exit(($input['TCP']['8080']['HTTPS'] ?? false) === true
+        && $handlers === [['/' => ['Proxy' => 'http://127.0.0.1:8080']]] ? 0 : 1);
+}
+
 if (str_contains($filter, '.services.proxy.ports')) {
     $services = $input['services'];
     $valid = $services['proxy']['ports'] === [[
@@ -284,11 +297,55 @@ PHP);
         expect($approvedIngress->getExitCode())->toBe(0, $approvedIngress->getErrorOutput())
             ->and($approvedIngress->getOutput())->toContain('Private ingress verification passed.');
 
+        $previewServeStatus = $serveStatus;
+        $previewServeStatus['TCP']['8080'] = ['HTTPS' => true];
+        $previewServeStatus['Web']['ricardo-server.example.ts.net:8080'] = [
+            'Handlers' => ['/' => ['Proxy' => 'http://127.0.0.1:8080']],
+        ];
+        $scopedListeners = implode("\n", [
+            'LISTEN 0 4096 100.64.0.10%tailscale0:443 0.0.0.0:*',
+            'LISTEN 0 4096 100.64.0.10%tailscale0:8443 0.0.0.0:*',
+            'LISTEN 0 4096 [fd7a:115c:a1e0::10]%tailscale0:443 [::]:*',
+            'LISTEN 0 4096 [fd7a:115c:a1e0::10]%tailscale0:8443 [::]:*',
+        ]);
+        $previewListeners = $scopedListeners."\n".implode("\n", [
+            'LISTEN 0 4096 100.64.0.10%tailscale0:8080 0.0.0.0:*',
+            'LISTEN 0 4096 [fd7a:115c:a1e0::10]%tailscale0:8080 [::]:*',
+        ]);
+
+        foreach ([
+            [$serveStatus, $scopedListeners],
+            [$previewServeStatus, $previewListeners],
+        ] as [$approvedServeStatus, $approvedListeners]) {
+            $privateIngress = new Process([
+                base_path('production/verify-private-ingress'),
+                $environmentFile,
+            ], base_path(), [
+                ...$environment,
+                'PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($approvedServeStatus, JSON_THROW_ON_ERROR),
+                'PRIVATE_INGRESS_TEST_LISTENERS' => $approvedListeners,
+            ]);
+            $privateIngress->run();
+
+            expect($privateIngress->getExitCode())->toBe(0, $privateIngress->getErrorOutput());
+        }
+
         $missingServiceStatus = $serveStatus;
         unset($missingServiceStatus['Services']);
 
         $wrongBackendStatus = $serveStatus;
         $wrongBackendStatus['Services']['svc:money-assistant']['Web']['money-assistant.example.ts.net:443']['Handlers']['/']['Proxy'] = 'http://127.0.0.1:8444';
+
+        $wrongPreviewBackend = $previewServeStatus;
+        $wrongPreviewBackend['Web']['ricardo-server.example.ts.net:8080']['Handlers']['/']['Proxy'] = 'http://192.168.1.50:8080';
+
+        $insecurePreview = $previewServeStatus;
+        $insecurePreview['TCP']['8080'] = ['HTTP' => true];
+
+        $extraPreviewHandler = $previewServeStatus;
+        $extraPreviewHandler['Web']['ricardo-server.example.ts.net:8080']['Handlers']['/extra'] = [
+            'Proxy' => 'http://127.0.0.1:8081',
+        ];
 
         $publicComposeStatus = $composeStatus;
         $publicComposeStatus['services']['proxy']['ports'][0]['host_ip'] = '0.0.0.0';
@@ -302,6 +359,31 @@ PHP);
         }
 
         $rejections = [
+            'preview with a non-loopback backend' => [
+                [
+                    'PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($wrongPreviewBackend, JSON_THROW_ON_ERROR),
+                    'PRIVATE_INGRESS_TEST_LISTENERS' => $previewListeners,
+                ],
+                'an application listener is reachable outside its approved private interface',
+            ],
+            'preview without HTTPS' => [
+                [
+                    'PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($insecurePreview, JSON_THROW_ON_ERROR),
+                    'PRIVATE_INGRESS_TEST_LISTENERS' => $previewListeners,
+                ],
+                'an application listener is reachable outside its approved private interface',
+            ],
+            'preview with an extra handler' => [
+                [
+                    'PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($extraPreviewHandler, JSON_THROW_ON_ERROR),
+                    'PRIVATE_INGRESS_TEST_LISTENERS' => $previewListeners,
+                ],
+                'an application listener is reachable outside its approved private interface',
+            ],
+            'tailnet preview without its Serve mapping' => [
+                ['PRIVATE_INGRESS_TEST_LISTENERS' => $previewListeners],
+                'an application listener is reachable outside its approved private interface',
+            ],
             'missing named service' => [
                 ['PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($missingServiceStatus, JSON_THROW_ON_ERROR)],
                 'the named Tailscale Service does not exclusively route HTTPS to the loopback proxy',
@@ -329,6 +411,23 @@ PHP);
                 'canonical tailnet HTTPS health probe failed',
             ],
         ];
+
+        foreach ([
+            '0.0.0.0:8080',
+            '[::]:8080',
+            '192.168.1.50:8080',
+            '100.64.0.11%tailscale0:8080',
+            '[fd7a:115c:a1e0::11]%tailscale0:8080',
+            '100.64.0.10%eth0:443',
+        ] as $unapprovedListener) {
+            $rejections['unapproved listener '.$unapprovedListener] = [
+                [
+                    'PRIVATE_INGRESS_TEST_SERVE_STATUS' => json_encode($previewServeStatus, JSON_THROW_ON_ERROR),
+                    'PRIVATE_INGRESS_TEST_LISTENERS' => 'LISTEN 0 4096 '.$unapprovedListener.' *:*',
+                ],
+                'Unapproved application listener: '.$unapprovedListener,
+            ];
+        }
 
         foreach ($rejections as [$environmentOverrides, $failureMessage]) {
             $rejectedIngress = new Process([
