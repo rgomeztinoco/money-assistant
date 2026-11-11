@@ -11,6 +11,12 @@ class ConfirmStatementImportRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
+        if (is_string($this->input('movements'))) {
+            $this->merge([
+                'movements' => json_decode($this->input('movements'), true),
+            ]);
+        }
+
         if (! is_array($this->input('movements'))) {
             return;
         }

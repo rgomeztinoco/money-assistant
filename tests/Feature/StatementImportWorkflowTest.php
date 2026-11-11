@@ -98,6 +98,24 @@ test('the Statement Import workflow previews a reconciled BCP statement without 
         ->and(Transaction::query()->doesntExist())->toBeTrue();
 });
 
+test('BCP accepts September dates written as SET or SEP', function (string $monthCode) {
+    $statementText = str_replace(
+        ['01/02/26  AL  28/02/26', 'FEB', '01'.$monthCode.' 01'.$monthCode.' WARDA                                  20.00'],
+        ['01/09/26  AL  30/09/26', $monthCode, '30'.$monthCode.' 30'.$monthCode.' WARDA *                                20.00'],
+        bcpStatementText(),
+    );
+
+    $preview = app(StatementImportWorkflow::class)->preview(
+        User::factory()->create(),
+        UploadedFile::fake()->createWithContent('september.pdf', SyntheticPdf::fromText($statementText)),
+    );
+
+    expect($preview->movements)->toHaveCount(5)
+        ->and($preview->movements[0]->occurredOn->toDateString())->toBe('2026-09-30')
+        ->and($preview->movements[0]->classification->value)->toBe('savings')
+        ->and($preview->movements[0]->sourceMetadata)->toBe(['asterisk' => true]);
+})->with(['SET', 'SEP']);
+
 test('BCP reconstructs one movement table across pages with repeated headers', function () {
     [$firstPage, $secondPage] = explode("\n03FEB", bcpStatementText(), 2);
     $repeatedHeader = 'FECHA PROC. FECHA VALOR  DESCRIPCION                     CARGOS / DEBE   ABONOS / HABER';

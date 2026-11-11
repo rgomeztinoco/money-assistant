@@ -815,6 +815,8 @@ export default function CreateStatementImport() {
         confirmation.transform((data) => ({
             ...data,
             statement: selectedStatement,
+            // Keep large statements below PHP's multipart form field limit.
+            movements: JSON.stringify(data.movements),
         }));
         confirmation.post(confirmStatementImport.url());
     }
