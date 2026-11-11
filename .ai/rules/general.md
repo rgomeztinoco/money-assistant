@@ -5,8 +5,8 @@ paths:
 
 # General
 
-## Comments
-Do not add code comments or post pull request or issue comments unless the owner explicitly requests them. Put explanations in the PR description or conversation.
+## Code comments
+Do not add code comments unless the owner explicitly requests them. Put explanations in PR descriptions, PR or issue comments, or the conversation.
 
 ## Use Astra for independent reviews
 Use the Astra model, gpt-6-astra, for independent agent reviews. Do not substitute another model without the owner's agreement.
