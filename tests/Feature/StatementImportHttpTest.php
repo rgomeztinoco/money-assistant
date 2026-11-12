@@ -101,7 +101,7 @@ test('the create page does not ask for a Spending Category for Savings Transfers
         );
 });
 
-test('the owner can confirm a preview and inspect it while another owner cannot', function () {
+test('the owner can confirm a preview and inspect it while another owner cannot', function (bool $encodeMovements) {
     $owner = User::factory()->create();
     $otherOwner = User::factory()->create();
     $pdf = statementImportHttpPdf();
@@ -118,6 +118,10 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
                 : $movement['classification'],
         ])
         ->all();
+
+    if ($encodeMovements) {
+        $confirmation['movements'] = json_encode($confirmation['movements'], JSON_THROW_ON_ERROR);
+    }
 
     $response = $this->actingAs($owner)
         ->post(route('statement_imports.store'), [
@@ -154,7 +158,26 @@ test('the owner can confirm a preview and inspect it while another owner cannot'
         ->assertMethodNotAllowed();
 
     expect(StatementMovement::query()->where('classification', 'transfer')->count())->toBe(1);
-});
+})->with(['array movements' => false, 'JSON movements' => true]);
+
+test('invalid encoded movements cannot confirm a Statement Import', function (string $movements) {
+    $owner = User::factory()->create();
+    $pdf = statementImportHttpPdf();
+    $preview = app(StatementImportWorkflow::class)->preview(
+        $owner,
+        UploadedFile::fake()->createWithContent('preview.pdf', $pdf),
+    );
+
+    $this->actingAs($owner)
+        ->post(route('statement_imports.store'), [
+            ...$preview->confirmationData(),
+            'statement' => UploadedFile::fake()->createWithContent('confirm.pdf', $pdf),
+            'movements' => $movements,
+        ])
+        ->assertSessionHasErrors('movements');
+
+    expect(StatementImport::query()->doesntExist())->toBeTrue();
+})->with(['malformed JSON' => '{', 'scalar JSON' => 'true', 'empty JSON' => '[]']);
 
 test('the owner can correct a confirmed Statement Movement classification', function () {
     $owner = User::factory()->create();

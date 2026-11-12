@@ -152,6 +152,35 @@ test('the owner reviews the full statement with automatic matches and confirms t
         ->and($recordedTransaction->fresh()->statementMovement)->not->toBeNull();
 });
 
+test('the owner can confirm more than 110 statement movements without losing fields', function () {
+    $owner = User::factory()->create();
+    $statement = str_replace(
+        ['06-Feb Single PEN amount         5.00', 'SUBTOTAL                        25.00 10.00', '= 27.00 10.00'],
+        [str_repeat("06-Feb Single PEN amount         5.00\n", 107), 'SUBTOTAL                        555.00 10.00', '= 557.00 10.00'],
+        (string) file_get_contents(base_path('tests/Fixtures/Statements/interbank.txt')),
+    );
+
+    $page = visit($this->browserApplicationUrl.'/login');
+    $page->type('#email', $owner->email)->type('#password', 'password')
+        ->click('[data-test="login-button"]')->assertPathIs('/')
+        ->navigate($this->browserApplicationUrl.'/statement-imports/create');
+    selectPdfInBrowser($page, '#preview-statement', SyntheticPdf::fromText($statement));
+
+    $page->press('Upload and check')
+        ->assertSee('Reconciled')
+        ->select('select[aria-label="Classification for Mercado Pago"]', 'transfer')
+        ->assertSee('0 unresolved')
+        ->assertButtonEnabled('Confirm import')
+        ->press('Confirm import')
+        ->assertPathIsNot('/statement-imports/create')
+        ->assertDontSee('The Statement Import was not confirmed.')
+        ->assertPathBeginsWith('/statement-imports/');
+
+    expect(StatementImport::query()->count())->toBe(1)
+        ->and(StatementMovement::query()->count())->toBe(112)
+        ->and(Transaction::query()->count())->toBe(112);
+});
+
 test('BCP WARDA rows preview and confirm as Savings', function () {
     $owner = User::factory()->create();
     collect(['WARDA', 'Warda savings'])->each(

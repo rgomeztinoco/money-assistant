@@ -815,6 +815,7 @@ export default function CreateStatementImport() {
         confirmation.transform((data) => ({
             ...data,
             statement: selectedStatement,
+            movements: JSON.stringify(data.movements),
         }));
         confirmation.post(confirmStatementImport.url());
     }

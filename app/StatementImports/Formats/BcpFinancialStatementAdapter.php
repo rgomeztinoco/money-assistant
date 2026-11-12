@@ -237,6 +237,7 @@ final class BcpFinancialStatementAdapter implements FinancialStatementFormatAdap
             'JUL' => 7,
             'AGO' => 8,
             'SEP' => 9,
+            'SET' => 9,
             'OCT' => 10,
             'NOV' => 11,
             'DIC' => 12,
